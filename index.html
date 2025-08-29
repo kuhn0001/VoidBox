@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TwinSkies — 2P RPG Shoot 'Em Up</title>
+  <title>Void Skies — 2P RPG Shoot 'Em Up (v0.3)</title>
   <style>
     :root { --bg:#0a0d12; --fg:#e6f0ff; --accent:#5eead4; --p1:#60a5fa; --p2:#f472b6; --danger:#f87171; }
     html, body { height:100%; margin:0; background:radial-gradient(1200px 800px at 50% 40%, #0f1420, var(--bg)); color:var(--fg); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; }
@@ -32,14 +32,14 @@
   <div id="wrap"><canvas id="game" width="960" height="540"></canvas></div>
   <div id="ui">
     <div id="menuPanel" class="panel">
-      <h1>🎮 TwinSkies</h1>
+      <h1>🎮 Void Skies <small style="opacity:.7;font-weight:500">v0.3</small></h1>
       <p>A 2‑player top‑down RPG shoot ’em up. Clear waves, earn XP & parts, unlock skills.</p>
       <div class="row" style="flex-wrap:wrap">
-        <div class="chip" style="border-color:rgba(96,165,250,.5)">P1: <b style="color:var(--p1)">WASD</b> move, <b>Space</b> shoot, <b>Shift</b> Special</div>
+        <div class="chip" style="border-color:rgba(96,165,250,.5)">P1: <b style="color:var(--p1)">Mouse</b> move, <b>Click</b> shoot, <b>Shift</b> Special</div>
         <div class="chip" style="border-color:rgba(244,114,182,.5)">P2: <b style="color:var(--p2)">Arrows</b> move, <b>/</b> shoot, <b>Right Shift</b> Special</div>
         <div class="chip">Pause: <b>P</b></div>
       </div>
-      <p>Press <b>Enter</b> to start.</p>
+      <p>Click anywhere or press <b>Enter</b> to start.</p>
     </div>
 
     <div id="levelPanel" class="panel hide">
@@ -72,6 +72,7 @@
   const W = cvs.width, H = cvs.height;
   function fit() {
     const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    cvs.style.transformOrigin = 'top left';
     cvs.style.transform = `scale(${scale})`;
   }
   window.addEventListener('resize', fit); fit();
@@ -94,6 +95,22 @@
   const block = new Set(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ']);
   window.addEventListener('keydown', (e) => { keys.add(e.key); if(block.has(e.key)) e.preventDefault(); }, {passive:false});
   window.addEventListener('keyup',   (e) => { keys.delete(e.key); if(block.has(e.key)) e.preventDefault(); }, {passive:false});
+
+  // Mouse input for P1
+  const mouse = {x: W*0.3, y: H-60, down:false};
+  function toCanvasPos(ev){
+    const rect = cvs.getBoundingClientRect();
+    const scaleX = rect.width / W;
+    const scaleY = rect.height / H;
+    const x = (ev.clientX - rect.left) / scaleX;
+    const y = (ev.clientY - rect.top) / scaleY;
+    return {x, y};
+  }
+  window.addEventListener('mousemove', (e)=>{ if(gameState==='playing'||gameState==='menu'){ const p=toCanvasPos(e); mouse.x=p.x; mouse.y=p.y; }});
+  window.addEventListener('mousedown', ()=>{ mouse.down=true; if(gameState==='menu'||gameOver) startGame(); });
+  window.addEventListener('mouseup', ()=> mouse.down=false);
+  window.addEventListener('click', ()=>{ if(gameState==='menu'||gameOver) startGame(); });
+  window.addEventListener('touchstart', ()=>{ if(gameState==='menu'||gameOver) startGame(); }, {passive:true});
 
   // --- Random helpers ---
   const rnd = (a,b) => Math.random()*(b-a)+a;
@@ -147,18 +164,32 @@
       this.id=id; this.x=x; this.y=y; this.r=14; this.color=color; this.keys=keys;
       this.stats={ maxHp:100, speed:180, fireCd:.22, bulletDamage:10, specialCd:10, specialDur:3, partsBonus:1 };
       this.hp=this.stats.maxHp; this.fireTimer=0; this.specialTimer=0; this.specialActive=0; this.level=1; this.xp=0; this.xpNext=60; this.skillPoints=0; this.skills=new Set(); this.drone=null;
+      this.mouseControl = (id===1); // P1 follows mouse
     }
     update(dt){
       // movement
       let dx=0, dy=0;
-      if(keys.has(this.keys.up)) dy-=1; if(keys.has(this.keys.down)) dy+=1; if(keys.has(this.keys.left)) dx-=1; if(keys.has(this.keys.right)) dx+=1;
-      if(dx||dy){ const len=Math.hypot(dx,dy); dx/=len; dy/=len; this.x+=dx*this.stats.speed*dt; this.y+=dy*this.stats.speed*dt; }
+      if(this.mouseControl){
+        const mx = mouse.x, my = mouse.y;
+        const vx = mx - this.x, vy = my - this.y;
+        const d = Math.hypot(vx,vy);
+        if(d>1){ dx = vx/d; dy = vy/d; }
+      } else {
+        if(keys.has(this.keys.up)) dy-=1; if(keys.has(this.keys.down)) dy+=1; if(keys.has(this.keys.left)) dx-=1; if(keys.has(this.keys.right)) dx+=1;
+        if(dx||dy){ const len=Math.hypot(dx,dy); dx/=len; dy/=len; }
+      }
+      this.x+=dx*this.stats.speed*dt; this.y+=dy*this.stats.speed*dt;
       this.x=clamp(this.x, 20, W-20); this.y=clamp(this.y, 20, H-20);
+
       // firing
-      this.fireTimer-=dt; if(keys.has(this.keys.fire) && this.fireTimer<=0){ this.shoot(); this.fireTimer=this.stats.fireCd*(this.specialActive?0.5:1); }
+      this.fireTimer-=dt;
+      const wantsFire = this.mouseControl ? mouse.down : keys.has(this.keys.fire);
+      if(wantsFire && this.fireTimer<=0){ this.shoot(); this.fireTimer=this.stats.fireCd*(this.specialActive?0.5:1); }
+
       // special
-      this.specialTimer-=dt; if(keys.has(this.keys.special) && this.specialTimer<=0){ this.specialActive=this.stats.specialDur; this.specialTimer=this.stats.specialCd; }
+      this.specialTimer-=dt; if((this.mouseControl? keys.has('Shift') : keys.has(this.keys.special)) && this.specialTimer<=0){ this.specialActive=this.stats.specialDur; this.specialTimer=this.stats.specialCd; }
       if(this.specialActive>0) this.specialActive=Math.max(0, this.specialActive-dt);
+
       // drone
       if(this.drone) this.drone.update(dt);
     }
@@ -170,12 +201,10 @@
       if(this.drone) this.drone.draw();
     }
     shoot(){
-      // twin shot
       bullets.push(new Bullet(this.x-6, this.y-12, 0, -360, this, this.color));
       bullets.push(new Bullet(this.x+6, this.y-12, 0, -360, this, this.color));
     }
-    hit(dmg){ this.hp-=dmg; if(this.hp<=0){ this.hp=0; gameOver=true; }
-    }
+    hit(dmg){ this.hp-=dmg; if(this.hp<=0){ this.hp=0; gameOver=true; } }
     earn(xp, parts){ this.xp+=xp; currency+=Math.round(parts*(this.stats.partsBonus||1)); if(this.xp>=this.xpNext){ this.level++; this.skillPoints++; this.xp-=this.xpNext; this.xpNext=Math.round(this.xpNext*1.35); queueLevelUp(this); } }
     deployDrone(){
       this.drone = new (class Drone{ constructor(p){ this.p=p; this.t=0; this.r=6; }
@@ -251,7 +280,7 @@
       ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(0,0,W,H);
       ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.font='bold 28px system-ui';
       ctx.fillText('Game Over', W/2, H/2-8);
-      ctx.font='16px system-ui'; ctx.fillText('Press Enter to restart', W/2, H/2+22);
+      ctx.font='16px system-ui'; ctx.fillText('Click or press Enter to restart', W/2, H/2+22);
     }
   }
 
@@ -283,7 +312,6 @@
 
   // --- Level up UI ---
   function queueLevelUp(player){
-    // mark pending for UI pause
     show(levelPanel);
     levelWho.textContent = `Player ${player.id} leveled up! Choose a skill.`;
     renderSkillChoices(player);
@@ -292,11 +320,11 @@
 
   function availableSkillsOf(p){
     const avail=[]; for(const [key,def] of Object.entries(SkillDefs)){
-      if(p.skills.has(key)) continue; // already taken
+      if(p.skills.has(key)) continue;
       const hasReq = def.req.every(r=>p.skills.has(r));
       if(hasReq) avail.push({key,def});
     }
-    return avail.slice(0,6); // cap choices to avoid overwhelm
+    return avail.slice(0,6);
   }
 
   function renderSkillChoices(p){
@@ -326,7 +354,7 @@
 
   // --- Menu / Pause / Restart ---
   window.addEventListener('keydown', (e)=>{
-    if(e.key==='Enter'){
+    if(e.key==='Enter' || e.code==='NumpadEnter'){
       if(gameState==='menu' || gameOver){ startGame(); }
     }
     if(e.key==='p' || e.key==='P'){
@@ -334,20 +362,7 @@
       else if(gameState==='paused'){ gameState='playing'; hide(pausePanel); }
     }
   });
-
 })();
-  // --- Extra start + key mapping fallbacks ---
-  window.addEventListener('keydown', (e) => {
-    if ((e.key==='Enter' || e.code==='Enter' || e.code==='NumpadEnter' || e.key===' ' || e.code==='Space') && (gameState==='menu' || gameOver)) {
-      startGame();
-    }
-  });
-  window.addEventListener('click', () => { if (gameState==='menu' || gameOver) startGame(); });
-  window.addEventListener('touchstart', () => { if (gameState==='menu' || gameOver) startGame(); }, {passive:true});
-  // Map certain codes so P2 special and slash fire work consistently across browsers
-  window.addEventListener('keydown', (e) => { if (e.code==='ShiftRight') keys.add('ShiftRight'); if (e.code==='Slash') keys.add('/'); });
-  window.addEventListener('keyup',   (e) => { if (e.code==='ShiftRight') keys.delete('ShiftRight'); if (e.code==='Slash') keys.delete('/'); });
-
 </script>
 </body>
 </html>
