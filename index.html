@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Void Skies — 2P RPG Shoot 'Em Up (v0.3)</title>
+  <title>Void Skies — 2P RPG Shoot 'Em Up (v0.4)</title>
   <style>
     :root { --bg:#0a0d12; --fg:#e6f0ff; --accent:#5eead4; --p1:#60a5fa; --p2:#f472b6; --danger:#f87171; }
     html, body { height:100%; margin:0; background:radial-gradient(1200px 800px at 50% 40%, #0f1420, var(--bg)); color:var(--fg); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; }
@@ -32,14 +32,15 @@
   <div id="wrap"><canvas id="game" width="960" height="540"></canvas></div>
   <div id="ui">
     <div id="menuPanel" class="panel">
-      <h1>🎮 Void Skies <small style="opacity:.7;font-weight:500">v0.3</small></h1>
+      <h1>🎮 Void Skies <small style="opacity:.7;font-weight:500">v0.4</small></h1>
       <p>A 2‑player top‑down RPG shoot ’em up. Clear waves, earn XP & parts, unlock skills.</p>
       <div class="row" style="flex-wrap:wrap">
         <div class="chip" style="border-color:rgba(96,165,250,.5)">P1: <b style="color:var(--p1)">Mouse</b> move, <b>Click</b> shoot, <b>Shift</b> Special</div>
         <div class="chip" style="border-color:rgba(244,114,182,.5)">P2: <b style="color:var(--p2)">Arrows</b> move, <b>/</b> shoot, <b>Right Shift</b> Special</div>
         <div class="chip">Pause: <b>P</b></div>
       </div>
-      <p>Click anywhere or press <b>Enter</b> to start.</p>
+      <p>Click anywhere, press <b>Enter</b>, or hit the <b>Start</b> button to begin.</p>
+      <button id="startBtn">Start</button>
     </div>
 
     <div id="levelPanel" class="panel hide">
@@ -85,6 +86,8 @@
   const hudP1 = document.getElementById('hudP1');
   const hudWave = document.getElementById('hudWave');
   const hudP2 = document.getElementById('hudP2');
+  const startBtn = document.getElementById('startBtn');
+  if (startBtn) startBtn.addEventListener('click', () => startGame());
   const levelWho = document.getElementById('levelWho');
   document.getElementById('closeLevel').onclick = () => hide(levelPanel);
   function show(el){ el.classList.remove('hide'); }
@@ -217,6 +220,9 @@
   // --- Game state ---
   let players=[], bullets=[], enemies=[], particles=[], wave=1, spawnTimer=0, gameState='menu', gameOver=false, currency=0;
 
+  // Auto-start after load as a failsafe for environments that block input events
+  setTimeout(() => { if (gameState==='menu') { console.log('[VoidSkies] Autostart fallback'); startGame(); } }, 800);
+
   function startGame(){
     players=[ new Player(1, W*0.3, H-60, '#60a5fa', {up:'w',down:'s',left:'a',right:'d',fire:' ', special:'Shift'}),
               new Player(2, W*0.7, H-60, '#f472b6', {up:'ArrowUp',down:'ArrowDown',left:'ArrowLeft',right:'ArrowRight',fire:'/', special:'ShiftRight'}) ];
@@ -267,14 +273,18 @@
 
   function draw(){
     drawStars(dt);
-    for(const p of players) p.draw();
-    for(const e of enemies) e.draw();
-    for(const b of bullets) b.draw();
-    for(const prt of particles){ prt.update(dt); prt.draw(); }
-    particles=particles.filter(p=>p.alive);
+    // Debug state badge
+    ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillRect(8,8,190,28);
+    ctx.fillStyle='#fff'; ctx.font='12px system-ui'; ctx.fillText(`Void Skies v0.4  |  state: ${gameState}`, 14, 27);
 
-    // HUD
-    renderHud();
+    if(gameState==='playing' || gameState==='paused' || gameOver){
+      for(const p of players) p.draw();
+      for(const e of enemies) e.draw();
+      for(const b of bullets) b.draw();
+      for(const prt of particles){ prt.update(dt); prt.draw(); }
+      particles=particles.filter(p=>p.alive);
+      renderHud();
+    }
 
     if(gameOver){
       ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(0,0,W,H);
@@ -354,14 +364,17 @@
 
   // --- Menu / Pause / Restart ---
   window.addEventListener('keydown', (e)=>{
-    if(e.key==='Enter' || e.code==='NumpadEnter'){
-      if(gameState==='menu' || gameOver){ startGame(); }
+    if(e.key==='Enter' || e.code==='NumpadEnter' || e.code==='Space'){
+      if(gameState==='menu' || gameOver){ console.log('[VoidSkies] Start via key'); startGame(); }
     }
     if(e.key==='p' || e.key==='P'){
       if(gameState==='playing'){ gameState='paused'; show(pausePanel); }
       else if(gameState==='paused'){ gameState='playing'; hide(pausePanel); }
     }
   });
+  // Canvas & window clicks start too
+  cvs.addEventListener('click', () => { if (gameState==='menu' || gameOver) { console.log('[VoidSkies] Start via canvas click'); startGame(); } });
+  window.addEventListener('click', () => { if (gameState==='menu' || gameOver) { console.log('[VoidSkies] Start via window click'); startGame(); } });
 })();
 </script>
 </body>
