@@ -1,8 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Void Skies a Vibe Box LLC Production</title>
+  <style>
+    :root { --bg:#05070b; --fg:#e6f0ff; --accent:#5eead4; --p1:#60a5fa; --p2:#f472b6; --danger:#f87171; }
+    html,body{height:100%;margin:0;background:radial-gradient(1200px 800px at 50% 40%, #0d1220, var(--bg));color:var(--fg);font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans";}
+    #wrap{position:fixed;inset:0;display:grid;place-items:center}
+    canvas{background:transparent;box-shadow:0 10px 40px rgba(0,0,0,.5);border-radius:16px;image-rendering:pixelated;}
+    #ui{position:fixed;inset:0;pointer-events:none}
+    .panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(15,20,32,.9);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:24px;width:min(900px,92vw);pointer-events:auto;backdrop-filter:blur(10px)}
+    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .chip{padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12)}
+    .btn{background:#0b1220;color:var(--fg);border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:10px 14px;cursor:pointer}
+    .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+    .skill{padding:12px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.03);cursor:pointer}
+    .skill .req{opacity:.7;font-size:.85rem}
+    #hud{position:absolute;inset:0;padding:10px;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;font-size:14px}
+    .bar{height:8px;width:220px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;border:1px solid rgba(255,255,255,.12)}
+    .bar>span{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#38bdf8)}
+    #help{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);opacity:.8;font-size:13px;text-align:center}
+    .hide{display:none!important}
+  </style>
+</head>
+<body>
+  <div id="wrap"><canvas id="game" width="960" height="540"></canvas></div>
+  <div id="ui">
+    <div id="menuPanel" class="panel">
+      <h1>🎮 Void Skies <small style="opacity:.7;font-weight:500">v0.6</small></h1>
+      <p>2‑player top‑down RPG shoot ’em up. Now with parallax, particles, enemy types, skill tree, screen shake, and a tiny content system.</p>
+      <div class="row">
+        <div class="chip">P1: <b style="color:var(--p1)">Mouse</b> move, <b>Click</b> shoot, <b>Shift</b> Special</div>
+        <div class="chip">P2: <b style="color:var(--p2)">Arrows</b> move, <b>/</b> shoot, <b>Right Shift</b> Special</div>
+        <div class="chip">Pause: <b>P</b> • Debug: <b>~</b></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="startBtn" class="btn">Start</button>
+        <button id="soloBtn" class="btn">Solo (P1 only)</button>
+      </div>
+      <p style="opacity:.8">Click/tap anywhere or press Enter/Space to start. The debug badge shows state and FPS.</p>
+    </div>
 
-<!doctype html>
-<meta charset="utf-8">
-<title>Redirecting…</title>
-<link rel="canonical" href="/void-skies.html">
-<meta http-equiv="refresh" content="0; url=/void-skies.html">
-<script>location.replace('/void-skies.html');</script>
-<p>If you’re not redirected, <a href="/void-skies.html">click here</a>.</p>
+    <div id="levelPanel" class="panel hide">
+      <h2>Level Up</h2>
+      <p id="levelWho">Player leveled up! Choose a skill.</p>
+      <div id="skillsGrid" class="grid"></div>
+      <div class="row" style="justify-content:flex-end"><button id="closeLevel" class="btn">Continue</button></div>
+    </div>
+
+    <div id="pausePanel" class="panel hide"><h2>⏸️ Paused</h2><p>Press <b>P</b> to resume.</p></div>
+
+    <div id="hud">
+      <div id="hudP1"></div>
+      <div id="hudWave"></div>
+      <div id="hudP2"></div>
+      <div id="help">Extensible: add enemies/skills/powerups to data tables below. Net‑ready core loop (deterministic RNG, render separated from sim step).</div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // ===== Core Setup =====
+  const cvs = document.getElementById('game');
+  const ctx = cvs.getContext('2d');
+  const W = cvs.width, H = cvs.height;
+  function fit(){ const s=Math.min(innerWidth/W, innerHeight/H); cvs.style.transform=`scale(${s})`; cvs.style.transformOrigin='top left'; }
+  addEventListener('resize', fit); fit();
+
+  // Time
+  let last=performance.now(), acc=0, dtFixed=1/60; // fixed-step sim ready for netplay later
+
+  // Input
+  const keys=new Set(); const mouse={x:W*0.5,y:H*0.8,down:false};
+  addEventListener('keydown',e=>{ keys.add(e.key); if([' ','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault(); });
+  addEventListener('keyup',e=>keys.delete(e.key));
+  cvs.addEventListener('mousemove',e=>{ const r=cvs.getBoundingClientRect(); const sx=r.width/W, sy=r.height/H; mouse.x=(e.clientX-r.left)/sx; mouse.y=(e.clientY-r.top)/sy;});
+  addEventListener('mousedown',()=>mouse.down=true); addEventListener('mouseup',()=>mouse.down=false);
+
+  // UI
+  const menuPanel=$('#menuPanel'), levelPanel=$('#levelPanel'), skillsGrid=$('#skillsGrid'), pausePanel=$('#pausePanel');
+  const hudP1=$('#hudP1'), hudP2=$('#hudP2'), hudWave=$('#hudWave');
+  $('#startBtn').onclick=()=>startGame({twoPlayers:true});
+  $('#soloBtn').onclick=()=>startGame({twoPlayers:false});
+  $('#closeLevel').onclick=()=>hide(levelPanel);
+  function $(q){return document.querySelector(q)}
+  function show(el){el.classList.remove('hide')} function hide(el){el.classList.add('hide')}
+
+  // Debug
+  let DEBUG=true; addEventListener('keydown',e=>{ if(e.key==='`') DEBUG=!DEBUG; });
+
+  // RNG (deterministic for sync)
+  let seed=(Date.now()>>>0) ^ 0x9e3779b9; function rand(){ seed^=seed<<13; seed^=seed>>>17; seed^=seed<<5; return (seed>>>0)/4294967296; }
+  const rnd=(a,b)=>a+rand()*(b-a), rndi=(a,b)=>Math.floor(rnd(a,b+1)); const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+  // Camera + shake
+  let shakeT=0, shakeMag=0; function shake(mag=6,time=0.2){ shakeMag=Math.max(shakeMag,mag); shakeT=Math.max(shakeT,time);} 
+
+  // Background parallax layers
+  const layers=[{n:90,s:10,col:'rgba(255,255,255,.4)'},{n:120,s:30,col:'rgba(255,255,255,.7)'},{n:160,s:60,col:'rgba(255,255,255,.9)'}]
+    .map(l=>({...l,stars:Array.from({length:l.n},()=>({x:rnd(0,W),y:rnd(0,H)}))}));
+  function drawBG(dt){ ctx.fillStyle='#05070b'; ctx.fillRect(0,0,W,H); for(const L of layers){ for(const s of L.stars){ s.y+=L.s*dt; if(s.y>H){ s.y=0; s.x=rnd(0,W); } ctx.fillStyle=L.col; ctx.fillRect(s.x,s.y,1,1);} }
+  }
+
+  // ===== Data-Driven Content =====
+  const EnemyDefs={
+    grunt:{hp:24,speed:70,score:10, shootP:0.004, draw(c){ tri(c,'#eab308'); } , ai:(e,t)=>{ e.y+=e.speed*t; e.x+=Math.sin(e.t*2)*40*t; }},
+    bruiser:{hp:40,speed:50,score:18, shootP:0.006, draw(c){ tri(c,'#f97316'); }, ai:(e,t)=>{ e.y+=e.speed*t; e.x+=Math.sin(e.t*3)*70*t; }},
+    chaser:{hp:28,speed:60,score:16, shootP:0.0,  draw(c){ tri(c,'#22d3ee'); }, ai:(e,t,w)=>{ e.y+=e.speed*t; const p=nearestPlayer(w,e); if(p){ const a=Math.atan2(p.y-e.y,p.x-e.x); e.x+=Math.cos(a)*80*t; }}}
+  };
+
+  const SkillDefs={
+    gunnery1:{name:'Gunnery I',desc:'+20% bullet dmg',req:[],apply:p=>p.stats.bulletDamage*=1.2},
+    gunnery2:{name:'Gunnery II',desc:'+25% bullet dmg',req:['gunnery1'],apply:p=>p.stats.bulletDamage*=1.25},
+    focus:{name:'Targeting Focus',desc:'-20% fire CD',req:['gunnery1'],apply:p=>p.stats.fireCd*=0.8},
+    shields1:{name:'Shield Plating I',desc:'+25% max HP',req:[],apply:p=>{p.stats.maxHp=Math.round(p.stats.maxHp*1.25); p.hp=p.stats.maxHp;}},
+    shields2:{name:'Shield Plating II',desc:'+35% max HP',req:['shields1'],apply:p=>{p.stats.maxHp=Math.round(p.stats.maxHp*1.35); p.hp=p.stats.maxHp;}},
+    engine1:{name:'Engine Tuning',desc:'+15% speed',req:[],apply:p=>p.stats.speed*=1.15},
+    reactor:{name:'Reactor Overdrive',desc:'Special lasts 2×',req:['engine1'],apply:p=>p.stats.specialDur*=2},
+    drone:{name:'Auto‑Drone',desc:'Adds a helper drone',req:['focus'],apply:p=>p.deployDrone()},
+    salvage:{name:'Salvage Ops',desc:'+25% parts gain',req:[],apply:p=>p.stats.partsBonus=1.25},
+  };
+
+  // ===== Entity Classes =====
+  class Bullet{ constructor(x,y,vx,vy,owner,col){ this.x=x;this.y=y;this.vx=vx;this.vy=vy;this.r=3;this.owner=owner;this.col=col||'#fff';this.alive=true; this.dmg=owner?.stats.bulletDamage||8; }
+    step(t){ this.x+=this.vx*t; this.y+=this.vy*t; if(this.y<-10||this.y>H+10||this.x<-10||this.x>W+10) this.alive=false; }
+    draw(){ dot(this.x,this.y,this.r,this.col); }
+  }
+  class Enemy{ constructor(def,x,y){ this.def=def; Object.assign(this, {x,y,r:14,hp:def.hp,t:0,alive:true}); }
+    step(t,world){ this.t+=t; this.def.ai(this,t,world); if(rand()<this.def.shootP) world.bullets.push(new Bullet(this.x,this.y+8,0,200,null,'#fca5a5')); if(this.y>H+40) this.alive=false; }
+    draw(){ ctx.save(); ctx.translate(this.x,this.y); this.def.draw(ctx); ctx.restore(); }
+  }
+  class Particle{ constructor(x,y,vx,vy,c,life=.6){ Object.assign(this,{x,y,vx,vy,c,life,alive:true}); }
+    step(t){ this.life-=t; if(this.life<=0) this.alive=false; this.x+=this.vx*t; this.y+=this.vy*t; this.vy+=60*t; }
+    draw(){ ctx.globalAlpha=Math.max(0,this.life/0.6); ctx.fillStyle=this.c; ctx.fillRect(this.x,this.y,3,3); ctx.globalAlpha=1; }
+  }
+  class Player{ constructor(id,x,y,col,control){ Object.assign(this,{id,x,y,r:14,col,control}); this.stats={maxHp:100,speed:180,fireCd:.22,bulletDamage:10,specialCd:10,specialDur:3,partsBonus:1}; this.hp=this.stats.maxHp; this.fireT=0; this.specialT=0; this.specialA=0; this.level=1; this.xp=0; this.xpNext=60; this.sp=0; this.skills=new Set(); this.drone=null; }
+    step(t){ let dx=0,dy=0; if(this.control.type==='mouse'){ const vx=mouse.x-this.x, vy=mouse.y-this.y; const d=Math.hypot(vx,vy); if(d>1){ dx=vx/d; dy=vy/d; } }
+      else{ const K=this.control.keys; if(keys.has(K.up)) dy-=1; if(keys.has(K.down)) dy+=1; if(keys.has(K.left)) dx-=1; if(keys.has(K.right)) dx+=1; if(dx||dy){ const l=Math.hypot(dx,dy); dx/=l; dy/=l; } }
+      this.x+=dx*this.stats.speed*t; this.y+=dy*this.stats.speed*t; this.x=clamp(this.x,20,W-20); this.y=clamp(this.y,20,H-20);
+      this.fireT-=t; const wantsFire=(this.control.type==='mouse'? mouse.down : keys.has(this.control.keys.fire)); if(wantsFire && this.fireT<=0){ this.shoot(); this.fireT=this.stats.fireCd*(this.specialA?0.5:1);} 
+      this.specialT-=t; const wantsSpec=(this.control.type==='mouse'? (keys.has('Shift')||keys.has('ShiftLeft')||keys.has('ShiftRight')) : keys.has(this.control.keys.special)); if(wantsSpec && this.specialT<=0){ this.specialA=this.stats.specialDur; this.specialT=this.stats.specialCd; }
+      if(this.specialA>0) this.specialA=Math.max(0,this.specialA-t);
+      if(this.drone) this.droneStep(t);
+    }
+    draw(){ ctx.save(); ctx.translate(this.x,this.y); tri(ctx,this.col); if(this.specialA>0){ ctx.globalAlpha=.8; ctx.strokeStyle=this.col; ctx.beginPath(); ctx.arc(0,0,18,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1; } ctx.restore(); if(this.drone) this.droneDraw(); }
+    shoot(){ world.bullets.push(new Bullet(this.x-6,this.y-12,0,-360,this,this.col)); world.bullets.push(new Bullet(this.x+6,this.y-12,0,-360,this,this.col)); }
+    hit(d){ this.hp-=d; shake(8,.15); if(this.hp<=0){ this.hp=0; world.gameOver=true; }}
+    earn(xp,parts){ this.xp+=xp; world.currency+=Math.round(parts*(this.stats.partsBonus||1)); if(this.xp>=this.xpNext){ this.level++; this.sp++; this.xp-=this.xpNext; this.xpNext=Math.round(this.xpNext*1.35); queueLevelUp(this);} }
+    deployDrone(){ this.drone={t:0}; }
+    droneStep(t){ this.drone.t+=t; if(rndi(0,25)===0){ world.bullets.push(new Bullet(this.x+Math.cos(this.drone.t*2)*24, this.y-24+Math.sin(this.drone.t*2)*6, 0, -340, {stats:{bulletDamage:6}}, '#a7f3d0')); } }
+    droneDraw(){ const px=this.x+Math.cos(this.drone.t*2)*24, py=this.y-24+Math.sin(this.drone.t*2)*6; dot(px,py,4,'#a7f3d0'); }
+  }
+
+  // ===== World (pure-ish sim state) =====
+  let world={ players:[], enemies:[], bullets:[], parts:[], particles:[], wave:1, currency:0, gameOver:false, twoPlayers:true };
+
+  function nearestPlayer(w,e){ let best=null,bd=1e9; for(const p of w.players){ const d=(p.x-e.x)**2+(p.y-e.y)**2; if(d<bd){bd=d;best=p;} } return best; }
+
+  // ===== Spawning & Waves =====
+  function spawnWave(){ const n=8+world.wave*2; for(let i=0;i<n;i++){ setTimeout(()=>{
+      const def = (rand()<.4?'bruiser': rand()<.5?'chaser':'grunt');
+      world.enemies.push(new Enemy(EnemyDefs[def], rnd(40,W-40), -30));
+    }, i*220); } }
+
+  // ===== Collisions =====
+  function collideCircles(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return dx*dx+dy*dy < (a.r+b.r)*(a.r+b.r); }
+
+  // ===== Level Up UI =====
+  function queueLevelUp(player){ show(levelPanel); $('#levelWho').textContent=`Player ${player.id} leveled up! Choose a skill.`; renderSkillChoices(player); gameState='paused'; }
+  function availableSkillsOf(p){ const out=[]; for(const [k,d] of Object.entries(SkillDefs)){ if(p.skills.has(k)) continue; if(d.req.every(r=>p.skills.has(r))) out.push({k,d}); } return out; }
+  function renderSkillChoices(p){ skillsGrid.innerHTML=''; let avail=availableSkillsOf(p).slice(0,6); for(const {k,d} of avail){ const card=document.createElement('div'); card.className='skill'; card.innerHTML=`<b>${d.name}</b><div>${d.desc}</div>${d.req.length?`<div class="req">Requires: ${d.req.map(r=>SkillDefs[r].name).join(', ')}</div>`:''}`; card.onclick=()=>{ if(p.sp<=0) return; p.sp--; p.skills.add(k); d.apply(p); hide(levelPanel); gameState='playing'; }; skillsGrid.appendChild(card);} }
+
+  // ===== Scenes / Game State =====
+  let gameState='menu';
+  function startGame({twoPlayers}){ world={players:[], enemies:[], bullets:[], parts:[], particles:[], wave:1, currency:0, gameOver:false, twoPlayers};
+    world.players.push(new Player(1, W*0.3, H-60, getComputedStyle(document.documentElement).getPropertyValue('--p1').trim()||'#60a5fa', {type:'mouse'}));
+    if(twoPlayers) world.players.push(new Player(2, W*0.7, H-60, getComputedStyle(document.documentElement).getPropertyValue('--p2').trim()||'#f472b6', {type:'keys',keys:{up:'ArrowUp',down:'ArrowDown',left:'ArrowLeft',right:'ArrowRight',fire:'/',special:'ShiftRight'}}));
+    spawnWave(); hide(menuPanel); hide(levelPanel); hide(pausePanel); gameState='playing'; }
+
+  // ===== Update (fixed step) =====
+  function stepSim(t){
+    // Players
+    for(const p of world.players) p.step(t);
+    // Bullets
+    for(const b of world.bullets) b.step(t);
+    // Enemies
+    for(const e of world.enemies) e.step(t,world);
+
+    // Collisions: player bullets → enemies
+    for(const b of world.bullets){ if(!b.alive) continue; if(!world.players.includes(b.owner)) continue; for(const e of world.enemies){ if(!e.alive) continue; if(collideCircles(b,e)){ e.hp-=b.dmg; b.alive=false; if(e.hp<=0){ e.alive=false; shake(5,.12); pop(e.x,e.y,'#fde047',12); const xp=e.def.score, parts=Math.round(e.def.score/2); world.players.forEach(p=>p.earn(xp/world.players.length, parts/world.players.length)); } } } }
+    // Enemy bullets → players
+    for(const b of world.bullets){ if(!b.alive) continue; if(world.players.includes(b.owner)) continue; for(const p of world.players){ if(collideCircles(b,p)){ p.hit(12); b.alive=false; hit(p.x,p.y,p.col); } } }
+    // Enemies → players
+    for(const e of world.enemies){ if(!e.alive) continue; for(const p of world.players){ if(collideCircles(e,p)){ p.hit(18); e.alive=false; pop(e.x,e.y,'#fde047',10); } } }
+
+    // Cleanup
+    world.bullets=world.bullets.filter(b=>b.alive);
+    world.enemies=world.enemies.filter(e=>e.alive);
+    for(const prt of world.particles) prt.step(t); world.particles=world.particles.filter(p=>p.alive);
+
+    // Wave clear
+    if(world.enemies.length===0 && !world.gameOver && gameState==='playing'){ world.wave++; world.players.forEach(p=>p.earn(20,10)); spawnWave(); }
+  }
+
+  // ===== Render =====
+  let fpsSm=60; function render(dt){
+    drawBG(dt);
+    // camera shake
+    let ox=0,oy=0; if(shakeT>0){ shakeT=Math.max(0,shakeT-dt); const m=shakeMag*(shakeT/0.2); ox=(rand()-.5)*m; oy=(rand()-.5)*m; }
+    ctx.save(); ctx.translate(ox,oy);
+    // Entities
+    for(const p of world.players) p.draw();
+    for(const e of world.enemies) e.draw();
+    for(const b of world.bullets) b.draw();
+    for(const prt of world.particles) prt.draw();
+    ctx.restore();
+
+    // HUD
+    renderHUD();
+    // Overlay states
+    if(world.gameOver){ overlay('Game Over','Click or Press Enter to restart'); }
+    if(DEBUG){ fpsSm = fpsSm*0.9 + (1/dt)*0.1; debugBadge(`Void Skies v0.6  |  state: ${gameState}  |  FPS: ${fpsSm.toFixed(0)}`); }
+  }
+
+  function overlay(title, subtitle){ ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(0,0,W,H); ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.font='bold 28px system-ui'; ctx.fillText(title,W/2,H/2-8); ctx.font='16px system-ui'; ctx.fillText(subtitle,W/2,H/2+22); ctx.textAlign='left'; }
+  function debugBadge(text){ ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillRect(8,8, 12+ctx.measureText(text).width+12, 28); ctx.fillStyle='#fff'; ctx.font='12px system-ui'; ctx.fillText(text, 20, 27); }
+
+  function renderHUD(){
+    function hudFor(p,label){ const xpPct=Math.max(0,Math.min(1,p.xp/p.xpNext)); return `
+      <div class="chip">${label}</div>
+      <div class="chip">HP: ${p.hp}/${p.stats.maxHp}</div>
+      <div class="chip">Lvl ${p.level} (${p.sp} SP)</div>
+      <div class="bar"><span style="width:${(xpPct*100).toFixed(0)}%"></span></div>`; }
+    hudP1.innerHTML = world.players[0]? hudFor(world.players[0], '<b style="color:var(--p1)">P1</b>') : '';
+    hudP2.innerHTML = world.players[1]? hudFor(world.players[1], '<b style="color:var(--p2)">P2</b>') : '';
+    hudWave.innerHTML = `<div class="chip">Wave ${world.wave}</div><div class="chip">Parts: ${world.currency}</div>`;
+  }
+
+  // ===== Particles helpers =====
+  function pop(x,y,c='#fde047',n=10){ for(let i=0;i<n;i++) world.particles.push(new Particle(x,y,rnd(-140,140),rnd(-80,40),c)); }
+  function hit(x,y,c='#fff'){ for(let i=0;i<8;i++) world.particles.push(new Particle(x,y,rnd(-120,120),rnd(-60,20),c)); }
+
+  // ===== Drawing helpers =====
+  function dot(x,y,r,c){ ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); }
+  function tri(c,fill){ c.fillStyle=fill; c.beginPath(); c.moveTo(0,-14); c.lineTo(12,10); c.lineTo(-12,10); c.closePath(); c.fill(); }
+
+  // ===== Main Loop =====
+  let prev=performance.now(); function loop(now){ const dt=(now-last)/1000; last=now; acc+=dt; const stepMax=0.25; if(acc>stepMax) acc=stepMax; while(acc>=dtFixed){ if(gameState==='playing') stepSim(dtFixed); acc-=dtFixed; } render(dt); requestAnimationFrame(loop); }
+  requestAnimationFrame(loop);
+
+  // ===== Start / Pause / Restart Handlers =====
+  addEventListener('keydown',e=>{ if((e.key==='Enter'||e.key===' ') && (gameState==='menu'||world.gameOver)) startGame({twoPlayers:true}); });
+  addEventListener('click',()=>{ if(gameState==='menu'||world.gameOver) startGame({twoPlayers:true}); });
+  addEventListener('keydown',e=>{ if(e.key==='p'||e.key==='P'){ if(gameState==='playing'){ gameState='paused'; show(pausePanel);} else if(gameState==='paused'){ gameState='playing'; hide(pausePanel);} }});
+  // Auto-start fallback for strict embeds
+  setTimeout(()=>{ if(gameState==='menu') startGame({twoPlayers:true}); }, 900);
+
+  // Small helpers
+  function $(q){return document.querySelector(q)}
+})();
+</script>
+</body>
+</html>
