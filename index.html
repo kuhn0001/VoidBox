@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-  <title>Void Skies v0.9.0</title>
+  <title>Void Skies v0.9.8</title>
   <style>
     :root { --bg:#05070b; --fg:#e6f0ff; --accent:#5eead4; --p1:#60a5fa; --p2:#f472b6; --danger:#f87171; --panel:#0f1524; --edge:rgba(255,255,255,.12); }
     html,body{height:100%;margin:0;background:radial-gradient(1200px 800px at 50% 40%, #0d1220, var(--bg));color:var(--fg);font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans";}
@@ -233,7 +233,9 @@
       if(this.specialA>0) this.specialA=Math.max(0,this.specialA-t);
       if(this.drone) this.droneStep(t);
     }
-    draw(){ ctx.save(); ctx.translate(this.x,this.y); tri(ctx,this.col); if(this.specialA>0||this.tempShield>0){ ctx.globalAlpha=.8; ctx.strokeStyle=this.tempShield>0?'#fde68a':this.col; ctx.beginPath(); ctx.arc(0,0,18,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1; } ctx.restore(); if(this.drone) this.droneDraw(); }
+    draw(){ ctx.save(); ctx.translate(this.x,this.y); tri(ctx,this.col); if(this.specialA>0||this.tempShield>0){ ctx.globalAlpha=.9; ctx.strokeStyle=this.tempShield>0?'#fde68a':this.col; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(0,0,18,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1; }
+      if(rand()<0.35){ world.particles.push(new Particle(this.x+rand()*6-3, this.y+16, 0, rnd(20,40), 'rgba(148,163,184,.7)', .3)); }
+      ctx.restore(); if(this.drone) this.droneDraw(); }
     shoot(){ const spread=this.mods.spread||1; const base= -360*(this.specialA?1.2:1); for(let i=0;i<spread;i++){ const off=(i-(spread-1)/2)*50; world.bullets.push(new Bullet(this.x-6+off*0.02,this.y-12, off*2, base, this, this.col)); world.bullets.push(new Bullet(this.x+6+off*0.02,this.y-12, off*2, base, this, this.col)); } }
     hit(d){ if(this.tempShield>0){ this.tempShield=Math.max(0,this.tempShield-0.6); return; } this.hp-=d; shake(8,.15); if(this.hp<=0){ this.hp=0; world.gameOver=true; }}
     earn(xp,parts){ this.xp+=xp; world.currency+=Math.round(parts*(this.stats.partsBonus||1)); if(this.xp>=this.xpNext){ this.level++; this.sp++; this.xp-=this.xpNext; this.xpNext=Math.round(this.xpNext*1.35); queueLevelUp(this);} }
@@ -243,7 +245,7 @@
   }
 
   // ===== World =====
-  let world={ players:[], enemies:[], bullets:[], particles:[], powerups:[], wave:1, currency:0, gameOver:false, twoPlayers:true, boss:null };
+  let world={ players:[], enemies:[], bullets:[], particles:[], powerups:[], wave:1, currency:0, score:0, gameOver:false, twoPlayers:true, boss:null };
   const SAVE_KEY='voidskies_save';
   function save(){ const p=world.players[0]; if(!p) return; const data={parts:world.currency, wave:world.wave, p1:{hp:p.hp, stats:p.stats, mods:p.mods}}; localStorage.setItem(SAVE_KEY, JSON.stringify(data)); }
   function load(){ try{ const d=JSON.parse(localStorage.getItem(SAVE_KEY)||'null'); if(!d) return; persist=d; }catch{} }
@@ -252,13 +254,29 @@
   function nearestPlayer(w,e){ let best=null,bd=1e9; for(const p of w.players){ const d=(p.x-e.x)**2+(p.y-e.y)**2; if(d<bd){bd=d;best=p;} } return best; }
 
   // ===== Waves / Spawner =====
-  const Spawner={ timer:0, interval:0.7, left:0 };
+  const Spawner={ timer:0, interval:0.7, left:0, watchdog:0, startedAt:0 };
   function beginWave(){
-    if(world.wave%5===0){ world.boss=new Boss(BossDefs.behemoth, W/2, -60); Spawner.left=0; }
-    else { Spawner.left=8+world.wave*2; Spawner.interval=Math.max(0.25, 0.9 - world.wave*0.04); Spawner.timer=0; }
+    Spawner.startedAt=performance.now();
+    Spawner.watchdog=0;
+    if(world.wave%5===0){
+      world.boss=new Boss(BossDefs.behemoth, W/2, -60);
+      Spawner.left=0;
+    } else {
+      Spawner.left=8+world.wave*2;
+      Spawner.interval=Math.max(0.25, 0.9 - world.wave*0.04);
+      Spawner.timer=0;
+    }
   }
   function spawnOne(){ const def=(rand()<.4?'bruiser': rand()<.5?'chaser':'grunt'); world.enemies.push(new Enemy(EnemyDefs[def], rnd(40,W-40), -30)); Spawner.left--; }
-  function spawnerStep(t){ if(Spawner.left>0){ Spawner.timer-=t; if(Spawner.timer<=0){ spawnOne(); Spawner.timer=Spawner.interval; } } }
+  function spawnerStep(t){
+    if(Spawner.left>0){
+      Spawner.timer-=t;
+      if(Spawner.timer<=0){ spawnOne(); Spawner.timer=Spawner.interval; }
+    }
+    Spawner.watchdog += t;
+    const noAction = world.enemies.length===0 && !world.boss && Spawner.left===0;
+    if(Spawner.watchdog>2.0 && noAction){ beginWave(); }
+  }
 
   // ===== Level Up UI =====
   function queueLevelUp(player){ show(levelPanel); $('#levelWho').textContent=`Player ${player.id} leveled up! Choose a skill.`; renderSkillChoices(player); gameState='paused'; }
@@ -274,7 +292,7 @@
   function fillSettingsFromState(){ opt1p.checked=!world.twoPlayers; opt2p.checked=world.twoPlayers; toggleControls.checked=$('#controls').style.display!=='none'; }
 
   function startGame({twoPlayers}){
-    world={players:[], enemies:[], bullets:[], particles:[], powerups:[], wave: persist?.wave||1, currency: persist?.parts||0, gameOver:false, twoPlayers: !!twoPlayers, boss:null};
+    world={players:[], enemies:[], bullets:[], particles:[], powerups:[], wave: persist?.wave||1, currency: persist?.parts||0, score:0, gameOver:false, twoPlayers: !!twoPlayers, boss:null};
     const p1=new Player(1, W*0.3, H-60, getComputedStyle(document.documentElement).getPropertyValue('--p1').trim()||'#60a5fa', {type:'mouse'});
     if(persist?.p1){ Object.assign(p1.stats,persist.p1.stats||{}); Object.assign(p1.mods,persist.p1.mods||{}); p1.hp=persist.p1.hp||p1.stats.maxHp; }
     world.players.push(p1);
@@ -302,8 +320,8 @@
 
     // Collisions: player bullets → enemies/boss
     for(const b of world.bullets){ if(!b.alive) continue; if(!world.players.includes(b.owner)) continue; 
-      if(world.boss && b.alive && collide(b,world.boss)){ world.boss.hp-=b.dmg; if(b.pierce>0) b.pierce--; else b.alive=false; hit(b.x,b.y,'#fde047'); if(world.boss.hp<=0){ world.boss=null; world.players.forEach(p=>p.earn(80/world.players.length, 60/world.players.length)); pop(W/2,120,'#c7d2fe',24); } }
-      for(const e of world.enemies){ if(!e.alive) continue; if(collide(b,e)){ e.hp-=b.dmg; if(b.pierce>0) b.pierce--; else b.alive=false; if(e.hp<=0){ e.alive=false; shake(5,.12); pop(e.x,e.y,'#fde047',12); if(rand()<0.18){ const kinds=['heal','rapid','damage','shield']; const k=kinds[rndi(0,kinds.length-1)]; world.powerups.push(new Powerup(e.x,e.y,k)); } const xp=e.def.score, parts=Math.round(e.def.score/2); world.players.forEach(p=>p.earn(xp/world.players.length, parts/world.players.length)); } }
+      if(world.boss && b.alive && collide(b,world.boss)){ world.boss.hp-=b.dmg; if(b.pierce>0) b.pierce--; else b.alive=false; hit(b.x,b.y,'#fde047'); if(world.boss.hp<=0){ world.boss=null; world.players.forEach(p=>p.earn(80/world.players.length, 60/world.players.length)); world.score += 500; pop(W/2,120,'#c7d2fe',24); } }
+      for(const e of world.enemies){ if(!e.alive) continue; if(collide(b,e)){ e.hp-=b.dmg; if(b.pierce>0) b.pierce--; else b.alive=false; if(e.hp<=0){ e.alive=false; shake(5,.12); pop(e.x,e.y,'#fde047',12); if(rand()<0.18){ const kinds=['heal','rapid','damage','shield']; const k=kinds[rndi(0,kinds.length-1)]; world.powerups.push(new Powerup(e.x,e.y,k)); } const xp=e.def.score, parts=Math.round(e.def.score/2); world.players.forEach(p=>p.earn(xp/world.players.length, parts/world.players.length)); world.score += e.def.score*10; } }
       }
     }
 
@@ -340,7 +358,7 @@
     for(const prt of world.particles) prt.draw();
     ctx.restore();
     renderHUD();
-    if(DEBUG){ fpsSm = fpsSm*0.9 + (1/dt)*0.1; debugBadge(`Void Skies v0.9.0  |  state: ${gameState}  |  FPS: ${fpsSm.toFixed(0)}`); }
+    if(DEBUG){ fpsSm = fpsSm*0.9 + (1/dt)*0.1; debugBadge(`Void Skies v0.9.8  |  state: ${gameState}  |  FPS: ${fpsSm.toFixed(0)}`); }
   }
 
   function debugBadge(text){ ctx.fillStyle='rgba(0,0,0,.45)'; const w=12+ctx.measureText(text).width+12; ctx.fillRect(8,8, w, 28); ctx.fillStyle='#fff'; ctx.font='12px system-ui'; ctx.fillText(text, 20, 27); }
@@ -355,14 +373,27 @@
       <div class="bar"><span style="width:${(xpPct*100).toFixed(0)}%"></span></div>`; }
     hudP1.innerHTML = world.players[0]? hudFor(world.players[0], 'Player 1', 'var(--p1)') : '';
     hudP2.innerHTML = world.players[1]? hudFor(world.players[1], 'Player 2', 'var(--p2)') : '';
-    hudCenter.innerHTML = `<div class="hud-title">Wave ${world.wave}</div><div class="row" style="gap:6px"><div class="chip">Parts <b>${world.currency}</b></div></div>`;
+    hudCenter.innerHTML = `<div class="hud-title">Wave ${world.wave}</div><div class="row" style="gap:6px"><div class="chip">Parts <b>${world.currency}</b></div><div class="chip">Score <b>${world.score}</b></div></div>`;
   }
 
   // ===== Helpers =====
   function pop(x,y,c='#fde047',n=10){ for(let i=0;i<n;i++) world.particles.push(new Particle(x,y,rnd(-140,140),rnd(-80,40),c)); }
   function hit(x,y,c='#fff'){ for(let i=0;i<8;i++) world.particles.push(new Particle(x,y,rnd(-120,120),rnd(-60,20),c)); }
   function dot(x,y,r,c){ ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); }
-  function tri(c,fill){ c.fillStyle=fill; c.beginPath(); c.moveTo(0,-14); c.lineTo(12,10); c.lineTo(-12,10); c.closePath(); c.fill(); }
+  function tri(c,fill){
+    // prettier jet: body, wings, cockpit, engine glow
+    c.save();
+    // body
+    c.fillStyle=fill; c.beginPath(); c.moveTo(0,-16); c.lineTo(12,10); c.lineTo(-12,10); c.closePath(); c.fill();
+    // wings
+    c.fillStyle='rgba(255,255,255,.08)'; c.beginPath(); c.moveTo(-12,6); c.lineTo(-24,12); c.lineTo(-12,10); c.closePath(); c.fill();
+    c.beginPath(); c.moveTo(12,6); c.lineTo(24,12); c.lineTo(12,10); c.closePath(); c.fill();
+    // cockpit
+    c.fillStyle='rgba(255,255,255,.6)'; c.beginPath(); c.ellipse(0,-6,4,6,0,0,Math.PI*2); c.fill();
+    // thruster glow
+    const grad=c.createRadialGradient(0,12,0,0,14,10); grad.addColorStop(0,'rgba(255,255,255,.7)'); grad.addColorStop(1,'rgba(56,189,248,.0)'); c.fillStyle=grad; c.beginPath(); c.ellipse(0,14,6,10,0,0,Math.PI*2); c.fill();
+    c.restore();
+  }
   function collide(a,b){ const dx=a.x-b.x, dy=a.y-b.y; const rr=(a.r||0)+(b.r||0); return dx*dx+dy*dy < rr*rr; }
 
   // ===== Tiny Tests =====
@@ -372,14 +403,24 @@
     console.assert(collide(A(0,0,1), A(3,0,1))===false, 'collide: far apart');
     console.assert(collide(A(0,0,2), A(3,0,2))===true,  'collide: overlap');
     console.assert(collide(A(0,0,2), A(4,0,2))===false, 'collide: edge-touch false');
-    const tmp={players:[{},{},], enemies:[], bullets:[]};
     world.wave=1; beginWave(); console.assert(Spawner.left>0 && !world.boss, 'wave1 spawns enemies');
+    // simulate watchdog safety by clearing left & boss
+    Spawner.left=0; world.enemies.length=0; world.boss=null; Spawner.watchdog=2.1; spawnerStep(0); console.assert(Spawner.left>0 || world.boss, 'watchdog re-primes wave');
     world.wave=5; beginWave(); console.assert(Spawner.left===0 && world.boss, 'wave5 spawns boss');
   })();
 
   // ===== Main Loop =====
-  function loop(now){ const dt=(now-last)/1000; last=now; acc+=dt; const stepMax=0.25; if(acc>stepMax) acc=stepMax; while(acc>=dtFixed){ if(gameState==='playing') stepSim(dtFixed); acc-=dtFixed; } render(dt); requestAnimationFrame(loop); }
+  function loop(now){
+    const dt=(now-last)/1000; last=now; acc+=dt;
+    const stepMax=0.25; if(acc>stepMax) acc=stepMax;
+    while(acc>=dtFixed){ if(gameState==='playing') stepSim(dtFixed); acc-=dtFixed; }
+    render(dt);
+    requestAnimationFrame(loop);
+  }
   requestAnimationFrame(loop);
+
+  // Touch helpers: tap to auto-fire briefly so mobile users can shoot without holding
+  addEventListener('touchstart',()=>{ mouse.down=true; setTimeout(()=>mouse.down=false, 250); }, {passive:true});
 
   // Pause toggle
   addEventListener('keydown',e=>{ if(e.key==='p'||e.key==='P'){ if(gameState==='playing'){ gameState='paused'; show(pausePanel);} else if(gameState==='paused'){ gameState='playing'; hide(pausePanel);} }});
