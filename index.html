@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-  <title>Void Skies v0.9.8</title>
+  <title>Void Skies v1.1.2</title>
   <style>
     :root { --bg:#05070b; --fg:#e6f0ff; --accent:#5eead4; --p1:#60a5fa; --p2:#f472b6; --danger:#f87171; --panel:#0f1524; --edge:rgba(255,255,255,.12); }
     html,body{height:100%;margin:0;background:radial-gradient(1200px 800px at 50% 40%, #0d1220, var(--bg));color:var(--fg);font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans";}
@@ -156,13 +156,38 @@
   // Parallax background
   const layers=[{n:90,s:10,col:'rgba(255,255,255,.4)'},{n:120,s:30,col:'rgba(255,255,255,.7)'},{n:160,s:60,col:'rgba(255,255,255,.9)'}]
     .map(l=>({...l,stars:Array.from({length:l.n},()=>({x:rnd(0,W),y:rnd(0,H)}))}));
-  function drawBG(dt){ ctx.fillStyle='#05070b'; ctx.fillRect(0,0,W,H); for(const L of layers){ for(const s of L.stars){ s.y+=L.s*dt; if(s.y>H){ s.y=0; s.x=rnd(0,W); } ctx.fillStyle=L.col; ctx.fillRect(s.x,s.y,1,1);} } }
-
+  function drawBG(dt){
+    ctx.fillStyle='#05070b';
+    ctx.fillRect(0,0,W,H);
+    // soft nebula glow
+    const g = ctx.createRadialGradient(W*0.72,H*0.28,60, W*0.72,H*0.28, 420);
+    g.addColorStop(0,'rgba(94,234,212,0.08)');
+    g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g;
+    ctx.fillRect(0,0,W,H);
+    // parallax star layers
+    for(const L of layers){
+      for(const s of L.stars){
+        s.y+=L.s*dt;
+        if(s.y>H){ s.y=0; s.x=rnd(0,W); }
+        ctx.fillStyle=L.col;
+        ctx.fillRect(s.x,s.y,1,1);
+      }
+    }
+  }
   // ===== Content =====
   const EnemyDefs={
     grunt:{hp:24,speed:70,score:10, shootP:0.004, draw(c){ tri(c,'#eab308'); } , ai:(e,t)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; e.x+=Math.sin(e.t*2)*40*t; }},
     bruiser:{hp:40,speed:50,score:18, shootP:0.006, draw(c){ tri(c,'#f97316'); }, ai:(e,t)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; e.x+=Math.sin(e.t*3)*70*t; }},
-    chaser:{hp:28,speed:60,score:16, shootP:0.0,  draw(c){ tri(c,'#22d3ee'); }, ai:(e,t,w)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; const p=nearestPlayer(w,e); if(p){ const a=Math.atan2(p.y-e.y,p.x-e.x); e.x+=Math.cos(a)*80*t; }}}
+    chaser:{hp:28,speed:60,score:16, shootP:0.0,  draw(c){ tri(c,'#22d3ee'); }, ai:(e,t,w)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; const p=nearestPlayer(w,e); if(p){ const a=Math.atan2(p.y-e.y,p.x-e.x); e.x+=Math.cos(a)*80*t; }}},
+    viper:{hp:20,speed:120,score:14, shootP:0.002, draw(c){ tri(c,'#60a5fa'); }, ai:(e,t)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; e.x+=Math.sin(e.t*5)*90*t; }},
+    sniper:{hp:28,speed:40,score:20, shootP:0.0, draw(c){ tri(c,'#fde047'); }, ai:(e,t,w)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; if((e.t||0)%1.2<0.02){ const p=nearestPlayer(w,e); if(p){ const a=Math.atan2(p.y-e.y,p.x-e.x); w.bullets.push(new Bullet(e.x,e.y+8, Math.cos(a)*240, Math.sin(a)*240, null,'#fca5a5')); } } }},
+    mine:{hp:22,speed:35,score:18, shootP:0, draw(c){ c.fillStyle='#94a3b8'; c.beginPath(); c.arc(0,0,10,0,Math.PI*2); c.fill(); }, ai:(e,t,w)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; if(!e.arm) e.arm = 1.5 + rnd(0.4,1.4); if(e.t>e.arm || e.y>H*0.72){ // explode
+        for(let i=0;i<10;i++){ const a=i*(Math.PI*2/10)+rand()*0.2; w.bullets.push(new Bullet(e.x,e.y, Math.cos(a)*160, Math.sin(a)*160, null, '#fca5a5')); }
+        e.alive=false; }
+      }},
+    turret:{hp:60,speed:20,score:26, shootP:0, draw(c){ c.fillStyle='#a78bfa'; c.fillRect(-10,-10,20,20); }, ai:(e,t,w)=>{ e.t=(e.t||0)+t; e.y = Math.min(e.y + e.speed*t, 120); if(e.t>0.5){ e.t=0; for(let i=0;i<6;i++){ const a=i*(Math.PI*2/6)+rand()*0.2; w.bullets.push(new Bullet(e.x,e.y, Math.cos(a)*200, Math.sin(a)*200, null,'#c4b5fd')); } } }},
+    splitter:{hp:30,speed:55,score:22, shootP:0.003, draw(c){ tri(c,'#34d399'); }, ai:(e,t)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; e.x+=Math.sin(e.t*2.5)*50*t; }, onDeath:(e,w)=>{ for(let i=0;i<2;i++){ w.enemies.push(new Enemy(EnemyDefs.grunt, e.x+(i?-12:12), e.y-10)); } }},
   };
 
   const BossDefs={
@@ -171,19 +196,29 @@
         for(let i=0;i<12;i++){ const a=i*(Math.PI*2/12); w.bullets.push(new Bullet(b.x, b.y, Math.cos(a)*160, Math.sin(a)*160, null, '#fca5a5')); }
       } if(rand()<0.015){ const p=nearestPlayer(w,b); if(p){ const a=Math.atan2(p.y-b.y,p.x-b.x); w.bullets.push(new Bullet(b.x,b.y,Math.cos(a)*220,Math.sin(a)*220,null,'#fca5a5')); } }
       }
+    },
+    sentinel:{hp:520, score:160, draw(c){ c.save(); c.rotate((Date.now()%4000)/4000*Math.PI*2); c.strokeStyle='#f472b6'; c.beginPath(); c.arc(0,0,44,0,Math.PI*2); c.stroke(); c.fillStyle='rgba(244,114,182,.2)'; c.beginPath(); c.arc(0,0,26,0,Math.PI*2); c.fill(); c.restore(); },
+      ai:(b,t,w)=>{ b.t=(b.t||0)+t; b.y = Math.min(b.y + 25*t, 140); b.x+=Math.sin(b.t*1.1)*120*t; const base=b.t*2.4; for(let i=0;i<2;i++){ const a=base+i*Math.PI; if(rand()<0.12){ w.bullets.push(new Bullet(b.x,b.y, Math.cos(a)*260, Math.sin(a)*260, null,'#fb7185')); } } if(rand()<0.02){ for(let i=0;i<10;i++){ const a=i*(Math.PI*2/10)+b.t*0.6; w.bullets.push(new Bullet(b.x,b.y, Math.cos(a)*180, Math.sin(a)*180, null,'#fb7185')); } } }
+    },
+    carrier:{hp:680, score:180, draw(c){ c.fillStyle='#38bdf8'; c.beginPath(); c.moveTo(-46,-12); c.lineTo(46,-12); c.lineTo(24,14); c.lineTo(-24,14); c.closePath(); c.fill(); },
+      ai:(b,t,w)=>{ b.t=(b.t||0)+t; b.y = Math.min(b.y + 18*t, 120); b.x+=Math.sin(b.t*0.9)*80*t; if(rand()<0.03){ w.enemies.push(new Enemy(EnemyDefs.viper, b.x+rnd(-40,40), b.y+30)); } if(rand()<0.01){ for(let i=0;i<6;i++){ const a=i*(Math.PI*2/6); w.bullets.push(new Bullet(b.x, b.y, Math.cos(a)*150, Math.sin(a)*150, null, '#38bdf8')); } } }
     }
   };
 
   const SkillDefs={
     gunnery1:{name:'Gunnery I',desc:'+20% bullet dmg',req:[],apply:p=>p.stats.bulletDamage*=1.2},
     gunnery2:{name:'Gunnery II',desc:'+25% bullet dmg',req:['gunnery1'],apply:p=>p.stats.bulletDamage*=1.25},
+    gunnery3:{name:'Gunnery III',desc:'+30% bullet dmg',req:['gunnery2'],apply:p=>p.stats.bulletDamage*=1.3},
     focus:{name:'Targeting Focus',desc:'-20% fire CD',req:['gunnery1'],apply:p=>p.stats.fireCd*=0.8},
+    overclock:{name:'Overclock',desc:'-15% fire CD',req:['focus'],apply:p=>p.stats.fireCd*=0.85},
     shields1:{name:'Shield Plating I',desc:'+25% max HP',req:[],apply:p=>{p.stats.maxHp=Math.round(p.stats.maxHp*1.25); p.hp=p.stats.maxHp;}},
     shields2:{name:'Shield Plating II',desc:'+35% max HP',req:['shields1'],apply:p=>{p.stats.maxHp=Math.round(p.stats.maxHp*1.35); p.hp=p.stats.maxHp;}},
     engine1:{name:'Engine Tuning',desc:'+15% speed',req:[],apply:p=>p.stats.speed*=1.15},
     reactor:{name:'Reactor Overdrive',desc:'Special lasts 2×',req:['engine1'],apply:p=>p.stats.specialDur*=2},
     drone:{name:'Auto‑Drone',desc:'Adds a helper drone',req:['focus'],apply:p=>p.deployDrone()},
     salvage:{name:'Salvage Ops',desc:'+25% parts gain',req:[],apply:p=>p.stats.partsBonus=1.25},
+    autoRepair:{name:'Auto‑Repair',desc:'Regenerate 1 HP/s',req:['shields1'],apply:p=>p.mods.regen=(p.mods.regen||0)+1},
+    magnet:{name:'Tractor Beam',desc:'Pickup range ↑',req:[],apply:p=>p.mods.magnet=(p.mods.magnet||0)+1},
   };
 
   const ShopDefs=[
@@ -193,6 +228,8 @@
     {key:'move', name:'Engine Baffles', cost:30, desc:'+12% move speed', apply:p=>p.stats.speed*=1.12},
     {key:'spread', name:'Twin Spread', cost:45, desc:'Adds spread shot', apply:p=>p.mods.spread=Math.min(3,(p.mods.spread||1)+1)},
     {key:'pierce', name:'Piercing Rounds', cost:60, desc:'Bullets pierce 1 target', apply:p=>p.mods.pierce=1},
+    {key:'shield', name:'Reactive Shielding', cost:50, desc:'+1s special duration', apply:p=>p.stats.specialDur*=1.25},
+    {key:'drone2', name:'Drone Overhaul', cost:55, desc:'Drone fires more often', apply:p=>p.mods.droneBoost=(p.mods.droneBoost||1)+0.5},
   ];
 
   // ===== Entities =====
@@ -214,7 +251,7 @@
     step(t,world){ this.def.ai(this,t,world); if(rand()<this.def.shootP) world.bullets.push(new Bullet(this.x,this.y+8,0,200,null,'#fca5a5')); if(this.y>H+40) this.alive=false; }
     draw(){ ctx.save(); ctx.translate(this.x,this.y); this.def.draw(ctx); ctx.restore(); }
   }
-  class Boss{ constructor(def,x,y){ this.kind='boss'; this.def=def; Object.assign(this,{x,y,r:40,hp:def.hp,t:0,alive:true}); }
+  class Boss{ constructor(def,x,y){ this.kind='boss'; this.def=def; Object.assign(this,{x,y,r:40,hp:def.hp,maxHp:def.hp,t:0,alive:true}); }
     step(t,world){ this.def.ai(this,t,world); }
     draw(){ ctx.save(); ctx.translate(this.x,this.y); this.def.draw(ctx); ctx.strokeStyle='#f87171'; ctx.beginPath(); ctx.arc(0,0,this.r+6,0,Math.PI*2); ctx.stroke(); ctx.restore(); }
   }
@@ -240,7 +277,7 @@
     hit(d){ if(this.tempShield>0){ this.tempShield=Math.max(0,this.tempShield-0.6); return; } this.hp-=d; shake(8,.15); if(this.hp<=0){ this.hp=0; world.gameOver=true; }}
     earn(xp,parts){ this.xp+=xp; world.currency+=Math.round(parts*(this.stats.partsBonus||1)); if(this.xp>=this.xpNext){ this.level++; this.sp++; this.xp-=this.xpNext; this.xpNext=Math.round(this.xpNext*1.35); queueLevelUp(this);} }
     deployDrone(){ this.drone={t:0}; }
-    droneStep(t){ this.drone.t+=t; if(rndi(0,25)===0){ world.bullets.push(new Bullet(this.x+Math.cos(this.drone.t*2)*24, this.y-24+Math.sin(this.drone.t*2)*6, 0, -340, {stats:{bulletDamage:6}}, '#a7f3d0')); } }
+    droneStep(t){ this.drone.t+=t; const rate = 25/(this.mods.droneBoost||1); if(rndi(0,rate)===0){ world.bullets.push(new Bullet(this.x+Math.cos(this.drone.t*2)*24, this.y-24+Math.sin(this.drone.t*2)*6, 0, -340, {stats:{bulletDamage:6}}, '#a7f3d0')); } }
     droneDraw(){ const px=this.x+Math.cos(this.drone.t*2)*24, py=this.y-24+Math.sin(this.drone.t*2)*6; dot(px,py,4,'#a7f3d0'); }
   }
 
@@ -259,15 +296,24 @@
     Spawner.startedAt=performance.now();
     Spawner.watchdog=0;
     if(world.wave%5===0){
-      world.boss=new Boss(BossDefs.behemoth, W/2, -60);
+      const bossKeys = Object.keys(BossDefs);
+      const pick = bossKeys[rndi(0,bossKeys.length-1)];
+      world.boss=new Boss(BossDefs[pick], W/2, -60);
       Spawner.left=0;
     } else {
       Spawner.left=8+world.wave*2;
-      Spawner.interval=Math.max(0.25, 0.9 - world.wave*0.04);
+      Spawner.interval=Math.max(0.22, 0.9 - world.wave*0.045);
       Spawner.timer=0;
     }
   }
-  function spawnOne(){ const def=(rand()<.4?'bruiser': rand()<.5?'chaser':'grunt'); world.enemies.push(new Enemy(EnemyDefs[def], rnd(40,W-40), -30)); Spawner.left--; }
+  function spawnOne(){
+    const w=world.wave;
+    const weights={ grunt:6, bruiser:Math.max(1,Math.floor(w/3)), chaser:Math.max(1,Math.floor(w/4)), viper:w>2?2:0, sniper:w>3?2:0, mine:w>4?2:0, turret:w>6?1:0, splitter:w>5?1:0 };
+    const pool=[]; for(const [k,val] of Object.entries(weights)){ for(let i=0;i<val;i++) pool.push(k); }
+    const pick = pool[rndi(0,pool.length-1)] || 'grunt';
+    world.enemies.push(new Enemy(EnemyDefs[pick], rnd(40,W-40), -30));
+    Spawner.left--;
+  }
   function spawnerStep(t){
     if(Spawner.left>0){
       Spawner.timer-=t;
@@ -321,7 +367,7 @@
     // Collisions: player bullets → enemies/boss
     for(const b of world.bullets){ if(!b.alive) continue; if(!world.players.includes(b.owner)) continue; 
       if(world.boss && b.alive && collide(b,world.boss)){ world.boss.hp-=b.dmg; if(b.pierce>0) b.pierce--; else b.alive=false; hit(b.x,b.y,'#fde047'); if(world.boss.hp<=0){ world.boss=null; world.players.forEach(p=>p.earn(80/world.players.length, 60/world.players.length)); world.score += 500; pop(W/2,120,'#c7d2fe',24); } }
-      for(const e of world.enemies){ if(!e.alive) continue; if(collide(b,e)){ e.hp-=b.dmg; if(b.pierce>0) b.pierce--; else b.alive=false; if(e.hp<=0){ e.alive=false; shake(5,.12); pop(e.x,e.y,'#fde047',12); if(rand()<0.18){ const kinds=['heal','rapid','damage','shield']; const k=kinds[rndi(0,kinds.length-1)]; world.powerups.push(new Powerup(e.x,e.y,k)); } const xp=e.def.score, parts=Math.round(e.def.score/2); world.players.forEach(p=>p.earn(xp/world.players.length, parts/world.players.length)); world.score += e.def.score*10; } }
+      for(const e of world.enemies){ if(!e.alive) continue; if(collide(b,e)){ e.hp-=b.dmg; if(b.pierce>0) b.pierce--; else b.alive=false; if(e.hp<=0){ e.alive=false; if(e.def.onDeath) e.def.onDeath(e,world); shake(5,.12); pop(e.x,e.y,'#fde047',12); if(rand()<0.18){ const kinds=['heal','rapid','damage','shield']; const k=kinds[rndi(0,kinds.length-1)]; world.powerups.push(new Powerup(e.x,e.y,k)); } const xp=e.def.score, parts=Math.round(e.def.score/2); world.players.forEach(p=>p.earn(xp/world.players.length, parts/world.players.length)); world.score += e.def.score*10; } }
       }
     }
 
@@ -358,27 +404,34 @@
     for(const prt of world.particles) prt.draw();
     ctx.restore();
     renderHUD();
-    if(DEBUG){ fpsSm = fpsSm*0.9 + (1/dt)*0.1; debugBadge(`Void Skies v0.9.8  |  state: ${gameState}  |  FPS: ${fpsSm.toFixed(0)}`); }
+    if(DEBUG){ fpsSm = fpsSm*0.9 + (1/dt)*0.1; debugBadge(`Void Skies v1.1.2  |  state: ${gameState}  |  FPS: ${fpsSm.toFixed(0)}`); }
   }
 
   function debugBadge(text){ ctx.fillStyle='rgba(0,0,0,.45)'; const w=12+ctx.measureText(text).width+12; ctx.fillRect(8,8, w, 28); ctx.fillStyle='#fff'; ctx.font='12px system-ui'; ctx.fillText(text, 20, 27); }
 
   function renderHUD(){
-    function hudFor(p,label,color){ const xpPct=Math.max(0,Math.min(1,p.xp/p.xpNext)); return `
+    function hudFor(p,label,color){
+      const xpPct=Math.max(0,Math.min(1,p.xp/p.xpNext));
+      return `
       <div class="hud-title">${label}</div>
       <div class="row" style="gap:6px;pointer-events:none">
-        <div class="chip">HP <b style="color:${color}">${p.hp}</b>/<span>${p.stats.maxHp}</span></div>
+        <div class="chip">HP <b style="color:${color}">${Math.max(0,Math.round(p.hp))}</b>/<span>${p.stats.maxHp}</span></div>
         <div class="chip">Lvl <b>${p.level}</b> • SP <b>${p.sp}</b></div>
       </div>
-      <div class="bar"><span style="width:${(xpPct*100).toFixed(0)}%"></span></div>`; }
+      <div class="bar"><span style="width:${(xpPct*100).toFixed(0)}%"></span></div>`;
+    }
     hudP1.innerHTML = world.players[0]? hudFor(world.players[0], 'Player 1', 'var(--p1)') : '';
     hudP2.innerHTML = world.players[1]? hudFor(world.players[1], 'Player 2', 'var(--p2)') : '';
-    hudCenter.innerHTML = `<div class="hud-title">Wave ${world.wave}</div><div class="row" style="gap:6px"><div class="chip">Parts <b>${world.currency}</b></div><div class="chip">Score <b>${world.score}</b></div></div>`;
+    let center = `<div class="hud-title">Wave ${world.wave}</div><div class="row" style="gap:6px"><div class="chip">Parts <b>${world.currency}</b></div><div class="chip">Score <b>${world.score}</b></div></div>`;
+    if(world.boss){
+      const pct=Math.max(0,Math.min(1, world.boss.hp/world.boss.maxHp));
+      center += `<div class=\"bar\" style=\"margin-top:6px\"><span style=\"width:${(pct*100).toFixed(0)}%\"></span></div>`;
+    }
+    hudCenter.innerHTML = center;
   }
-
   // ===== Helpers =====
   function pop(x,y,c='#fde047',n=10){ for(let i=0;i<n;i++) world.particles.push(new Particle(x,y,rnd(-140,140),rnd(-80,40),c)); }
-  function hit(x,y,c='#fff'){ for(let i=0;i<8;i++) world.particles.push(new Particle(x,y,rnd(-120,120),rnd(-60,20),c)); }
+  function hit(x,y,c='#fff'){ for(let i=0;i<8;i++) world.particles.push(new Particle(x,y,rnd(-120,120),rnd(-60,20),c)); if(world.players[0]?.mods?.regen){ world.players[0].hp=Math.min(world.players[0].stats.maxHp, world.players[0].hp + 0.2*world.players[0].mods.regen); } }
   function dot(x,y,r,c){ ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); }
   function tri(c,fill){
     // prettier jet: body, wings, cockpit, engine glow
