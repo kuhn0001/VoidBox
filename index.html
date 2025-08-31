@@ -1021,51 +1021,55 @@
   }
 
   // ---------- High Scores ----------
-  function addScore(score) {
-    const name = (store.name || 'ROGUE').slice(0, 16);
-    const arr = store.scores || [];
-    arr.push({ name, score, level: store.world.level, ts: Date.now() });
-    arr.sort((a, b) => b.score - a.score);
-    store.scores = arr.slice(0, 10);
-    LS.save('scores', store.scores);
-    refreshScoreList();
-  }
+// ---------- High Scores (SERVER-Backed) ----------
+const API_BASE = "https://card-eau-sugar-opera.trycloudflare.com/api";
 
-  function refreshScoreList() {
-    const ol = q('hsList');
+async function refreshScoreList() {
+  try {
+    const res = await fetch(`${API_BASE}/leaderboard`, { cache: "no-store" });
+    const data = await res.json();
+    store.scores = data;
+    const ol = q("hsList");
     if (!ol) return;
-    ol.innerHTML = (store.scores || []).map((s) => 
-      `<li>${escapeHtml(s.name)} — ${s.score} (LVL ${s.level || 1})</li>`
-    ).join('') || `<li>NO GOOD PILOTS</li>`;
+    ol.innerHTML = (data || [])
+      .map(s => `<li>${escapeHtml(s.name)} — ${s.score} (LVL ${s.level ?? "?"})</li>`)
+      .join("") || `<li>NO GOOD PILOTS</li>`;
+  } catch (err) {
+    console.error("Error loading scores:", err);
   }
+}
 
-  // ---------- Game Over ----------
-  let gameOverShown = false;
-  function handleGameOver() {
-    if (gameOverShown) return;
-    gameOverShown = true;
-    addScore(store.world.score);
-    announce('◢ NEXUS BREACH - PILOT LOST ◣');
-    
-    setTimeout(() => {
-      // Reset game
-      store.player = {
-        x: W*0.5, y: H-60, r: 14, hp: 100, hpMax: 100,
-        fireT: 0, speed: 380,
-        dmgMult: 1, fireRate: 0.18, vampirism: 0, shield: 0, shieldMax: 0,
-        multishot: 2, piercing: 0, explosive: false
-      };
-      store.world = { wave: 1, score: 0, parts: 0, xp: 0, level: 1 };
-      store.boss = null;
-      store.enemies.length = 0;
-      store.bullets.length = 0;
-      store.eBullets.length = 0;
-      store.particles.length = 0;
-      store.upgrades = {};
-      gameOverShown = false;
-      initWave();
-    }, 2000);
+async function addScore(score) {
+  const name = (store.name || "ROGUE").slice(0, 16);
+  try {
+    // get a nonce
+    const nonceRes = await fetch(`${API_BASE}/session`, { method: "POST" });
+    const { nonce } = await nonceRes.json();
+
+    // submit score
+    const msElapsed = Math.max(10_000, Math.floor(performance.now() - (store._startTs || performance.now())));
+    const body = {
+      name,
+      score: Math.floor(score) || 0,
+      waves: store.world.wave|0,
+      kills: store.world.kills|0,
+      bosses: store.world.bosses|0,
+      ms: msElapsed,
+      nonce
+    };
+
+    const res = await fetch(`${API_BASE}/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data.ok) { store.scores = data.top10; refreshScoreList(); }
+    else { console.warn("Score rejected:", data.err); announce(`Score rejected: ${data.err}`); }
+  } catch (err) {
+    console.error("Error submitting score:", err);
   }
+}
 
   // ---------- Main Loop ----------
   function step(dt) { stepWorld(dt); }
