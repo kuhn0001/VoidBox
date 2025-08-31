@@ -1,98 +1,58 @@
-// ui.js
-import { store, setPlayerName, addScore } from './state.js';
+// state.js
+import { LS } from './utils.js';
 
-export function wireUI(startGame){
-  const pausePanel=document.getElementById('pausePanel');
-  const gameOverPanel=document.getElementById('gameOverPanel');
-  const restartBtn=document.getElementById('restartBtn');
-  const settingsPanel=document.getElementById('settingsPanel');
-  const closeSettings=document.getElementById('closeSettings');
-  const shopPanel=document.getElementById('shopPanel');
+export const store = {
+  game:   { running: true, frame: 0, lastTime: performance.now() },
+  world:  { wave: 1, score: 0, parts: 0 },
+  player: { hp: 180, hpMax: 180, x: 480, y: 480 },
+  boss:   { active: false, hp: 0, hpMax: 0 },
+  spawner:{ left: 0, timer: 0, interval: 0.8 },
+  ui:     { paused: false, showShop: false, showLevel: false, announce: '' },
 
-  // High score / name panels added in index.html (see snippet below)
-  const namePanel=document.getElementById('highScorePanel') || document.getElementById('namePanel');
-  const nameInput=document.getElementById('playerNameInput') || document.getElementById('nameInput');
-  const saveNameBtn=document.getElementById('saveScoreBtn') || document.getElementById('saveName');
-  const cancelNameBtn=document.getElementById('cancelName') || document.getElementById('closeScoresBtn');
+  // new generic stores
+  kv:   {},         // key→value
+  dict: {},         // dictionary-of-dictionaries
 
-  hide(pausePanel); hide(gameOverPanel); hide(settingsPanel); hide(shopPanel);
-  if (namePanel) hide(namePanel);
+  // high scores + player name
+  scores: [],
+  playerName: '',
+};
 
-  document.getElementById('menuBtn')?.addEventListener('click',()=>show(settingsPanel));
-  closeSettings?.addEventListener('click',()=>hide(settingsPanel));
-  restartBtn?.addEventListener('click',()=>{ hide(gameOverPanel); startGame(); });
+export const setGame   = (patch)=>Object.assign(store.game, patch);
+export const setWorld  = (patch)=>Object.assign(store.world, patch);
+export const setPlayer = (patch)=>Object.assign(store.player, patch);
+export const setBoss   = (patch)=>Object.assign(store.boss, patch);
+export const setSpawn  = (patch)=>Object.assign(store.spawner, patch);
+export const setUI     = (patch)=>Object.assign(store.ui, patch);
 
-  // Pause toggle
-  addEventListener('keydown',e=>{
-    if(e.key==='p'||e.key==='P'){
-      if(pausePanel.classList.contains('hide')) show(pausePanel); else hide(pausePanel);
-    }
-  });
+// kv/dict helpers
+export function setKV(k,v){ store.kv[k]=v; saveKV(); }
+export function getKV(k, def=null){ return (k in store.kv)? store.kv[k] : def; }
+export function setDict(bucket, obj){ store.dict[bucket] = { ...(store.dict[bucket]||{}), ...obj }; saveDict(); }
+export function getDict(bucket){ return store.dict[bucket]||{}; }
 
-  // Name entry handlers
-  function openNamePanel(prefill=''){
-    if (!namePanel) return;
-    if (nameInput) nameInput.value = prefill || store.playerName || '';
-    show(namePanel);
-    nameInput?.focus();
-  }
-  function commitNameAndRecord(){
-    const val = (nameInput?.value||'').trim().slice(0,16) || 'PILOT';
-    setPlayerName(val);
-    hide(namePanel);
-    if (store._pendingScore!=null){
-      addScore(store._pendingScore);
-      delete store._pendingScore;
-      show(gameOverPanel);
-      // optional: refresh scoreboard list if the panel is open later
-      const list=document.getElementById('scoreList');
-      if (list) list.innerHTML = (store.scores||[]).map((s,i)=>`<li>${i+1}. ${escapeHtml(s.name)} — ${s.score}</li>`).join('');
-    }
-  }
-
-  saveNameBtn?.addEventListener('click', commitNameAndRecord);
-  cancelNameBtn?.addEventListener('click', ()=>{ if(namePanel) hide(namePanel); show(gameOverPanel); });
-  nameInput?.addEventListener('keydown', (e)=>{ if(e.key==='Enter') commitNameAndRecord(); });
-
-  // Optional scoreboard panel wiring
-  const scoreboardPanel=document.getElementById('scoreboardPanel');
-  const scoreList=document.getElementById('scoreList');
-  const closeScoresBtn=document.getElementById('closeScoresBtn');
-  closeScoresBtn?.addEventListener('click',()=>hide(scoreboardPanel));
-
-  function renderScoreboardList(){
-    if (!scoreList) return;
-    scoreList.innerHTML = (store.scores||[]).map((s,i)=>`<li>${i+1}. ${escapeHtml(s.name)} — ${s.score}</li>`).join('');
-  }
-  function showScoreboard(){
-    if (!scoreboardPanel) return;
-    renderScoreboardList();
-    show(scoreboardPanel);
-  }
-
-  return { pausePanel, gameOverPanel, shopPanel, openNamePanel, showScoreboard };
+// high score API
+export function setPlayerName(name){
+  store.playerName = (name||'').toString().slice(0,16);
+  LS.save('playerName', store.playerName);
 }
-
-// Override gameOver flow to include name & high-score persistence
-export function gameOver(){
-  const score = store.world.score;
-  const haveName = (store.playerName || '').length>0;
-  if (!haveName){
-    store._pendingScore = score;
-    const panel=document.getElementById('highScorePanel') || document.getElementById('namePanel');
-    if (panel) panel.classList.remove('hide');
-    const input=document.getElementById('playerNameInput') || document.getElementById('nameInput');
-    input?.focus();
-  } else {
-    addScore(score);
-    const panel=document.getElementById('gameOverPanel');
-    if (panel) panel.classList.remove('hide');
-  }
+export function addScore(score){
+  const entry = { name: store.playerName||'PILOT', score: Number(score)||0, ts: Date.now() };
+  store.scores.push(entry);
+  store.scores.sort((a,b)=>b.score-a.score);
+  store.scores = store.scores.slice(0,10);
+  LS.save('scores', store.scores);
 }
+export function getTopScore(){ return (store.scores[0]?.score)||0; }
 
-function show(el){ if(el) el.classList.remove('hide'); }
-function hide(el){ if(el) el.classList.add('hide'); }
-function escapeHtml(s){
-  s = String(s ?? '');
-  return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#39;");
-}
+// persistence
+export function saveKV(){ LS.save('kv', store.kv); }
+export function saveDict(){ LS.save('dict', store.dict); }
+
+// Load on module init
+(function boot(){
+  store.playerName = LS.load('playerName','');
+  store.scores = LS.load('scores', []);
+  store.kv = LS.load('kv', {});
+  store.dict = LS.load('dict', {});
+})();
