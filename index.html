@@ -105,6 +105,17 @@
 
   <!-- Panels -->
   <div id="ui">
+    <!-- Add this inside #ui -->
+    <div id="scorePanel" class="panel hide">
+      <h2 style="font-family:'Orbitron';color:#ff00ff;">🏆 ACE PILOTS 🏆</h2>
+      <div style="max-height:60vh;overflow-y:auto;">
+        <ol id="hsListPopup" style="line-height:1.6;color:#ff99cc;"></ol>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+        <button id="closeScores" class="btn" type="button">Close</button>
+      </div>
+    </div>
+
     <div id="levelPanel" class="panel hide">
       <h2 style="font-family:'Orbitron';color:#ff00ff;">⚡ AUGMENTATION PROTOCOL ⚡</h2>
       <p style="color:#ff99cc;">Select your neural enhancement:</p>
@@ -1029,15 +1040,28 @@ async function refreshScoreList() {
     const res = await fetch(`${API_BASE}/leaderboard`, { cache: "no-store" });
     const data = await res.json();
     store.scores = data;
+
+    // Small board under game
     const ol = q("hsList");
-    if (!ol) return;
-    ol.innerHTML = (data || [])
-      .map(s => `<li>${escapeHtml(s.name)} — ${s.score} (LVL ${s.level ?? "?"})</li>`)
-      .join("") || `<li>NO GOOD PILOTS</li>`;
+    if (ol) {
+      ol.innerHTML = (data || [])
+        .map(s => `<li>${escapeHtml(s.name)} — ${s.score} (LVL ${s.level ?? "?"})</li>`)
+        .join("") || `<li>NO GOOD PILOTS</li>`;
+    }
+
+    // Full popup board
+    const ol2 = q("hsListPopup");
+    if (ol2) {
+      ol2.innerHTML = (data || [])
+        .map((s,i) => `<li>#${i+1} ${escapeHtml(s.name)} — ${s.score} (LVL ${s.level ?? "?"})</li>`)
+        .join("") || `<li>NO GOOD PILOTS</li>`;
+    }
+
   } catch (err) {
     console.error("Error loading scores:", err);
   }
 }
+
 
 async function addScore(score) {
   const name = (store.name || "ROGUE").slice(0, 16);
@@ -1083,7 +1107,7 @@ async function addScore(score) {
     requestAnimationFrame(frame);
   }
 
-  // ---------- Boot ----------
+  // ---------- Name input ----------
   addEventListener('keydown', (e) => {
     if (e.key.toLowerCase() === 'n') {
       const v = prompt('Enter pilot callsign (max 16 chars)', store.name || '') || '';
@@ -1092,22 +1116,24 @@ async function addScore(score) {
       updateHUD();
     }
   });
-  
+
+  // ---------- Menu button opens High Score popup ----------
   q('menuBtn').addEventListener('click', () => {
-    const reset = confirm('Reset all progress and high scores?');
-    if (reset) {
-      memoryStore.scores = [];
-      memoryStore.playerName = '';
-      memoryStore.upgrades = {};
-      location.reload();
-    }
+    q('scorePanel').classList.remove('hide');
   });
 
+  // ---------- Close button in High Score popup ----------
+  q('closeScores').addEventListener('click', () => {
+    q('scorePanel').classList.add('hide');
+  });
+
+  // ---------- Boot ----------
   refreshScoreList();
   initWave();
   requestAnimationFrame(frame);
 })();
 </script>
+
 
 </body>
 </html>
