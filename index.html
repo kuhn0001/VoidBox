@@ -72,6 +72,12 @@
 
     <div id="pausePanel" class="panel hide"><h2>⏸️ Paused</h2><p>Press <b>P</b> to resume.</p></div>
 
+    <div id="gameOverPanel" class="panel hide">
+      <h2>💥 Game Over</h2>
+      <p>Your ship was destroyed. Press <b>R</b> to restart.</p>
+      <div class="row" style="justify-content:flex-end"><button id="restartBtn" class="btn">Restart</button></div>
+    </div>
+
     <div id="shopPanel" class="panel hide">
       <h2>🛠️ Hangar Shop</h2>
       <p id="shopInfo">Spend Parts to upgrade between waves.</p>
@@ -129,6 +135,8 @@
 
   // Settings panel logic
   const menuBtn=$('#menuBtn'), settingsPanel=$('#settingsPanel');
+  const gameOverPanel=$('#gameOverPanel');
+  const restartBtn=$('#restartBtn');
   const opt1p=$('#opt1p'), opt2p=$('#opt2p'), applyPlayers=$('#applyPlayers');
   const toggleControls=$('#toggleControls');
   const resetProgress=$('#resetProgress');
@@ -274,7 +282,7 @@
       if(rand()<0.35){ world.particles.push(new Particle(this.x+rand()*6-3, this.y+16, 0, rnd(20,40), 'rgba(148,163,184,.7)', .3)); }
       ctx.restore(); if(this.drone) this.droneDraw(); }
     shoot(){ const spread=this.mods.spread||1; const base= -360*(this.specialA?1.2:1); for(let i=0;i<spread;i++){ const off=(i-(spread-1)/2)*50; world.bullets.push(new Bullet(this.x-6+off*0.02,this.y-12, off*2, base, this, this.col)); world.bullets.push(new Bullet(this.x+6+off*0.02,this.y-12, off*2, base, this, this.col)); } }
-    hit(d){ if(this.tempShield>0){ this.tempShield=Math.max(0,this.tempShield-0.6); return; } this.hp-=d; shake(8,.15); if(this.hp<=0){ this.hp=0; world.gameOver=true; }}
+    hit(d){ if(this.tempShield>0){ this.tempShield=Math.max(0,this.tempShield-0.6); return; } this.hp-=d; shake(8,.15); if(this.hp<=0){ this.hp=0; killPlayer(this); }}
     earn(xp,parts){ this.xp+=xp; world.currency+=Math.round(parts*(this.stats.partsBonus||1)); if(this.xp>=this.xpNext){ this.level++; this.sp++; this.xp-=this.xpNext; this.xpNext=Math.round(this.xpNext*1.35); queueLevelUp(this);} }
     deployDrone(){ this.drone={t:0}; }
     droneStep(t){ this.drone.t+=t; const rate = 25/(this.mods.droneBoost||1); if(rndi(0,rate)===0){ world.bullets.push(new Bullet(this.x+Math.cos(this.drone.t*2)*24, this.y-24+Math.sin(this.drone.t*2)*6, 0, -340, {stats:{bulletDamage:6}}, '#a7f3d0')); } }
@@ -405,7 +413,7 @@
     for(const prt of world.particles) prt.draw();
     ctx.restore();
     renderHUD();
-    if(DEBUG){ fpsSm = fpsSm*0.9 + (1/dt)*0.1; debugBadge(`Void Skies v1.1.2  |  state: ${gameState}  |  FPS: ${fpsSm.toFixed(0)}`); }
+    if(DEBUG){ fpsSm = fpsSm*0.9 + (1/dt)*0.1; debugBadge(`Void Skies v1.1.2 • 1P  |  state: ${gameState}  |  FPS: ${fpsSm.toFixed(0)}`); }
   }
 
   function debugBadge(text){ ctx.fillStyle='rgba(0,0,0,.45)'; const w=12+ctx.measureText(text).width+12; ctx.fillRect(8,8, w, 28); ctx.fillStyle='#fff'; ctx.font='12px system-ui'; ctx.fillText(text, 20, 27); }
@@ -431,6 +439,14 @@
     hudCenter.innerHTML = center;
   }
   // ===== Helpers =====
+  function killPlayer(p){
+    pop(p.x,p.y,p.col,24);
+    world.players.length=0; // 1P: remove pilot
+    world.gameOver=true;
+    gameState='paused';
+    if(gameOverPanel) show(gameOverPanel);
+  }
+
   function pop(x,y,c='#fde047',n=10){ for(let i=0;i<n;i++) world.particles.push(new Particle(x,y,rnd(-140,140),rnd(-80,40),c)); }
   function hit(x,y,c='#fff'){ for(let i=0;i<8;i++) world.particles.push(new Particle(x,y,rnd(-120,120),rnd(-60,20),c)); if(world.players[0]?.mods?.regen){ world.players[0].hp=Math.min(world.players[0].stats.maxHp, world.players[0].hp + 0.2*world.players[0].mods.regen); } }
   function dot(x,y,r,c){ ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); }
@@ -464,6 +480,11 @@
   })();
 
   // ===== Main Loop =====
+  // Restart controls
+  if (restartBtn) restartBtn.addEventListener('click', ()=> startGame({twoPlayers:false}));
+  addEventListener('keydown', e=>{ if((e.key==='r'||e.key==='R') && world.gameOver){ startGame({twoPlayers:false}); } });
+
+  
   function loop(now){
     const dt=(now-last)/1000; last=now; acc+=dt;
     const stepMax=0.25; if(acc>stepMax) acc=stepMax;
