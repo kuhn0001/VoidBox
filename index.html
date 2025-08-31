@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-  <title>Void Skies v1.1.2</title>
+  <title>Void Skies v1.1.2 • 1P</title>
   <style>
     :root { --bg:#05070b; --fg:#e6f0ff; --accent:#5eead4; --p1:#60a5fa; --p2:#f472b6; --danger:#f87171; --panel:#0f1524; --edge:rgba(255,255,255,.12); }
     html,body{height:100%;margin:0;background:radial-gradient(1200px 800px at 50% 40%, #0d1220, var(--bg));color:var(--fg);font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans";}
@@ -282,7 +282,7 @@
   }
 
   // ===== World =====
-  let world={ players:[], enemies:[], bullets:[], particles:[], powerups:[], wave:1, currency:0, score:0, gameOver:false, twoPlayers:true, boss:null };
+  let world={ players:[], enemies:[], bullets:[], particles:[], powerups:[], wave:1, currency:0, score:0, gameOver:false, twoPlayers:false, boss:null };
   const SAVE_KEY='voidskies_save';
   function save(){ const p=world.players[0]; if(!p) return; const data={parts:world.currency, wave:world.wave, p1:{hp:p.hp, stats:p.stats, mods:p.mods}}; localStorage.setItem(SAVE_KEY, JSON.stringify(data)); }
   function load(){ try{ const d=JSON.parse(localStorage.getItem(SAVE_KEY)||'null'); if(!d) return; persist=d; }catch{} }
@@ -349,10 +349,11 @@
 
   // Initial visibility for mobile controls (persisted)
   const persistedCtrl = localStorage.getItem('vs_controls');
-  setControlsVisible(persistedCtrl===null ? ( 'ontouchstart' in window || navigator.maxTouchPoints>0 ) : persistedCtrl==='1');
+  // Default: controls hidden unless user opts in (prevents overlay blocking)
+  setControlsVisible(persistedCtrl===null ? false : persistedCtrl==='1');
 
   // Auto-start instantly (no splash) in 1P by default; user can switch in settings
-  startGame({twoPlayers:true});
+  startGame({twoPlayers:false});
 
   // ===== Update =====
   function stepSim(t){
