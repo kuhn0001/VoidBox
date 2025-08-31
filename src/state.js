@@ -18,7 +18,6 @@ export const store = {
   playerName: '',
 };
 
-// --- setters ---
 export const setGame   = (patch)=>Object.assign(store.game, patch);
 export const setWorld  = (patch)=>Object.assign(store.world, patch);
 export const setPlayer = (patch)=>Object.assign(store.player, patch);
@@ -26,13 +25,13 @@ export const setBoss   = (patch)=>Object.assign(store.boss, patch);
 export const setSpawn  = (patch)=>Object.assign(store.spawner, patch);
 export const setUI     = (patch)=>Object.assign(store.ui, patch);
 
-// --- kv/dict helpers ---
+// kv/dict helpers
 export function setKV(k,v){ store.kv[k]=v; saveKV(); }
 export function getKV(k, def=null){ return (k in store.kv)? store.kv[k] : def; }
 export function setDict(bucket, obj){ store.dict[bucket] = { ...(store.dict[bucket]||{}), ...obj }; saveDict(); }
 export function getDict(bucket){ return store.dict[bucket]||{}; }
 
-// --- high score API ---
+// high score API
 export function setPlayerName(name){
   store.playerName = (name||'').toString().slice(0,16);
   LS.save('playerName', store.playerName);
@@ -46,7 +45,7 @@ export function addScore(score){
 }
 export function getTopScore(){ return (store.scores[0]?.score)||0; }
 
-// --- persistence ---
+// persistence
 export function saveKV(){ LS.save('kv', store.kv); }
 export function saveDict(){ LS.save('dict', store.dict); }
 
