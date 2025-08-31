@@ -3,11 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-  <title>Void Skies v1.1.2 • 1P</title>
+  <title>Void Skies v1.1.2 • 1P (Responsive)</title>
   <style>
     :root { --bg:#05070b; --fg:#e6f0ff; --accent:#5eead4; --p1:#60a5fa; --p2:#f472b6; --danger:#f87171; --panel:#0f1524; --edge:rgba(255,255,255,.12); }
     html,body{height:100%;margin:0;background:radial-gradient(1200px 800px at 50% 40%, #0d1220, var(--bg));color:var(--fg);font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans";}
-    #wrap{position:fixed;inset:0;display:grid;place-items:center}
+    /* Responsive shell + stage (fixed 16:9 with letterbox + safe areas) */
+    #wrap{position:fixed;inset:0;display:grid;place-items:center;min-height:100svh;padding:
+      calc(16px + env(safe-area-inset-top))
+      calc(16px + env(safe-area-inset-right))
+      calc(16px + env(safe-area-inset-bottom))
+      calc(16px + env(safe-area-inset-left));}
+    .stage{width:min(100%, 1200px);aspect-ratio:16/9;position:relative;display:grid;place-items:center;background:#000;border-radius:16px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.5);}
     canvas{background:transparent;box-shadow:0 10px 40px rgba(0,0,0,.5);border-radius:16px;touch-action:none;}
 
     /* UI Panels */
@@ -33,7 +39,7 @@
     #menuBtn{position:fixed;top:12px;right:12px;z-index:5;border-radius:12px;padding:10px 12px;background:rgba(255,255,255,.08);border:1px solid var(--edge);backdrop-filter:blur(8px);cursor:pointer;pointer-events:auto}
 
     /* Mobile controls (prettier + toggleable) */
-    #controls{position:fixed;inset:0;pointer-events:none}
+    #controls{position:fixed;inset:0;pointer-events:none;display:none} /* Default hidden so a JS parse error doesn't leave UI overlay blocking the game */
     #joy{position:absolute;left:18px;bottom:18px;width:170px;height:170px;border-radius:50%;background:radial-gradient(120px 120px at 50% 50%, rgba(94,234,212,.18), rgba(255,255,255,.04));border:1px solid var(--edge);pointer-events:auto;box-shadow:0 8px 20px rgba(0,0,0,.35)}
     #joyKnob{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:76px;height:76px;border-radius:50%;background:linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,.12));border:1px solid rgba(255,255,255,.25)}
     .roundBtn{position:absolute;right:18px;border-radius:16px;width:92px;height:92px;background:radial-gradient(80px 80px at 50% 35%, rgba(255,255,255,.22), rgba(255,255,255,.06));border:1px solid var(--edge);pointer-events:auto;display:grid;place-items:center;box-shadow:0 8px 20px rgba(0,0,0,.35)}
@@ -44,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="wrap"><canvas id="game" width="960" height="540"></canvas></div>
+  <div id="wrap"><div class="stage" id="stage"><canvas id="game" width="960" height="540"></canvas></div></div>
 
   <button id="menuBtn">⚙️</button>
 
@@ -100,13 +106,26 @@
 
 <script>
 (() => {
+  /* DEV NOTE: If you ever see static mobile controls & empty HUD, open DevTools → Console.
+     A syntax/parse error earlier in this file prevents JS from running (controls stay visible by default).
+     Fix the error (often a duplicated block or stray brace) and hard refresh. */
   // ===== Core Setup =====
   const cvs = document.getElementById('game');
   const ctx = cvs.getContext('2d');
-  const DPR = Math.min(2, window.devicePixelRatio || 1);
-  function resizeCanvas(){ const w=960, h=540; cvs.width=w*DPR; cvs.height=h*DPR; cvs.style.width=w+'px'; cvs.style.height=h+'px'; ctx.setTransform(DPR,0,0,DPR,0,0);} resizeCanvas(); addEventListener('resize', resizeCanvas);
-  const W = 960, H = 540;
-  function fit(){ const s=Math.min(innerWidth/W, innerHeight/H); cvs.style.transform=`scale(${s})`; cvs.style.transformOrigin='top left'; } addEventListener('resize', fit); fit();
+  const W = 960, H = 540; // logical size (16:9)
+  const stage = document.getElementById('stage');
+  function resizeCanvas(){
+    const rect = stage.getBoundingClientRect();
+    const cssW = Math.floor(rect.width);
+    const cssH = Math.floor(rect.height);
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    cvs.style.width = cssW + 'px';
+    cvs.style.height = cssH + 'px';
+    cvs.width = Math.floor(cssW * dpr);
+    cvs.height = Math.floor(cssH * dpr);
+    ctx.setTransform(cvs.width / cssW, 0, 0, cvs.height / cssH, 0, 0);
+  }
+  const ro = new ResizeObserver(resizeCanvas); ro.observe(stage); resizeCanvas();
 
   // Time
   let last=performance.now(), acc=0, dtFixed=1/60;
@@ -185,16 +204,16 @@
   }
   // ===== Content =====
   const EnemyDefs={
-    grunt:{hp:24,speed:70,score:10, shootP:0.004, draw(c){ tri(c,'#eab308'); } , ai:(e,t)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; e.x+=Math.sin(e.t*2)*40*t; }},
-    bruiser:{hp:40,speed:50,score:18, shootP:0.006, draw(c){ tri(c,'#f97316'); }, ai:(e,t)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; e.x+=Math.sin(e.t*3)*70*t; }},
+    grunt:{hp:22,speed:62,score:10, shootP:0.003, draw(c){ tri(c,'#eab308'); } , ai:(e,t)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; e.x+=Math.sin(e.t*2)*40*t; }},
+    bruiser:{hp:38,speed:46,score:18, shootP:0.0045, draw(c){ tri(c,'#f97316'); }, ai:(e,t)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; e.x+=Math.sin(e.t*3)*70*t; }},
     chaser:{hp:28,speed:60,score:16, shootP:0.0,  draw(c){ tri(c,'#22d3ee'); }, ai:(e,t,w)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; const p=nearestPlayer(w,e); if(p){ const a=Math.atan2(p.y-e.y,p.x-e.x); e.x+=Math.cos(a)*80*t; }}},
-    viper:{hp:20,speed:120,score:14, shootP:0.002, draw(c){ tri(c,'#60a5fa'); }, ai:(e,t)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; e.x+=Math.sin(e.t*5)*90*t; }},
+    viper:{hp:20,speed:110,score:14, shootP:0.0016, draw(c){ tri(c,'#60a5fa'); }, ai:(e,t)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; e.x+=Math.sin(e.t*5)*90*t; }},
     sniper:{hp:28,speed:40,score:20, shootP:0.0, draw(c){ tri(c,'#fde047'); }, ai:(e,t,w)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; if((e.t||0)%1.2<0.02){ const p=nearestPlayer(w,e); if(p){ const a=Math.atan2(p.y-e.y,p.x-e.x); w.bullets.push(new Bullet(e.x,e.y+8, Math.cos(a)*240, Math.sin(a)*240, null,'#fca5a5')); } } }},
-    mine:{hp:22,speed:35,score:18, shootP:0, draw(c){ c.fillStyle='#94a3b8'; c.beginPath(); c.arc(0,0,10,0,Math.PI*2); c.fill(); }, ai:(e,t,w)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; if(!e.arm) e.arm = 1.5 + rnd(0.4,1.4); if(e.t>e.arm || e.y>H*0.72){ // explode
+    mine:{hp:22,speed:32,score:18, shootP:0, draw(c){ c.fillStyle='#94a3b8'; c.beginPath(); c.arc(0,0,10,0,Math.PI*2); c.fill(); }, ai:(e,t,w)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; if(!e.arm) e.arm = 1.5 + rnd(0.4,1.4); if(e.t>e.arm || e.y>H*0.72){ // explode
         for(let i=0;i<10;i++){ const a=i*(Math.PI*2/10)+rand()*0.2; w.bullets.push(new Bullet(e.x,e.y, Math.cos(a)*160, Math.sin(a)*160, null, '#fca5a5')); }
         e.alive=false; }
       }},
-    turret:{hp:60,speed:20,score:26, shootP:0, draw(c){ c.fillStyle='#a78bfa'; c.fillRect(-10,-10,20,20); }, ai:(e,t,w)=>{ e.t=(e.t||0)+t; e.y = Math.min(e.y + e.speed*t, 120); if(e.t>0.5){ e.t=0; for(let i=0;i<6;i++){ const a=i*(Math.PI*2/6)+rand()*0.2; w.bullets.push(new Bullet(e.x,e.y, Math.cos(a)*200, Math.sin(a)*200, null,'#c4b5fd')); } } }},
+    turret:{hp:56,speed:18,score:26, shootP:0, draw(c){ c.fillStyle='#a78bfa'; c.fillRect(-10,-10,20,20); }, ai:(e,t,w)=>{ e.t=(e.t||0)+t; e.y = Math.min(e.y + e.speed*t, 120); if(e.t>0.5){ e.t=0; for(let i=0;i<6;i++){ const a=i*(Math.PI*2/6)+rand()*0.2; w.bullets.push(new Bullet(e.x,e.y, Math.cos(a)*200, Math.sin(a)*200, null,'#c4b5fd')); } } }},
     splitter:{hp:30,speed:55,score:22, shootP:0.003, draw(c){ tri(c,'#34d399'); }, ai:(e,t)=>{ e.t=(e.t||0)+t; e.y+=e.speed*t; e.x+=Math.sin(e.t*2.5)*50*t; }, onDeath:(e,w)=>{ for(let i=0;i<2;i++){ w.enemies.push(new Enemy(EnemyDefs.grunt, e.x+(i?-12:12), e.y-10)); } }},
   };
 
@@ -259,8 +278,14 @@
     step(t,world){ this.def.ai(this,t,world); if(rand()<this.def.shootP) world.bullets.push(new Bullet(this.x,this.y+8,0,200,null,'#fca5a5')); if(this.y>H+40) this.alive=false; }
     draw(){ ctx.save(); ctx.translate(this.x,this.y); this.def.draw(ctx); ctx.restore(); }
   }
-  class Boss{ constructor(def,x,y){ this.kind='boss'; this.def=def; Object.assign(this,{x,y,r:40,hp:def.hp,maxHp:def.hp,t:0,alive:true}); }
-    step(t,world){ this.def.ai(this,t,world); }
+  class Boss{ constructor(def,x,y){ this.kind='boss'; this.def=def; Object.assign(this,{x,y,r:40,hp:def.hp,maxHp:def.hp,t:0,alive:true,leashT:0}); }
+    step(t,world){ this.def.ai(this,t,world);
+      this.x = clamp(this.x, 60, W-60);
+      this.y = clamp(this.y, 60, H*0.65);
+      const nearEdge = (this.y>=H*0.64)||(this.x<=62)||(this.x>=W-62)||(this.y<=58);
+      this.leashT = nearEdge ? Math.min(this.leashT+t, 2) : Math.max(0,this.leashT-t*2);
+      if(this.leashT>1.2){ const ax=(W/2-this.x)*0.6, ay=(H*0.35-this.y)*0.6; this.x+=ax*t; this.y+=ay*t; }
+  }
     draw(){ ctx.save(); ctx.translate(this.x,this.y); this.def.draw(ctx); ctx.strokeStyle='#f87171'; ctx.beginPath(); ctx.arc(0,0,this.r+6,0,Math.PI*2); ctx.stroke(); ctx.restore(); }
   }
   class Particle{ constructor(x,y,vx,vy,c,life=.6){ Object.assign(this,{x,y,vx,vy,c,life,alive:true}); }
@@ -376,15 +401,15 @@
     // Collisions: player bullets → enemies/boss
     for(const b of world.bullets){ if(!b.alive) continue; if(!world.players.includes(b.owner)) continue; 
       if(world.boss && b.alive && collide(b,world.boss)){ world.boss.hp-=b.dmg; if(b.pierce>0) b.pierce--; else b.alive=false; hit(b.x,b.y,'#fde047'); if(world.boss.hp<=0){ world.boss=null; world.players.forEach(p=>p.earn(80/world.players.length, 60/world.players.length)); world.score += 500; pop(W/2,120,'#c7d2fe',24); } }
-      for(const e of world.enemies){ if(!e.alive) continue; if(collide(b,e)){ e.hp-=b.dmg; if(b.pierce>0) b.pierce--; else b.alive=false; if(e.hp<=0){ e.alive=false; if(e.def.onDeath) e.def.onDeath(e,world); shake(5,.12); pop(e.x,e.y,'#fde047',12); if(rand()<0.18){ const kinds=['heal','rapid','damage','shield']; const k=kinds[rndi(0,kinds.length-1)]; world.powerups.push(new Powerup(e.x,e.y,k)); } const xp=e.def.score, parts=Math.round(e.def.score/2); world.players.forEach(p=>p.earn(xp/world.players.length, parts/world.players.length)); world.score += e.def.score*10; } }
+      for(const e of world.enemies){ if(!e.alive) continue; if(collide(b,e)){ e.hp-=b.dmg; if(b.pierce>0) b.pierce--; else b.alive=false; if(e.hp<=0){ e.alive=false; if(e.def.onDeath) e.def.onDeath(e,world); shake(5,.12); pop(e.x,e.y,'#fde047',12); if(rand()<0.30){ const kinds=['heal','rapid','damage','shield']; const k=kinds[rndi(0,kinds.length-1)]; world.powerups.push(new Powerup(e.x,e.y,k)); } const xp=e.def.score, parts=Math.round(e.def.score/2); world.players.forEach(p=>p.earn(xp/world.players.length, parts/world.players.length)); world.score += e.def.score*10; } }
       }
     }
 
     // Enemy bullets → players
-    for(const b of world.bullets){ if(!b.alive) continue; if(world.players.includes(b.owner)) continue; for(const p of world.players){ if(collide(b,p)){ p.hit(12); b.alive=false; hit(p.x,p.y,p.col); } } }
+    for(const b of world.bullets){ if(!b.alive) continue; if(world.players.includes(b.owner)) continue; for(const p of world.players){ if(collide(b,p)){ p.hit(8); b.alive=false; hit(p.x,p.y,p.col); } } }
     // Enemies/Boss → players
-    if(world.boss){ for(const p of world.players){ if(collide(world.boss,p)){ p.hit(25); } } }
-    for(const e of world.enemies){ if(!e.alive) continue; for(const p of world.players){ if(collide(e,p)){ p.hit(18); e.alive=false; pop(e.x,e.y,'#fde047',10); } } }
+    if(world.boss){ for(const p of world.players){ if(collide(world.boss,p)){ p.hit(18); } } }
+    for(const e of world.enemies){ if(!e.alive) continue; for(const p of world.players){ if(collide(e,p)){ p.hit(12); e.alive=false; pop(e.x,e.y,'#fde047',10); } } }
 
     // Powerups → players
     for(const pu of world.powerups){ for(const p of world.players){ if(collide({x:pu.x,y:pu.y,r:pu.r},{x:p.x,y:p.y,r:p.r})){ PowerTypes[pu.type].apply(p); pu.alive=false; pop(pu.x,pu.y,PowerTypes[pu.type].col,8); } } }
