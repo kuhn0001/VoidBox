@@ -80,7 +80,7 @@
 
     <div id="gameOverPanel" class="panel hide">
       <h2>💥 Game Over</h2>
-      <p>Your ship was destroyed. Press <b>R</b> to restart.</p>
+      <p>Your ship was destroyed. Tap <b>Restart</b> to play again.</p>
       <div class="row" style="justify-content:flex-end"><button id="restartBtn" class="btn">Restart</button></div>
     </div>
 
@@ -292,7 +292,7 @@
     step(t){ this.life-=t; if(this.life<=0) this.alive=false; this.x+=this.vx*t; this.y+=this.vy*t; this.vy+=60*t; }
     draw(){ ctx.globalAlpha=Math.max(0,this.life/0.6); ctx.fillStyle=this.c; ctx.fillRect(this.x,this.y,3,3); ctx.globalAlpha=1; }
   }
-  class Player{ constructor(id,x,y,col,control){ Object.assign(this,{id,x,y,r:14,col,control}); this.stats={maxHp:100,speed:180,fireCd:.22,bulletDamage:10,specialCd:10,specialDur:3,partsBonus:1}; this.mods={spread:1,pierce:0}; this.hp=this.stats.maxHp; this.fireT=0; this.specialT=0; this.specialA=0; this.level=1; this.xp=0; this.xpNext=60; this.sp=0; this.skills=new Set(); this.drone=null; this.tempRapid=0; this.tempDamage=0; this.tempShield=0; }
+  class Player{ constructor(id,x,y,col,control){ Object.assign(this,{id,x,y,r:14,col,control}); this.stats={maxHp:160,speed:180,fireCd:.22,bulletDamage:10,specialCd:10,specialDur:3,partsBonus:1}; this.mods={spread:1,pierce:0}; this.hp=this.stats.maxHp; this.fireT=0; this.specialT=0; this.specialA=0; this.level=1; this.xp=0; this.xpNext=60; this.sp=0; this.skills=new Set(); this.drone=null; this.tempRapid=0; this.tempDamage=0; this.tempShield=0; }
     step(t){ this.tempRapid=Math.max(0,this.tempRapid-t); this.tempDamage=Math.max(0,this.tempDamage-t); this.tempShield=Math.max(0,this.tempShield-t);
       let dx=joyVec.x, dy=joyVec.y; if(Math.hypot(dx,dy)<0.05){ dx=0; dy=0; }
       if(this.control.type==='mouse' && dx===0 && dy===0){ const vx=mouse.x-this.x, vy=mouse.y-this.y; const d=Math.hypot(vx,vy); if(d>1){ dx=vx/d; dy=vy/d; } }
@@ -373,11 +373,11 @@
   function startGame({twoPlayers}){
     world={players:[], enemies:[], bullets:[], particles:[], powerups:[], wave: persist?.wave||1, currency: persist?.parts||0, score:0, gameOver:false, twoPlayers: !!twoPlayers, boss:null};
     const p1=new Player(1, W*0.3, H-60, getComputedStyle(document.documentElement).getPropertyValue('--p1').trim()||'#60a5fa', {type:'mouse'});
-    if(persist?.p1){ Object.assign(p1.stats,persist.p1.stats||{}); Object.assign(p1.mods,persist.p1.mods||{}); p1.hp=persist.p1.hp||p1.stats.maxHp; }
+    if(persist?.p1){ Object.assign(p1.stats,persist.p1.stats||{}); Object.assign(p1.mods,persist.p1.mods||{}); p1.stats.maxHp = Math.max(160, p1.stats.maxHp||160); p1.hp = Math.min(p1.stats.maxHp, persist.p1.hp||p1.stats.maxHp); }
     world.players.push(p1);
     if(twoPlayers){ world.players.push(new Player(2, W*0.7, H-60, getComputedStyle(document.documentElement).getPropertyValue('--p2').trim()||'#f472b6', {type:'keys',keys:{up:'ArrowUp',down:'ArrowDown',left:'ArrowLeft',right:'ArrowRight',fire:'/',special:'ShiftRight'}})); }
     beginWave(); // start first wave immediately
-    hide(levelPanel); hide(pausePanel); hide(shopPanel); renderHUD();
+    hide(levelPanel); hide(pausePanel); hide(shopPanel); hide(gameOverPanel); gameState='playing'; renderHUD();
   }
 
   // Initial visibility for mobile controls (persisted)
