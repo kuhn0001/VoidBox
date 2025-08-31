@@ -1,76 +1,127 @@
-// main.js
-import { store, setWorld, setPlayer, setBoss } from './state.js';
-import { attachCanvas, makeLoop, moveToward } from './engine.js';
-import { renderAll } from './render.js';
-import { createWorld, stepPlayer, stepEnemy, stepBoss } from './entities.js';
-import { collide } from './utils.js';
-import { initWave, stepSpawner } from './spawner.js';
-import { wireUI, gameOver as showGameOver } from './ui.js';
-
-const { ctx, mouse } = (()=>{ const o=attachCanvas(); return { ctx:o.ctx, mouse:o.mouse }; })();
-const ui = wireUI(startGame);
-let world;
-
-function startGame(){
-  world = createWorld();
-  setPlayer({ hp:180, hpMax:180, x:world.player.x, y:world.player.y });
-  setWorld({ wave:1, score:0 });
-  setBoss({ active:false, hp:0, hpMax:0 });
-  initWave(world);
-}
-
-function step(dt){
-  // Player
-  stepPlayer(world, mouse, dt);
-
-  // Spawner
-  stepSpawner(world, dt);
-
-  // Bullets
-  for(const b of world.bullets){ b.x+=b.vx*dt; b.y+=b.vy*dt; if(b.y<-20) b.dead=true; }
-  for(const b of world.enemyBullets){
-    b.x+=b.vx*dt; b.y+=b.vy*dt; if(b.y>560) b.dead=true;
-    if(collide(b, {x:world.player.x,y:world.player.y,r:14})){
-      setPlayer({ hp: Math.max(0, store.player.hp - (b.dmg||10)) });
-      if (store.player.hp===0) showGameOver();
-      b.dead=true;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+  />
+  <!-- Perf: preconnect to Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Audiowide&family=Orbitron:wght@500;700&display=swap" rel="stylesheet" />
+  <title>Void Skies v1.1.2 • 1P (Auto-fire)</title>
+  <style>
+    :root {
+      --bg:#05070b; --fg:#e6f0ff;
+      --accent:#5eead4; --p1:#5eead4; --p2:#f472b6; --danger:#f87171;
+      --panel:#0f1524; --edge:rgba(255,255,255,.12);
+      --hud-text: clamp(12px, 1.8vw, 18px);
+      --btn-text: clamp(14px, 1.6vw, 18px);
+      --btn-pad-y: clamp(8px, 1.2vw, 12px);
+      --btn-pad-x: clamp(12px, 2vw, 18px);
     }
-  }
-
-  // Enemies
-  for(const e of world.enemies){
-    const nb = stepEnemy(e, dt); if(nb) world.enemyBullets.push(nb);
-    if(collide(e, {x:world.player.x,y:world.player.y,r:14})){
-      setPlayer({ hp: Math.max(0, store.player.hp - 14) });
-      e.dead=true; if (store.player.hp===0) showGameOver();
+    html,body{
+      height:100%;margin:0;
+      background:radial-gradient(1200px 800px at 50% 40%, #0d1220, var(--bg));
+      color:var(--fg);
+      font-family:'Audiowide', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans";
     }
-  }
-
-  // Player bullets → enemies/boss
-  for(const b of world.bullets){
-    if(world.boss && collide(b, {x:world.boss.x,y:world.boss.y,r:world.boss.r})){
-      setBoss({ hp: Math.max(0, store.boss.hp - (b.dmg||20)) });
-      b.dead=true;
-      if (store.boss.hp===0){ world.boss=null; setBoss({ active:false }); setWorld({ wave: store.world.wave + 1, score: store.world.score + 150 }); initWave(world); }
-      continue;
+    #wrap{position:fixed;inset:0;display:grid;place-items:center;min-height:100svh;padding:
+      calc(16px + env(safe-area-inset-top))
+      calc(16px + env(safe-area-inset-right))
+      calc(16px + env(safe-area-inset-bottom))
+      calc(16px + env(safe-area-inset-left));}
+    .stage{
+      width:min(100%, 1200px); aspect-ratio:16/9; position:relative; display:grid; place-items:center;
+      background:#000; border-radius:16px; overflow:hidden; box-shadow:0 10px 40px rgba(0,0,0,.5);
+      container-type:inline-size;
     }
-    for(const e of world.enemies){
-      if(!e.dead && collide(b,e)){ e.hp-= (b.dmg||20); b.dead=true; if(e.hp<=0){ e.dead=true; setWorld({ score: store.world.score + 5 }); } }
-    }
-  }
+    canvas{background:transparent; border-radius:16px; touch-action:none;}
 
-  // Boss
-  if(world.boss){ stepBoss(world.boss, dt, world, mouse); if(collide(world.boss, {x:world.player.x,y:world.player.y,r:14})){ setPlayer({ hp: Math.max(0, store.player.hp - 18) }); if (store.player.hp===0) showGameOver(); } }
+    /* Top bar inside the game frame */
+    #topBar{position:absolute; left:0; right:0; top:0; display:grid; grid-template-columns:1fr auto; align-items:start; gap:8px; padding:10px; pointer-events:none;}
+    #versionBadge{justify-self:end; background:rgba(0,0,0,.45); border:1px solid var(--edge); padding:6px 10px; border-radius:10px; font-size:12px; letter-spacing:.3px; font-family:'Orbitron','Audiowide',ui-sans-serif;}
+    #announce{position:absolute; left:50%; transform:translateX(-50%); top:50px; background:linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.04)); border:1px solid var(--edge); padding:8px 14px; border-radius:14px; font-weight:600; text-shadow:0 1px 0 rgba(0,0,0,.3); font-family:'Orbitron','Audiowide',ui-sans-serif;}
+    /* a11y: let screen readers announce wave/boss messages */
+    #announce[aria-live]{ position:absolute; }
+    #hud{position:relative; display:grid; grid-template-columns:1fr auto; gap:8px; pointer-events:none; font-size:var(--hud-text);}
+    .hud-card{pointer-events:none; border:1px solid var(--edge); background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); backdrop-filter:blur(8px); padding:8px 10px; border-radius:12px; min-width:250px}
+    .hud-title{opacity:.85; font-weight:600; margin-bottom:4px; font-family:'Orbitron','Audiowide',ui-sans-serif;}
+    .bar{height:8px;width:100%;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;border:1px solid var(--edge);margin-top:4px}
+    .bar>span{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#38bdf8)}
+    .btn{background:#0b1220;color:var(--fg);border:1px solid var(--edge);border-radius:12px;padding:var(--btn-pad-y) var(--btn-pad-x);font-size:var(--btn-text);cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+    .panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(5,7,11,.9);border:1px solid var(--edge);border-radius:16px;padding:20px;width:min(900px,92vw);pointer-events:auto;backdrop-filter:blur(12px);color:var(--fg)}
+    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+    .hide{display:none!important}
+    @media (max-width: 820px){ canvas{width:100vw;height:auto;max-height:68vh;border-radius:12px} .panel{width:min(700px,94vw)} .hud-card{min-width:auto} }
+    @container (max-width:700px){ #hud{ grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <div class="stage" id="stage">
+      <div id="topBar">
+        <div id="hud" class="hud-row">
+          <div id="hudP1" class="hud-card"></div>
+          <div id="hudCenter" class="hud-card"></div>
+        </div>
+        <div id="versionBadge">Void Skies v1.1.2 • 1P (Auto-fire)</div>
+        <div id="announce" class="hide" aria-live="polite"></div>
+      </div>
+      <canvas id="game" width="960" height="540"></canvas>
+    </div>
+  </div>
 
-  // GC
-  world.bullets = world.bullets.filter(b=>!b.dead);
-  world.enemyBullets = world.enemyBullets.filter(b=>!b.dead);
-  world.enemies = world.enemies.filter(e=>!e.dead);
-}
+  <!-- Panels -->
+  <div id="ui">
+    <div id="highScorePanel" class="panel hide">
+      <h2 style="font-family:'Orbitron'">🏆 New High Score!</h2>
+      <p>Enter your callsign:</p>
+      <input id="playerNameInput" maxlength="16" autocapitalize="characters" autocomplete="off"
+             style="width:100%;padding:10px 12px;font-size:16px;margin-bottom:10px;border-radius:10px;border:1px solid var(--edge);background:#0b1220;color:var(--fg)" />
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="saveScoreBtn" class="btn" type="button">Save</button>
+        <button id="cancelName" class="btn" type="button">Cancel</button>
+      </div>
+    </div>
 
-function render(dt){
-  renderAll(ctx, world);
-}
+    <div id="scoreboardPanel" class="panel hide">
+      <h2 style="font-family:'Orbitron'">📜 High Scores</h2>
+      <ul id="scoreList" style="line-height:1.6"></ul>
+      <div style="display:flex;justify-content:flex-end"><button id="closeScoresBtn" class="btn" type="button">Close</button></div>
+    </div>
 
-startGame();
-makeLoop(step, render);
+    <div id="settingsPanel" class="panel hide">
+      <h2 style="font-family:'Orbitron','Audiowide'">Settings</h2>
+      <div class="row" style="margin-top:8px">
+        <button id="resetProgress" class="btn" type="button">Reset Progress</button>
+        <button id="closeSettings" class="btn" type="button" style="margin-left:auto">Close</button>
+      </div>
+    </div>
+    <div id="levelPanel" class="panel hide">
+      <h2 style="font-family:'Orbitron','Audiowide'">Level Up</h2>
+      <p id="levelWho">Player leveled up! Choose a skill.</p>
+      <div id="skillsGrid" class="grid"></div>
+      <div class="row" style="justify-content:flex-end"><button id="closeLevel" class="btn" type="button">Continue</button></div>
+    </div>
+    <div id="pausePanel" class="panel hide"><h2 style="font-family:'Orbitron','Audiowide'">⏸️ Paused</h2><p>Press <b>P</b> to resume.</p></div>
+    <div id="gameOverPanel" class="panel hide">
+      <h2 style="font-family:'Orbitron','Audiowide'">💥 Game Over</h2>
+      <p>Your ship was destroyed. Tap <b>Restart</b> to play again.</p>
+      <div class="row" style="justify-content:flex-end"><button id="restartBtn" class="btn" type="button">Restart</button></div>
+    </div>
+    <div id="shopPanel" class="panel hide">
+      <h2 style="font-family:'Orbitron','Audiowide'">🛠️ Hangar Shop</h2>
+      <p id="shopInfo">Spend Parts to upgrade between waves.</p>
+      <div id="shopGrid" class="grid"></div>
+      <div class="row" style="justify-content:flex-end"><button id="closeShop" class="btn" type="button">Launch</button></div>
+    </div>
+  </div>
+
+  <button id="menuBtn" type="button" style="position:fixed;top:12px;right:12px;z-index:5;border-radius:12px;padding:10px 12px;background:rgba(255,255,255,.08);border:1px solid var(--edge);backdrop-filter:blur(8px);cursor:pointer">⚙️</button>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
