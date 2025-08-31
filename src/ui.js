@@ -1,5 +1,5 @@
 // ui.js
-import { store, setUI, addScore, setPlayerName } from './state.js';
+import { store, setPlayerName, addScore } from './state.js';
 
 export function wireUI(startGame){
   const pausePanel=document.getElementById('pausePanel');
@@ -9,7 +9,7 @@ export function wireUI(startGame){
   const closeSettings=document.getElementById('closeSettings');
   const shopPanel=document.getElementById('shopPanel');
 
-  // High score / name panels (must exist in index.html)
+  // High score / name panels added in index.html (see snippet below)
   const namePanel=document.getElementById('highScorePanel') || document.getElementById('namePanel');
   const nameInput=document.getElementById('playerNameInput') || document.getElementById('nameInput');
   const saveNameBtn=document.getElementById('saveScoreBtn') || document.getElementById('saveName');
@@ -44,7 +44,9 @@ export function wireUI(startGame){
       addScore(store._pendingScore);
       delete store._pendingScore;
       show(gameOverPanel);
-      renderScoreboardList(); // keep data fresh if user opens later
+      // optional: refresh scoreboard list if the panel is open later
+      const list=document.getElementById('scoreList');
+      if (list) list.innerHTML = (store.scores||[]).map((s,i)=>`<li>${i+1}. ${escapeHtml(s.name)} — ${s.score}</li>`).join('');
     }
   }
 
@@ -52,7 +54,7 @@ export function wireUI(startGame){
   cancelNameBtn?.addEventListener('click', ()=>{ if(namePanel) hide(namePanel); show(gameOverPanel); });
   nameInput?.addEventListener('keydown', (e)=>{ if(e.key==='Enter') commitNameAndRecord(); });
 
-  // Scoreboard (optional panel)
+  // Optional scoreboard panel wiring
   const scoreboardPanel=document.getElementById('scoreboardPanel');
   const scoreList=document.getElementById('scoreList');
   const closeScoresBtn=document.getElementById('closeScoresBtn');
@@ -60,20 +62,19 @@ export function wireUI(startGame){
 
   function renderScoreboardList(){
     if (!scoreList) return;
-    scoreList.innerHTML = store.scores.map((s,i)=>`<li>${i+1}. ${escapeHtml(s.name)} — ${s.score}</li>`).join('');
+    scoreList.innerHTML = (store.scores||[]).map((s,i)=>`<li>${i+1}. ${escapeHtml(s.name)} — ${s.score}</li>`).join('');
   }
-
-  return { pausePanel, gameOverPanel, shopPanel, openNamePanel, showScoreboard, renderScoreboardList };
-
   function showScoreboard(){
     if (!scoreboardPanel) return;
     renderScoreboardList();
     show(scoreboardPanel);
   }
+
+  return { pausePanel, gameOverPanel, shopPanel, openNamePanel, showScoreboard };
 }
 
+// Override gameOver flow to include name & high-score persistence
 export function gameOver(){
-  // If player has a name, record immediately; else prompt
   const score = store.world.score;
   const haveName = (store.playerName || '').length>0;
   if (!haveName){
@@ -91,13 +92,7 @@ export function gameOver(){
 
 function show(el){ if(el) el.classList.remove('hide'); }
 function hide(el){ if(el) el.classList.add('hide'); }
-
 function escapeHtml(s){
   s = String(s ?? '');
-  return s
-    .replaceAll('&','&amp;')
-    .replaceAll('<','&lt;')
-    .replaceAll('>','&gt;')
-    .replaceAll('"','&quot;')
-    .replaceAll("'",'&#39;');
+  return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#39;");
 }
