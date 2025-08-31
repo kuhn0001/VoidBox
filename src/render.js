@@ -24,13 +24,14 @@ export function renderAll(ctx, world){
   const hudP1=document.getElementById('hudP1');
   const hudCenter=document.getElementById('hudCenter');
   if (hudP1){ const hpPct=Math.round(store.player.hp/store.player.hpMax*100);
-    hudP1.innerHTML=`<div class="hud-title">PILOT</div>
+    hudP1.innerHTML=`<div class="hud-title">PILOT ${store.playerName?('• '+store.playerName):''}</div>
       <div class="row"><div>HP ${hpPct}%</div></div>
       <div class="bar"><span style="width:${hpPct}%"></span></div>`;
   }
   if (hudCenter){
+    const top = (store.scores && store.scores[0]?.score) || 0;
     hudCenter.innerHTML=`<div class="hud-title">WAVE</div>
-      <div> ${store.world.wave}${store.boss.active?' (BOSS)':''} • SCORE ${store.world.score} </div>`;
+      <div>${store.world.wave}${store.boss.active?' (BOSS)':''} • SCORE ${store.world.score} • TOP ${top}</div>`;
   }
   const versionBadge=document.getElementById('versionBadge');
   if (versionBadge){ versionBadge.textContent = `Void Skies v1.1.2 • 1P | wave ${store.world.wave} | score ${store.world.score}`; }
