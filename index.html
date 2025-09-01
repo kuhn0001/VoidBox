@@ -66,7 +66,6 @@
             height: auto;
         }
 
-/* Updated styles for other fixed buttons */
         .fixed-btn {
             position: fixed;
             bottom: 10px;
@@ -81,18 +80,9 @@
             color: #ffddff;
         }
 
-        #menuBtn {
-            right: 10px;
-        }
-
-        #fsEnterBtn {
-            left: 10px;
-        }
-
-        #pauseBtn {
-            top: 10px;
-            right: 10px;
-        }
+        #menuBtn { right: 10px; }
+        #fsEnterBtn { left: 10px; }
+        #pauseBtn { top: 10px; right: 10px; }
         .input{width:100%;padding:8px 10px;border-radius:10px;background:#17001f;color:#ffddff;border:1px solid var(--accent);font-family:'Orbitron','Audiowide',ui-sans-serif}
         @media (max-width:820px){canvas{width:100vw;height:auto;max-height:75vh;border-radius:8px}.panel{width:min(700px,94vw)}.stage{width:98vw}#belowBoard{width:98vw}}
     </style>
@@ -103,7 +93,7 @@
             <div class="stage" id="stage">
                 <div id="topBar"><div id="hud"><div id="hudWaveContent" class="hud-card"></div><div id="hudPilotContent" class="hud-card"></div><div id="hudBossContent" class="hud-card hide"></div></div><div id="announce" class="hide" aria-live="polite"></div></div>
                 <canvas id="game" width="960" height="540"></canvas>
-                <div id="diagBox"><div class="chip"> v2.5.3</div><div class="chip">FPS <span id="fps">—</span></div></div>
+                <div id="diagBox"><div class="chip"> v2.6.0</div><div class="chip">FPS <span id="fps">—</span></div></div>
                 
                 <div id="ui">
                     <div id="gameOverPanel" class="panel hide"><h2 style="font-family:'Orbitron';color:var(--accent);margin-top:0">🚀 PILOT LOST 🚀</h2><p style="text-align:center;font-size:1.2em;color:#ffddff">FINAL SCORE: <span id="finalScore">0</span></p><div class="row" style="justify-content:center;margin-top:20px"><button id="restartBtn" class="btn" type="button">FLY AGAIN</button></div></div>
@@ -170,12 +160,12 @@
     const store = {
         frame: 0, last: performance.now(), isGameOver: false, isPaused: false,
         world: { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0 },
-        player: { x: W * 0.5, y: H * 0.8, r: 14, hp: 100, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1, fireRate: 0.18, vampirism: 0, shield: 0, shieldMax: 0, multishot: 1, piercing: 0, explosive: false },
+        player: { x: W * 0.5, y: H * 0.8, r: 14, hp: 100, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1, fireRate: 0.18, vampirism: 0, shield: 0, shieldMax: 0, multishot: 1, piercing: 0, explosive: false, levelUpEffect: null },
         boss: null, bullets: [], eBullets: [], enemies: [],
         _startTs: performance.now()
     };
     
-    const player_initial_state = { x: W * 0.5, y: H * 0.8, r: 14, hp: 100, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1, fireRate: 0.18, vampirism: 0, shield: 0, shieldMax: 0, multishot: 1, piercing: 0, explosive: false };
+    const player_initial_state = { x: W * 0.5, y: H * 0.8, r: 14, hp: 100, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1, fireRate: 0.18, vampirism: 0, shield: 0, shieldMax: 0, multishot: 1, piercing: 0, explosive: false, levelUpEffect: null };
 
     const UPGRADES = [
         { id: 'dmg', name: 'PLASMA CORE', desc: '+25% damage', cost: 0, tier: 1, apply: () => store.player.dmgMult *= 1.25 },
@@ -188,14 +178,15 @@
         { id: 'shield', name: 'VOID SHIELD', desc: '+20 regenerating shield', cost: 0, tier: 1, apply: () => { store.player.shieldMax += 20; store.player.shield = store.player.shieldMax; } },
         { id: 'explode', name: 'NOVA WARHEADS', desc: 'Explosive rounds', cost: 0, tier: 1, apply: () => store.player.explosive = true },
         
-        { id: 'dmg-t2', name: 'REINFORCED PLASMA', desc: '+15% damage', cost: 40, tier: 2, apply: () => store.player.dmgMult *= 1.15 },
-        { id: 'speed-t2', name: 'SPEED REGULATOR', desc: '+10% speed', cost: 35, tier: 2, apply: () => store.player.speed *= 1.1 },
-        { id: 'hp-t2', name: 'REPAIR NANOBOTS', desc: 'Restore 25 HP', cost: 20, tier: 2, apply: () => store.player.hp=Math.min(store.player.hpMax,store.player.hp+25) },
-        { id: 'shield-t2', name: 'SHIELD BOOSTER', desc: '+20 shield capacity', cost: 30, tier: 2, apply: () => { store.player.shieldMax+=20; store.player.shield+=20; } },
+        // Rebalanced Shop Costs
+        { id: 'dmg-t2', name: 'REINFORCED PLASMA', desc: '+15% damage', cost: 50, tier: 2, apply: () => store.player.dmgMult *= 1.15 },
+        { id: 'speed-t2', name: 'SPEED REGULATOR', desc: '+10% speed', cost: 40, tier: 2, apply: () => store.player.speed *= 1.1 },
+        { id: 'hp-t2', name: 'REPAIR NANOBOTS', desc: 'Restore 25 HP', cost: 25, tier: 2, apply: () => store.player.hp=Math.min(store.player.hpMax,store.player.hp+25) },
+        { id: 'shield-t2', name: 'SHIELD BOOSTER', desc: '+20 shield capacity', cost: 35, tier: 2, apply: () => { store.player.shieldMax+=20; store.player.shield+=20; } },
         
-        { id: 'dmg-t3', name: 'BASIC RECOIL', desc: '+10% damage', cost: 10, tier: 3, apply: () => store.player.dmgMult *= 1.1 },
-        { id: 'speed-t3', name: 'THRUSTER OPTIMIZATION', desc: '+5% speed', cost: 8, tier: 3, apply: () => store.player.speed *= 1.05 },
-        { id: 'hp-t3', name: 'COMPOSITE PLATING', desc: '+5 max HP', cost: 5, tier: 3, apply: () => { store.player.hpMax += 5; store.player.hp += 5; } }
+        { id: 'dmg-t3', name: 'BASIC RECOIL', desc: '+10% damage', cost: 15, tier: 3, apply: () => store.player.dmgMult *= 1.1 },
+        { id: 'speed-t3', name: 'THRUSTER OPTIMIZATION', desc: '+5% speed', cost: 12, tier: 3, apply: () => store.player.speed *= 1.05 },
+        { id: 'hp-t3', name: 'COMPOSITE PLATING', desc: '+5 max HP', cost: 10, tier: 3, apply: () => { store.player.hpMax += 5; store.player.hp += 5; } }
     ];
 
     function getUpgradesByTier(tier) {
@@ -206,7 +197,7 @@
         const isBossWave = store.world.wave % 5 === 0;
         if (isBossWave) {
             store.enemies = []; 
-            const bossHpScale = store.world.wave / 5;
+            const bossHpScale = 1 + (store.world.wave / 5 - 1) * 0.5;
             store.boss = createBoss(bossHpScale);
             announce(`⚡ GUARDIAN: ${store.boss.name} ⚡`); 
             playMusic(BGM_BOSS, 0.6);
@@ -223,14 +214,15 @@
     }
 
     function createBoss(scale) {
+        const bossCycle = Math.floor((store.world.wave - 5) / 5) % 3;
         const types = [
-            { name:'VOID DRIFTER', baseHp: 800 },
-            { name:'OMEGA SENTINEL', baseHp: 1000 },
-            { name:'CORE MALIGNUS', baseHp: 1200 }
+            { name:'VOID DRIFTER', baseHp: 800, r: 50, behavior: 'drifter', color: '#b266ff'},
+            { name:'OMEGA SENTINEL', baseHp: 1000, r: 55, behavior: 'sentinel', color: '#ff8080' },
+            { name:'CORE MALIGNUS', baseHp: 1200, r: 60, behavior: 'malignus', color: '#9a66ff' }
         ];
-        const type = types[Math.min(Math.floor(store.world.wave / 5) -1, types.length - 1)];
+        const type = types[bossCycle];
         const hp = type.baseHp * scale;
-        return { ...type, x: W/2, y: -80, r: 50, hpMax: hp, color:'#b266ff', hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30 };
+        return { ...type, x: W/2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, patternPhase: 0 };
     }
 
     function spawnEnemy(type='drone') {
@@ -243,7 +235,7 @@
         let c = { ...cfgs[type] };
         const wave = store.world.wave;
         if (wave > 1) {
-            c.hp *= 1 + (wave * 0.05);
+            c.hp *= 1 + (wave * 0.08); // Slightly increased scaling
             c.fireRateChance *= 1 + (wave * 0.05);
         }
         c.shards = Math.ceil(c.shards / 2);
@@ -262,6 +254,13 @@
         p.fireT -= dt;
         if (p.fireT <= 0) { firePlayer(); p.fireT = p.fireRate; }
         if (p.shieldMax > 0 && p.shield < p.shieldMax) { p.shield = Math.min(p.shieldMax, p.shield + 4 * dt); }
+
+        if (p.levelUpEffect) {
+            p.levelUpEffect.t += dt;
+            if (p.levelUpEffect.t >= p.levelUpEffect.maxT) {
+                p.levelUpEffect = null;
+            }
+        }
     }
     
     function stepWorld(dt) {
@@ -355,21 +354,42 @@
     }
     
     function levelUp() {
-        announce(`⚡ LEVEL ${store.world.level} REACHED ⚡`);
+        announce(`LEVEL UP! ⚡ CHOOSE YOUR AUGMENTATION!`);
+        store.player.levelUpEffect = { t: 0, maxT: 1 };
+        playSound('https://www.myinstants.com/media/sounds/level-up-1.mp3', 0.6);
+
+        // Apply 3-second power boost
+        store.player.speed *= 1.5;
+        store.player.multishot += 2;
+        setTimeout(() => {
+            store.player.speed /= 1.5;
+            store.player.multishot -= 2;
+        }, 3000);
+
         store.isPaused = true;
         const panel = q('levelPanel'), grid = q('skillsGrid');
-        const available = getUpgradesByTier(1);
-        const choices = [];
-
-        for (let i = available.length - 1; i > 0; i--) {
+        
+        const multiShotUpgrade = UPGRADES.find(u => u.id === 'multi');
+        let otherUpgrades = getUpgradesByTier(1).filter(u => u.id !== 'multi');
+        
+        // Shuffle other upgrades
+        for (let i = otherUpgrades.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
-            [available[i], available[j]] = [available[j], available[i]];
+            [otherUpgrades[i], otherUpgrades[j]] = [otherUpgrades[j], otherUpgrades[i]];
         }
         
-        choices.push(...available.slice(0, 3));
+        const choices = [multiShotUpgrade, ...otherUpgrades.slice(0, 2)];
         
-        grid.innerHTML=choices.map(s=>`<div class="skill-card" data-id="${s.id}"><div class="skill-title">${s.name}</div><div class="skill-desc">${s.desc}</div></div>`).join('');
-        grid.querySelectorAll('.skill-card').forEach(c=>{c.addEventListener('click',()=>{const id=c.dataset.id,upgrade=UPGRADES.find(s=>s.id===id);if(upgrade){upgrade.apply();} panel.classList.add('hide'); store.isPaused = false; initWave()})});
+        grid.innerHTML = choices.map(s => `<div class="skill-card" data-id="${s.id}"><div class="skill-title">${s.name}</div><div class="skill-desc">${s.desc}</div></div>`).join('');
+        grid.querySelectorAll('.skill-card').forEach(c => {
+            c.addEventListener('click', () => {
+                const id = c.dataset.id;
+                const upgrade = UPGRADES.find(s => s.id === id);
+                if (upgrade) { upgrade.apply(); }
+                panel.classList.add('hide');
+                store.isPaused = false;
+            })
+        });
         panel.classList.remove('hide');
     }
 
@@ -420,7 +440,20 @@
         for(const b of store.bullets) { ctx.fillStyle = b.col; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 2 * Math.PI); ctx.fill(); }
         for(const e of store.enemies) drawEnemy(e);
         if (store.boss) drawBoss(store.boss);
+        
         drawShip(store.player.x, store.player.y);
+        if (store.player.levelUpEffect) {
+            const effect = store.player.levelUpEffect;
+            const progress = effect.t / effect.maxT;
+            ctx.save();
+            ctx.translate(store.player.x, store.player.y);
+            ctx.strokeStyle = `rgba(178, 102, 255, ${1 - progress})`;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(0, 0, progress * 150, 0, 2 * Math.PI);
+            ctx.stroke();
+            ctx.restore();
+        }
         updateHUD();
     }
     
@@ -473,8 +506,7 @@
             store.bullets.push({
                 x: p.x + 10 * Math.sin(angle),
                 y: p.y - 12,
-                vx: vx,
-                vy: vy,
+                vx: vx, vy: vy,
                 r: p.explosive ? 5 : 3,
                 col: p.explosive ? "#cc99ff" : "#b266ff",
                 dmg: 20 * p.dmgMult,
@@ -484,32 +516,75 @@
         }
     }
 
-    function stepBoss(dt){
+    function stepBoss(dt) {
+        if (!store.boss) return;
         const b = store.boss;
-        if(!b) return;
         b.t += dt;
-        if(b.y < 100){
-            b.y += b.vy * dt;
-        } else {
+        if (b.y < 100) { b.y += b.vy * dt; }
+
+        switch(b.behavior) {
+            case 'drifter': stepBossVoidDrifter(dt, b); break;
+            case 'sentinel': stepBossOmegaSentinel(dt, b); break;
+            case 'malignus': stepBossCoreMalignus(dt, b); break;
+        }
+    }
+
+    function stepBossVoidDrifter(dt, b) {
+        if (b.y >= 100) {
             b.moveT += dt;
             b.x = W / 2 + 220 * Math.sin(1.2 * b.moveT);
             b.y = 100 + 60 * Math.sin(2 * b.moveT);
         }
-        b.fireT += dt;
-        if(b.fireT > 0.5){
-            b.fireT = 0;
+        b.fireT -= dt;
+        if (b.fireT <= 0) {
+            b.fireT = 0.5;
             const numBullets = 8;
             for(let i = 0; i < numBullets; i++){
                 const angle = i * Math.PI / 4 + 2 * b.t;
-                store.eBullets.push({
-                    x: b.x + 30 * Math.cos(angle),
-                    y: b.y + 30 * Math.sin(angle),
-                    vx: 120 * Math.cos(angle),
-                    vy: 120 * Math.sin(angle),
-                    r: 5,
-                    col: b.color,
-                    dmg: 15
-                });
+                store.eBullets.push({ x: b.x, y: b.y, vx: 120 * Math.cos(angle), vy: 120 * Math.sin(angle), r: 5, col: b.color, dmg: 15 });
+            }
+        }
+    }
+
+    function stepBossOmegaSentinel(dt, b) {
+        if (b.y >= 100) {
+            b.moveT += dt;
+            b.x += Math.sin(b.moveT * 2) * 200 * dt;
+            b.x = clamp(b.x, 100, W - 100);
+        }
+        b.fireT -= dt;
+        if (b.fireT <= 0) {
+            if (b.patternPhase % 4 === 0) { // Radial Burst
+                b.fireT = 1.5;
+                const numBullets = 12;
+                for (let i = 0; i < numBullets; i++) {
+                    const angle = (i * Math.PI / 6) + b.t;
+                    store.eBullets.push({ x: b.x, y: b.y, vx: 150 * Math.cos(angle), vy: 150 * Math.sin(angle), r: 4, col: b.color, dmg: 12 });
+                }
+            } else { // Targeted Shot
+                b.fireT = 0.2;
+                const angleToPlayer = Math.atan2(store.player.y - b.y, store.player.x - b.x);
+                store.eBullets.push({ x: b.x, y: b.y, vx: 250 * Math.cos(angleToPlayer), vy: 250 * Math.sin(angleToPlayer), r: 5, col: b.color, dmg: 18 });
+            }
+            b.patternPhase++;
+        }
+    }
+
+    function stepBossCoreMalignus(dt, b) {
+        if (b.y >= 100) {
+            b.moveT += dt;
+            b.x = W / 2 + (W / 2 - 100) * Math.sin(b.moveT * 0.5);
+        }
+        b.fireT -= dt;
+        if (b.fireT <= 0) {
+            b.fireT = 0.8;
+            const bulletsInWall = 12;
+            const gapSize = 3; 
+            const gapStart = Math.floor(Math.random() * (bulletsInWall - gapSize));
+            for (let i = 0; i < bulletsInWall; i++) {
+                if (i >= gapStart && i < gapStart + gapSize) continue; // Create a gap
+                const posX = (W / (bulletsInWall + 1)) * (i + 1);
+                store.eBullets.push({ x: posX, y: b.y, vx: 0, vy: 180, r: 6, col: b.color, dmg: 20 });
             }
         }
     }
@@ -552,7 +627,7 @@
     
     q("restartBtn").addEventListener("click",resetGame);
     q("saveName").addEventListener("click",()=>{const t=(q("nameInput").value||"").slice(0,16).trim();t&&(store.name=t,q("namePanel").classList.add("hide"),store.isPaused=!1, initWave())});
-    q("closeShop").addEventListener("click",()=>{q("shopPanel").classList.add('hide'); store.isPaused=false; q('pauseBtn').classList.remove('hide'); initWave()});
+    q("closeShop").addEventListener("click",()=>{q("shopPanel").classList.add('hide'); store.isPaused=false; q('pauseBtn').classList.remove('hide');});
     q("shopBtn").addEventListener("click", showShop);
     
     q("menuBtn").addEventListener("click",()=>{
@@ -568,23 +643,15 @@
     
     q("fsEnterBtn").addEventListener('click', () => {
         const root = document.documentElement;
-        if (root.requestFullscreen) {
-            root.requestFullscreen();
-        } else if (root.webkitRequestFullscreen) {
-            root.webkitRequestFullscreen();
-        } else if (root.msRequestFullscreen) {
-            root.msRequestFullscreen();
-        }
+        if (root.requestFullscreen) { root.requestFullscreen(); } 
+        else if (root.webkitRequestFullscreen) { root.webkitRequestFullscreen(); } 
+        else if (root.msRequestFullscreen) { root.msRequestFullscreen(); }
     });
     
     q('pauseBtn').addEventListener('click', () => {
         if (!store.isGameOver && q('shopPanel').classList.contains('hide') && q('levelPanel').classList.contains('hide') && q('namePanel').classList.contains('hide') && q('scorePanel').classList.contains('hide')) {
             store.isPaused = !store.isPaused;
-            if (store.isPaused) {
-                q('pauseBtn').textContent = 'RESUME';
-            } else {
-                q('pauseBtn').textContent = 'PAUSE';
-            }
+            q('pauseBtn').textContent = store.isPaused ? 'RESUME' : 'PAUSE';
         }
     });
 
