@@ -62,7 +62,7 @@
             <div class="stage" id="stage">
                 <div id="topBar"><div id="hudPowerup" class="hud-card hide"></div><div id="hud"><div id="hudWaveContent" class="hud-card"></div><div id="hudPilotContent" class="hud-card"></div><div id="hudBossContent" class="hud-card hide"></div></div><div id="hudEquipment" class="hud-card hide"></div><div id="announce" class="hide" aria-live="polite"></div></div>
                 <canvas id="game" width="960" height="540"></canvas>
-                <div id="diagBox"><div class="chip"> v2.9.2</div><div class="chip">FPS <span id="fps">—</span></div></div>
+                <div id="diagBox"><div class="chip"> v3.0.0</div><div class="chip">FPS <span id="fps">—</span></div></div>
                 
                 <div id="ui">
                     <div id="gameOverPanel" class="panel hide"><h2 style="font-family:'Orbitron';color:var(--accent);margin-top:0">🚀 PILOT LOST 🚀</h2><p style="text-align:center;font-size:1.2em;color:#ffddff">FINAL SCORE: <span id="finalScore">0</span></p><div class="row" style="justify-content:center;margin-top:20px"><button id="restartBtn" class="btn" type="button">FLY AGAIN</button></div></div>
@@ -129,22 +129,22 @@
     }
     
     // --- GAME STATE & DATA ---
-    const player_initial_state = { x: W / 2, y: H * 0.8, r: 14, hp: 100, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1, fireRate: 0.18, vampirism: 0, shield: 0, shieldMax: 0, multishot: 1, piercing: 0, explosive: false, levelUpEffect: null, weaponType: 'default', hasShieldBubble: false, powerupTimers: {}, upgradeLevels: { dmg: 0, speed: 0, hp: 0, shield: 0 }, grenades: 0, hasVoidBeam: false, voidBeamCooldown: 0 };
+    const player_initial_state = { x: W / 2, y: H * 0.8, r: 14, hp: 100, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1, fireRate: 0.18, vampirism: 0, shield: 0, shieldMax: 0, multishot: 1, piercing: 0, explosive: false, levelUpEffect: null, weaponType: 'default', hasShieldBubble: false, powerupTimers: {}, upgradeLevels: { dmg: 0, speed: 0, hp: 0, shield: 0 }, grenades: 0, hasVoidBeam: false, voidBeamCooldown: 0, hasLauncher: false, hasHounds: false };
     
     const store = {
         frame: 0, last: performance.now(), isGameOver: false, isPaused: false,
         world: { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0 },
         player: { ...player_initial_state },
-        boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], grenades: [], activeEffects: [],
+        boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], grenades: [], hounds: [], activeEffects: [],
         _startTs: performance.now()
     };
 
     const LEVEL_UPGRADES = [
-        { id: 'dmg', name: 'PLASMA CORE', desc: '+10% damage', apply: () => store.player.dmgMult *= 1.1 },
+        { id: 'dmg', name: 'PLASMA CORE', desc: '+25% damage', apply: () => store.player.dmgMult *= 1.25 },
         { id: 'speed', name: 'NEURAL BOOST', desc: '+15% speed', apply: () => store.player.speed *= 1.15 },
         { id: 'hp', name: 'BLOOD ARMOR', desc: '+10 max HP', apply: () => { store.player.hpMax += 10; store.player.hp += 10; } },
         { id: 'fire', name: 'OVERCLOCK', desc: '+25% fire rate', apply: () => store.player.fireRate *= 0.75 },
-        { id: 'vamp', name: 'VAMPIRIC ROUNDS', desc: 'Heal 1% damage dealt', apply: () => store.player.vampirism += 0.01 },
+        { id: 'vamp', name: 'VAMPIRIC ROUNDS', desc: 'Heal 0.5% damage dealt', apply: () => store.player.vampirism += 0.005 },
         { id: 'multi', name: 'SCATTER PROTOCOL', desc: '+1 projectile', apply: () => store.player.multishot += 1 },
         { id: 'pierce', name: 'PHASE ROUNDS', desc: 'Bullets pierce enemies', apply: () => store.player.piercing = 1 },
         { id: 'shield', name: 'VOID SHIELD', desc: '+20 regenerating shield', apply: () => { store.player.shieldMax += 20; store.player.shield = store.player.shieldMax; } },
@@ -155,9 +155,11 @@
         'dmg': { name: "DAMAGE", baseCost: 25, scale: 1.5, maxLevel: 10, effect: () => store.player.dmgMult += 0.1, desc: level => `+10% Damage (Lvl ${level + 1})` },
         'speed': { name: "SPEED", baseCost: 30, scale: 1.6, maxLevel: 8, effect: () => store.player.speed += 30, desc: level => `+30 Speed (Lvl ${level + 1})` },
         'hp': { name: "MAX HP", baseCost: 20, scale: 1.4, maxLevel: 10, effect: () => { store.player.hpMax += 10; store.player.hp += 10; }, desc: level => `+10 Max HP (Lvl ${level + 1})` },
-        'shield': { name: "MAX SHIELD", baseCost: 40, scale: 1.8, maxLevel: 5, effect: () => { store.player.shieldMax += 25; store.player.shield += 25; }, desc: level => `+15 Max Shield (Lvl ${level + 1})` },
-        'grenade': { name: "NOVA GRENADE", cost: 15, isPremium: true, max: 3, apply: () => { if (store.player.grenades < 3) { store.player.grenades++; return true; } return false; }, desc: () => `Buy 1 (Max 3)` },
-        'void_beam': { name: "VOID BEAM", cost: 80, isPremium: true, isUnlock: true, apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; return true; } return false; }, desc: () => `Unlock Ultimate Weapon` }
+        'shield': { name: "MAX SHIELD", baseCost: 40, scale: 1.8, maxLevel: 5, effect: () => { store.player.shieldMax += 25; store.player.shield += 25; }, desc: level => `+25 Max Shield (Lvl ${level + 1})` },
+        'grenade': { name: "NOVA GRENADE", cost: 75, isPremium: true, max: 3, apply: () => { if (store.player.grenades < 3) { store.player.grenades++; return true; } return false; }, desc: () => `Buy 1 (Max 3)` },
+        'void_beam': { name: "VOID BEAM", cost: 250, isPremium: true, isUnlock: true, apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; return true; } return false; }, desc: () => `Unlock Ultimate Weapon` },
+        'launcher': { name: 'FRAGMENTATION LAUNCHER', cost: 50, isPremium: true, isUnlock: true, apply: () => { if (!store.player.hasLauncher) { store.player.hasLauncher = true; return true; } return false; }, desc: () => `Adds swirling nova projectiles to your primary fire.` },
+        'ghost_hounds': { name: "GHOST HOUNDS", cost: 200, isPremium: true, isUnlock: true, apply: () => { if (!store.player.hasHounds) { store.player.hasHounds = true; store.hounds = [createHound(-1), createHound(1)]; return true; } return false; }, desc: () => `Unlocks 2 spectral hounds to attack enemies.` }
     };
     
     const POWERUP_TYPES = {
@@ -169,13 +171,13 @@
 
     // --- GAME MECHANICS ---
     function spawnPowerup(x, y) { if (Math.random() > 0.15) return; const types = Object.keys(POWERUP_TYPES); const typeKey = types[Math.floor(Math.random() * types.length)]; store.powerups.push({ x, y, r: 12, type: typeKey }); }
-    function applyPowerup(typeKey) { const p = store.player; const powerup = POWERUP_TYPES[typeKey]; playSound('https://www.myinstants.com/media/sounds/zelda-power-up.mp3', 0.5); if (powerup.type === 'weapon') { p.weaponType = typeKey; delete p.powerupTimers[typeKey]; } else if (powerup.type === 'timed') { if (typeKey === 'drones') { store.drones = [{ active: true, offset: -40 }, { active: true, offset: 40 }]; } p.powerupTimers[typeKey] = { remaining: powerup.duration, max: powerup.duration }; } else if (powerup.type === 'instant') { if (typeKey === 'shield') p.hasShieldBubble = true; if (typeKey === 'repair') p.hp = Math.min(p.hpMax, p.hp + 30); } }
+    function applyPowerup(typeKey) { const p = store.player; const powerup = POWERUP_TYPES[typeKey]; playSound('https://www.myinstants.com/media/sounds/zelda-power-up.mp3', 0.5); if (powerup.type === 'weapon') { p.weaponType = typeKey; delete p.powerupTimers[typeKey]; } else if (powerup.type === 'timed') { if (p.powerupTimers[typeKey]) { p.powerupTimers[typeKey].remaining += powerup.duration; } else { if (typeKey === 'drones') { store.drones = [{ active: true, offset: -40 }, { active: true, offset: 40 }]; } p.powerupTimers[typeKey] = { remaining: powerup.duration, max: powerup.duration }; } } else if (powerup.type === 'instant') { if (typeKey === 'shield') p.hasShieldBubble = true; if (typeKey === 'repair') p.hp = Math.min(p.hpMax, p.hp + 30); } }
 
     function initWave() {
         const isBossWave = store.world.wave % 5 === 0;
         if (isBossWave) {
             store.enemies = [];
-            const bossHpScale = 1 + (store.world.wave / 5 - 1) * 0.5;
+            const bossHpScale = 1 + (store.world.wave / 5 - 1) * 0.75;
             store.boss = createBoss(bossHpScale);
             announce(`⚡ GUARDIAN: ${store.boss.name} ⚡`);
             playMusic(BGM_BOSS, 0.6);
@@ -194,13 +196,13 @@
     function createBoss(scale) {
         const bossCycle = Math.floor((store.world.wave - 5) / 5) % 3;
         const types = [
-            { name: 'OMEGA SENTINEL', baseHp: 800, r: 55, behavior: 'sentinel', color: '#ff8080' },
-            { name: 'VOID DRIFTER', baseHp: 1000, r: 50, behavior: 'drifter', color: '#b266ff' },
-            { name: 'CORE MALIGNUS', baseHp: 1200, r: 60, behavior: 'malignus', color: '#9a66ff' }
+            { name: 'OMEGA SENTINEL', baseHp: 1200, r: 55, behavior: 'sentinel', color: '#ff8080' },
+            { name: 'THE HEX', baseHp: 1500, r: 50, behavior: 'hex', color: '#66aaff', spawnAddsT: 8},
+            { name: 'CORE MALIGNUS', baseHp: 1800, r: 60, behavior: 'malignus', color: '#9a66ff' }
         ];
         const type = types[bossCycle];
         const hp = type.baseHp * scale;
-        return { ...type, x: W / 2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, patternPhase: 0 };
+        return { ...type, x: W / 2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, patternPhase: 0, mines: [] };
     }
 
     function spawnEnemy(type = 'drone') {
@@ -238,10 +240,27 @@
     function stepWorld(dt) {
         stepPlayer(dt);
         if (store.boss) stepBoss(dt);
+        stepHounds(dt);
 
         store.activeEffects.forEach(e => e.step(dt));
         store.grenades.forEach(g => { g.x += g.vx * dt; g.y += g.vy * dt; g.fuse -= dt; if (g.fuse <= 0) { g.dead = true; explodeGrenade(g.x, g.y); } });
-        store.eBullets.forEach(b => { b.x += b.vx * dt; b.y += b.vy * dt; if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true; if (collide(b, store.player)) { takeDamage(b.dmg || 10); b.dead = true; } });
+        store.eBullets.forEach(b => { b.x += b.vx * dt; b.y += b.vy * dt; if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true; if (collide(b, store.player)) { takeDamage(b.dmg || 10); b.dead = true; }});
+        
+        if (store.boss && store.boss.mines) {
+            store.boss.mines.forEach(mine => {
+                mine.fuse -= dt;
+                if (mine.fuse <= 0) {
+                    store.eBullets.push({ x: mine.x, y: mine.y, vx: 0, vy: 100, r: 8, col: '#ff8080', dmg: 25 });
+                    mine.dead = true;
+                }
+                if (collide(mine, store.player)) {
+                    takeDamage(50);
+                    mine.dead = true;
+                }
+            });
+            store.boss.mines = store.boss.mines.filter(m => !m.dead);
+        }
+
         store.enemies.forEach(e => {
             e.t += dt; e.y += e.v * dt;
             if (e.phase) { e.x = e.x + Math.sin(e.t * 3) * 80 * dt; }
@@ -259,9 +278,10 @@
         });
         store.bullets.forEach(b => {
             b.x += b.vx * dt; b.y += b.vy * dt;
+            if (b.isSwirl) { b.life += dt; b.x += Math.sin(b.life * 15) * 150 * dt; }
             if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true;
             store.enemies.forEach(e => { if (!e.dead && collide(b, e)) { const dmg = b.dmg || 20; e.hp -= dmg; if (e.hp <= 0) { e.dead = true; store.world.score += e.score; store.world.shards += e.shards; store.world.xp += e.xp; store.world.kills++; spawnPowerup(e.x, e.y); if (store.player.vampirism > 0) store.player.hp = Math.min(store.player.hpMax, store.player.hp + dmg * store.player.vampirism); explode(e.x, e.y); } if (b.explosive) explode(b.x, b.y); if (!b.pierce) b.dead = true; } });
-            if (store.boss && collide(b, store.boss)) { const dmg = b.dmg || 20; store.boss.hp -= dmg; if (store.boss.hp <= 0) { store.world.score += 2000; store.world.shards += 25; store.world.xp += 100; store.world.bosses++; store.boss = null; announce('⚡ GUARDIAN DEFEATED ⚡'); explode(b.x, b.y, true); playMusic(BGM_NORMAL); } if (b.explosive) explode(b.x, b.y); if (!b.pierce) b.dead = true; }
+            if (store.boss && collide(b, store.boss)) { let dmg = b.dmg || 20; if(b.isDrone) dmg *= 0.4; store.boss.hp -= dmg; if (store.boss.hp <= 0) { store.world.score += 2000; store.world.shards += 25; store.world.xp += 100; store.world.bosses++; store.boss = null; announce('⚡ GUARDIAN DEFEATED ⚡'); explode(b.x, b.y, true); playMusic(BGM_NORMAL); } if (b.explosive) explode(b.x, b.y); if (!b.pierce) b.dead = true; }
         });
         store.powerups.forEach(p => { p.y += 40 * dt; if (collide(p, store.player)) { p.dead = true; applyPowerup(p.type); } if (p.y > H + 20) p.dead = true; });
 
@@ -277,11 +297,11 @@
     function levelUp() { announce(`LEVEL UP! ⚡ CHOOSE YOUR AUGMENTATION!`); store.player.levelUpEffect = { t: 0, maxT: 1 }; playSound('https://www.myinstants.com/media/sounds/level-up-1.mp3', 0.6); store.player.speed *= 1.5; store.player.multishot += 2; setTimeout(() => { store.player.speed /= 1.5; store.player.multishot -= 2; }, 3000); store.isPaused = true; const panel = q('levelPanel'), grid = q('skillsGrid'); const multiShotUpgrade = LEVEL_UPGRADES.find(u => u.id === 'multi'); let otherUpgrades = LEVEL_UPGRADES.filter(u => u.id !== 'multi'); for (let i = otherUpgrades.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [otherUpgrades[i], otherUpgrades[j]] = [otherUpgrades[j], otherUpgrades[i]]; } const choices = [multiShotUpgrade, ...otherUpgrades.slice(0, 2)]; grid.innerHTML = choices.map(s => `<div class="skill-card" data-id="${s.id}"><div class="skill-title">${s.name}</div><div class="skill-desc">${s.desc}</div></div>`).join(''); grid.querySelectorAll('.skill-card').forEach(c => { c.addEventListener('click', () => { const id = c.dataset.id; const upgrade = LEVEL_UPGRADES.find(s => s.id === id); if (upgrade) { upgrade.apply(); } panel.classList.add('hide'); store.isPaused = false; }) }); panel.classList.remove('hide'); }
     function handleGameOver() { if (store.isGameOver) return; store.isGameOver = true; bgm.pause(); playSound('https://soundbible.com/mp3/Grenade-SoundBible.com-1775988413.mp3'); addScore(store.world.score); announce('◢ NEXUS BREACH - PILOT LOST ◣'); q('finalScore').textContent = store.world.score; q('gameOverPanel').classList.remove('hide'); }
     function resetGame() {
-        store.player = JSON.parse(JSON.stringify(player_initial_state)); // Deep copy to prevent reference issues
+        store.player = JSON.parse(JSON.stringify(player_initial_state));
         store.world = { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0 };
         store.boss = null;
         store.bullets = []; store.eBullets = []; store.enemies = [];
-        store.powerups = []; store.drones = []; store.grenades = []; store.activeEffects = [];
+        store.powerups = []; store.drones = []; store.grenades = []; store.hounds = []; store.activeEffects = [];
         store._startTs = performance.now();
         store.isGameOver = false;
         q('gameOverPanel').classList.add('hide'); q('shopPanel').classList.add('hide'); q('levelPanel').classList.add('hide');
@@ -289,7 +309,6 @@
     }
 
     // --- RENDER & DRAW FUNCTIONS ---
-    // Moved star array creation outside of the render loop for performance
     const starCountA = 100, starCountB = 80;
     const starsA = Array.from({ length: starCountA }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5, pulse: Math.random() * 10 }));
     const starsB = Array.from({ length: starCountB }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 2, pulse: Math.random() * 10 }));
@@ -298,7 +317,6 @@
         ctx.fillStyle = '#050008'; ctx.fillRect(0, 0, W, H);
         const time = performance.now() / 1000;
         
-        // Animate and draw stars
         ctx.globalAlpha = 0.8; 
         for (const s of starsA) { s.y += 30 * dt; if (s.y > H) s.y -= H; ctx.fillStyle = `rgba(255,0,255,${0.5 + 0.5 * Math.sin(time * 2 + s.pulse)})`; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 2 * Math.PI); ctx.fill(); }
         ctx.globalAlpha = 0.6; 
@@ -309,9 +327,21 @@
         store.grenades.forEach(g => drawGrenade(g));
         store.eBullets.forEach(b => { ctx.fillStyle = b.col; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 2 * Math.PI); ctx.fill(); });
         store.bullets.forEach(b => { ctx.fillStyle = b.col; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 2 * Math.PI); ctx.fill(); });
+        if(store.boss && store.boss.mines) {
+            store.boss.mines.forEach(mine => {
+                ctx.save();
+                ctx.translate(mine.x, mine.y);
+                ctx.beginPath();
+                ctx.arc(0, 0, 10, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 128, 128, ${0.7 + 0.3 * Math.sin(performance.now() / 200)})`;
+                ctx.fill();
+                ctx.restore();
+            });
+        }
         store.enemies.forEach(e => drawEnemy(e));
         if (store.boss) drawBoss(store.boss);
         store.drones.forEach(d => drawDrone(d));
+        store.hounds.forEach(h => drawHound(h));
         drawShip(store.player.x, store.player.y);
         store.activeEffects.forEach(e => e.draw());
         if (store.player.levelUpEffect) { const e = store.player.levelUpEffect, p = e.t / e.maxT; ctx.save(); ctx.translate(store.player.x, store.player.y); ctx.strokeStyle = `rgba(178,102,255,${1 - p})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, p * 150, 0, 2 * Math.PI); ctx.stroke(); ctx.restore(); }
@@ -330,20 +360,29 @@
         const powerupEl = q("hudPowerup");
         const timedPowerups = Object.keys(store.player.powerupTimers);
         let currentWeapon = store.player.weaponType !== 'default' ? POWERUP_TYPES[store.player.weaponType].name : null;
-        let currentTimed = timedPowerups.length > 0 ? POWERUP_TYPES[timedPowerups[0]].name : null;
-        if (currentWeapon || currentTimed) {
+        let timedContent = '';
+        if (timedPowerups.length > 0) {
+            timedPowerups.forEach(key => {
+                const timer = store.player.powerupTimers[key];
+                const percent = Math.min(100, (timer.remaining / timer.max) * 100);
+                timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`;
+            });
+        }
+        if (currentWeapon || timedContent) {
             powerupEl.classList.remove('hide');
-            let content = `<div class="hud-title">◢ WEAPON SYSTEMS ◣</div>`;
-            if (currentWeapon) content += `<div style="text-align:center;color:#FFD700">${currentWeapon}</div>`;
-            if (currentTimed) { const timer = store.player.powerupTimers[timedPowerups[0]]; const percent = (timer.remaining / timer.max) * 100; content += `<div style="text-align:center;color:#FFD700">${currentTimed}</div><div class="bar"><span style="width:${percent}%; background:#FFD700"></span></div>`; }
+            let content = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>`;
+            if (currentWeapon) content += `<div style="text-align:left;color:#FFD700;font-size:10px;">${currentWeapon}</div>`;
+            content += timedContent;
             powerupEl.innerHTML = content;
         } else { powerupEl.classList.add('hide'); }
         const equipEl = q("hudEquipment");
-        if (store.player.grenades > 0 || store.player.hasVoidBeam) {
+        if (store.player.grenades > 0 || store.player.hasVoidBeam || store.player.hasLauncher || store.player.hasHounds) {
             equipEl.classList.remove('hide');
             let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`;
             if (store.player.grenades > 0) content += `<div>GRENADE (SPACE) x${store.player.grenades}</div>`;
             if (store.player.hasVoidBeam) { const cd = store.player.voidBeamCooldown; const status = cd > 0 ? `CD ${Math.ceil(cd)}s` : 'READY'; const color = cd > 0 ? '#ff8080' : '#80ff80'; content += `<div>VOID BEAM (B) <span style="color:${color}">[${status}]</span></div>`; }
+            if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`;
+            if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`;
             equipEl.innerHTML = content;
         } else { equipEl.classList.add('hide'); }
     }
@@ -352,17 +391,133 @@
     async function refreshScoreList() { try { const res = await fetch(`${API_BASE}/leaderboard`, { cache: "no-store" }); const data = await res.json(); updateLeaderboard(data); } catch (err) { console.error("Scores:", err) } }
     async function addScore(score) { const name = (store.name || "ROGUE").slice(0, 16); try { const nonceRes = await fetch(`${API_BASE}/session`, { method: "POST" }); const { nonce } = await nonceRes.json(); const body = { name, score: Math.floor(score) || 0, waves: store.world.wave | 0, kills: store.world.kills | 0, bosses: store.world.bosses | 0, ms: Math.max(1e4, Math.floor(performance.now() - store._startTs)), nonce }; const res = await fetch(`${API_BASE}/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); const data = await res.json(); if (data.ok) { updateLeaderboard(data.top10) } else { console.warn("Score rejected:", data.err); announce(`Score rejected: ${data.err}`); refreshScoreList() } } catch (err) { console.error("Submit Error:", err); refreshScoreList() } }
     
-    function fireBullet(x, y, vx, vy) { const p = store.player; store.bullets.push({ x, y, vx, vy, r: p.explosive ? 5 : 3, col: p.explosive ? "#cc99ff" : "#b266ff", dmg: 20 * p.dmgMult, pierce: p.piercing, explosive: p.explosive }); }
-    function firePlayer() { const p = store.player; const bulletSpeed = 420; switch (p.weaponType) { case 'double': fireBullet(p.x - 8, p.y, 0, -bulletSpeed); fireBullet(p.x + 8, p.y, 0, -bulletSpeed); break; default: const angleSpread = p.multishot > 2 ? 15 : 10; for (let i = 0; i < p.multishot; i++) { const angle = (i - (p.multishot - 1) / 2) * angleSpread * Math.PI / 180; fireBullet(p.x + 10 * Math.sin(angle), p.y - 12, Math.sin(angle) * bulletSpeed, -Math.cos(angle) * bulletSpeed); } } store.drones.forEach(drone => { fireBullet(p.x + drone.offset, p.y + 20, 0, -bulletSpeed); }); }
+    function fireBullet(x, y, vx, vy, props = {}) { const p = store.player; store.bullets.push({ x, y, vx, vy, r: p.explosive ? 5 : 3, col: p.explosive ? "#cc99ff" : "#b266ff", dmg: 20 * p.dmgMult, pierce: p.piercing, explosive: p.explosive, ...props }); }
+    function firePlayer() {
+        const p = store.player;
+        const bulletSpeed = 420;
+        switch (p.weaponType) {
+            case 'double': fireBullet(p.x - 8, p.y, 0, -bulletSpeed); fireBullet(p.x + 8, p.y, 0, -bulletSpeed); break;
+            default: const angleSpread = p.multishot > 2 ? 15 : 10; for (let i = 0; i < p.multishot; i++) { const angle = (i - (p.multishot - 1) / 2) * angleSpread * Math.PI / 180; fireBullet(p.x + 10 * Math.sin(angle), p.y - 12, Math.sin(angle) * bulletSpeed, -Math.cos(angle) * bulletSpeed); }
+        }
+        store.drones.forEach(drone => { fireBullet(p.x + drone.offset, p.y + 20, 0, -bulletSpeed, {isDrone: true}); });
+        if (p.hasLauncher) {
+            const speed = 350;
+            const common = { dmg: 5 * p.dmgMult, r: 4, col: '#ff8080', explosive: true, pierce: false, life: 0, isSwirl: true };
+            store.bullets.push({ ...common, x: p.x - 15, y: p.y, vx: -50, vy: -speed });
+            store.bullets.push({ ...common, x: p.x + 15, y: p.y, vx: 50, vy: -speed });
+        }
+    }
     
-    function stepBoss(dt) { if (!store.boss) return; const b = store.boss; b.t += dt; if (b.y < 100) { b.y += b.vy * dt; } switch (b.behavior) { case 'drifter': stepBossVoidDrifter(dt, b); break; case 'sentinel': stepBossOmegaSentinel(dt, b); break; case 'malignus': stepBossCoreMalignus(dt, b); break; } }
-    function stepBossVoidDrifter(dt, b) { if (b.y >= 100) { b.moveT += dt; b.x = W / 2 + 220 * Math.sin(1.2 * b.moveT); b.y = 100 + 60 * Math.sin(2 * b.moveT); } b.fireT -= dt; if (b.fireT <= 0) { b.fireT = 0.5; const n = 8; for (let i = 0; i < n; i++) { const a = i * Math.PI / 4 + 2 * b.t; store.eBullets.push({ x: b.x, y: b.y, vx: 120 * Math.cos(a), vy: 120 * Math.sin(a), r: 5, col: b.color, dmg: 15 }); } } }
-    function stepBossOmegaSentinel(dt, b) { if (b.y >= 100) { b.moveT += dt; b.x += Math.sin(b.moveT * 2) * 200 * dt; b.x = clamp(b.x, 100, W - 100); } b.fireT -= dt; if (b.fireT <= 0) { if (b.patternPhase % 4 === 0) { b.fireT = 1.5; const n = 12; for (let i = 0; i < n; i++) { const a = (i * Math.PI / 6) + b.t; store.eBullets.push({ x: b.x, y: b.y, vx: 150 * Math.cos(a), vy: 150 * Math.sin(a), r: 4, col: b.color, dmg: 12 }); } } else { b.fireT = 0.2; const a = Math.atan2(store.player.y - b.y, store.player.x - b.x); store.eBullets.push({ x: b.x, y: b.y, vx: 250 * Math.cos(a), vy: 250 * Math.sin(a), r: 5, col: b.color, dmg: 18 }); } b.patternPhase++; } }
-    function stepBossCoreMalignus(dt, b) { if (b.y >= 100) { b.moveT += dt; b.x = W / 2 + (W / 2 - 100) * Math.sin(b.moveT * 0.5); } b.fireT -= dt; if (b.fireT <= 0) { b.fireT = 0.8; const n = 12, g = 3, s = Math.floor(Math.random() * (n - g)); for (let i = 0; i < n; i++) { if (i >= s && i < s + g) continue; const p = (W / (n + 1)) * (i + 1); store.eBullets.push({ x: p, y: b.y, vx: 0, vy: 180, r: 6, col: b.color, dmg: 20 }); } } }
+    function stepBoss(dt) { 
+        if (!store.boss) return; 
+        const b = store.boss; b.t += dt; 
+        if (b.y < 100) { b.y += b.vy * dt; } 
+        switch (b.behavior) { 
+            case 'drifter': stepBossVoidDrifter(dt, b); break; 
+            case 'sentinel': stepBossOmegaSentinel(dt, b); break; 
+            case 'malignus': stepBossCoreMalignus(dt, b); break; 
+            case 'hex': stepBossTheHex(dt, b); break;
+        } 
+    }
+
+    function stepBossVoidDrifter(dt, b) { 
+        if (b.y >= 100) { b.moveT += dt; b.x = W / 2 + 220 * Math.sin(1.2 * b.moveT); b.y = 100 + 60 * Math.sin(2 * b.moveT); } 
+        b.fireT -= dt; 
+        if (b.fireT <= 0) { b.fireT = 0.5; const n = 8; for (let i = 0; i < n; i++) { const a = i * Math.PI / 4 + 2 * b.t; store.eBullets.push({ x: b.x, y: b.y, vx: 120 * Math.cos(a), vy: 120 * Math.sin(a), r: 5, col: b.color, dmg: 15 }); } } 
+    }
+    
+    function stepBossOmegaSentinel(dt, b) { 
+        if (b.y >= 100) { b.moveT += dt; b.x += Math.sin(b.moveT * 2) * 200 * dt; b.x = clamp(b.x, 100, W - 100); } 
+        b.fireT -= dt; 
+        if (b.fireT <= 0) { if (b.patternPhase % 4 === 0) { b.fireT = 1.5; const n = 12; for (let i = 0; i < n; i++) { const a = (i * Math.PI / 6) + b.t; store.eBullets.push({ x: b.x, y: b.y, vx: 150 * Math.cos(a), vy: 150 * Math.sin(a), r: 4, col: b.color, dmg: 12 }); } } else { b.fireT = 0.2; const a = Math.atan2(store.player.y - b.y, store.player.x - b.x); store.eBullets.push({ x: b.x, y: b.y, vx: 250 * Math.cos(a), vy: 250 * Math.sin(a), r: 5, col: b.color, dmg: 18 }); } b.patternPhase++; } 
+    }
+
+    function stepBossCoreMalignus(dt, b) { 
+        if (b.y >= 100) { b.moveT += dt; b.x = W / 2 + (W / 2 - 100) * Math.sin(b.moveT * 0.5); } 
+        b.fireT -= dt; 
+        if (b.fireT <= 0) { b.fireT = 0.8; const n = 12, g = 3, s = Math.floor(Math.random() * (n - g)); for (let i = 0; i < n; i++) { if (i >= s && i < s + g) continue; const p = (W / (n + 1)) * (i + 1); store.eBullets.push({ x: p, y: b.y, vx: 0, vy: 180, r: 6, col: b.color, dmg: 20 }); } } 
+    }
+
+    function stepBossTheHex(dt, b) {
+        if (b.y >= 100) {
+            b.moveT += dt;
+            b.x = W * 0.2 + (W * 0.6) * Math.abs(Math.sin(b.moveT * 0.4));
+        }
+        b.fireT -= dt;
+        if (b.fireT <= 0) {
+            b.fireT = 1.5;
+            b.mines.push({ x: b.x, y: b.y + 40, fuse: 2, dead: false });
+            for (let i = -1; i <= 1; i++) {
+                const a = Math.atan2(store.player.y - b.y, store.player.x - b.x) + i * 0.2;
+                store.eBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 160, vy: Math.sin(a) * 160, r: 4, col: '#80ffff', dmg: 10 });
+            }
+        }
+        b.spawnAddsT -= dt;
+        if (b.spawnAddsT <= 0) {
+            b.spawnAddsT = 12; 
+            for (let i = 0; i < 3; i++) {
+                setTimeout(() => {
+                    const enemy = spawnEnemy('hunter');
+                    enemy.x = (i % 2 === 0) ? -30 : W + 30;
+                    enemy.y = b.y + Math.random() * 100;
+                    enemy.v = 50;
+                    enemy.phase = true;
+                    store.enemies.push(enemy);
+                }, i * 400);
+            }
+        }
+    }
     
     function drawPowerup(p) { const cfg = POWERUP_TYPES[p.type]; ctx.save(); ctx.translate(p.x, p.y); const pulse = 0.8 + 0.2 * Math.sin(performance.now() / 150); ctx.scale(pulse, pulse); ctx.beginPath(); ctx.arc(0, 0, p.r + 3, 0, Math.PI * 2); const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, p.r + 3); grad.addColorStop(0, '#FFD70099'); grad.addColorStop(1, '#FFD70000'); ctx.fillStyle = grad; ctx.fill(); ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.fillStyle = '#FFD70044'; ctx.fill(); ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 16px Orbitron'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(cfg.icon, 0, 1); ctx.restore(); }
     function drawDrone(d) { const p = store.player; ctx.save(); ctx.translate(p.x + d.offset, p.y + 20); ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(6, 6); ctx.lineTo(-6, 6); ctx.closePath(); ctx.fillStyle = '#80ffff'; ctx.fill(); ctx.restore(); }
-    function drawBoss(t) { ctx.save(); ctx.translate(t.x, t.y); ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(-60, -t.r - 20, 120, 8); ctx.fillStyle = t.color; ctx.fillRect(-60, -t.r - 20, 120 * (t.hp / t.hpMax), 8); ctx.strokeStyle = "#ff00ff"; ctx.lineWidth = 1; ctx.strokeRect(-60, -t.r - 20, 120, 8); ctx.strokeStyle = t.color; ctx.lineWidth = 3; for (let e = 0; e < 3; e++) { ctx.save(); ctx.rotate(t.t * (1 + .5 * e)); ctx.beginPath(); ctx.arc(0, 0, t.r - 10 * e, 0, 2 * Math.PI); ctx.stroke(); ctx.restore(); } ctx.fillStyle = t.color + "aa"; ctx.beginPath(); ctx.arc(0, 0, Math.max(1, .3 * t.r * (.8 + .2 * Math.sin(3 * t.t))), 0, 2 * Math.PI); ctx.fill(); ctx.restore(); }
+    
+    function drawBoss(t) { 
+        ctx.save(); 
+        ctx.translate(t.x, t.y); 
+        ctx.fillStyle = "rgba(0,0,0,0.7)"; 
+        ctx.fillRect(-60, -t.r - 20, 120, 8); 
+        ctx.fillStyle = t.color; 
+        ctx.fillRect(-60, -t.r - 20, 120 * (t.hp / t.hpMax), 8); 
+        ctx.strokeStyle = "#ff00ff"; 
+        ctx.lineWidth = 1; 
+        ctx.strokeRect(-60, -t.r - 20, 120, 8); 
+        if (t.behavior === 'hex') {
+            const time = performance.now() / 1000;
+            ctx.fillStyle = '#66aaff';
+            ctx.strokeStyle = '#ff8080';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(0, -t.r * 1.5);
+            ctx.lineTo(t.r, -t.r * 0.7);
+            ctx.lineTo(t.r * 0.8, t.r);
+            ctx.lineTo(-t.r * 0.8, t.r);
+            ctx.lineTo(-t.r, -t.r * 0.7);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(0, t.r * 0.2, t.r * 0.6, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 128, 128, ${0.4 + 0.3 * Math.sin(time * 5)})`;
+            ctx.fill();
+        } else {
+            ctx.strokeStyle = t.color; 
+            ctx.lineWidth = 3; 
+            for (let e = 0; e < 3; e++) { 
+                ctx.save(); 
+                ctx.rotate(t.t * (1 + .5 * e)); 
+                ctx.beginPath(); 
+                ctx.arc(0, 0, t.r - 10 * e, 0, 2 * Math.PI); 
+                ctx.stroke(); 
+                ctx.restore(); 
+            } 
+            ctx.fillStyle = t.color + "aa"; 
+            ctx.beginPath(); 
+            ctx.arc(0, 0, Math.max(1, .3 * t.r * (.8 + .2 * Math.sin(3 * t.t))), 0, 2 * Math.PI); 
+            ctx.fill(); 
+        }
+        ctx.restore(); 
+    }
+    
     function drawShip(t, e) { ctx.save(); ctx.translate(t, e); if (store.player.hasShieldBubble) { ctx.beginPath(); ctx.arc(0, 0, 24, 0, Math.PI * 2); const g = ctx.createRadialGradient(0, 0, 18, 0, 0, 24); g.addColorStop(0, '#9a66ff11'); g.addColorStop(1, '#9a66ff'); ctx.fillStyle = g; ctx.fill(); } ctx.beginPath(); ctx.moveTo(0, -20); ctx.lineTo(12, 8); ctx.lineTo(8, 14); ctx.lineTo(0, 10); ctx.lineTo(-8, 14); ctx.lineTo(-12, 8); ctx.closePath(); const o = ctx.createLinearGradient(0, -20, 0, 14); o.addColorStop(0, "#b266ff"); o.addColorStop(.5, "#7a49cc"); o.addColorStop(1, "#4d2a80"); ctx.fillStyle = o; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = "#c49cff"; ctx.stroke(); ctx.strokeStyle = "#b266ff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-12, 5); ctx.lineTo(-20, -2); ctx.lineTo(-18, 8); ctx.moveTo(12, 5); ctx.lineTo(20, -2); ctx.lineTo(18, 8); ctx.stroke(); const r = performance.now() / 1e3; ctx.globalAlpha = .8 + .2 * Math.sin(10 * r); ctx.fillStyle = "#cc99ff"; ctx.beginPath(); ctx.ellipse(-5, 16, 3, 6, 0, 0, 2 * Math.PI); ctx.ellipse(5, 16, 3, 6, 0, 0, 2 * Math.PI); ctx.fill(); ctx.globalAlpha = 1; ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(0, -8, 3, 0, 2 * Math.PI); ctx.fill(); ctx.restore(); }
     function drawGrenade(g) { ctx.save(); ctx.translate(g.x, g.y); ctx.rotate(g.fuse * 5); ctx.fillStyle = '#ff8080'; ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
     function drawEnemy(e) { const { x, y, r, type, color, hp, hpMax, t } = e; ctx.save(); ctx.translate(x, y); if (hp < hpMax && hp > 0) { ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(-r, -r - 8, r * 2, 3); ctx.fillStyle = '#b266ff'; ctx.fillRect(-r, -r - 8, r * 2 * (hp / hpMax), 3); } ctx.strokeStyle = color; ctx.fillStyle = color + '99'; ctx.lineWidth = 2; ctx.beginPath(); switch (type) { case 'drone': ctx.moveTo(-r,0); ctx.quadraticCurveTo(0,-r*0.8,r,0); ctx.quadraticCurveTo(0,r*0.8,-r,0); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.arc(0,-r*0.3,r*0.4,Math.PI,0); ctx.fill(); break; case 'hunter': ctx.moveTo(0,-r); ctx.lineTo(r*0.8,r*0.8); ctx.lineTo(0,r*0.3); ctx.lineTo(-r*0.8,r*0.8); ctx.closePath(); ctx.fill(); ctx.stroke(); break; case 'phantom': ctx.globalAlpha=0.7+0.3*Math.sin(t*5); ctx.moveTo(0,-r*0.8); ctx.quadraticCurveTo(r,-r*0.5,r*0.8,r*0.8); ctx.quadraticCurveTo(0,r*0.5,-r*0.8,r*0.8); ctx.quadraticCurveTo(-r,-r*0.5,0,-r*0.8); ctx.closePath(); ctx.fill(); ctx.stroke(); for(let i=-1;i<=1;i++){ctx.beginPath(); ctx.moveTo(i*r*0.4,r*0.6); ctx.quadraticCurveTo(i*r*0.5,r,i*r*0.3+Math.sin(t*4+i)*2,r*1.2); ctx.stroke();} break; case 'mech': ctx.rect(-r*0.8,-r*0.6,r*1.6,r*1.2); ctx.moveTo(-r*0.8,-r*0.4); ctx.lineTo(-r*1.2,0); ctx.lineTo(-r*0.8,r*0.4); ctx.moveTo(r*0.8,-r*0.4); ctx.lineTo(r*1.2,0); ctx.lineTo(r*0.8,r*0.4); ctx.fill(); ctx.stroke(); ctx.fillStyle='#ff99cc'; ctx.beginPath(); ctx.arc(0,0,r*0.3,0,Math.PI*2); ctx.fill(); break; } ctx.restore(); }
@@ -370,8 +525,53 @@
     function createEffect(type, x, y) { let effect = { isActive: true, life: 1, maxLife: 1, x, y }; switch(type) { case 'grenadeExplosion': effect.maxLife = 0.5; effect.radius = 150; effect.step = function(dt) { this.life -= dt * 2; if (this.life <= 0) this.isActive = false; }; effect.draw = function() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius * (1 - this.life), 0, 2 * Math.PI); ctx.fillStyle = `rgba(255, 128, 128, ${this.life * 0.8})`; ctx.fill(); }; break; case 'shieldBreak': effect.maxLife = 0.6; effect.step = function(dt) { this.life -= dt * 1.5; if (this.life <= 0) this.isActive = false; }; effect.draw = function() { ctx.strokeStyle = `rgba(154, 102, 255, ${this.life})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(this.x, this.y, 24 * (1.5 - this.life), 0, 2 * Math.PI); ctx.stroke(); }; break; case 'voidBeam': effect.maxLife = 2; effect.step = function(dt) { this.life -= dt / this.maxLife; if (this.life <= 0) this.isActive = false; const beamWidth = 200; store.enemies.forEach(e => { if(Math.abs(e.x - store.player.x) < beamWidth / 2) e.hp -= 200 * dt; }); if(store.boss && Math.abs(store.boss.x - store.player.x) < beamWidth / 2) store.boss.hp -= 200 * dt; }; effect.draw = function() { const beamWidth = 200; const p = store.player; ctx.fillStyle = `rgba(255, 255, 255, ${0.4 * Math.sin(this.life * Math.PI)})`; ctx.fillRect(p.x - beamWidth / 2, 0, beamWidth, H); ctx.fillStyle = `rgba(178, 102, 255, ${0.3 * Math.sin(this.life * Math.PI)})`; ctx.fillRect(p.x - beamWidth / 4, 0, beamWidth/2, H); }; break; } return effect; }
     function explodeGrenade(x, y) { playSound('https://soundbible.com/mp3/Grenade-SoundBible.com-1775988413.mp3', 0.6); store.activeEffects.push(createEffect('grenadeExplosion', x, y)); const radius = 150; store.enemies.forEach(e => { const distSq = (e.x - x)**2 + (e.y - y)**2; if (distSq < radius**2) { e.hp -= e.hpMax * 0.5; } }); }
 
-    function showShop(){ store.isPaused=true; q('pauseBtn').classList.add('hide'); const panel=q("shopPanel"),grid=q("shopGrid"),shardsEl=q("shopShards"); shardsEl.textContent=store.world.shards; let content = ''; for (const key in SHOP_UPGRADES) { const u = SHOP_UPGRADES[key]; let currentLevel = store.player.upgradeLevels[key] || 0; let isDisabled = false; let cost = 0; let desc = u.desc(currentLevel); let name = u.name; if (u.isPremium) { if (u.isUnlock) { if (store.player.hasVoidBeam) { isDisabled = true; desc = "Already Unlocked"; } cost = u.cost; } else { if (store.player.grenades >= u.max) { isDisabled = true; desc = "At maximum capacity"; } cost = u.cost; } } else { if (currentLevel >= u.maxLevel) { isDisabled = true; desc = "Max Level Reached"; } cost = Math.floor(u.baseCost * Math.pow(u.scale, currentLevel)); } if (store.world.shards < cost) isDisabled = true; content += `<div class="skill-card shop-item" data-key="${key}" style="${isDisabled ? "opacity:0.5;pointer-events:none;" : ""}"> <div class="skill-title">${name}</div> <div class="skill-desc">${desc}</div> <div style="color:var(--accent);margin-top:4px;">Cost: ${cost > 0 ? cost : '---'} shards</div> </div>`; } grid.innerHTML = content; grid.querySelectorAll(".shop-item").forEach(item => { item.addEventListener("click", () => { const key = item.dataset.key; const upgrade = SHOP_UPGRADES[key]; let cost = 0; if (upgrade.isPremium) { cost = upgrade.cost; } else { cost = Math.floor(upgrade.baseCost * Math.pow(upgrade.scale, store.player.upgradeLevels[key])); } if (store.world.shards >= cost) { let purchaseSuccessful = false; if (upgrade.isPremium) { purchaseSuccessful = upgrade.apply(); } else { upgrade.effect(); store.player.upgradeLevels[key]++; purchaseSuccessful = true; } if (purchaseSuccessful) store.world.shards -= cost; showShop(); } }); }); panel.classList.remove("hide"); }
+    function showShop(){ store.isPaused=true; q('pauseBtn').classList.add('hide'); const panel=q("shopPanel"),grid=q("shopGrid"),shardsEl=q("shopShards"); shardsEl.textContent=store.world.shards; let content = ''; for (const key in SHOP_UPGRADES) { const u = SHOP_UPGRADES[key]; let currentLevel = store.player.upgradeLevels[key] || 0; let isDisabled = false; let cost = 0; let desc = u.desc(currentLevel); let name = u.name; if (u.isPremium) { if (u.isUnlock) { if ((key === 'void_beam' && store.player.hasVoidBeam) || (key === 'launcher' && store.player.hasLauncher) || (key === 'ghost_hounds' && store.player.hasHounds)) { isDisabled = true; desc = "Already Unlocked"; } cost = u.cost; } else { if (store.player.grenades >= u.max) { isDisabled = true; desc = "At maximum capacity"; } cost = u.cost; } } else { if (currentLevel >= u.maxLevel) { isDisabled = true; desc = "Max Level Reached"; } cost = Math.floor(u.baseCost * Math.pow(u.scale, currentLevel)); } if (store.world.shards < cost) isDisabled = true; content += `<div class="skill-card shop-item" data-key="${key}" style="${isDisabled ? "opacity:0.5;pointer-events:none;" : ""}"> <div class="skill-title">${name}</div> <div class="skill-desc">${desc}</div> <div style="color:var(--accent);margin-top:4px;">Cost: ${cost > 0 ? cost : '---'} shards</div> </div>`; } grid.innerHTML = content; grid.querySelectorAll(".shop-item").forEach(item => { item.addEventListener("click", () => { const key = item.dataset.key; const upgrade = SHOP_UPGRADES[key]; let cost = 0; if (upgrade.isPremium) { cost = upgrade.cost; } else { cost = Math.floor(upgrade.baseCost * Math.pow(upgrade.scale, store.player.upgradeLevels[key] || 0)); } if (store.world.shards >= cost) { let purchaseSuccessful = false; if (upgrade.isPremium) { purchaseSuccessful = upgrade.apply(); } else { upgrade.effect(); store.player.upgradeLevels[key] = (store.player.upgradeLevels[key] || 0) + 1; purchaseSuccessful = true; } if (purchaseSuccessful) store.world.shards -= cost; showShop(); } }); }); panel.classList.remove("hide"); }
     
+    // --- GHOST HOUNDS ---
+    function createHound(side) { return { x: store.player.x + side * 50, y: store.player.y + 20, side, target: null, attackT: 0, r: 12 }; }
+    function stepHounds(dt) {
+        if (!store.player.hasHounds) return;
+        store.hounds.forEach(h => {
+            if (!h.target || h.target.dead || h.target.hp <= 0) {
+                let closest = null, closestDist = Infinity;
+                const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
+                potentialTargets.forEach(e => {
+                    if (e.dead || e.hp <= 0) return;
+                    const dist = (h.x - e.x)**2 + (h.y - e.y)**2;
+                    if (dist < closestDist) { closest = e; closestDist = dist; }
+                });
+                h.target = closest;
+            }
+            if (h.target) {
+                const tx = h.target.x, ty = h.target.y;
+                const dx = tx - h.x, dy = ty - h.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                const speed = 350;
+                if (dist > 30) {
+                    h.x += (dx / dist) * speed * dt;
+                    h.y += (dy / dist) * speed * dt;
+                } else {
+                    h.attackT -= dt;
+                    if (h.attackT <= 0) {
+                        h.attackT = 0.25;
+                        let dmg = 8 * store.player.dmgMult;
+                        if (h.target === store.boss) dmg *= 0.3;
+                        h.target.hp -= dmg;
+                    }
+                }
+            } else {
+                const tx = store.player.x + h.side * 50, ty = store.player.y + 20;
+                const dx = tx - h.x, dy = ty - h.y;
+                const dist = Math.sqrt(dx*dx+dy*dy);
+                if (dist > 5) {
+                    h.x += dx * 5 * dt;
+                    h.y += dy * 5 * dt;
+                }
+            }
+        });
+    }
+    function drawHound(h) { ctx.save(); ctx.translate(h.x, h.y); const time = performance.now() / 100; ctx.globalAlpha = 0.5 + 0.2 * Math.sin(time + h.side); ctx.fillStyle = '#99ffff'; ctx.beginPath(); ctx.arc(0, 0, h.r, Math.PI, 0); ctx.lineTo(h.r, h.r); ctx.lineTo(h.r * 0.6, h.r * 0.7); ctx.lineTo(0, h.r); ctx.lineTo(-h.r * 0.6, h.r * 0.7); ctx.lineTo(-h.r, h.r); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(-4, -2, 2, 0, Math.PI * 2); ctx.arc(4, -2, 2, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
+
     // --- EVENT LISTENERS & INITIALIZATION ---
     function ensureName(){if(!store.name){store.isPaused=true; q("namePanel").classList.remove("hide"); q("nameInput").value=""; setTimeout(()=>q("nameInput").focus(),50)}}
     q("restartBtn").addEventListener("click",resetGame);
