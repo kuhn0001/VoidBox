@@ -45,9 +45,54 @@
         .skill-card:hover{background:rgba(85,0,120,.9);box-shadow:0 0 20px rgba(178,102,255,.6);transform:scale(1.05)}
         .skill-title{font-weight:700;color:#c49cff;margin-bottom:4px}
         .skill-desc{font-size:11px;color:#ffddff}
-        #menuBtn{position:fixed;bottom:10px;right:10px;z-index:5;border-radius:10px;padding:8px 10px;background:rgba(150,80,255,.2);border:1px solid var(--accent);backdrop-filter:blur(8px);cursor:pointer;font-size:12px;color:#ffddff}
-        #fsEnterBtn{position:fixed;bottom:10px;left:10px;z-index:5;border-radius:10px;padding:8px 10px;background:rgba(150,80,255,.2);border:1px solid var(--accent);backdrop-filter:blur(8px);cursor:pointer;font-size:12px;color:#ffddff}
-        #pauseBtn{position:fixed;top:10px;right:10px;z-index:5;border-radius:10px;padding:8px 10px;background:rgba(150,80,255,.2);border:1px solid var(--accent);backdrop-filter:blur(8px);cursor:pointer;font-size:12px;color:#ffddff}
+        .fixed-btn{position:fixed;bottom:10px;z-index:5;border-radius:10px;padding:8px 10px;background:rgba(150,80,255,.2);border:1px solid var(--accent);backdrop-filter:blur(8px);cursor:pointer;font-size:12px;color:#ffddff}
+        #menuBtn{right:10px;}
+        #fsEnterBtn{left:10px;}
+        #shopBtn{right:100px; top:10px;}
+        #pauseBtn{top:10px;right:10px;}
+        #shopBtn {
+            position: fixed;
+            top: 10px;
+            right: 100px;
+            z-index: 5;
+            border-radius: 10px;
+            padding: 8px 10px;
+            background: rgba(150, 80, 255, .2);
+            border: 1px solid var(--accent);
+            backdrop-filter: blur(8px);
+            cursor: pointer;
+            font-size: 12px;
+            color: #ffddff;
+            height: auto;
+        }
+
+/* Updated styles for other fixed buttons */
+        .fixed-btn {
+            position: fixed;
+            bottom: 10px;
+            z-index: 5;
+            border-radius: 10px;
+            padding: 8px 10px;
+            background: rgba(150, 80, 255, .2);
+            border: 1px solid var(--accent);
+            backdrop-filter: blur(8px);
+            cursor: pointer;
+            font-size: 12px;
+            color: #ffddff;
+        }
+
+        #menuBtn {
+            right: 10px;
+        }
+
+        #fsEnterBtn {
+            left: 10px;
+        }
+
+        #pauseBtn {
+            top: 10px;
+            right: 10px;
+        }
         .input{width:100%;padding:8px 10px;border-radius:10px;background:#17001f;color:#ffddff;border:1px solid var(--accent);font-family:'Orbitron','Audiowide',ui-sans-serif}
         @media (max-width:820px){canvas{width:100vw;height:auto;max-height:75vh;border-radius:8px}.panel{width:min(700px,94vw)}.stage{width:98vw}#belowBoard{width:98vw}}
     </style>
@@ -73,16 +118,17 @@
     </div>
 
     <audio id="bgmAudio" loop></audio>
-    <button id="menuBtn" type="button">🏆 TOP PILOTS</button>
-    <button id="fsEnterBtn" type="button">FULLSCREEN</button>
-    <button id="pauseBtn" type="button" class="hide">PAUSE</button>
+    <button id="menuBtn" class="fixed-btn" type="button">🏆 TOP PILOTS</button>
+    <button id="fsEnterBtn" class="fixed-btn" type="button">FULLSCREEN</button>
+    <button id="shopBtn" type="button">🔧 MECH FORGE</button>
+    <button id="pauseBtn" class="fixed-btn hide" type="button">PAUSE</button>
 
 <script>
 (() => {
     const W = 960, H = 540;
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const collide = (a, b) => { const dx = a.x - b.x, dy = a.y - b.y; const rr = (a.r || 0) + (b.r || 0); return dx*dx + dy*dy < rr*rr; };
-    const API_BASE = "https://zero-june-worship-developed.trycloudflare.com/api";
+    const API_BASE = "https://zero-june-worship-developed.trycloudflare.com/api"; 
     const q = (id) => document.getElementById(id);
     const cvs = q('game'), ctx = cvs.getContext('2d'), stage = q('stage');
     new ResizeObserver(() => { const r=stage.getBoundingClientRect(),cssW=Math.floor(r.width),cssH=Math.floor(r.height),dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1));cvs.style.width=cssW+'px';cvs.style.height=cssH+'px';cvs.width=Math.floor(cssW*dpr);cvs.height=Math.floor(cssH*dpr);ctx.setTransform(cvs.width/W,0,0,cvs.height/H,0,0); }).observe(stage);
@@ -124,14 +170,12 @@
     const store = {
         frame: 0, last: performance.now(), isGameOver: false, isPaused: false,
         world: { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0 },
-        player: { x: W*0.5, y: H-60, r: 14, hp: 100, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1, fireRate: 0.18, vampirism: 0, shield: 0, shieldMax: 0, multishot: 1, piercing: 0, explosive: false },
+        player: { x: W * 0.5, y: H * 0.8, r: 14, hp: 100, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1, fireRate: 0.18, vampirism: 0, shield: 0, shieldMax: 0, multishot: 1, piercing: 0, explosive: false },
         boss: null, bullets: [], eBullets: [], enemies: [],
         _startTs: performance.now()
     };
     
-    // Initial player state to be used for reset
     const player_initial_state = { x: W * 0.5, y: H * 0.8, r: 14, hp: 100, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1, fireRate: 0.18, vampirism: 0, shield: 0, shieldMax: 0, multishot: 1, piercing: 0, explosive: false };
-
 
     const UPGRADES = [
         { id: 'dmg', name: 'PLASMA CORE', desc: '+25% damage', cost: 0, tier: 1, apply: () => store.player.dmgMult *= 1.25 },
@@ -161,8 +205,11 @@
     function initWave() {
         const isBossWave = store.world.wave % 5 === 0;
         if (isBossWave) {
-            store.enemies = []; store.boss = createBoss();
-            announce(`⚡ GUARDIAN: ${store.boss.name} ⚡`); playMusic(BGM_BOSS, 0.6);
+            store.enemies = []; 
+            const bossHpScale = store.world.wave / 5;
+            store.boss = createBoss(bossHpScale);
+            announce(`⚡ GUARDIAN: ${store.boss.name} ⚡`); 
+            playMusic(BGM_BOSS, 0.6);
         } else {
             store.enemies = [];
             const spawnCount = 6 + Math.floor(store.world.wave * 1.5);
@@ -170,14 +217,20 @@
                 const types = ['drone', 'drone', 'hunter', 'phantom', 'mech'];
                 store.enemies.push(spawnEnemy(types[Math.floor(Math.random() * types.length)]));
             }
-            announce(`◢ SECTOR ${store.world.wave} ◣`); playMusic(BGM_NORMAL, 0.5);
+            announce(`◢ SECTOR ${store.world.wave} ◣`); 
+            playMusic(BGM_NORMAL, 0.5);
         }
     }
 
-    function createBoss() {
-        const types = [{name:'VOID DRIFTER',hp:800},{name:'OMEGA SENTINEL',hp:1000},{name:'CORE MALIGNUS',hp:1200}];
-        const type = types[Math.floor(store.world.wave / 5) % types.length];
-        return { ...type, x: W/2, y: -80, r: 50, hpMax: type.hp, color:'#b266ff', hp: type.hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30 };
+    function createBoss(scale) {
+        const types = [
+            { name:'VOID DRIFTER', baseHp: 800 },
+            { name:'OMEGA SENTINEL', baseHp: 1000 },
+            { name:'CORE MALIGNUS', baseHp: 1200 }
+        ];
+        const type = types[Math.min(Math.floor(store.world.wave / 5) -1, types.length - 1)];
+        const hp = type.baseHp * scale;
+        return { ...type, x: W/2, y: -80, r: 50, hpMax: hp, color:'#b266ff', hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30 };
     }
 
     function spawnEnemy(type='drone') {
@@ -190,9 +243,10 @@
         let c = { ...cfgs[type] };
         const wave = store.world.wave;
         if (wave > 1) {
-            if (wave % 2 === 0) { c.hp *= 1 + (wave * 0.05); } 
-            else { c.fireRateChance *= 1 + (wave * 0.1); }
+            c.hp *= 1 + (wave * 0.05);
+            c.fireRateChance *= 1 + (wave * 0.05);
         }
+        c.shards = Math.ceil(c.shards / 2);
         return { ...c, type, x:20+Math.random()*(W-40), y:-50-Math.random()*250, hpMax:c.hp, phase:type==='phantom', t:0, fireT: (c.fireCooldown || 0), isBursting: false, burstTimer: 0 };
     }
 
@@ -276,8 +330,7 @@
         store.enemies = store.enemies.filter(e => !e.dead);
         if (!store.boss && store.enemies.length === 0) { 
             store.world.wave++;
-            store.isPaused = true;
-            showShop();
+            initWave();
         }
 
         const xpNeeded = store.world.level * 100; if (store.world.xp >= xpNeeded) { store.world.xp -= xpNeeded; store.world.level++; levelUp(); }
@@ -308,7 +361,6 @@
         const available = getUpgradesByTier(1);
         const choices = [];
 
-        // Shuffle available upgrades and pick three
         for (let i = available.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [available[i], available[j]] = [available[j], available[i]];
@@ -340,6 +392,7 @@
         store._startTs = performance.now(); store.isGameOver = false;
         q('gameOverPanel').classList.add('hide');
         q('shopPanel').classList.add('hide');
+        q('levelPanel').classList.add('hide');
         initWave();
     }
 
@@ -466,6 +519,7 @@
 
     function showShop(){
         store.isPaused=true;
+        q('pauseBtn').classList.add('hide');
         const panel = q("shopPanel"), grid = q("shopGrid"), shardsEl = q("shopShards");
         shardsEl.textContent = store.world.shards;
         
@@ -487,7 +541,7 @@
                 if(store.world.shards >= upgrade.cost){
                     store.world.shards -= upgrade.cost;
                     upgrade.apply();
-                    showShop(); // Re-render the shop to update shard count and disabled items
+                    showShop();
                 }
             });
         });
@@ -498,18 +552,27 @@
     
     q("restartBtn").addEventListener("click",resetGame);
     q("saveName").addEventListener("click",()=>{const t=(q("nameInput").value||"").slice(0,16).trim();t&&(store.name=t,q("namePanel").classList.add("hide"),store.isPaused=!1, initWave())});
-    q("closeShop").addEventListener("click",()=>{q("shopPanel").classList.add("hide"),store.isPaused=!1, initWave()});
+    q("closeShop").addEventListener("click",()=>{q("shopPanel").classList.add('hide'); store.isPaused=false; q('pauseBtn').classList.remove('hide'); initWave()});
+    q("shopBtn").addEventListener("click", showShop);
     
-    q("menuBtn").addEventListener("click",()=>{store.isPaused=true,q("scorePanel").classList.remove("hide")});
-    q("closeScores").addEventListener("click",()=>{store.isPaused=false,q("scorePanel").classList.add("hide")});
+    q("menuBtn").addEventListener("click",()=>{
+        store.isPaused=true;
+        q('scorePanel').classList.remove('hide');
+        q('pauseBtn').classList.add('hide');
+    });
+    q("closeScores").addEventListener("click",()=>{
+        store.isPaused=false;
+        q('scorePanel').classList.add('hide');
+        q('pauseBtn').classList.remove('hide');
+    });
     
     q("fsEnterBtn").addEventListener('click', () => {
         const root = document.documentElement;
         if (root.requestFullscreen) {
             root.requestFullscreen();
-        } else if (root.webkitRequestFullscreen) { // Safari
+        } else if (root.webkitRequestFullscreen) {
             root.webkitRequestFullscreen();
-        } else if (root.msRequestFullscreen) { // IE11
+        } else if (root.msRequestFullscreen) {
             root.msRequestFullscreen();
         }
     });
@@ -525,7 +588,7 @@
         }
     });
 
-    addEventListener("keydown",t=>{const e=t.key.toLowerCase();if("INPUT"===document.activeElement.tagName)return;"b"===e?(()=>{const t=q("shopPanel");t.classList.contains("hide")?showShop():(t.classList.add("hide"),store.isPaused=!1, initWave())})():"n"===e?(store.isPaused=!0,q("nameInput").value=store.name||"",q("namePanel").classList.remove("hide")):void 0});
+    addEventListener("keydown",t=>{const e=t.key.toLowerCase();if("INPUT"===document.activeElement.tagName)return;"n"===e?(store.isPaused=!0,q("nameInput").value=store.name||"",q("namePanel").classList.remove("hide")):void 0});
     
     refreshScoreList();
     ensureName();
