@@ -49,12 +49,32 @@
         .skill-title{font-weight:700;color:#c49cff;margin-bottom:4px}
         .skill-desc{font-size:11px;color:#ffddff}
         .fixed-btn{position:fixed;z-index:5;border-radius:10px;padding:var(--btn-pad-y) var(--btn-pad-x);background:rgba(150,80,255,.2);border:1px solid var(--accent);backdrop-filter:blur(8px);cursor:pointer;font-size:var(--btn-text);color:#ffddff;height:auto;min-width:180px;text-align:center;}
+        .fixed-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         #menuBtn{right:20px; bottom:20px;}
         #fsEnterBtn{left:20px; bottom:20px;}
         #shopBtn{right:220px; bottom:20px; z-index: 5;}
         #pauseBtn{top:20px;right:20px; z-index:5;}
-        #voidBeamBtn{top:20px;left:20px; z-index:5;}
         .input{width:100%;padding:8px 10px;border-radius:10px;background:#17001f;color:#ffddff;border:1px solid var(--accent);font-family:'Orbitron','Audiowide',ui-sans-serif}
+        
+        /* --- NEW STYLES FOR ABILITY BUTTONS --- */
+        #abilityBar {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            z-index: 6; /* Higher than other buttons */
+            pointer-events: auto;
+        }
+        #abilityBar .ability-btn {
+            position: relative; /* Overrides .fixed-btn */
+            bottom: auto; left: auto; right: auto; top: auto;
+            min-width: 150px; /* Adjust size as needed */
+            padding: clamp(10px, 1.2vw, 14px) clamp(16px, 2vw, 22px);
+            font-size: clamp(14px, 1.8vw, 18px);
+        }
+
         @media (max-width:820px){canvas{width:100vw;height:auto;max-height:75vh;border-radius:8px}.panel{width:min(700px,94vw)}.stage{width:98vw}#belowBoard{width:98vw}}
     </style>
 </head>
@@ -117,6 +137,12 @@
                         </div>
                     </div>
                 </div>
+                
+                <div id="abilityBar">
+                    <button id="grenadeBtnUI" class="fixed-btn ability-btn hide" type="button">GRENADE</button>
+                    <button id="voidBeamBtnUI" class="fixed-btn ability-btn hide" type="button">VOID BEAM</button>
+                </div>
+
             </div>
             <div id="belowBoard">
                 <div id="hsCard">
@@ -132,7 +158,6 @@
     <button id="fsEnterBtn" class="fixed-btn" type="button">FULLSCREEN</button>
     <button id="shopBtn" class="fixed-btn" type="button">🔧 MECH FORGE</button>
     <button id="pauseBtn" class="fixed-btn hide" type="button">PAUSE</button>
-    <button id="voidBeamBtn" class="fixed-btn hide" type="button">VOID BEAM</button>
 
 <script>
 (() => {
@@ -157,9 +182,37 @@
         cy = 'clientY' in e ? e.clientY : e.touches[0].clientY; 
         return { x: (cx - r.left) * (W / r.width), y: (cy - r.top) * (H / r.height) }; 
     };
+
+    // NEW: Object to track positions of canvas buttons for click detection
+    const canvasButtons = {
+        grenade: { x: 0, y: 0, w: 80, h: 28, visible: false },
+        voidBeam: { x: 0, y: 0, w: 80, h: 28, visible: false }
+    };
+
     cvs.addEventListener('mousemove', (e) => { const p = pointFromEvent(e); mouse.x = p.x; mouse.y = p.y; });
     cvs.addEventListener('touchstart', (e) => { const p = pointFromEvent(e); mouse.x = p.x; mouse.y = p.y; e.preventDefault(); }, { passive: false });
     cvs.addEventListener('touchmove', (e) => { const p = pointFromEvent(e); mouse.x = p.x; mouse.y = p.y; e.preventDefault(); }, { passive: false });
+    
+    // NEW: Click listener for canvas buttons
+    cvs.addEventListener('click', (e) => {
+        if (store.isPaused || store.isGameOver) return;
+        const p = pointFromEvent(e);
+
+        if (canvasButtons.grenade.visible) {
+            const b = canvasButtons.grenade;
+            if (p.x > b.x && p.x < b.x + b.w && p.y > b.y && p.y < b.y + b.h) {
+                useGrenade();
+            }
+        }
+
+        if (canvasButtons.voidBeam.visible) {
+            const b = canvasButtons.voidBeam;
+            if (p.x > b.x && p.x < b.x + b.w && p.y > b.y && p.y < b.y + b.h) {
+                activateVoidBeam();
+            }
+        }
+    });
+
 
     // --- AUDIO (Removed external sounds) ---
     const bgm = q('bgmAudio');
@@ -679,6 +732,10 @@
         store.drones.forEach(d => drawDrone(d));
         store.hounds.forEach(h => drawHound(h));
         drawShip(store.player.x, store.player.y);
+
+        // NEW: Draw ability buttons attached to player
+        drawPlayerAbilityButtons(store.player);
+
         store.activeEffects.forEach(e => e.draw && e.draw());
         if (store.player.levelUpEffect) { 
             const e = store.player.levelUpEffect, p = e.t / e.maxT; 
@@ -746,10 +803,9 @@
         powerupEl.classList.toggle('hide', !timedContent);
         
         const equipEl = q("hudEquipment");
-        if (store.player.grenades > 0 || store.player.hasLauncher || store.player.hasHounds) {
+        if (store.player.hasLauncher || store.player.hasHounds) { // Grenade display is handled by buttons now
             equipEl.classList.remove('hide');
             let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`;
-            if (store.player.grenades > 0) content += `<div>GRENADE (SPACE) x${store.player.grenades}</div>`;
             if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`;
             if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`;
             equipEl.innerHTML = content;
@@ -757,19 +813,29 @@
             equipEl.classList.add('hide'); 
         }
         
-        const voidBeamBtn = q('voidBeamBtn');
+        // --- NEW: Update bottom UI buttons ---
+        const voidBeamBtn = q('voidBeamBtnUI');
         if (store.player.hasVoidBeam) {
             voidBeamBtn.classList.remove('hide');
             const cd = store.player.voidBeamCooldown;
             if (cd > 0) {
                 voidBeamBtn.textContent = `VOID BEAM [${Math.ceil(cd)}s]`;
-                voidBeamBtn.style.opacity = 0.5;
+                voidBeamBtn.disabled = true;
             } else {
                 voidBeamBtn.textContent = 'VOID BEAM [READY]';
-                voidBeamBtn.style.opacity = 1;
+                voidBeamBtn.disabled = false;
             }
         } else {
             voidBeamBtn.classList.add('hide');
+        }
+        
+        const grenadeBtn = q('grenadeBtnUI');
+        if (store.player.grenades > 0) {
+            grenadeBtn.classList.remove('hide');
+            grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`;
+            grenadeBtn.disabled = false;
+        } else {
+            grenadeBtn.classList.add('hide');
         }
     }
 
@@ -1349,6 +1415,51 @@
         }
         ctx.restore();
     }
+    
+    // NEW: Draw buttons attached to the player ship
+    function drawPlayerAbilityButtons(player) {
+        const availableAbilities = [];
+        if (player.grenades > 0) {
+            availableAbilities.push({ type: 'grenade', label: `GRENADE [${player.grenades}]` });
+        }
+        if (player.hasVoidBeam && player.voidBeamCooldown <= 0) {
+            availableAbilities.push({ type: 'voidBeam', label: 'VOID BEAM' });
+        }
+
+        canvasButtons.grenade.visible = false;
+        canvasButtons.voidBeam.visible = false;
+
+        if (availableAbilities.length === 0) return;
+
+        const totalWidth = availableAbilities.length * canvasButtons.grenade.w + (availableAbilities.length - 1) * 10;
+        let startX = player.x - totalWidth / 2;
+        const startY = player.y + 35; 
+
+        ctx.font = 'bold 10px Orbitron';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        availableAbilities.forEach(ability => {
+            const btn = canvasButtons[ability.type];
+            btn.x = startX;
+            btn.y = startY;
+            btn.visible = true;
+
+            ctx.globalAlpha = 0.8;
+            ctx.fillStyle = '#330044';
+            ctx.strokeStyle = '#b266ff';
+            ctx.lineWidth = 1;
+            ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
+            ctx.strokeRect(btn.x, btn.y, btn.w, btn.h);
+
+            ctx.fillStyle = '#ffddff';
+            ctx.fillText(ability.label, btn.x + btn.w / 2, btn.y + btn.h / 2);
+            ctx.globalAlpha = 1;
+
+            startX += btn.w + 10;
+        });
+    }
+
 
     function createEffect(type, x, y) {
         let effect = { isActive: true, life: 1, maxLife: 1, x, y };
@@ -1576,6 +1687,22 @@
         }
     }
 
+    // NEW: Centralized function for using a grenade
+    function useGrenade() {
+        if (store.player.grenades > 0 && !store.isPaused) {
+            store.player.grenades--;
+            store.grenades.push({
+                x: store.player.x,
+                y: store.player.y,
+                vx: 0,
+                vy: -200,
+                fuse: 1.5,
+                r: 8
+            });
+        }
+    }
+
+
     // --- EVENT LISTENERS & INITIALIZATION ---
     function ensureName(){
         if(!store.name){
@@ -1633,7 +1760,10 @@
             q('pauseBtn').textContent=store.isPaused?'RESUME':'PAUSE';
         }
     });
-    q('voidBeamBtn').addEventListener('click', activateVoidBeam);
+
+    // NEW Listeners for UI Buttons
+    q('grenadeBtnUI').addEventListener('click', useGrenade);
+    q('voidBeamBtnUI').addEventListener('click', activateVoidBeam);
     
     // Add Enter key support for name input
     q("nameInput").addEventListener("keydown", (e) => {
@@ -1650,17 +1780,9 @@
     addEventListener("keydown",e=>{
         const key = e.key.toLowerCase(); 
         if("INPUT"===document.activeElement.tagName)return; 
-        if(key === ' ' && store.player.grenades > 0 && !store.isPaused) { 
+        if(key === ' ') { 
             e.preventDefault(); 
-            store.player.grenades--; 
-            store.grenades.push({ 
-                x: store.player.x, 
-                y: store.player.y, 
-                vx: 0, 
-                vy: -200, 
-                fuse: 1.5, 
-                r: 8 
-            }); 
+            useGrenade();
         } 
         if(key === 'b') { 
             activateVoidBeam(); 
