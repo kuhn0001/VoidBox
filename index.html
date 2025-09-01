@@ -18,6 +18,11 @@
     #wrap{position:fixed;inset:0;display:grid;place-items:center;min-height:100svh;padding:calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left))}
     .stage{width:min(95vw,var(--maxw));aspect-ratio:16/9;position:relative;display:grid;place-items:center;background:#000;border-radius:12px;overflow:hidden;box-shadow:0 0 60px rgba(255,0,255,.4);container-type:inline-size}
     canvas{background:transparent;border-radius:16px;touch-action:none;cursor:none}
+    
+    /* MODIFIED: Z-index for UI container to ensure panels are on top */
+    #ui { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+    .panel { pointer-events: auto; }
+
     #topBar{position:absolute;left:0;right:0;top:0;display:grid;place-items:center;padding:4px;pointer-events:none}
     #hud{display:flex;gap:8px;pointer-events:none;font-size:var(--hud-text);justify-content:center;align-items:flex-start;width:auto;max-width:none;transform:translateY(2px)}
     .hud-card{pointer-events:none;border:1px solid var(--edge);background:linear-gradient(180deg,rgba(150,80,255,.12),rgba(150,80,255,.06));backdrop-filter:blur(8px);padding:6px 10px;border-radius:8px;width:auto;min-width:220px}
@@ -31,7 +36,7 @@
     .resource-chip{background:rgba(0,0,0,.7);border:1px solid var(--edge);padding:4px 8px;border-radius:8px;font-size:11px;color:#c49cff}
     .btn{background:#330044;color:#ffddff;border:1px solid var(--accent);border-radius:12px;padding:var(--btn-pad-y) var(--btn-pad-x);font-size:var(--btn-text);cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none;transition:all .2s}
     .btn:hover{background:#4c0e72;box-shadow:0 0 15px rgba(178,102,255,.5)}
-    .panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(26,0,34,.95);border:1px solid var(--accent);border-radius:16px;padding:20px;width:min(900px,92vw);pointer-events:auto;backdrop-filter:blur(12px);color:#ffddff;box-shadow:0 0 40px rgba(178,102,255,.3)}
+    .panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(26,0,34,.95);border:1px solid var(--accent);border-radius:16px;padding:20px;width:min(900px,92vw);backdrop-filter:blur(12px);color:#ffddff;box-shadow:0 0 40px rgba(178,102,255,.3)}
     .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
     .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
     .hide{display:none!important}
@@ -55,21 +60,21 @@
         <div id="topBar"><div id="hud"><div id="hudWaveContent" class="hud-card"></div><div id="hudPilotContent" class="hud-card"></div><div id="hudBossContent" class="hud-card hide"></div></div><div id="announce" class="hide" aria-live="polite"></div></div>
         <canvas id="game" width="960" height="540"></canvas>
         <div id="resourceHud"><div class="resource-chip">SCORE: <span id="resScore">0</span></div><div class="resource-chip">SHARDS: <span id="resShards">0</span></div></div>
-        <div id="diagBox"><div class="chip"> v2.5.2</div><div class="chip">FPS <span id="fps">—</span></div></div>
+        <div id="diagBox"><div class="chip"> v2.5.3</div><div class="chip">FPS <span id="fps">—</span></div></div>
+        
+        <div id="ui">
+            <div id="gameOverPanel" class="panel hide"><h2 style="font-family:'Orbitron';color:var(--accent);margin-top:0">🚀 PILOT LOST 🚀</h2><p style="text-align:center;font-size:1.2em;color:#ffddff">FINAL SCORE: <span id="finalScore">0</span></p><div class="row" style="justify-content:center;margin-top:20px"><button id="restartBtn" class="btn" type="button">FLY AGAIN</button></div></div>
+            <div id="namePanel" class="panel hide"><h2 style="font-family:'Orbitron';color:var(--accent);margin-top:0">🪪 CALLSIGN</h2><p style="color:#ffddff;margin-top:0">Enter your pilot callsign (max 16 chars).</p><input id="nameInput" class="input" maxlength="16" placeholder="e.g. NIGHTWRAITH" /><div class="row" style="justify-content:flex-end;margin-top:12px"><button id="saveName" class="btn" type="button">CONFIRM</button></div></div>
+            <div id="scorePanel" class="panel hide"><h2 style="font-family:'Orbitron';color:var(--accent);margin-top:0">🏆 ACE PILOTS 🏆</h2><div style="max-height:60vh;overflow-y:auto"><ol id="hsListPopup" style="line-height:1.6;color:#ffddff"></ol></div><div style="display:flex;justify-content:flex-end;margin-top:10px"><button id="closeScores" class="btn" type="button">CLOSE</button></div></div>
+            <div id="levelPanel" class="panel hide"><h2 style="font-family:'Orbitron';color:var(--accent)">⚡ AUGMENTATION PROTOCOL ⚡</h2><p style="color:#ffddff">Select your neural enhancement:</p><div id="skillsGrid" class="grid"></div></div>
+            <div id="shopPanel" class="panel hide"><h2 style="font-family:'Orbitron';color:var(--accent)">🔧 MECH FORGE 🔧</h2><p style="color:#ffddff">Available Shards: <span id="shopParts">0</span> (Press 'B' to close)</p><div id="shopGrid" class="grid"></div><div class="row" style="justify-content:flex-end;margin-top:10px"><button id="closeShop" class="btn" type="button">OKAY</button></div></div>
+        </div>
       </div>
       <div id="belowBoard"><div id="hsCard"><h3>⚡ ACE PILOTS ⚡</h3><ol id="hsList"></ol></div></div>
     </div>
   </div>
 
   <audio id="bgmAudio" loop></audio>
-
-  <div id="ui">
-    <div id="gameOverPanel" class="panel hide"><h2 style="font-family:'Orbitron';color:var(--accent);margin-top:0">🚀 PILOT LOST 🚀</h2><p style="text-align:center;font-size:1.2em;color:#ffddff">FINAL SCORE: <span id="finalScore">0</span></p><div class="row" style="justify-content:center;margin-top:20px"><button id="restartBtn" class="btn" type="button">FLY AGAIN</button></div></div>
-    <div id="namePanel" class="panel hide"><h2 style="font-family:'Orbitron';color:var(--accent);margin-top:0">🪪 CALLSIGN</h2><p style="color:#ffddff;margin-top:0">Enter your pilot callsign (max 16 chars).</p><input id="nameInput" class="input" maxlength="16" placeholder="e.g. NIGHTWRAITH" /><div class="row" style="justify-content:flex-end;margin-top:12px"><button id="saveName" class="btn" type="button">CONFIRM</button></div></div>
-    <div id="scorePanel" class="panel hide"><h2 style="font-family:'Orbitron';color:var(--accent);margin-top:0">🏆 ACE PILOTS 🏆</h2><div style="max-height:60vh;overflow-y:auto"><ol id="hsListPopup" style="line-height:1.6;color:#ffddff"></ol></div><div style="display:flex;justify-content:flex-end;margin-top:10px"><button id="closeScores" class="btn" type="button">CLOSE</button></div></div>
-    <div id="levelPanel" class="panel hide"><h2 style="font-family:'Orbitron';color:var(--accent)">⚡ AUGMENTATION PROTOCOL ⚡</h2><p style="color:#ffddff">Select your neural enhancement:</p><div id="skillsGrid" class="grid"></div></div>
-    <div id="shopPanel" class="panel hide"><h2 style="font-family:'Orbitron';color:var(--accent)">🔧 MECH FORGE 🔧</h2><p style="color:#ffddff">Available Shards: <span id="shopParts">0</span> (Press 'B' to close)</p><div id="shopGrid" class="grid"></div><div class="row" style="justify-content:flex-end;margin-top:10px"><button id="closeShop" class="btn" type="button">OKAY</button></div></div>
-  </div>
   <button id="menuBtn" type="button">🏆 TOP PILOTS</button>
 
 <script>
@@ -102,10 +107,8 @@
     const currentSrcEnd = bgm.src.split('/').pop();
     const newSrcEnd = src.split('/').pop();
     if (currentSrcEnd === newSrcEnd && !bgm.paused && bgm.volume > 0) return;
-    
     clearInterval(musicFadeInterval);
     let currentVolume = bgm.volume;
-
     if (bgm.paused || bgm.src === '' || currentVolume === 0) {
         bgm.src = src; bgm.volume = volume; bgm.play().catch(e => {}); return;
     }
@@ -162,10 +165,10 @@
 
   function spawnEnemy(type='drone') {
     const cfgs = {
-      drone:  { r:10, v:80,  hp:20,  color:'#00FFF7', xp:5, score:50,  parts:1, fireRateChance: 0.004 },
-      hunter: { r:12, v:160, hp:25,  color:'#39FF14', xp:8, score:80,  parts:2, fireRateChance: 0.005 },
-      phantom:{ r:14, v:100, hp:30,  color:'#FF3131', xp:10,score:100, parts:2, fireRateChance: 0.006, fireCooldown: 1.5 },
-      mech:   { r:18, v:50,  hp:80,  color:'#08F7FE', xp:15,score:150, parts:3, fireRateChance: 0.007 }
+      drone:  { r:10, v:80,  hp:20,  color:'#c27cff', xp:5, score:50,  parts:1, fireRateChance: 0.004 },
+      hunter: { r:12, v:160, hp:25,  color:'#ff8080', xp:8, score:80,  parts:2, fireRateChance: 0.005 },
+      phantom:{ r:14, v:100, hp:30,  color:'#9a66ff', xp:10,score:100, parts:2, fireRateChance: 0.006, fireCooldown: 1.5 },
+      mech:   { r:18, v:50,  hp:80,  color:'#7a49cc', xp:15,score:150, parts:3, fireRateChance: 0.007 }
     };
     let c = { ...cfgs[type] };
     const wave = store.world.wave;
@@ -200,7 +203,7 @@
       if (e.isBursting) {
         e.burstTimer -= dt;
         if (e.burstTimer <= 0) {
-            store.eBullets.push({ x:e.x, y:e.y, vx:0, vy:180, r:3, col:e.color, dmg:8 });
+            if (!e.dead) store.eBullets.push({ x:e.x, y:e.y, vx:0, vy:180, r:3, col:e.color, dmg:8 });
             e.isBursting = false;
         }
       }
@@ -276,7 +279,7 @@
     announce(`⚡ LEVEL ${store.world.level} REACHED ⚡`);
     store.isPaused = true;
     const panel = q('levelPanel'), grid = q('skillsGrid');
-    const available = SKILLS.filter(s => !s.max || (store.upgrades[s.id] || 0) < s.max);
+    const available = SKILLS.slice(); // Create a copy
     const choices = [];
 
     if (store.world.level === 2) {
@@ -346,8 +349,36 @@
   function escapeHtml(s){ s=String(s??''); return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')};
   function announce(text){ const el=q('announce'); el.textContent=text; el.classList.remove('hide'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.add('hide'), 2500)}
   function updateHUD(){q("hudWaveContent").innerHTML=`<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`;const t=store.player,e=Math.round(t.hp/t.hpMax*100),o=t.shieldMax>0?Math.round(t.shield/t.shieldMax*100):0;q("hudPilotContent").innerHTML=`<div class="hud-title">${store.name?`◢ ${escapeHtml(store.name)} ◣`:"◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">HULL ${e}% ${t.shieldMax>0?`• SHIELD ${o}%`:""}</div><div class="bar"><span style="width:${e}%"></span></div>${t.shieldMax>0?`<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div>`:""}`,store.boss?(q("hudBossContent").classList.remove("hide"),q("hudBossContent").innerHTML=`<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp/store.boss.hpMax*100)}%"></span></div>`):q("hudBossContent").classList.add("hide"),q("resScore").textContent=store.world.score,q("resShards").textContent=store.world.parts}
-  async function refreshScoreList(){try{const res=await fetch(`${API_BASE}/leaderboard`,{cache:"no-store"});const data=await res.json();q("hsList").innerHTML=(data||[]).map(s=>`<li>${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves??"?"})</li>`).join("")||`<li>NO DATA</li>`;q("hsListPopup").innerHTML=(data||[]).map((s,i)=>`<li>#${i+1} ${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves??"?"})</li>`).join("")||`<li>NO DATA</li>`}catch(err){console.error("Scores:",err)}}
-  async function addScore(score){const name=(store.name||"ROGUE").slice(0,16);try{const nonceRes=await fetch(`${API_BASE}/session`,{method:"POST"});const{nonce}=await nonceRes.json();const msElapsed=Math.max(10_000,Math.floor(performance.now()-(store._startTs||performance.now())));const body={name,score:Math.floor(score)||0,waves:store.world.wave|0,kills:store.world.kills|0,bosses:store.world.bosses|0,ms:msElapsed,nonce};const res=await fetch(`${API_BASE}/submit`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await res.json();if(!data.ok){console.warn("Score rejected:",data.err);announce(`Score rejected: ${data.err}`)}refreshScoreList()}catch(err){console.error("Submit:",err)}}
+  
+  function updateLeaderboard(top10) {
+      q("hsList").innerHTML=(top10||[]).map(s=>`<li>${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves??"?"})</li>`).join("")||`<li>NO DATA</li>`;
+      q("hsListPopup").innerHTML=(top10||[]).map((s,i)=>`<li>#${i+1} ${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves??"?"})</li>`).join("")||`<li>NO DATA</li>`;
+  }
+  
+  async function refreshScoreList(){try{const res=await fetch(`${API_BASE}/leaderboard`,{cache:"no-store"});const data=await res.json();updateLeaderboard(data);}catch(err){console.error("Scores:",err)}}
+  
+  // MODIFIED: More robust score submission
+  async function addScore(score){
+      const name = (store.name || "ROGUE").slice(0, 16);
+      try {
+          const nonceRes = await fetch(`${API_BASE}/session`, { method: "POST" });
+          const { nonce } = await nonceRes.json();
+          const body = { name, score: Math.floor(score) || 0, waves: store.world.wave | 0, kills: store.world.kills | 0, bosses: store.world.bosses | 0, ms: Math.max(10_000, Math.floor(performance.now() - store._startTs)), nonce };
+          const res = await fetch(`${API_BASE}/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          const data = await res.json();
+          if (data.ok) {
+              updateLeaderboard(data.top10); // Use the list returned by the server directly
+          } else {
+              console.warn("Score rejected:", data.err);
+              announce(`Score rejected: ${data.err}`);
+              refreshScoreList(); // Refresh to get latest scores anyway
+          }
+      } catch (err) {
+          console.error("Submit Error:", err);
+          refreshScoreList(); // Refresh on error
+      }
+  }
+
   function firePlayer(){const t=store.player,e=420,o=t.multishot>2?15:10;for(let r=0;r<t.multishot;r++){const s=(r-(t.multishot-1)/2)*o*Math.PI/180,n=Math.sin(s)*e,a=-Math.cos(s)*e;store.bullets.push({x:t.x+10*Math.sin(s),y:t.y-12,vx:n,vy:a,r:t.explosive?5:3,col:t.explosive?"#cc99ff":"#b266ff",dmg:20*t.dmgMult,pierce:t.piercing,explosive:t.explosive})}}
   function stepBoss(dt){const t=store.boss;if(!t)return;t.t+=dt,t.y<100?t.y+=t.vy*dt:(t.moveT+=dt,t.x=W/2+220*Math.sin(1.2*t.moveT),t.y=100+60*Math.sin(2*t.moveT)),t.fireT+=dt,t.fireT>0.5&&(t.fireT=0,function(t){for(let e=0;e<8;e++){const o=e*Math.PI/4+2*t.t;store.eBullets.push({x:t.x+30*Math.cos(o),y:t.y+30*Math.sin(o),vx:120*Math.cos(o),vy:120*Math.sin(o),r:5,col:t.color,dmg:15})}}(t))}
   function drawBoss(t){ctx.save(),ctx.translate(t.x,t.y),ctx.fillStyle="rgba(0,0,0,0.7)",ctx.fillRect(-60,-t.r-20,120,8),ctx.fillStyle=t.color,ctx.fillRect(-60,-t.r-20,120*(t.hp/t.hpMax),8),ctx.strokeStyle="#ff00ff",ctx.lineWidth=1,ctx.strokeRect(-60,-t.r-20,120,8),ctx.strokeStyle=t.color,ctx.lineWidth=3;for(let e=0;e<3;e++)ctx.save(),ctx.rotate(t.t*(1+.5*e)),ctx.beginPath(),ctx.arc(0,0,t.r-10*e,0,2*Math.PI),ctx.stroke(),ctx.restore();ctx.fillStyle=t.color+"aa",ctx.beginPath(),ctx.arc(0,0,Math.max(1,.3*t.r*(.8+.2*Math.sin(3*t.t))),0,2*Math.PI),ctx.fill(),ctx.restore()}
@@ -358,8 +389,11 @@
   q("restartBtn").addEventListener("click",resetGame);
   q("saveName").addEventListener("click",()=>{const t=(q("nameInput").value||"").slice(0,16).trim();t&&(store.name=t,q("namePanel").classList.add("hide"),store.isPaused=!1)});
   q("closeShop").addEventListener("click",()=>{q("shopPanel").classList.add("hide"),store.isPaused=!1});
-  q("menuBtn").addEventListener("click",()=>{store.isPaused=!0,q("scorePanel").classList.remove("hide")});
-  q("closeScores").addEventListener("click",()=>{store.isPaused=!1,q("scorePanel").classList.add("hide")});
+  
+  // MODIFIED: Pause logic for leaderboard buttons
+  q("menuBtn").addEventListener("click",()=>{store.isPaused=true,q("scorePanel").classList.remove("hide")});
+  q("closeScores").addEventListener("click",()=>{store.isPaused=false,q("scorePanel").classList.add("hide")});
+  
   addEventListener("keydown",t=>{const e=t.key.toLowerCase();if("INPUT"===document.activeElement.tagName)return;"b"===e?(()=>{const t=q("shopPanel");t.classList.contains("hide")?showShop():(t.classList.add("hide"),store.isPaused=!1)})():"n"===e?(store.isPaused=!0,q("nameInput").value=store.name||"",q("namePanel").classList.remove("hide")):void 0});
   
   refreshScoreList();
