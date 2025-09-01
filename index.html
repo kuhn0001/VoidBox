@@ -62,7 +62,7 @@
             <div class="stage" id="stage">
                 <div id="topBar"><div id="hudPowerup" class="hud-card hide"></div><div id="hud"><div id="hudWaveContent" class="hud-card"></div><div id="hudPilotContent" class="hud-card"></div><div id="hudBossContent" class="hud-card hide"></div></div><div id="hudEquipment" class="hud-card hide"></div><div id="announce" class="hide" aria-live="polite"></div></div>
                 <canvas id="game" width="960" height="540"></canvas>
-                <div id="diagBox"><div class="chip"> v3.0.0</div><div class="chip">FPS <span id="fps">—</span></div></div>
+                <div id="diagBox"><div class="chip"> v3.1.0</div><div class="chip">FPS <span id="fps">—</span></div></div>
                 
                 <div id="ui">
                     <div id="gameOverPanel" class="panel hide"><h2 style="font-family:'Orbitron';color:var(--accent);margin-top:0">🚀 PILOT LOST 🚀</h2><p style="text-align:center;font-size:1.2em;color:#ffddff">FINAL SCORE: <span id="finalScore">0</span></p><div class="row" style="justify-content:center;margin-top:20px"><button id="restartBtn" class="btn" type="button">FLY AGAIN</button></div></div>
@@ -144,7 +144,7 @@
         { id: 'speed', name: 'NEURAL BOOST', desc: '+15% speed', apply: () => store.player.speed *= 1.15 },
         { id: 'hp', name: 'BLOOD ARMOR', desc: '+10 max HP', apply: () => { store.player.hpMax += 10; store.player.hp += 10; } },
         { id: 'fire', name: 'OVERCLOCK', desc: '+25% fire rate', apply: () => store.player.fireRate *= 0.75 },
-        { id: 'vamp', name: 'VAMPIRIC ROUNDS', desc: 'Heal 0.5% damage dealt', apply: () => store.player.vampirism += 0.005 },
+        { id: 'vamp', name: 'VAMPIRIC ROUNDS', desc: 'Heal 02% damage dealt', apply: () => store.player.vampirism += 0.02 },
         { id: 'multi', name: 'SCATTER PROTOCOL', desc: '+1 projectile', apply: () => store.player.multishot += 1 },
         { id: 'pierce', name: 'PHASE ROUNDS', desc: 'Bullets pierce enemies', apply: () => store.player.piercing = 1 },
         { id: 'shield', name: 'VOID SHIELD', desc: '+20 regenerating shield', apply: () => { store.player.shieldMax += 20; store.player.shield = store.player.shieldMax; } },
@@ -156,10 +156,11 @@
         'speed': { name: "SPEED", baseCost: 30, scale: 1.6, maxLevel: 8, effect: () => store.player.speed += 30, desc: level => `+30 Speed (Lvl ${level + 1})` },
         'hp': { name: "MAX HP", baseCost: 20, scale: 1.4, maxLevel: 10, effect: () => { store.player.hpMax += 10; store.player.hp += 10; }, desc: level => `+10 Max HP (Lvl ${level + 1})` },
         'shield': { name: "MAX SHIELD", baseCost: 40, scale: 1.8, maxLevel: 5, effect: () => { store.player.shieldMax += 25; store.player.shield += 25; }, desc: level => `+25 Max Shield (Lvl ${level + 1})` },
+        'repair': { name: "NANO REPAIR", cost: 3, isPremium: true, apply: () => { if (store.player.hp < store.player.hpMax) { store.player.hp = Math.min(store.player.hpMax, store.player.hp + store.player.hpMax * 0.25); return true; } return false; }, desc: () => `Restore 25% of max HP.` },
         'grenade': { name: "NOVA GRENADE", cost: 75, isPremium: true, max: 3, apply: () => { if (store.player.grenades < 3) { store.player.grenades++; return true; } return false; }, desc: () => `Buy 1 (Max 3)` },
-        'void_beam': { name: "VOID BEAM", cost: 250, isPremium: true, isUnlock: true, apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; return true; } return false; }, desc: () => `Unlock Ultimate Weapon` },
+        'void_beam': { name: "VOID BEAM", cost: 75, isPremium: true, isUnlock: true, apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; return true; } return false; }, desc: () => `Unlock Ultimate Weapon` },
         'launcher': { name: 'FRAGMENTATION LAUNCHER', cost: 50, isPremium: true, isUnlock: true, apply: () => { if (!store.player.hasLauncher) { store.player.hasLauncher = true; return true; } return false; }, desc: () => `Adds swirling nova projectiles to your primary fire.` },
-        'ghost_hounds': { name: "GHOST HOUNDS", cost: 200, isPremium: true, isUnlock: true, apply: () => { if (!store.player.hasHounds) { store.player.hasHounds = true; store.hounds = [createHound(-1), createHound(1)]; return true; } return false; }, desc: () => `Unlocks 2 spectral hounds to attack enemies.` }
+        'ghost_hounds': { name: "GHOST HOUNDS", cost: 75, isPremium: true, isUnlock: true, apply: () => { if (!store.player.hasHounds) { store.player.hasHounds = true; store.hounds = [createHound(-1), createHound(1)]; return true; } return false; }, desc: () => `Unlocks 2 spectral hounds to attack enemies.` }
     };
     
     const POWERUP_TYPES = {
@@ -196,9 +197,9 @@
     function createBoss(scale) {
         const bossCycle = Math.floor((store.world.wave - 5) / 5) % 3;
         const types = [
-            { name: 'OMEGA SENTINEL', baseHp: 1200, r: 55, behavior: 'sentinel', color: '#ff8080' },
-            { name: 'THE HEX', baseHp: 1500, r: 50, behavior: 'hex', color: '#66aaff', spawnAddsT: 8},
-            { name: 'CORE MALIGNUS', baseHp: 1800, r: 60, behavior: 'malignus', color: '#9a66ff' }
+            { name: 'MAJOR JUEVO', baseHp: 1200, r: 55, behavior: 'sentinel', color: '#ff8080' },
+            { name: 'TRAP KING', baseHp: 1500, r: 50, behavior: 'hex', color: '#66aaff', spawnAddsT: 8},
+            { name: 'DONGULORD', baseHp: 1800, r: 60, behavior: 'malignus', color: '#9a66ff' }
         ];
         const type = types[bossCycle];
         const hp = type.baseHp * scale;
@@ -207,10 +208,20 @@
 
     function spawnEnemy(type = 'drone') {
         const cfgs = {
-            drone: { r: 10, v: 80, hp: 25, color: '#c27cff', xp: 5, score: 50, shards: 1, fireRateChance: 0.004 },
-            hunter: { r: 12, v: 160, hp: 30, color: '#ff8080', xp: 8, score: 80, shards: 2, fireRateChance: 0.005 },
-            phantom: { r: 14, v: 100, hp: 40, color: '#9a66ff', xp: 10, score: 100, shards: 2, fireRateChance: 0.006, fireCooldown: 1.5 },
-            mech: { r: 18, v: 50, hp: 90, color: '#7a49cc', xp: 15, score: 150, shards: 3, fireRateChance: 0.007 }
+            drone: { r: 10, v: 80, hp: 25, color: '#F7E11C', xp: 5, score: 50, shards: 2, fireRateChance: 0.004 },
+            hunter: { r: 20, v: 100, hp: 20, color: '#008B8B', xp: 8, score: 80, shards: 2, fireRateChance: 0.005 },
+            trap_king_add: {
+                    r: 8,          // Small radius
+                    v: 90,         // Moderately fast
+                    hp: 10,        // Very easy to kill
+                    color: '#ffc83d', // A distinct color, maybe gold/yellow
+                    damage: 5,     // Low damage if they hit the player
+                    xp: 2,         // Optional: maybe they give no XP
+                    score: 10,
+                    shards: 1      // Special handling needed for this
+                },
+            phantom: { r: 14, v: 90, hp: 40, color: '#7DF9FF', xp: 10, score: 100, shards: 3, fireRateChance: 0.006, fireCooldown: 1.5 },
+            mech: { r: 18, v: 40, hp: 90, color: '#FF8500', xp: 15, score: 150, shards: 4, fireRateChance: 0.007 }
         };
         let c = { ...cfgs[type] };
         const wave = store.world.wave;
@@ -280,7 +291,16 @@
             b.x += b.vx * dt; b.y += b.vy * dt;
             if (b.isSwirl) { b.life += dt; b.x += Math.sin(b.life * 15) * 150 * dt; }
             if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true;
-            store.enemies.forEach(e => { if (!e.dead && collide(b, e)) { const dmg = b.dmg || 20; e.hp -= dmg; if (e.hp <= 0) { e.dead = true; store.world.score += e.score; store.world.shards += e.shards; store.world.xp += e.xp; store.world.kills++; spawnPowerup(e.x, e.y); if (store.player.vampirism > 0) store.player.hp = Math.min(store.player.hpMax, store.player.hp + dmg * store.player.vampirism); explode(e.x, e.y); } if (b.explosive) explode(b.x, b.y); if (!b.pierce) b.dead = true; } });
+            store.enemies.forEach(e => { if (!e.dead && collide(b, e)) { const dmg = b.dmg || 20; e.hp -= dmg; if (e.hp <= 0) { e.dead = true; store.world.score += e.score; 
+                // --- Shard Drop Logic ---
+                if (e.type === 'trap_king_add') {
+                    if (Math.random() < 0.5) { // 50% chance to drop 1 shard
+                        store.world.shards += 1;
+                    }
+                } else {
+                    store.world.shards += e.shards; // Default shard drop for all other enemies
+                }
+            store.world.xp += e.xp; store.world.kills++; spawnPowerup(e.x, e.y); if (store.player.vampirism > 0) store.player.hp = Math.min(store.player.hpMax, store.player.hp + dmg * store.player.vampirism); explode(e.x, e.y); } if (b.explosive) explode(b.x, b.y); if (!b.pierce) b.dead = true; } });
             if (store.boss && collide(b, store.boss)) { let dmg = b.dmg || 20; if(b.isDrone) dmg *= 0.4; store.boss.hp -= dmg; if (store.boss.hp <= 0) { store.world.score += 2000; store.world.shards += 25; store.world.xp += 100; store.world.bosses++; store.boss = null; announce('⚡ GUARDIAN DEFEATED ⚡'); explode(b.x, b.y, true); playMusic(BGM_NORMAL); } if (b.explosive) explode(b.x, b.y); if (!b.pierce) b.dead = true; }
         });
         store.powerups.forEach(p => { p.y += 40 * dt; if (collide(p, store.player)) { p.dead = true; applyPowerup(p.type); } if (p.y > H + 20) p.dead = true; });
@@ -525,7 +545,7 @@
     function createEffect(type, x, y) { let effect = { isActive: true, life: 1, maxLife: 1, x, y }; switch(type) { case 'grenadeExplosion': effect.maxLife = 0.5; effect.radius = 150; effect.step = function(dt) { this.life -= dt * 2; if (this.life <= 0) this.isActive = false; }; effect.draw = function() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius * (1 - this.life), 0, 2 * Math.PI); ctx.fillStyle = `rgba(255, 128, 128, ${this.life * 0.8})`; ctx.fill(); }; break; case 'shieldBreak': effect.maxLife = 0.6; effect.step = function(dt) { this.life -= dt * 1.5; if (this.life <= 0) this.isActive = false; }; effect.draw = function() { ctx.strokeStyle = `rgba(154, 102, 255, ${this.life})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(this.x, this.y, 24 * (1.5 - this.life), 0, 2 * Math.PI); ctx.stroke(); }; break; case 'voidBeam': effect.maxLife = 2; effect.step = function(dt) { this.life -= dt / this.maxLife; if (this.life <= 0) this.isActive = false; const beamWidth = 200; store.enemies.forEach(e => { if(Math.abs(e.x - store.player.x) < beamWidth / 2) e.hp -= 200 * dt; }); if(store.boss && Math.abs(store.boss.x - store.player.x) < beamWidth / 2) store.boss.hp -= 200 * dt; }; effect.draw = function() { const beamWidth = 200; const p = store.player; ctx.fillStyle = `rgba(255, 255, 255, ${0.4 * Math.sin(this.life * Math.PI)})`; ctx.fillRect(p.x - beamWidth / 2, 0, beamWidth, H); ctx.fillStyle = `rgba(178, 102, 255, ${0.3 * Math.sin(this.life * Math.PI)})`; ctx.fillRect(p.x - beamWidth / 4, 0, beamWidth/2, H); }; break; } return effect; }
     function explodeGrenade(x, y) { playSound('https://soundbible.com/mp3/Grenade-SoundBible.com-1775988413.mp3', 0.6); store.activeEffects.push(createEffect('grenadeExplosion', x, y)); const radius = 150; store.enemies.forEach(e => { const distSq = (e.x - x)**2 + (e.y - y)**2; if (distSq < radius**2) { e.hp -= e.hpMax * 0.5; } }); }
 
-    function showShop(){ store.isPaused=true; q('pauseBtn').classList.add('hide'); const panel=q("shopPanel"),grid=q("shopGrid"),shardsEl=q("shopShards"); shardsEl.textContent=store.world.shards; let content = ''; for (const key in SHOP_UPGRADES) { const u = SHOP_UPGRADES[key]; let currentLevel = store.player.upgradeLevels[key] || 0; let isDisabled = false; let cost = 0; let desc = u.desc(currentLevel); let name = u.name; if (u.isPremium) { if (u.isUnlock) { if ((key === 'void_beam' && store.player.hasVoidBeam) || (key === 'launcher' && store.player.hasLauncher) || (key === 'ghost_hounds' && store.player.hasHounds)) { isDisabled = true; desc = "Already Unlocked"; } cost = u.cost; } else { if (store.player.grenades >= u.max) { isDisabled = true; desc = "At maximum capacity"; } cost = u.cost; } } else { if (currentLevel >= u.maxLevel) { isDisabled = true; desc = "Max Level Reached"; } cost = Math.floor(u.baseCost * Math.pow(u.scale, currentLevel)); } if (store.world.shards < cost) isDisabled = true; content += `<div class="skill-card shop-item" data-key="${key}" style="${isDisabled ? "opacity:0.5;pointer-events:none;" : ""}"> <div class="skill-title">${name}</div> <div class="skill-desc">${desc}</div> <div style="color:var(--accent);margin-top:4px;">Cost: ${cost > 0 ? cost : '---'} shards</div> </div>`; } grid.innerHTML = content; grid.querySelectorAll(".shop-item").forEach(item => { item.addEventListener("click", () => { const key = item.dataset.key; const upgrade = SHOP_UPGRADES[key]; let cost = 0; if (upgrade.isPremium) { cost = upgrade.cost; } else { cost = Math.floor(upgrade.baseCost * Math.pow(upgrade.scale, store.player.upgradeLevels[key] || 0)); } if (store.world.shards >= cost) { let purchaseSuccessful = false; if (upgrade.isPremium) { purchaseSuccessful = upgrade.apply(); } else { upgrade.effect(); store.player.upgradeLevels[key] = (store.player.upgradeLevels[key] || 0) + 1; purchaseSuccessful = true; } if (purchaseSuccessful) store.world.shards -= cost; showShop(); } }); }); panel.classList.remove("hide"); }
+    function showShop(){ store.isPaused=true; q('pauseBtn').classList.add('hide'); const panel=q("shopPanel"),grid=q("shopGrid"),shardsEl=q("shopShards"); shardsEl.textContent=store.world.shards; let content = ''; for (const key in SHOP_UPGRADES) { const u = SHOP_UPGRADES[key]; let currentLevel = store.player.upgradeLevels[key] || 0; let isDisabled = false; let cost = 0; let desc = u.desc(currentLevel); let name = u.name; if (u.isPremium) { cost = u.cost; if (key === 'repair') { if (store.player.hp >= store.player.hpMax) { isDisabled = true; desc = "Health is already full."; } } else if (u.isUnlock) { if ((key === 'void_beam' && store.player.hasVoidBeam) || (key === 'launcher' && store.player.hasLauncher) || (key === 'ghost_hounds' && store.player.hasHounds)) { isDisabled = true; desc = "Already Unlocked"; } } else { if (store.player.grenades >= u.max) { isDisabled = true; desc = "At maximum capacity"; } } } else { if (currentLevel >= u.maxLevel) { isDisabled = true; desc = "Max Level Reached"; } cost = Math.floor(u.baseCost * Math.pow(u.scale, currentLevel)); } if (store.world.shards < cost) isDisabled = true; content += `<div class="skill-card shop-item" data-key="${key}" style="${isDisabled ? "opacity:0.5;pointer-events:none;" : ""}"> <div class="skill-title">${name}</div> <div class="skill-desc">${desc}</div> <div style="color:var(--accent);margin-top:4px;">Cost: ${cost > 0 ? cost : '---'} shards</div> </div>`; } grid.innerHTML = content; grid.querySelectorAll(".shop-item").forEach(item => { item.addEventListener("click", () => { const key = item.dataset.key; const upgrade = SHOP_UPGRADES[key]; let cost = 0; if (upgrade.isPremium) { cost = upgrade.cost; } else { cost = Math.floor(upgrade.baseCost * Math.pow(upgrade.scale, store.player.upgradeLevels[key] || 0)); } if (store.world.shards >= cost) { let purchaseSuccessful = false; if (upgrade.isPremium) { purchaseSuccessful = upgrade.apply(); } else { upgrade.effect(); store.player.upgradeLevels[key] = (store.player.upgradeLevels[key] || 0) + 1; purchaseSuccessful = true; } if (purchaseSuccessful) { store.world.shards -= cost; playSound('https://www.myinstants.com/media/sounds/zelda-power-up.mp3', 0.4); } showShop(); } }); }); panel.classList.remove("hide"); }
     
     // --- GHOST HOUNDS ---
     function createHound(side) { return { x: store.player.x + side * 50, y: store.player.y + 20, side, target: null, attackT: 0, r: 12 }; }
