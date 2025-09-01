@@ -28,6 +28,7 @@
         .hud-title{opacity:.85;font-weight:600;margin-bottom:4px;font-family:'Orbitron','Audiowide',ui-sans-serif;text-align:center;font-size:10px;color:#c49cff}
         #hudPowerup{grid-column:1;justify-self:start;margin-left:8px;min-width:150px}
         #hudEquipment{grid-column:3;justify-self:end;margin-right:8px;min-width:150px; text-align:right;}
+        #hudBossContainer{display:flex; flex-direction: column; gap: 4px;} /* Container for multiple boss bars */
         .bar{height:4px;width:100%;background:rgba(150,80,255,.12);border-radius:999px;overflow:hidden;border:1px solid var(--edge);margin-top:2px}
         .bar>span{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2))}
         #announce{position:absolute;left:50%;transform:translateX(-50%);top:40px;background:linear-gradient(180deg,rgba(150,80,255,.26),rgba(150,80,255,.1));border:1px solid var(--accent);padding:6px 10px;border-radius:10px;font-weight:600;text-shadow:0 0 10px var(--accent);font-family:'Orbitron','Audiowide',ui-sans-serif;font-size:12px;color:#fff}
@@ -61,7 +62,7 @@
     <div id="wrap">
         <div>
             <div class="stage" id="stage">
-                <div id="topBar"><div id="hudPowerup" class="hud-card hide"></div><div id="hud"><div id="hudWaveContent" class="hud-card"></div><div id="hudPilotContent" class="hud-card"></div><div id="hudBossContent" class="hud-card hide"></div></div><div id="hudEquipment" class="hud-card hide"></div><div id="announce" class="hide" aria-live="polite"></div></div>
+                <div id="topBar"><div id="hudPowerup" class="hud-card hide"></div><div id="hud"><div id="hudWaveContent" class="hud-card"></div><div id="hudPilotContent" class="hud-card"></div><div id="hudBossContainer"></div></div><div id="hudEquipment" class="hud-card hide"></div><div id="announce" class="hide" aria-live="polite"></div></div>
                 <canvas id="game" width="960" height="540"></canvas>
                 <div id="diagBox"><div class="chip"> v3.1.0</div><div class="chip">FPS <span id="fps">—</span></div></div>
                 
@@ -110,7 +111,7 @@
     function playSound(src, volume = 0.5) {
         const audio = new Audio(src);
         audio.volume = volume;
-        audio.play().catch(e => { });
+        audio.play().catch(e => { /* Ignore autoplay errors */ });
     }
 
     function playMusic(src, volume = 0.5) {
@@ -120,13 +121,13 @@
         clearInterval(musicFadeInterval);
         let currentVolume = bgm.volume;
         if (bgm.paused || bgm.src === '' || currentVolume === 0) {
-            bgm.src = src; bgm.volume = volume; bgm.play().catch(e => { }); return;
+            bgm.src = src; bgm.volume = volume; bgm.play().catch(e => {}); return;
         }
         musicFadeInterval = setInterval(() => {
             currentVolume = Math.max(0, currentVolume - 0.05);
             bgm.volume = currentVolume;
             if (currentVolume <= 0) {
-                clearInterval(musicFadeInterval); bgm.pause(); bgm.src = src; bgm.volume = volume; bgm.play().catch(e => { });
+                clearInterval(musicFadeInterval); bgm.pause(); bgm.src = src; bgm.volume = volume; bgm.play().catch(e => {});
             }
         }, 50);
     }
@@ -138,7 +139,8 @@
         frame: 0, last: performance.now(), isGameOver: false, isPaused: false,
         world: { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0 },
         player: { ...player_initial_state },
-        boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], grenades: [], hounds: [], activeEffects: [],
+        bosses: [], // Changed from single boss object to an array
+        bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], grenades: [], hounds: [], activeEffects: [],
         _startTs: performance.now()
     };
 
@@ -203,12 +205,23 @@
         const isBossWave = store.world.wave % 5 === 0;
         if (isBossWave) {
             store.enemies = [];
-            const bossHpScale = 1 + (store.world.wave / 5 - 1) * 0.75;
-            store.boss = createBoss(bossHpScale);
-            announce(`⚡ GUARDIAN: ${store.boss.name} ⚡`);
-            // Boss intro sound and music logic
             playSound('https://www.myinstants.com/media/sounds/inception-horn.mp3', 0.8);
             playMusic(BGM_BOSS, 0.6);
+
+            // ### MULTI-BOSS WAVE LOGIC ###
+            if (store.world.wave === 5) {
+                announce('⚡⚡ MULTIPLE GUARDIANS DETECTED ⚡⚡');
+                const boss1 = createBoss(0, 0.8); // Major Juevo at 80% strength
+                boss1.x = W * 0.25;
+                const boss2 = createBoss(1, 0.8); // Trap King at 80% strength
+                boss2.x = W * 0.75;
+                store.bosses.push(boss1, boss2);
+            } else {
+                const bossHpScale = 1 + (store.world.wave / 5 - 1) * 0.75;
+                const boss = createBoss(store.world.wave, bossHpScale);
+                store.bosses.push(boss);
+                announce(`⚡ GUARDIAN: ${boss.name} ⚡`);
+            }
         } else {
             store.enemies = [];
             const spawnCount = 6 + Math.floor(store.world.wave * 1.5);
@@ -221,26 +234,35 @@
         }
     }
     
-    function createBoss(scale) {
-        const bossCycle = Math.floor((store.world.wave - 5) / 5) % 3;
+    function createBoss(wave, scale) {
+        // We use the wave number to cycle through bosses, skipping the multi-boss wave count
+        const bossCycleIndex = Math.floor(((wave - 5) / 5)) % 3;
+        const bossIndex = (wave === 5) ? -1 : (wave / 5 - 2 >= 0 ? bossCycleIndex : (wave / 5 -1));
+        
         const types = [
-            { name: 'MAJOR JUEVO', baseHp: 1200, r: 55, behavior: 'sentinel', color: '#ff8080' },
-            { name: 'TRAP KING', baseHp: 1500, r: 50, behavior: 'hex', color: '#66aaff', spawnAddsT: 8},
-            // ### BOSS 3 COLOR CHANGE ###
-            { name: 'CORE MALIGNUS', baseHp: 1800, r: 60, behavior: 'malignus', color: '#2E8B57' } // Was DONGULORD, new name and menacing green color
+            { name: 'MAJOR JUEVO', baseHp: 1200, r: 55, behavior: 'sentinel', color: '#ff8080', patternPhase: 0 },
+            { name: 'TRAP KING', baseHp: 1500, r: 50, behavior: 'hex', color: '#66aaff', spawnAddsT: 8, patternPhase: 0 },
+            { name: 'CORE MALIGNUS', baseHp: 1800, r: 60, behavior: 'malignus', color: '#2E8B57', patternPhase: 0 }
         ];
-        const type = types[bossCycle];
+
+        let type;
+        if(arguments.length === 2) {
+             type = types[bossCycleIndex]
+        } else {
+            type = types[scale];
+            scale = arguments[1]
+        }
+
         const hp = type.baseHp * scale;
-        return { ...type, x: W / 2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, patternPhase: 0, mines: [] };
+        return { ...type, x: W / 2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, mines: [] };
     }
+
 
     function spawnEnemy(type = 'drone') {
         const cfgs = {
             drone: { r: 10, v: 80, hp: 25, color: '#C0C0C0', xp: 5, score: 50, shards: 2, fireRateChance: 0.004 },
             hunter: { r: 20, v: 100, hp: 20, color: '#DC143C', xp: 8, score: 80, shards: 2, fireRateChance: 0.005 },
-            trap_king_add: {
-                    r: 8, v: 90, hp: 10, color: '#ffc83d', damage: 5, xp: 2, score: 10, shards: 1
-                },
+            trap_king_add: { r: 8, v: 90, hp: 10, color: '#ffc83d', damage: 5, xp: 2, score: 10, shards: 1 },
             phantom: { r: 14, v: 90, hp: 40, color: '#FFFFFF', xp: 10, score: 100, shards: 3, fireRateChance: 0.006, fireCooldown: 1.5 },
             mech: { r: 18, v: 40, hp: 90, color: '#FF8500', xp: 15, score: 150, shards: 4, fireRateChance: 0.007 }
         };
@@ -251,7 +273,7 @@
             c.fireRateChance *= 1 + (wave * 0.05);
         }
         c.shards = Math.ceil(c.shards / 2);
-        return { ...c, type, x: 20 + Math.random() * (W - 40), y: -50 - Math.random() * 250, hpMax: c.hp, phase: type === 'phantom', t: 0, fireT: (c.fireCooldown || 0), isBursting: false, burstTimer: 0 };
+        return { ...c, type, x: 20 + Math.random() * (W - 40), y: -50 - Math.random() * 250, hpMax: c.hp, phase: type === 'phantom' || type === 'trap_king_add', t: 0, fireT: (c.fireCooldown || 0) };
     }
 
     function stepPlayer(dt) {
@@ -271,35 +293,34 @@
     
     function stepWorld(dt) {
         stepPlayer(dt);
-        if (store.boss) stepBoss(dt);
+        store.bosses.forEach(b => stepBoss(dt, b)); // Use new bosses array
         stepHounds(dt);
 
         store.activeEffects.forEach(e => e.step(dt));
         store.grenades.forEach(g => { g.x += g.vx * dt; g.y += g.vy * dt; g.fuse -= dt; if (g.fuse <= 0) { g.dead = true; explodeGrenade(g.x, g.y); } });
         store.eBullets.forEach(b => { b.x += b.vx * dt; b.y += b.vy * dt; if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true; if (collide(b, store.player)) { takeDamage(b.dmg || 10); b.dead = true; }});
         
-        if (store.boss && store.boss.mines) {
-            store.boss.mines.forEach(mine => {
-                mine.fuse -= dt;
-                if (mine.fuse <= 0) {
-                    store.eBullets.push({ x: mine.x, y: mine.y, vx: 0, vy: 100, r: 8, col: '#ff8080', dmg: 25 });
-                    mine.dead = true;
-                }
-                if (collide(mine, store.player)) {
-                    takeDamage(50);
-                    mine.dead = true;
-                }
-            });
-            store.boss.mines = store.boss.mines.filter(m => !m.dead);
-        }
+        store.bosses.forEach(boss => {
+            if (boss.mines) {
+                boss.mines.forEach(mine => {
+                    mine.fuse -= dt;
+                    if (mine.fuse <= 0) { store.eBullets.push({ x: mine.x, y: mine.y, vx: 0, vy: 100, r: 8, col: '#ff8080', dmg: 25 }); mine.dead = true; }
+                    if (collide(mine, store.player)) { takeDamage(50); mine.dead = true; }
+                });
+                boss.mines = boss.mines.filter(m => !m.dead);
+            }
+        });
 
         store.enemies.forEach(e => {
-            e.t += dt; e.y += e.v * dt;
+            e.x += (e.vx || 0) * dt; // Add horizontal movement for adds
+            e.y += e.v * dt;
+            e.t += dt;
             if (e.phase) { e.x = e.x + Math.sin(e.t * 3) * 80 * dt; }
             if (e.y > H + 30 || e.x < -30 || e.x > W + 30) e.dead = true;
             if (collide(e, store.player)) { takeDamage(15); e.dead = true; }
             e.fireT -= dt;
             if (e.fireT <= 0 && e.y > 0 && Math.random() < e.fireRateChance) {
+                // Firing logic remains the same
                 switch (e.type) {
                     case 'hunter': { const a = Math.atan2(store.player.y - e.y, store.player.x - e.x); store.eBullets.push({ x: e.x, y: e.y, vx: Math.cos(a) * 180, vy: Math.sin(a) * 180, r: 3, col: e.color, dmg: 10 }); e.fireT = 1.0; break; }
                     case 'phantom': { store.eBullets.push({ x: e.x, y: e.y, vx: 0, vy: 180, r: 3, col: e.color, dmg: 8 }); e.fireT = e.fireCooldown; break; }
@@ -312,43 +333,52 @@
             b.x += b.vx * dt; b.y += b.vy * dt;
             if (b.isSwirl) { b.life += dt; b.x += Math.sin(b.life * 15) * 150 * dt; }
             if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true;
-            store.enemies.forEach(e => { if (!e.dead && collide(b, e)) { const dmg = b.dmg || 20; e.hp -= dmg; if (e.hp <= 0) { e.dead = true; store.world.score += e.score; 
-                if (e.type === 'trap_king_add') {
-                    if (Math.random() < 0.5) { store.world.shards += 1; }
-                } else {
-                    store.world.shards += e.shards;
+            store.enemies.forEach(e => { if (!e.dead && collide(b, e)) { const dmg = b.dmg || 20; e.hp -= dmg; if (e.hp <= 0) { e.dead = true; store.world.score += e.score; if (e.type === 'trap_king_add') { if (Math.random() < 0.5) { store.world.shards += 1; } } else { store.world.shards += e.shards; } store.world.xp += e.xp; store.world.kills++; spawnPowerup(e.x, e.y); if (store.player.vampirism > 0) store.player.hp = Math.min(store.player.hpMax, store.player.hp + dmg * store.player.vampirism); explode(e.x, e.y); } if (b.explosive) explode(b.x, b.y, false, true); if (!b.pierce) b.dead = true; } });
+            
+            store.bosses.forEach(boss => {
+                if (collide(b, boss)) {
+                    let dmg = b.dmg || 20; if(b.isDrone) dmg *= 0.4;
+                    boss.hp -= dmg;
+                    if (boss.hp <= 0) {
+                        boss.dead = true; // Mark boss as dead instead of removing
+                        store.world.score += 2000; store.world.shards += 25; store.world.xp += 100; store.world.bosses++;
+                        announce('⚡ GUARDIAN DEFEATED ⚡');
+                        explode(b.x, b.y, true);
+                        if (store.bosses.every(b => b.dead)) { playMusic(BGM_NORMAL); }
+                    }
+                    if (b.explosive) explode(b.x, b.y, false, true);
+                    if (!b.pierce) b.dead = true;
                 }
-            store.world.xp += e.xp; store.world.kills++; spawnPowerup(e.x, e.y); if (store.player.vampirism > 0) store.player.hp = Math.min(store.player.hpMax, store.player.hp + dmg * store.player.vampirism); explode(e.x, e.y); } 
-            // ### EXPLOSION THROTTLING CHANGE ###
-            if (b.explosive) explode(b.x, b.y, false, true); if (!b.pierce) b.dead = true; } });
-            if (store.boss && collide(b, store.boss)) { let dmg = b.dmg || 20; if(b.isDrone) dmg *= 0.4; store.boss.hp -= dmg; if (store.boss.hp <= 0) { store.world.score += 2000; store.world.shards += 25; store.world.xp += 100; store.world.bosses++; store.boss = null; announce('⚡ GUARDIAN DEFEATED ⚡'); explode(b.x, b.y, true); playMusic(BGM_NORMAL); } 
-            if (b.explosive) explode(b.x, b.y, false, true); if (!b.pierce) b.dead = true; }
+            });
         });
         store.powerups.forEach(p => { p.y += 40 * dt; if (collide(p, store.player)) { p.dead = true; applyPowerup(p.type); } if (p.y > H + 20) p.dead = true; });
 
-        store.bullets = store.bullets.filter(b => !b.dead); store.eBullets = store.eBullets.filter(b => !b.dead); store.enemies = store.enemies.filter(e => !e.dead); store.powerups = store.powerups.filter(p => !p.dead); store.grenades = store.grenades.filter(g => !g.dead); store.activeEffects = store.activeEffects.filter(e => e.isActive);
-        if (!store.boss && store.enemies.length === 0) { store.world.wave++; initWave(); }
+        // Filter all dead entities at the end of the frame
+        store.bullets = store.bullets.filter(b => !b.dead); 
+        store.eBullets = store.eBullets.filter(b => !b.dead); 
+        store.enemies = store.enemies.filter(e => !e.dead); 
+        store.powerups = store.powerups.filter(p => !p.dead); 
+        store.grenades = store.grenades.filter(g => !g.dead); 
+        store.activeEffects = store.activeEffects.filter(e => e.isActive);
+        store.bosses = store.bosses.filter(b => !b.dead);
+
+        if (store.bosses.length === 0 && store.enemies.length === 0) { store.world.wave++; initWave(); }
 
         const xpNeeded = store.world.level * 100; if (store.world.xp >= xpNeeded) { store.world.xp -= xpNeeded; store.world.level++; levelUp(); }
         if (store.player.hp <= 0) handleGameOver();
     }
 
-    // ### EXPLOSION SOUND & THROTTLING CHANGE ###
     function explode(x, y, isBoss = false, isSmall = false) {
         if (isSmall) {
             const now = performance.now();
-            if (now - lastSmallExplosionSoundTime > 100) { // Throttle to 10 times/sec max
+            if (now - lastSmallExplosionSoundTime > 100) {
                 playSound('https://soundbible.com/mp3/Flame%20Arrow-SoundBible.com-618032039.mp3', 0.3);
                 lastSmallExplosionSoundTime = now;
             }
         } else {
             playSound('https://soundbible.com/mp3/Bomb-SoundBible.com-891110113.mp3', 0.4);
         }
-        if (isBoss) {
-            for (let i = 0; i < 5; i++) {
-                setTimeout(() => spawnPowerup(x, y), i * 300);
-            }
-        }
+        if (isBoss) { for (let i = 0; i < 5; i++) { setTimeout(() => spawnPowerup(x, y), i * 300); } }
     }
     
     function levelUp() { announce(`LEVEL UP! ⚡ CHOOSE YOUR AUGMENTATION!`); store.player.levelUpEffect = { t: 0, maxT: 1 }; playSound('https://www.myinstants.com/media/sounds/level-up-1.mp3', 0.6); store.player.speed *= 1.5; store.player.multishot += 2; setTimeout(() => { store.player.speed /= 1.5; store.player.multishot -= 2; }, 3000); store.isPaused = true; const panel = q('levelPanel'), grid = q('skillsGrid'); const multiShotUpgrade = LEVEL_UPGRADES.find(u => u.id === 'multi'); let otherUpgrades = LEVEL_UPGRADES.filter(u => u.id !== 'multi'); for (let i = otherUpgrades.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [otherUpgrades[i], otherUpgrades[j]] = [otherUpgrades[j], otherUpgrades[i]]; } const choices = [multiShotUpgrade, ...otherUpgrades.slice(0, 2)]; grid.innerHTML = choices.map(s => `<div class="skill-card" data-id="${s.id}"><div class="skill-title">${s.name}</div><div class="skill-desc">${s.desc}</div></div>`).join(''); grid.querySelectorAll('.skill-card').forEach(c => { c.addEventListener('click', () => { const id = c.dataset.id; const upgrade = LEVEL_UPGRADES.find(s => s.id === id); if (upgrade) { upgrade.apply(); } panel.classList.add('hide'); store.isPaused = false; }) }); panel.classList.remove('hide'); }
@@ -356,7 +386,7 @@
     function resetGame() {
         store.player = JSON.parse(JSON.stringify(player_initial_state));
         store.world = { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0 };
-        store.boss = null;
+        store.bosses = [];
         store.bullets = []; store.eBullets = []; store.enemies = [];
         store.powerups = []; store.drones = []; store.grenades = []; store.hounds = []; store.activeEffects = [];
         store._startTs = performance.now();
@@ -384,19 +414,13 @@
         store.grenades.forEach(g => drawGrenade(g));
         store.eBullets.forEach(b => { ctx.fillStyle = b.col; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 2 * Math.PI); ctx.fill(); });
         store.bullets.forEach(b => { ctx.fillStyle = b.col; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 2 * Math.PI); ctx.fill(); });
-        if(store.boss && store.boss.mines) {
-            store.boss.mines.forEach(mine => {
-                ctx.save();
-                ctx.translate(mine.x, mine.y);
-                ctx.beginPath();
-                ctx.arc(0, 0, 10, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(255, 128, 128, ${0.7 + 0.3 * Math.sin(performance.now() / 200)})`;
-                ctx.fill();
-                ctx.restore();
-            });
-        }
+        
+        store.bosses.forEach(boss => {
+             if(boss.mines) { boss.mines.forEach(mine => { ctx.save(); ctx.translate(mine.x, mine.y); ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fillStyle = `rgba(255, 128, 128, ${0.7 + 0.3 * Math.sin(performance.now() / 200)})`; ctx.fill(); ctx.restore(); }); }
+        });
+       
         store.enemies.forEach(e => drawEnemy(e));
-        if (store.boss) drawBoss(store.boss);
+        store.bosses.forEach(b => drawBoss(b));
         store.drones.forEach(d => drawDrone(d));
         store.hounds.forEach(h => drawHound(h));
         drawShip(store.player.x, store.player.y);
@@ -413,7 +437,14 @@
         q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`;
         const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0;
         q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div>${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div>` : ""}`;
-        store.boss ? (q("hudBossContent").classList.remove("hide"), q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`) : q("hudBossContent").classList.add("hide");
+        
+        const bossContainer = q("hudBossContainer");
+        if (store.bosses.length > 0) {
+            bossContainer.innerHTML = store.bosses.map(boss => `<div class="hud-card"><div class="hud-title">⚡ ${boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(boss.hp / boss.hpMax * 100)}%"></span></div></div>`).join('');
+        } else {
+            bossContainer.innerHTML = '';
+        }
+
         const powerupEl = q("hudPowerup");
         const timedPowerups = Object.keys(store.player.powerupTimers);
         let timedContent = '';
@@ -476,9 +507,9 @@
         }
     }
     
-    function stepBoss(dt) { 
-        if (!store.boss) return; 
-        const b = store.boss; b.t += dt; 
+    function stepBoss(dt, b) {  // Boss object is now passed as an argument
+        if (!b) return; 
+        b.t += dt; 
         if (b.y < 100) { b.y += b.vy * dt; } 
         switch (b.behavior) { 
             case 'sentinel': stepBossOmegaSentinel(dt, b); break; 
@@ -499,33 +530,60 @@
         if (b.fireT <= 0) { b.fireT = 0.8; const n = 12, g = 3, s = Math.floor(Math.random() * (n - g)); for (let i = 0; i < n; i++) { if (i >= s && i < s + g) continue; const p = (W / (n + 1)) * (i + 1); store.eBullets.push({ x: p, y: b.y, vx: 0, vy: 180, r: 6, col: b.color, dmg: 20 }); } } 
     }
 
+    // ### TRAP KING BOSS REWORK ###
     function stepBossTheHex(dt, b) {
         if (b.y >= 100) {
             b.moveT += dt;
-            b.x = W * 0.2 + (W * 0.6) * Math.abs(Math.sin(b.moveT * 0.4));
+            b.x = W / 2 + (W * 0.3) * Math.sin(b.moveT * 0.4);
         }
         b.fireT -= dt;
         if (b.fireT <= 0) {
-            b.fireT = 1.5;
-            b.mines.push({ x: b.x, y: b.y + 40, fuse: 2, dead: false });
-            for (let i = -1; i <= 1; i++) {
-                const a = Math.atan2(store.player.y - b.y, store.player.x - b.x) + i * 0.2;
-                store.eBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 160, vy: Math.sin(a) * 160, r: 4, col: '#80ffff', dmg: 10 });
+            switch (b.patternPhase % 4) {
+                case 0: // Original attack
+                    b.fireT = 1.5;
+                    b.mines.push({ x: b.x, y: b.y + 40, fuse: 2, dead: false });
+                    for (let i = -1; i <= 1; i++) {
+                        const a = Math.atan2(store.player.y - b.y, store.player.x - b.x) + i * 0.2;
+                        store.eBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 160, vy: Math.sin(a) * 160, r: 4, col: '#80ffff', dmg: 10 });
+                    }
+                    break;
+                case 1: // Laser barrage
+                    b.fireT = 1.2;
+                    for (let i = 0; i < 6; i++) {
+                        setTimeout(() => {
+                            const a = Math.atan2(store.player.y - b.y, store.player.x - b.x);
+                            store.eBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 250, vy: Math.sin(a) * 250, r: 3, col: b.color, dmg: 8 });
+                        }, i * 80);
+                    }
+                    break;
+                case 2: // Hexagonal Burst
+                    b.fireT = 2.0;
+                    for (let i = 0; i < 6; i++) {
+                        const a = (i * 60 * Math.PI / 180) + b.t * 2;
+                        store.eBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 150, vy: Math.sin(a) * 150, r: 5, col: '#ff8080', dmg: 12 });
+                    }
+                    break;
+                case 3: // Mine Field
+                    b.fireT = 2.5;
+                    for (let i = 0; i < 4; i++) {
+                        b.mines.push({ x: (W/5) * (i + 1), y: b.y + 100 + i * 20, fuse: 2.5, dead: false });
+                    }
+                    break;
             }
+            b.patternPhase++;
         }
         b.spawnAddsT -= dt;
         if (b.spawnAddsT <= 0) {
             b.spawnAddsT = 12; 
             for (let i = 0; i < 3; i++) {
                 setTimeout(() => {
-                    // ### BOSS ADDS FIX ###
-                    const enemy = spawnEnemy('trap_king_add'); // Spawns the correct minion
-                    enemy.x = (i % 2 === 0) ? -30 : W + 30;
+                    const side = (i % 2 === 0) ? -30 : W + 30;
+                    const enemy = spawnEnemy('trap_king_add');
+                    enemy.x = side;
                     enemy.y = b.y + Math.random() * 100;
-                    enemy.v = 50;
-                    enemy.phase = true; // Give them the snaking movement
+                    enemy.vx = (side < W/2) ? 60 : -60; // Give it horizontal velocity
                     store.enemies.push(enemy);
-                }, i * 400);
+                }, i * 500);
             }
         }
     }
@@ -543,69 +601,36 @@
         ctx.strokeStyle = "#fff"; 
         ctx.lineWidth = 1; 
         ctx.strokeRect(-60, -t.r - 20, 120, 8); 
-        // ### BOSS 3 SHAPE CHANGE ###
+        
         if (t.behavior === 'malignus') {
             const time = performance.now() / 1000;
-            // Central Eye
-            ctx.fillStyle = t.color;
-            ctx.beginPath();
             const pulse = t.r * (0.3 + 0.05 * Math.sin(time * 4));
-            ctx.arc(0, 0, pulse, 0, 2 * Math.PI);
-            ctx.fill();
+            ctx.fillStyle = t.color;
+            ctx.beginPath(); ctx.arc(0, 0, pulse, 0, 2 * Math.PI); ctx.fill();
             ctx.fillStyle = 'white';
-            ctx.beginPath();
-            ctx.arc(0, 0, pulse * 0.4, 0, 2 * Math.PI);
-            ctx.fill();
-            // Orbiting shards
-            const numShards = 5;
-            for (let i = 0; i < numShards; i++) {
+            ctx.beginPath(); ctx.arc(0, 0, pulse * 0.4, 0, 2 * Math.PI); ctx.fill();
+            for (let i = 0; i < 5; i++) {
                 ctx.save();
-                const angle = time * (0.5 + i * 0.1) + (i * 2 * Math.PI / numShards);
-                const dist = t.r * 0.8;
-                ctx.rotate(angle);
-                ctx.translate(dist, 0);
-                ctx.rotate(time * 2);
-                ctx.fillStyle = t.color + 'aa';
-                ctx.strokeStyle = '#FFFFFF';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                const shardSize = t.r * 0.3;
-                ctx.moveTo(0, -shardSize);
-                ctx.lineTo(shardSize / 2, shardSize);
-                ctx.lineTo(-shardSize / 2, shardSize);
-                ctx.closePath();
-                ctx.fill();
-                ctx.stroke();
-                ctx.restore();
+                const angle = time * (0.5 + i * 0.1) + (i * 2 * Math.PI / 5);
+                ctx.rotate(angle); ctx.translate(t.r * 0.8, 0); ctx.rotate(time * 2);
+                ctx.fillStyle = t.color + 'aa'; ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2;
+                ctx.beginPath(); const s = t.r * 0.3; ctx.moveTo(0, -s); ctx.lineTo(s / 2, s); ctx.lineTo(-s / 2, s);
+                ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
             }
         } else if (t.behavior === 'hex') {
             const time = performance.now() / 1000;
-            ctx.fillStyle = '#66aaff';
-            ctx.strokeStyle = '#ff8080';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(0, -t.r * 1.5); ctx.lineTo(t.r, -t.r * 0.7); ctx.lineTo(t.r * 0.8, t.r); ctx.lineTo(-t.r * 0.8, t.r); ctx.lineTo(-t.r, -t.r * 0.7);
-            ctx.closePath();
-            ctx.fill(); ctx.stroke();
-            ctx.beginPath();
-            ctx.arc(0, t.r * 0.2, t.r * 0.6, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(255, 128, 128, ${0.4 + 0.3 * Math.sin(time * 5)})`;
-            ctx.fill();
+            ctx.fillStyle = t.color; ctx.strokeStyle = '#ff8080'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(0, -t.r * 1.5); ctx.lineTo(t.r, -t.r * 0.7); ctx.lineTo(t.r * 0.8, t.r); ctx.lineTo(-t.r * 0.8, t.r); ctx.lineTo(-t.r, -t.r * 0.7);
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.beginPath(); ctx.arc(0, t.r * 0.2, t.r * 0.6, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 128, 128, ${0.4 + 0.3 * Math.sin(time * 5)})`; ctx.fill();
         } else {
-            ctx.strokeStyle = t.color; 
-            ctx.lineWidth = 3; 
+            ctx.strokeStyle = t.color; ctx.lineWidth = 3; 
             for (let e = 0; e < 3; e++) { 
-                ctx.save(); 
-                ctx.rotate(t.t * (1 + .5 * e)); 
-                ctx.beginPath(); 
-                ctx.arc(0, 0, t.r - 10 * e, 0, 2 * Math.PI); 
-                ctx.stroke(); 
-                ctx.restore(); 
+                ctx.save(); ctx.rotate(t.t * (1 + .5 * e)); ctx.beginPath(); ctx.arc(0, 0, t.r - 10 * e, 0, 2 * Math.PI); ctx.stroke(); ctx.restore(); 
             } 
             ctx.fillStyle = t.color + "aa"; 
-            ctx.beginPath(); 
-            ctx.arc(0, 0, Math.max(1, .3 * t.r * (.8 + .2 * Math.sin(3 * t.t))), 0, 2 * Math.PI); 
-            ctx.fill(); 
+            ctx.beginPath(); ctx.arc(0, 0, Math.max(1, .3 * t.r * (.8 + .2 * Math.sin(3 * t.t))), 0, 2 * Math.PI); ctx.fill(); 
         }
         ctx.restore(); 
     }
@@ -631,18 +656,16 @@
                 const grad = ctx.createLinearGradient(-r, -r, r, r);
                 grad.addColorStop(0, '#E0E0E0'); grad.addColorStop(1, '#A0A0A0');
                 ctx.fillStyle = grad; ctx.strokeStyle = '#808080';
-                ctx.beginPath();
-                ctx.moveTo(-r * 1.2, 0); ctx.quadraticCurveTo(0, -r, r * 1.2, 0); ctx.quadraticCurveTo(0, r * 0.6, -r * 1.2, 0);
+                ctx.beginPath(); ctx.moveTo(-r * 1.2, 0); ctx.quadraticCurveTo(0, -r, r * 1.2, 0); ctx.quadraticCurveTo(0, r * 0.6, -r * 1.2, 0);
                 ctx.closePath(); ctx.fill(); ctx.stroke();
                 ctx.fillStyle = '#aaddff'; ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 1;
                 ctx.beginPath(); ctx.arc(0, -r * 0.2, r * 0.6, Math.PI, 0); ctx.fill(); ctx.stroke();
-                ctx.fillStyle = '#32CD32';
-                ctx.beginPath(); ctx.ellipse(0, -r * 0.2, r * 0.3, r * 0.4, 0, 0, Math.PI * 2); ctx.fill();
-                ctx.fillStyle = '#000000';
-                ctx.beginPath(); ctx.ellipse(-r*0.1, -r*0.25, r*0.08, r*0.15, -0.5, 0, Math.PI * 2); ctx.ellipse(r*0.1, -r*0.25, r*0.08, r*0.15, 0.5, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#32CD32'; ctx.beginPath(); ctx.ellipse(0, -r * 0.2, r * 0.3, r * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#000000'; ctx.beginPath(); ctx.ellipse(-r*0.1, -r*0.25, r*0.08, r*0.15, -0.5, 0, Math.PI * 2); ctx.ellipse(r*0.1, -r*0.25, r*0.08, r*0.15, 0.5, 0, Math.PI * 2); ctx.fill();
                 break;
     
             case 'hunter':
+            case 'trap_king_add': // trap_king_add will now use the hunter's visuals
                 ctx.shadowColor = color; ctx.shadowBlur = 15;
                 ctx.strokeStyle = color; ctx.fillStyle = color + '99';
                 ctx.moveTo(0,-r); ctx.lineTo(r*0.8,r*0.8); ctx.lineTo(0,r*0.3); ctx.lineTo(-r*0.8,r*0.8);
@@ -664,8 +687,7 @@
                 ctx.strokeStyle = color; ctx.fillStyle = color + '99';
                 ctx.rect(-r*0.8,-r*0.6,r*1.6,r*1.2); ctx.moveTo(-r*0.8,-r*0.4); ctx.lineTo(-r*1.2,0); ctx.lineTo(-r*0.8,r*0.4); ctx.moveTo(r*0.8,-r*0.4); ctx.lineTo(r*1.2,0); ctx.lineTo(r*0.8,r*0.4);
                 ctx.fill(); ctx.stroke();
-                ctx.fillStyle='#ff99cc';
-                ctx.beginPath(); ctx.arc(0,0,r*0.3,0,Math.PI*2); ctx.fill();
+                ctx.fillStyle='#ff99cc'; ctx.beginPath(); ctx.arc(0,0,r*0.3,0,Math.PI*2); ctx.fill();
                 break;
         }
         ctx.restore();
@@ -687,20 +709,16 @@
             case 'voidBeam':
                 effect.maxLife = 2;
                 effect.step = function (dt) {
-                    this.life -= dt / this.maxLife;
-                    if (this.life <= 0) this.isActive = false;
+                    this.life -= dt / this.maxLife; if (this.life <= 0) this.isActive = false;
                     const beamWidth = 200;
-                    // ### DAMAGE SCALING CHANGE ###
                     const beamDmg = 200 * store.player.dmgMult * dt; 
                     store.enemies.forEach(e => { if (Math.abs(e.x - store.player.x) < beamWidth / 2) e.hp -= beamDmg; });
-                    if (store.boss && Math.abs(store.boss.x - store.player.x) < beamWidth / 2) store.boss.hp -= beamDmg;
+                    store.bosses.forEach(b => { if (Math.abs(b.x - store.player.x) < beamWidth / 2) b.hp -= beamDmg; });
                 };
                 effect.draw = function () {
                     const beamWidth = 200; const p = store.player;
-                    ctx.fillStyle = `rgba(255, 255, 255, ${0.4 * Math.sin(this.life * Math.PI)})`;
-                    ctx.fillRect(p.x - beamWidth / 2, 0, beamWidth, H);
-                    ctx.fillStyle = `rgba(178, 102, 255, ${0.3 * Math.sin(this.life * Math.PI)})`;
-                    ctx.fillRect(p.x - beamWidth / 4, 0, beamWidth / 2, H);
+                    ctx.fillStyle = `rgba(255, 255, 255, ${0.4 * Math.sin(this.life * Math.PI)})`; ctx.fillRect(p.x - beamWidth / 2, 0, beamWidth, H);
+                    ctx.fillStyle = `rgba(178, 102, 255, ${0.3 * Math.sin(this.life * Math.PI)})`; ctx.fillRect(p.x - beamWidth / 4, 0, beamWidth / 2, H);
                 };
                 break;
         }
@@ -708,7 +726,49 @@
     }
     function explodeGrenade(x, y) { playSound('https://soundbible.com/mp3/Grenade-SoundBible.com-1775988413.mp3', 0.6); store.activeEffects.push(createEffect('grenadeExplosion', x, y)); const radius = 150; store.enemies.forEach(e => { const distSq = (e.x - x)**2 + (e.y - y)**2; if (distSq < radius**2) { e.hp -= e.hpMax * 0.5; } }); }
 
-    function showShop(){ store.isPaused=true; q('pauseBtn').classList.add('hide'); const panel=q("shopPanel"),grid=q("shopGrid"),shardsEl=q("shopShards"); shardsEl.textContent=store.world.shards; let content = ''; for (const key in SHOP_UPGRADES) { const u = SHOP_UPGRADES[key]; let currentLevel = store.player.upgradeLevels[key] || 0; let isDisabled = false; let cost = 0; let desc = u.desc(currentLevel); let name = u.name; if (u.isPremium) { cost = u.cost; if (key === 'repair') { if (store.player.hp >= store.player.hpMax) { isDisabled = true; desc = "Health is already full."; } } else if (u.isUnlock) { if ((key === 'void_beam' && store.player.hasVoidBeam) || (key === 'launcher' && store.player.hasLauncher) || (key === 'ghost_hounds' && store.player.hasHounds)) { isDisabled = true; desc = "Already Unlocked"; } } else { if (store.player.grenades >= u.max) { isDisabled = true; desc = "At maximum capacity"; } } } else { if (currentLevel >= u.maxLevel) { isDisabled = true; desc = "Max Level Reached"; } cost = Math.floor(u.baseCost * Math.pow(u.scale, currentLevel)); } if (store.world.shards < cost) isDisabled = true; content += `<div class="skill-card shop-item" data-key="${key}" style="${isDisabled ? "opacity:0.5;pointer-events:none;" : ""}"> <div class="skill-title">${name}</div> <div class="skill-desc">${desc}</div> <div style="color:var(--accent);margin-top:4px;">Cost: ${cost > 0 ? cost : '---'} shards</div> </div>`; } grid.innerHTML = content; grid.querySelectorAll(".shop-item").forEach(item => { item.addEventListener("click", () => { const key = item.dataset.key; const upgrade = SHOP_UPGRADES[key]; let cost = 0; if (upgrade.isPremium) { cost = upgrade.cost; } else { cost = Math.floor(upgrade.baseCost * Math.pow(upgrade.scale, store.player.upgradeLevels[key] || 0)); } if (store.world.shards >= cost) { let purchaseSuccessful = false; if (upgrade.isPremium) { purchaseSuccessful = upgrade.apply(); } else { upgrade.effect(); store.player.upgradeLevels[key] = (store.player.upgradeLevels[key] || 0) + 1; purchaseSuccessful = true; } if (purchaseSuccessful) { store.world.shards -= cost; playSound('https://www.myinstants.com/media/sounds/zelda-power-up.mp3', 0.4); } showShop(); } }); }); panel.classList.remove("hide"); }
+    function showShop(){
+        store.isPaused=true; q('pauseBtn').classList.add('hide'); 
+        const panel=q("shopPanel"),grid=q("shopGrid"),shardsEl=q("shopShards"); 
+        shardsEl.textContent=store.world.shards;
+        // ### SCALING UPGRADE COST LOGIC ###
+        const globalCostScale = 1 + ((store.world.wave - 1) * 0.1);
+        let content = ''; 
+        for (const key in SHOP_UPGRADES) {
+            const u = SHOP_UPGRADES[key]; 
+            let currentLevel = store.player.upgradeLevels[key] || 0; 
+            let isDisabled = false, cost = 0, desc = u.desc(currentLevel), name = u.name;
+            if (u.isPremium) {
+                cost = Math.floor(u.cost * (key === 'repair' ? 1 : globalCostScale)); // Scale premium items except basic repairs
+                if (key === 'repair' && store.player.hp >= store.player.hpMax) { isDisabled = true; desc = "Health is already full."; }
+                else if (u.isUnlock && ((key === 'void_beam' && store.player.hasVoidBeam) || (key === 'launcher' && store.player.hasLauncher) || (key === 'ghost_hounds' && store.player.hasHounds))) { isDisabled = true; desc = "Already Unlocked"; }
+                else if (store.player.grenades >= u.max) { isDisabled = true; desc = "At maximum capacity"; }
+            } else {
+                if (currentLevel >= u.maxLevel) { isDisabled = true; desc = "Max Level Reached"; }
+                cost = Math.floor(u.baseCost * globalCostScale * Math.pow(u.scale, currentLevel));
+            } 
+            if (store.world.shards < cost) isDisabled = true; 
+            content += `<div class="skill-card shop-item" data-key="${key}" style="${isDisabled ? "opacity:0.5;pointer-events:none;" : ""}"> <div class="skill-title">${name}</div> <div class="skill-desc">${desc}</div> <div style="color:var(--accent);margin-top:4px;">Cost: ${cost > 0 ? cost : '---'} shards</div> </div>`; 
+        } 
+        grid.innerHTML = content; 
+        grid.querySelectorAll(".shop-item").forEach(item => { 
+            item.addEventListener("click", () => { 
+                const key = item.dataset.key; const upgrade = SHOP_UPGRADES[key]; let cost = 0;
+                if (upgrade.isPremium) {
+                    cost = Math.floor(upgrade.cost * (key === 'repair' ? 1 : globalCostScale));
+                } else {
+                    cost = Math.floor(upgrade.baseCost * globalCostScale * Math.pow(upgrade.scale, store.player.upgradeLevels[key] || 0));
+                } 
+                if (store.world.shards >= cost) { 
+                    let purchaseSuccessful = false; 
+                    if (upgrade.isPremium) { purchaseSuccessful = upgrade.apply(); }
+                    else { upgrade.effect(); store.player.upgradeLevels[key] = (store.player.upgradeLevels[key] || 0) + 1; purchaseSuccessful = true; } 
+                    if (purchaseSuccessful) { store.world.shards -= cost; playSound('https://www.myinstants.com/media/sounds/zelda-power-up.mp3', 0.4); } 
+                    showShop(); 
+                } 
+            }); 
+        }); 
+        panel.classList.remove("hide"); 
+    }
     
     // --- GHOST HOUNDS ---
     function createHound(side) { return { x: store.player.x + side * 50, y: store.player.y + 20, side, target: null, attackT: 0, r: 12 }; }
@@ -717,7 +777,7 @@
         store.hounds.forEach(h => {
             if (!h.target || h.target.dead || h.target.hp <= 0) {
                 let closest = null, closestDist = Infinity;
-                const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
+                const potentialTargets = [...store.enemies, ...store.bosses];
                 potentialTargets.forEach(e => {
                     if (e.dead || e.hp <= 0) return;
                     const dist = (h.x - e.x)**2 + (h.y - e.y)**2;
@@ -732,7 +792,7 @@
                 } else {
                     h.attackT -= dt;
                     if (h.attackT <= 0) {
-                        h.attackT = 0.25; let dmg = 8 * store.player.dmgMult; if (h.target === store.boss) dmg *= 0.3; h.target.hp -= dmg;
+                        h.attackT = 0.25; let dmg = 8 * store.player.dmgMult; if (store.bosses.includes(h.target)) dmg *= 0.3; h.target.hp -= dmg;
                     }
                 }
             } else {
@@ -748,7 +808,7 @@
     // --- ABILITY ACTIVATION ---
     function activateVoidBeam() {
         if (store.player.hasVoidBeam && store.player.voidBeamCooldown <= 0 && !store.isPaused) {
-            store.player.voidBeamCooldown = 20; // Cooldown reduced to 20 seconds
+            store.player.voidBeamCooldown = 20;
             store.activeEffects.push(createEffect('voidBeam'));
             playSound('https://www.myinstants.com/media/sounds/movie-bass-drop-sound-effect_f42zSUd.mp3', 0.7);
         }
