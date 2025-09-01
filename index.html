@@ -16,7 +16,7 @@
         }
         html,body{height:100%;margin:0;background:radial-gradient(1200px 800px at 50% 40%,#330044,var(--bg));color:var(--fg);font-family:'Audiowide',ui-sans-serif,system-ui}
         #wrap{position:fixed;inset:0;display:grid;place-items:center;min-height:100svh;padding:calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left))}
-        .stage{width:min(95vw,var(--maxw));aspect-ratio:16/9;position:relative;display:grid;place-items:center;background:#000;border-radius:12px;overflow:hidden;box-shadow:0 0 60px rgba(255,0,255,.4);container-type:inline-size}
+        .stage{width:min(95vw,var(--maxw));aspect-ratio:16/9;position:relative;display:grid;place-items:center;background:#000;border-radius:12px;overflow:hidden;box-shadow:0 0 60px rgba(255,0,255,.4);container-type:inline-size;z-index:2;}
         canvas{background:transparent;border-radius:16px;touch-action:none;cursor:none}
         
         #ui { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
@@ -35,7 +35,7 @@
         .chip{pointer-events:auto;background:rgba(0,0,0,.7);border:1px solid var(--edge);padding:4px 8px;border-radius:8px;font-size:10px;letter-spacing:.3px;font-family:'Orbitron','Audiowide',ui-sans-serif;text-align:right;color:#c49cff}
         .btn{background:#330044;color:#ffddff;border:1px solid var(--accent);border-radius:12px;padding:var(--btn-pad-y) var(--btn-pad-x);font-size:var(--btn-text);cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none;transition:all .2s}
         .btn:hover{background:#4c0e72;box-shadow:0 0 15px rgba(178,102,255,.5)}
-        .panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(26,0,34,.95);border:1px solid var(--accent);border-radius:16px;padding:20px;width:min(900px,92vw);backdrop-filter:blur(12px);color:#ffddff;box-shadow:0 0 40px rgba(178,102,255,.3)}
+        .panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(26,0,34,.95);border:1px solid var(--accent);border-radius:16px;padding:20px;width:min(900px,92vw);backdrop-filter:blur(12px);color:#ffddff;box-shadow:0 0 40px rgba(178,102,255,.3);z-index:100;}
         .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
         .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
         .hide{display:none!important}
@@ -47,11 +47,11 @@
         .skill-card:hover{background:rgba(85,0,120,.9);box-shadow:0 0 20px rgba(178,102,255,.6);transform:scale(1.05)}
         .skill-title{font-weight:700;color:#c49cff;margin-bottom:4px}
         .skill-desc{font-size:11px;color:#ffddff}
-        .fixed-btn{position:fixed;bottom:10px;z-index:5;border-radius:10px;padding:8px 10px;background:rgba(150,80,255,.2);border:1px solid var(--accent);backdrop-filter:blur(8px);cursor:pointer;font-size:12px;color:#ffddff}
-        #menuBtn{right:10px;}
-        #fsEnterBtn{left:10px;}
-        #shopBtn{right:100px; top:10px;}
-        #pauseBtn{top:10px;right:10px;}
+        .fixed-btn{position:fixed;z-index:5;border-radius:10px;padding:8px 10px;background:rgba(150,80,255,.2);border:1px solid var(--accent);backdrop-filter:blur(8px);cursor:pointer;font-size:12px;color:#ffddff;height:auto;}
+        #menuBtn{right:10px; bottom:10px;}
+        #fsEnterBtn{left:10px; bottom:10px;}
+        #shopBtn{right:100px; top:10px; z-index: 5;}
+        #pauseBtn{top:10px;right:10px; z-index:5;}
         .input{width:100%;padding:8px 10px;border-radius:10px;background:#17001f;color:#ffddff;border:1px solid var(--accent);font-family:'Orbitron','Audiowide',ui-sans-serif}
         @media (max-width:820px){canvas{width:100vw;height:auto;max-height:75vh;border-radius:8px}.panel{width:min(700px,94vw)}.stage{width:98vw}#belowBoard{width:98vw}}
     </style>
@@ -79,7 +79,7 @@
     <audio id="bgmAudio" loop></audio>
     <button id="menuBtn" class="fixed-btn" type="button">🏆 TOP PILOTS</button>
     <button id="fsEnterBtn" class="fixed-btn" type="button">FULLSCREEN</button>
-    <button id="shopBtn" type="button">🔧 MECH FORGE</button>
+    <button id="shopBtn" class="fixed-btn" type="button">🔧 MECH FORGE</button>
     <button id="pauseBtn" class="fixed-btn hide" type="button">PAUSE</button>
 
 <script>
@@ -144,7 +144,7 @@
         { id: 'speed', name: 'NEURAL BOOST', desc: '+15% speed', apply: () => store.player.speed *= 1.15 },
         { id: 'hp', name: 'BLOOD ARMOR', desc: '+10 max HP', apply: () => { store.player.hpMax += 10; store.player.hp += 10; } },
         { id: 'fire', name: 'OVERCLOCK', desc: '+25% fire rate', apply: () => store.player.fireRate *= 0.75 },
-        { id: 'vamp', name: 'VAMPIRIC ROUNDS', desc: 'Heal 1% damage dealt', apply: () => store.player.vampirism += 0.01 },
+        { id: 'vamp', name: 'VAMPIRIC ROUNDS', desc: 'Heal 0.5% damage dealt', apply: () => store.player.vampirism += 0.005 },
         { id: 'multi', name: 'SCATTER PROTOCOL', desc: '+1 projectile', apply: () => store.player.multishot += 1 },
         { id: 'pierce', name: 'PHASE ROUNDS', desc: 'Bullets pierce enemies', apply: () => store.player.piercing = 1 },
         { id: 'shield', name: 'VOID SHIELD', desc: '+20 regenerating shield', apply: () => { store.player.shieldMax += 20; store.player.shield = store.player.shieldMax; } },
@@ -156,8 +156,8 @@
         'speed': { name: "SPEED", baseCost: 30, scale: 1.6, maxLevel: 8, effect: () => store.player.speed += 30, desc: level => `+30 Speed (Lvl ${level + 1})` },
         'hp': { name: "MAX HP", baseCost: 20, scale: 1.4, maxLevel: 10, effect: () => { store.player.hpMax += 10; store.player.hp += 10; }, desc: level => `+10 Max HP (Lvl ${level + 1})` },
         'shield': { name: "MAX SHIELD", baseCost: 40, scale: 1.8, maxLevel: 5, effect: () => { store.player.shieldMax += 25; store.player.shield += 25; }, desc: level => `+25 Max Shield (Lvl ${level + 1})` },
-        'grenade': { name: "NOVA GRENADE", cost: 15, isPremium: true, max: 3, apply: () => { if (store.player.grenades < 3) { store.player.grenades++; return true; } return false; }, desc: () => `Buy 1 (Max 3)` },
-        'void_beam': { name: "VOID BEAM", cost: 80, isPremium: true, isUnlock: true, apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; return true; } return false; }, desc: () => `Unlock Ultimate Weapon` }
+        'grenade': { name: "NOVA GRENADE", cost: 75, isPremium: true, max: 3, apply: () => { if (store.player.grenades < 3) { store.player.grenades++; return true; } return false; }, desc: () => `Buy 1 (Max 3)` },
+        'void_beam': { name: "VOID BEAM", cost: 250, isPremium: true, isUnlock: true, apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; return true; } return false; }, desc: () => `Unlock Ultimate Weapon` }
     };
     
     const POWERUP_TYPES = {
@@ -289,13 +289,20 @@
     }
 
     // --- RENDER & DRAW FUNCTIONS ---
+    // Moved star array creation outside of the render loop for performance
+    const starCountA = 100, starCountB = 80;
+    const starsA = Array.from({ length: starCountA }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5, pulse: Math.random() * 10 }));
+    const starsB = Array.from({ length: starCountB }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 2, pulse: Math.random() * 10 }));
+
     function render(dt) {
         ctx.fillStyle = '#050008'; ctx.fillRect(0, 0, W, H);
         const time = performance.now() / 1000;
-        const starsA = Array.from({ length: 100 }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5, pulse: Math.random() * 10 }));
-        const starsB = Array.from({ length: 80 }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 2, pulse: Math.random() * 10 }));
-        ctx.globalAlpha = 0.8; for (const s of starsA) { s.y += 30 * dt; if (s.y > H) s.y -= H; ctx.fillStyle = `rgba(255,0,255,${0.5 + 0.5 * Math.sin(time * 2 + s.pulse)})`; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 2 * Math.PI); ctx.fill(); }
-        ctx.globalAlpha = 0.6; for (const s of starsB) { s.y += 60 * dt; if (s.y > H) s.y -= H; ctx.fillStyle = `rgba(204,0,255,${0.4 + 0.6 * Math.sin(time * 1.5 + s.pulse)})`; ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(0.1, s.r * (0.4 + 0.6 * Math.sin(time * 1.5 + s.pulse))), 0, 2 * Math.PI); ctx.fill(); }
+        
+        // Animate and draw stars
+        ctx.globalAlpha = 0.8; 
+        for (const s of starsA) { s.y += 30 * dt; if (s.y > H) s.y -= H; ctx.fillStyle = `rgba(255,0,255,${0.5 + 0.5 * Math.sin(time * 2 + s.pulse)})`; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 2 * Math.PI); ctx.fill(); }
+        ctx.globalAlpha = 0.6; 
+        for (const s of starsB) { s.y += 60 * dt; if (s.y > H) s.y -= H; ctx.fillStyle = `rgba(204,0,255,${0.4 + 0.6 * Math.sin(time * 1.5 + s.pulse)})`; ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(0.1, s.r * (0.4 + 0.6 * Math.sin(time * 1.5 + s.pulse))), 0, 2 * Math.PI); ctx.fill(); }
         ctx.globalAlpha = 1;
         
         store.powerups.forEach(p => drawPowerup(p));
