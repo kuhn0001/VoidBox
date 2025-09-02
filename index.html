@@ -58,8 +58,8 @@
             background:rgba(26,0,34,.95);
             border:1px solid var(--accent);
             border-radius:16px;
-            padding:12px;
-            width:min(600px, 90vw);
+            padding:10px;
+            width:min(500px, 90vw); /* MODIFIED: Reduced width again */
             backdrop-filter:blur(12px);
             color:#ffddff;
             box-shadow:0 0 40px rgba(178,102,255,.3);
@@ -71,7 +71,7 @@
             right: 12px;
             background: transparent;
             border: none;
-            color: var(--accent); /* CHANGED: Color to purple */
+            color: var(--accent);
             font-size: 28px;
             font-weight: bold;
             line-height: 1;
@@ -83,48 +83,48 @@
             opacity: 1;
             transform: scale(1.1);
         }
-        #shopPanel h2, #levelPanel h2 {
+        #shopPanel h2, #levelPanel h2, #scorePanel h2, #namePanel h2 {
             margin: 0 0 8px 0;
             padding-top: 10px;
-            font-size: clamp(18px, 2.2vw, 22px);
+            font-size: clamp(16px, 2.2vw, 20px); /* MODIFIED: Reduced font size */
             text-align: center;
         }
-        #shopPanel p, #levelPanel p {
+        #shopPanel p, #levelPanel p, #namePanel p {
             margin: 0 0 10px 0;
             text-align: center;
         }
-        #shopGrid {
-            max-height: 55vh;
+        #shopGrid, #scorePanel div {
+            max-height: 60vh; 
             overflow-y: auto;
             padding-right: 8px;
         }
         .grid{
             display:grid;
-            gap:10px;
-            grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));
+            gap:8px; /* MODIFIED: Reduced gap */
+            grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); /* MODIFIED: Reduced column width */
         }
         .hide{display:none!important}
         #belowBoard{width:min(95vw,var(--maxw));margin:8px auto 0;padding:8px;display:grid;gap:8px}
         #hsCard{border:1px solid var(--edge);background:linear-gradient(180deg,rgba(150,80,255,.12),rgba(150,80,255,.06));backdrop-filter:blur(8px);padding:8px;border-radius:8px}
         #hsCard h3{margin:0 0 6px 0;font-family:'Orbitron','Audiowide',ui-sans-serif;text-align:center;font-size:14px;color:#c49cff}
         #hsList{list-style:decimal;margin:0;padding:0 0 0 1rem;line-height:1.4;font-size:12px;color:#ffddff}
-        .skill-card{background:rgba(51,0,68,.8);border:1px solid var(--accent);border-radius:8px;padding:10px;cursor:pointer;transition:all .2s}
+        .skill-card{background:rgba(51,0,68,.8);border:1px solid var(--accent);border-radius:8px;padding:8px;cursor:pointer;transition:all .2s}
         .skill-card:hover{background:rgba(85,0,120,.9);box-shadow:0 0 20px rgba(178,102,255,.6);transform:scale(1.05)}
         .skill-card.disabled{opacity:0.5;cursor:not-allowed;transform:none!important;box-shadow:none!important}
         .skill-title{
             font-weight:700;
             color:#c49cff;
             margin-bottom:4px;
-            font-size: 14px;
+            font-size: 13px; /* MODIFIED: Reduced font size */
         }
-        .skill-desc{font-size:11px;color:#ffddff}
+        .skill-desc{font-size:10px;color:#ffddff} /* MODIFIED: Reduced font size */
         .fixed-btn{position:fixed;z-index:5;border-radius:10px;padding:var(--btn-pad-y) var(--btn-pad-x);background:rgba(150,80,255,.2);border:1px solid var(--accent);backdrop-filter:blur(8px);cursor:pointer;font-size:var(--btn-text);color:#ffddff;height:auto;min-width:180px;text-align:center;}
         .fixed-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         #menuBtn{right:20px; bottom:20px;}
         #fsEnterBtn{left:20px; bottom:20px;}
         #shopBtn{right:220px; bottom:20px; z-index: 5;}
         #pauseBtn{top:20px;right:20px; z-index:5;}
-        .input{width:100%;padding:8px 10px;border-radius:10px;background:#17001f;color:#ffddff;border:1px solid var(--accent);font-family:'Orbitron','Audiowide',ui-sans-serif; box-sizing: border-box;} /* ADDED: box-sizing */
+        .input{width:100%;padding:8px 10px;border-radius:10px;background:#17001f;color:#ffddff;border:1px solid var(--accent);font-family:'Orbitron','Audiowide',ui-sans-serif; box-sizing: border-box;}
         
         #abilityBar {
             position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
@@ -146,7 +146,7 @@
             border-color: #66ffb2;
         }
 
-        @media (max-width:820px){canvas{width:100vw;height:auto;max-height:75vh;border-radius:8px}.panel{width:min(700px,94vw)}.stage{width:98vw}#belowBoard{width:98vw}}
+        @media (max-width:820px){canvas{width:100vw;height:auto;max-height:75vh;border-radius:8px}.panel{width:min(500px,94vw)}.stage{width:98vw}#belowBoard{width:98vw}}
     </style>
 </head>
 <body>
@@ -669,25 +669,53 @@
     function drawHound(h){ctx.save();ctx.translate(h.x,h.y);const time=performance.now()/100;ctx.globalAlpha=.5+.2*Math.sin(time+h.side);ctx.fillStyle="#9a66ff";ctx.beginPath();ctx.arc(0,0,h.r,Math.PI,0);ctx.lineTo(h.r,h.r);ctx.lineTo(.6*h.r,.7*h.r);ctx.lineTo(0,h.r);ctx.lineTo(-.6*h.r,.7*h.r);ctx.lineTo(-h.r,h.r);ctx.closePath();ctx.fill();ctx.fillStyle="#000";ctx.beginPath();ctx.arc(-4,-2,2,0,2*Math.PI);ctx.arc(4,-2,2,0,2*Math.PI);ctx.fill();ctx.restore()}
     function activateVoidBeam(){if(store.player.hasVoidBeam&&store.player.voidBeamCooldown<=0&&!store.isPaused){store.player.voidBeamCooldown=20;store.activeEffects.push(createEffect("voidBeam"))}}
     function useGrenade(){if(store.player.grenades>0&&!store.isPaused){store.player.grenades--;store.grenades.push({x:store.player.x,y:store.player.y,vx:0,vy:-200,fuse:1.5,r:8})}}
+    // --- EVENT LISTENERS & INITIALIZATION ---
     function ensureName(){if(!store.name){store.isPaused=true;q("namePanel").classList.remove("hide");q("nameInput").value="";setTimeout(()=>q("nameInput").focus(),50)}}
+    
     q("restartBtn").addEventListener("click",resetGame);
+    
     q("saveName").addEventListener("click",()=>{const t=(q("nameInput").value||"").slice(0,16).trim();if(t){store.name=t;q("namePanel").classList.add("hide");store.isPaused=false}});
+    
     const closeShopLogic = () => { q("shopPanel").classList.add('hide'); store.isPaused = false; q('pauseBtn').classList.remove('hide'); const highlighted = document.querySelector('.shop-item.highlight'); if (highlighted) highlighted.classList.remove('highlight'); };
     q("closeShop").addEventListener("click", closeShopLogic);
     q("closeShopTopBtn").addEventListener("click", closeShopLogic);
-    q("shopBtn").addEventListener("click",showShop);
-    q("menuBtn").addEventListener("click",()=>{store.isPaused=true;q('scorePanel').classList.remove('hide');q('pauseBtn').classList.add('hide')});
-    q("closeScores").addEventListener("click",()=>{store.isPaused=false;q('scorePanel').classList.add('hide');q('pauseBtn').classList.remove('hide')});
+
+    q("shopBtn").addEventListener("click", () => {
+        if (q('shopPanel').classList.contains('hide')) {
+            showShop();
+        } else {
+            closeShopLogic();
+        }
+    });
+
+    const closeScoresLogic = () => { store.isPaused=false; q('scorePanel').classList.add('hide'); q('pauseBtn').classList.remove('hide'); };
+    q("closeScores").addEventListener("click", closeScoresLogic);
+    
+    q("menuBtn").addEventListener("click",()=>{
+        if (q('scorePanel').classList.contains('hide')) {
+            store.isPaused=true;
+            q('scorePanel').classList.remove('hide');
+            q('pauseBtn').classList.add('hide');
+        } else {
+            closeScoresLogic();
+        }
+    });
+
     q("fsEnterBtn").addEventListener('click',()=>{const r=document.documentElement;if(!document.fullscreenElement){if(r.requestFullscreen)r.requestFullscreen();else if(r.webkitRequestFullscreen)r.webkitRequestFullscreen();else if(r.msRequestFullscreen)r.msRequestFullscreen()}else{if(document.exitFullscreen)document.exitFullscreen()}});
+    
     q('pauseBtn').addEventListener('click',()=>{if(!store.isGameOver&&q('shopPanel').classList.contains('hide')&&q('levelPanel').classList.contains('hide')&&q('namePanel').classList.contains('hide')&&q('scorePanel').classList.contains('hide')){store.isPaused=!store.isPaused;q('pauseBtn').textContent=store.isPaused?'RESUME':'PAUSE'}});
+    
     q('grenadeBtnUI').addEventListener('click',useGrenade);
+    
     q('voidBeamBtnUI').addEventListener('click',activateVoidBeam);
+    
     q("nameInput").addEventListener("keydown",(e)=>{if(e.key==="Enter"){const t=(q("nameInput").value||"").slice(0,16).trim();if(t){store.name=t;q("namePanel").classList.add("hide");store.isPaused=false}}});
+    
     addEventListener("keydown",e=>{const key=e.key.toLowerCase();if(document.activeElement.tagName==="INPUT")return;if(key===' '){e.preventDefault();useGrenade()}if(key==='b'){activateVoidBeam()}});
     function frame(now){const dt=Math.min(.033,(now-store.last)/1e3);store.last=now;if(!store.isGameOver&&!store.isPaused){stepWorld(dt)}render(dt);q('fps').textContent=(1/dt).toFixed(0);requestAnimationFrame(frame)}
     try{initWave();refreshScoreList();ensureName();requestAnimationFrame(frame)}catch(error){console.error("Game initialization failed:",error);try{updateLeaderboard(null);ensureName();requestAnimationFrame(frame);console.log("Game started in offline mode")}catch(criticalError){console.error("Critical startup failure:",criticalError);alert("Game failed to start. Please refresh the page.")}}
     
-})();
-</script>
-</body>
+        })();
+        </script>
+    </body>
 </html>
