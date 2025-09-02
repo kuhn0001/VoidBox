@@ -67,17 +67,19 @@
         }
         .close-btn {
             position: absolute;
-            top: 5px;
-            right: 12px;
+            top: 8px;
+            right: 15px;
             background: transparent;
             border: none;
-            color: var(--accent); /* CHANGED: Color to purple */
-            font-size: 28px;
+            color: var(--accent);
+            font-size: 20px;
+            font-family: 'Orbitron', 'Audiowide', ui-sans-serif;
             font-weight: bold;
             line-height: 1;
             cursor: pointer;
             opacity: 0.7;
             transition: opacity 0.2s, transform 0.2s;
+            padding: 4px;
         }
         .close-btn:hover {
             opacity: 1;
@@ -108,16 +110,42 @@
         #hsCard{border:1px solid var(--edge);background:linear-gradient(180deg,rgba(150,80,255,.12),rgba(150,80,255,.06));backdrop-filter:blur(8px);padding:8px;border-radius:8px}
         #hsCard h3{margin:0 0 6px 0;font-family:'Orbitron','Audiowide',ui-sans-serif;text-align:center;font-size:14px;color:#c49cff}
         #hsList{list-style:decimal;margin:0;padding:0 0 0 1rem;line-height:1.4;font-size:12px;color:#ffddff}
-        .skill-card{background:rgba(51,0,68,.8);border:1px solid var(--accent);border-radius:8px;padding:8px;cursor:pointer;transition:all .2s}
+        
+        .skill-card {
+            background: radial-gradient(circle, rgba(51,0,68,1) 0%, rgba(51,0,68,0.8) 70%);
+            border: 1px solid var(--accent);
+            border-radius: 12px;
+            padding: 12px 8px;
+            cursor: pointer;
+            transition: all .2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            justify-content: space-between;
+        }
         .skill-card:hover{background:rgba(85,0,120,.9);box-shadow:0 0 20px rgba(178,102,255,.6);transform:scale(1.05)}
         .skill-card.disabled{opacity:0.5;cursor:not-allowed;transform:none!important;box-shadow:none!important}
+        
+        .skill-icon {
+            font-size: 28px;
+            margin-bottom: 8px;
+            line-height: 1;
+        }
         .skill-title{
             font-weight:700;
             color:#c49cff;
-            margin-bottom:4px;
+            margin-bottom: 4px;
             font-size: 13px;
+            line-height: 1.1;
         }
-        .skill-desc{font-size:10px;color:#ffddff; min-height: 22px;}
+        .skill-desc{
+            font-size:10px;
+            color:#ffddff;
+            flex-grow: 1;
+            margin-bottom: 4px;
+        }
+
         .fixed-btn{position:fixed;z-index:5;border-radius:10px;padding:var(--btn-pad-y) var(--btn-pad-x);background:rgba(150,80,255,.2);border:1px solid var(--accent);backdrop-filter:blur(8px);cursor:pointer;font-size:var(--btn-text);color:#ffddff;height:auto;min-width:180px;text-align:center; font-family: 'Orbitron', 'Audiowide', ui-sans-serif;}
         .fixed-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         #menuBtn, #fsEnterBtn, #shopBtn {
@@ -229,7 +257,7 @@
                         <div id="skillsGrid" class="grid"></div>
                     </div>
                     <div id="shopPanel" class="panel hide">
-                        <button type="button" class="close-btn" id="closeShopTopBtn">&times;</button>
+                        <button type="button" class="close-btn" id="closeShopTopBtn">X</button>
                         <h2 style="font-family:'Orbitron';color:var(--accent)">⚡ MECH FORGE ⚡</h2>
                         <p style="color:#ffddff">Available Shards: <span id="shopShards">0</span></p>
                         <div id="shopGrid" class="grid"></div>
@@ -346,29 +374,29 @@
     };
 
     const LEVEL_UPGRADES = [
-        { id: 'dmg', name: 'PLASMA CORE', desc: '+25% damage', apply: () => store.player.dmgMult *= 1.25 },
-        { id: 'speed', name: 'NEURAL BOOST', desc: '+15% speed', apply: () => store.player.speed *= 1.15 },
-        { id: 'hp', name: 'BLOOD ARMOR', desc: '+10 max HP', apply: () => { store.player.hpMax += 10; store.player.hp += 10; } },
-        { id: 'fire', name: 'OVERCLOCK', desc: '+25% fire rate', apply: () => store.player.fireRate *= 0.75 },
-        { id: 'vamp', name: 'VAMPIRIC ROUNDS', desc: 'Heal 2% damage dealt', apply: () => store.player.vampirism += 0.02 },
-        { id: 'multi', name: 'SCATTER PROTOCOL', desc: '+1 projectile', apply: () => store.player.multishot += 1 },
-        { id: 'pierce', name: 'PHASE ROUNDS', desc: 'Bullets pierce enemies', apply: () => store.player.piercing = 1 },
-        { id: 'shield', name: 'VOID SHIELD', desc: '+20 regenerating shield', apply: () => { store.player.shieldMax += 20; store.player.shield = store.player.shieldMax; } },
-        { id: 'explode', name: 'NOVA WARHEADS', desc: 'Explosive rounds', apply: () => store.player.explosive = true },
+        { id: 'dmg', name: 'PLASMA CORE', icon: '💥', desc: '+25% damage', apply: () => store.player.dmgMult *= 1.25 },
+        { id: 'speed', name: 'NEURAL BOOST', icon: '🚀', desc: '+15% speed', apply: () => store.player.speed *= 1.15 },
+        { id: 'hp', name: 'BLOOD ARMOR', icon: '❤️', desc: '+10 max HP', apply: () => { store.player.hpMax += 10; store.player.hp += 10; } },
+        { id: 'fire', name: 'OVERCLOCK', icon: '🔥', desc: '+25% fire rate', apply: () => store.player.fireRate *= 0.75 },
+        { id: 'vamp', name: 'VAMPIRIC ROUNDS', icon: '🩸', desc: 'Heal 2% damage dealt', apply: () => store.player.vampirism += 0.02 },
+        { id: 'multi', name: 'SCATTER PROTOCOL', icon: '☄️', desc: '+1 projectile', apply: () => store.player.multishot += 1 },
+        { id: 'pierce', name: 'PHASE ROUNDS', icon: '➡️', desc: 'Bullets pierce enemies', apply: () => store.player.piercing = 1 },
+        { id: 'shield', name: 'VOID SHIELD', icon: '🛡️', desc: '+20 regenerating shield', apply: () => { store.player.shieldMax += 20; store.player.shield = store.player.shieldMax; } },
+        { id: 'explode', name: 'NOVA WARHEADS', icon: '💣', desc: 'Explosive rounds', apply: () => store.player.explosive = true },
     ];
     
     const SHOP_UPGRADES = {
-        'dmg': { name: "DAMAGE", baseCost: 25, scale: 1.5, maxLevel: 10, category: 'attack', effect: () => store.player.dmgMult += 0.1, desc: level => `+10% Damage (Lvl ${level + 1})` },
-        'speed': { name: "SPEED", baseCost: 30, scale: 1.6, maxLevel: 8, category: 'utility', effect: () => store.player.speed += 30, desc: level => `+30 Speed (Lvl ${level + 1})` },
-        'hp': { name: "MAX HP", baseCost: 20, scale: 1.4, maxLevel: 10, category: 'health', effect: () => { store.player.hpMax += 10; store.player.hp += 10; }, desc: level => `+10 Max HP (Lvl ${level + 1})` },
-        'shield': { name: "MAX SHIELD", baseCost: 40, scale: 1.8, maxLevel: 5, category: 'health', effect: () => { store.player.shieldMax += 25; store.player.shield += 25; }, desc: level => `+25 Max Shield (Lvl ${level + 1})` },
-        'repair': { name: "NANO REPAIR", cost: 3, isPremium: true, category: 'health', apply: () => { if (store.player.hp < store.player.hpMax) { store.player.hp = Math.min(store.player.hpMax, store.player.hp + store.player.hpMax * 0.25); return true; } return false; }, desc: () => `Restore 25% of max HP.` },
-        'nano_save': { name: "NANO SAVE", cost: 25, isPremium: true, max: 3, category: 'utility', apply: () => { if (store.player.nanoSaves < 3) { store.player.nanoSaves++; return true; } return false; }, desc: () => `Auto-heals 25% when below 25% HP. Charges: ${store.player.nanoSaves}/3` },
-        'mine_wall': { name: "MINE WALL", cost: 40, isPremium: true, max: 2, category: 'attack', apply: () => { const activeWalls = store.mines.filter(m => m.isWallMine).length > 0; if(!activeWalls) { deployMineWall(); return true; } return false; }, desc: () => `Deploy a wall of mines.` },
-        'grenade': { name: "NOVA GRENADE", cost: 35, isPremium: true, max: 3, category: 'attack', apply: () => { if (store.player.grenades < 3) { store.player.grenades++; return true; } return false; }, desc: () => `Buy 1 (Max 3)` },
-        'void_beam': { name: "VOID BEAM", cost: 75, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; return true; } return false; }, desc: () => `Unlock Ultimate Weapon` },
-        'launcher': { name: 'FRAGMENTATION LAUNCHER', cost: 50, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasLauncher) { store.player.hasLauncher = true; return true; } return false; }, desc: () => `Adds swirling nova projectiles to your primary fire.` },
-        'ghost_hounds': { name: "GHOST HOUNDS", cost: 75, isPremium: true, isUnlock: true, category: 'attack', apply: () => { 
+        'dmg': { name: "DAMAGE", icon: '💥', baseCost: 25, scale: 1.5, maxLevel: 10, category: 'attack', effect: () => store.player.dmgMult += 0.1, desc: level => `+10% Damage (Lvl ${level + 1})` },
+        'speed': { name: "SPEED", icon: '🚀', baseCost: 30, scale: 1.6, maxLevel: 8, category: 'utility', effect: () => store.player.speed += 30, desc: level => `+30 Speed (Lvl ${level + 1})` },
+        'hp': { name: "MAX HP", icon: '❤️', baseCost: 20, scale: 1.4, maxLevel: 10, category: 'health', effect: () => { store.player.hpMax += 10; store.player.hp += 10; }, desc: level => `+10 Max HP (Lvl ${level + 1})` },
+        'shield': { name: "MAX SHIELD", icon: '🛡️', baseCost: 40, scale: 1.8, maxLevel: 5, category: 'health', effect: () => { store.player.shieldMax += 25; store.player.shield += 25; }, desc: level => `+25 Max Shield (Lvl ${level + 1})` },
+        'repair': { name: "NANO REPAIR", icon: '🔧', cost: 3, isPremium: true, category: 'health', apply: () => { if (store.player.hp < store.player.hpMax) { store.player.hp = Math.min(store.player.hpMax, store.player.hp + store.player.hpMax * 0.25); return true; } return false; }, desc: () => `Restore 25% of max HP.` },
+        'nano_save': { name: "NANO SAVE", icon: '🔋', cost: 25, isPremium: true, max: 3, category: 'utility', apply: () => { if (store.player.nanoSaves < 3) { store.player.nanoSaves++; return true; } return false; }, desc: () => `Auto-heals on low HP. Charges: ${store.player.nanoSaves}/3` },
+        'mine_wall': { name: "MINE WALL", icon: '🧱', cost: 40, isPremium: true, max: 2, category: 'attack', apply: () => { const activeWalls = store.mines.filter(m => m.isWallMine).length > 0; if(!activeWalls) { deployMineWall(); return true; } return false; }, desc: () => `Deploy a wall of mines.` },
+        'grenade': { name: "NOVA GRENADE", icon: '💣', cost: 35, isPremium: true, max: 3, category: 'attack', apply: () => { if (store.player.grenades < 3) { store.player.grenades++; return true; } return false; }, desc: () => `Buy 1 (Max 3)` },
+        'void_beam': { name: "VOID BEAM", icon: '🌀', cost: 75, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; return true; } return false; }, desc: () => `Unlock Ultimate Weapon` },
+        'launcher': { name: 'FRAGMENTATION LAUNCHER', icon: '🛰️', cost: 50, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasLauncher) { store.player.hasLauncher = true; return true; } return false; }, desc: () => `Adds swirling nova projectiles.` },
+        'ghost_hounds': { name: "GHOST HOUNDS", icon: '🐺', cost: 75, isPremium: true, isUnlock: true, category: 'attack', apply: () => { 
             if (!store.player.hasHounds) { 
                 store.player.hasHounds = true; 
                 store.hounds = [createHound(-1), createHound(1)];
@@ -376,7 +404,7 @@
                 return true; 
             } 
             return false; 
-        }, desc: () => `Unlocks 2 spectral hounds to attack enemies.` }
+        }, desc: () => `Unlocks 2 spectral hounds.` }
     };
     
    const POWERUP_TYPES = {
@@ -684,7 +712,7 @@
         let otherUpgrades = LEVEL_UPGRADES.filter(u => u.id !== 'multi'); 
         for (let i = otherUpgrades.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [otherUpgrades[i], otherUpgrades[j]] = [otherUpgrades[j], otherUpgrades[i]]; } 
         const choices = [multiShotUpgrade, ...otherUpgrades.slice(0, 2)]; 
-        grid.innerHTML = choices.map(s => `<div class="skill-card" data-id="${s.id}"><div class="skill-title">${s.name}</div><div class="skill-desc">${s.desc}</div></div>`).join(''); 
+        grid.innerHTML = choices.map(s => `<div class="skill-card" data-id="${s.id}"><div class="skill-icon">${s.icon}</div><div><div class="skill-title">${s.name}</div><div class="skill-desc">${s.desc}</div></div></div>`).join(''); 
         grid.querySelectorAll('.skill-card').forEach(c => c.addEventListener('click', () => { 
             const id = c.dataset.id; const upgrade = LEVEL_UPGRADES.find(s => s.id === id); 
             if (upgrade) upgrade.apply(); panel.classList.add('hide'); store.isPaused = false; 
@@ -825,7 +853,7 @@
         return effect
     }
     function explodeGrenade(x,y){store.activeEffects.push(createEffect("grenadeExplosion",x,y));const radius=150;store.enemies.forEach(e=>{(e.x-x)**2+(e.y-y)**2<radius**2&&(e.hp-=.5*e.hpMax)})}
-    function showShop(){ store.isPaused=true; q('pauseBtn').classList.add('hide'); const panel=q("shopPanel"),grid=q("shopGrid"),shardsEl=q("shopShards"); shardsEl.textContent=store.world.shards; let content=""; for(const key in SHOP_UPGRADES){ const u=SHOP_UPGRADES[key]; let currentLevel=store.player.upgradeLevels[key]||0,isDisabled=!1,cost=0,desc=u.desc(currentLevel),name=u.name; if(u.isPremium){cost=u.cost;if(key==='repair'){if(store.player.hp>=store.player.hpMax){isDisabled=true;desc="Health is already full."}} else if (key === 'nano_save') { if (store.player.nanoSaves >= u.max) { isDisabled = true; desc = "Max charges reached."; } } else if(u.isUnlock){if((key==='void_beam'&&store.player.hasVoidBeam)||(key==='launcher'&&store.player.hasLauncher)||(key==='ghost_hounds'&&store.player.hasHounds)){isDisabled=true;desc="Already Unlocked"}}else{if(store.player.grenades>=u.max){isDisabled=true;desc="At maximum capacity"}}}else{if(currentLevel>=u.maxLevel){isDisabled=true;desc="Max Level Reached"}cost=Math.floor(u.baseCost*Math.pow(u.scale,currentLevel))} if(store.world.shards<cost)isDisabled=true; content+=`<div class="skill-card shop-item ${isDisabled?'disabled':''} shop-item-${u.category}" data-key="${key}"> <div class="skill-title">${name}</div> <div class="skill-desc">${desc}</div> <div style="color:var(--accent);margin-top:4px;">Cost: ${cost>0?cost:'---'} shards</div> </div>`} grid.innerHTML=content; grid.querySelectorAll(".shop-item").forEach(item=>{item.addEventListener("click",()=>{if(item.classList.contains('disabled'))return; const key=item.dataset.key; const upgrade=SHOP_UPGRADES[key]; let cost=0; if(upgrade.isPremium){cost=upgrade.cost}else{cost=Math.floor(upgrade.baseCost*Math.pow(upgrade.scale,store.player.upgradeLevels[key]||0))} if(store.world.shards>=cost){let purchaseSuccessful=false;if(upgrade.isPremium){purchaseSuccessful=upgrade.apply()}else{upgrade.effect();store.player.upgradeLevels[key]=(store.player.upgradeLevels[key]||0)+1;purchaseSuccessful=true}if(purchaseSuccessful){store.world.shards-=cost}showShop()}})}); panel.classList.remove("hide"); }
+    function showShop(){ store.isPaused=true; q('pauseBtn').classList.add('hide'); const panel=q("shopPanel"),grid=q("shopGrid"),shardsEl=q("shopShards"); shardsEl.textContent=store.world.shards; let content=""; for(const key in SHOP_UPGRADES){ const u=SHOP_UPGRADES[key]; let currentLevel=store.player.upgradeLevels[key]||0,isDisabled=!1,cost=0,desc=u.desc(currentLevel),name=u.name; if(u.isPremium){cost=u.cost;if(key==='repair'){if(store.player.hp>=store.player.hpMax){isDisabled=true;desc="Health is already full."}} else if (key === 'nano_save') { if (store.player.nanoSaves >= u.max) { isDisabled = true; desc = "Max charges reached."; } } else if (key === 'mine_wall') { if (store.mines.filter(m=>m.isWallMine).length > 0) {isDisabled = true; desc = "Wall already deployed.";} } else if(u.isUnlock){if((key==='void_beam'&&store.player.hasVoidBeam)||(key==='launcher'&&store.player.hasLauncher)||(key==='ghost_hounds'&&store.player.hasHounds)){isDisabled=true;desc="Already Unlocked"}}else{if(store.player.grenades>=u.max){isDisabled=true;desc="At maximum capacity"}}}else{if(currentLevel>=u.maxLevel){isDisabled=true;desc="Max Level Reached"}cost=Math.floor(u.baseCost*Math.pow(u.scale,currentLevel))} if(store.world.shards<cost)isDisabled=true; content+=`<div class="skill-card shop-item ${isDisabled?'disabled':''} shop-item-${u.category}" data-key="${key}"><div class="skill-icon">${u.icon}</div><div><div class="skill-title">${name}</div><div class="skill-desc">${desc}</div></div><div style="color:var(--accent);margin-top:4px;font-size:11px;">Cost: ${cost>0?cost:'---'}</div></div>`} grid.innerHTML=content; grid.querySelectorAll(".shop-item").forEach(item=>{item.addEventListener("click",()=>{if(item.classList.contains('disabled'))return; const key=item.dataset.key; const upgrade=SHOP_UPGRADES[key]; let cost=0; if(upgrade.isPremium){cost=upgrade.cost}else{cost=Math.floor(upgrade.baseCost*Math.pow(upgrade.scale,store.player.upgradeLevels[key]||0))} if(store.world.shards>=cost){let purchaseSuccessful=false;if(upgrade.isPremium){purchaseSuccessful=upgrade.apply()}else{upgrade.effect();store.player.upgradeLevels[key]=(store.player.upgradeLevels[key]||0)+1;purchaseSuccessful=true}if(purchaseSuccessful){store.world.shards-=cost}showShop()}})}); panel.classList.remove("hide"); }
     function showShopWithHighlight() { showShop(); announce('Low health! Use the Mech Forge to repair!'); setTimeout(() => { const repairItem = document.querySelector('.shop-item[data-key="repair"]'); if (repairItem) repairItem.classList.add('highlight'); }, 100); }
     function createHound(side) { return { x: store.player.x + 50 * side, y: store.player.y + 20, side, target: null, attackT: 0, r: 12, killCount: 0 }; }
     function stepHounds(dt) { if (!store.player.hasHounds) return; store.hounds.forEach(h => { if (!h.target || h.target.dead || h.target.hp <= 0) { let closest = null, closestDist = Infinity; const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies; potentialTargets.forEach(e => { if (e.dead || e.hp <= 0) return; const dist = (h.x - e.x)**2 + (h.y - e.y)**2; if (dist < closestDist) { closest = e; closestDist = dist; } }); h.target = closest; } if (h.target) { const tx = h.target.x, ty = h.target.y; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); const speed = 350; if (dist > 30) { h.x += (dx / dist) * speed * dt; h.y += (dy / dist) * speed * dt; } else { h.attackT -= dt; if (h.attackT <= 0) { h.attackT = 0.25; let dmg = 8 * store.player.dmgMult; if (h.target === store.boss) dmg *= 0.3; if (!h.target.dead && h.target.hp > 0) { h.target.hp -= dmg; if (h.target.hp <= 0) { h.killCount++; if (h.killCount > 0 && h.killCount % 12 === 0) { playSound('dogs'); } } } } } } else { const tx = store.player.x + h.side * 50, ty = store.player.y + 20; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); if (dist > 5) { h.x += dx * 5 * dt; h.y += dy * 5 * dt; } } }); }
