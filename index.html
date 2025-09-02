@@ -159,6 +159,7 @@
     <audio id="audioHorn" src="Horn.wav" preload="auto"></audio>
     <audio id="audioHit" src="thunk.wav" preload="auto"></audio>
     <audio id="audioTrap" src="trap.m4a" preload="auto"></audio>
+    <audio id="audioDogs" src="dogs.m4a" preload="auto"></audio>
 
     <button id="menuBtn" class="fixed-btn" type="button">🏆 TOP PILOTS</button>
     <button id="fsEnterBtn" class="fixed-btn" type="button">FULLSCREEN</button>
@@ -218,7 +219,8 @@
         explosion: q('audioExplosion'),
         horn: q('audioHorn'),
         hit: q('audioHit'),
-        trap: q('audioTrap')
+        trap: q('audioTrap'),
+        dogs: q('audioDogs')
     };
     let lastExplosionSoundTime = 0;
     let lastBossHitSoundTime = 0;
@@ -280,7 +282,15 @@
         'grenade': { name: "NOVA GRENADE", cost: 35, isPremium: true, max: 3, apply: () => { if (store.player.grenades < 3) { store.player.grenades++; return true; } return false; }, desc: () => `Buy 1 (Max 3)` },
         'void_beam': { name: "VOID BEAM", cost: 75, isPremium: true, isUnlock: true, apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; return true; } return false; }, desc: () => `Unlock Ultimate Weapon` },
         'launcher': { name: 'FRAGMENTATION LAUNCHER', cost: 50, isPremium: true, isUnlock: true, apply: () => { if (!store.player.hasLauncher) { store.player.hasLauncher = true; return true; } return false; }, desc: () => `Adds swirling nova projectiles to your primary fire.` },
-        'ghost_hounds': { name: "GHOST HOUNDS", cost: 75, isPremium: true, isUnlock: true, apply: () => { if (!store.player.hasHounds) { store.player.hasHounds = true; store.hounds = [createHound(-1), createHound(1)]; return true; } return false; }, desc: () => `Unlocks 2 spectral hounds to attack enemies.` }
+        'ghost_hounds': { name: "GHOST HOUNDS", cost: 75, isPremium: true, isUnlock: true, apply: () => { 
+            if (!store.player.hasHounds) { 
+                store.player.hasHounds = true; 
+                store.hounds = [createHound(-1), createHound(1)];
+                playSound('dogs');
+                return true; 
+            } 
+            return false; 
+        }, desc: () => `Unlocks 2 spectral hounds to attack enemies.` }
     };
     
     const POWERUP_TYPES = {
@@ -585,8 +595,70 @@
     function explodeGrenade(x,y){store.activeEffects.push(createEffect("grenadeExplosion",x,y));const radius=150;store.enemies.forEach(e=>{(e.x-x)**2+(e.y-y)**2<radius**2&&(e.hp-=.5*e.hpMax)})}
     function showShop(){ store.isPaused=true; q('pauseBtn').classList.add('hide'); const panel=q("shopPanel"),grid=q("shopGrid"),shardsEl=q("shopShards"); shardsEl.textContent=store.world.shards; let content=""; for(const key in SHOP_UPGRADES){ const u=SHOP_UPGRADES[key]; let currentLevel=store.player.upgradeLevels[key]||0,isDisabled=!1,cost=0,desc=u.desc(currentLevel),name=u.name; if(u.isPremium){cost=u.cost;if(key==='repair'){if(store.player.hp>=store.player.hpMax){isDisabled=true;desc="Health is already full."}}else if(u.isUnlock){if((key==='void_beam'&&store.player.hasVoidBeam)||(key==='launcher'&&store.player.hasLauncher)||(key==='ghost_hounds'&&store.player.hasHounds)){isDisabled=true;desc="Already Unlocked"}}else{if(store.player.grenades>=u.max){isDisabled=true;desc="At maximum capacity"}}}else{if(currentLevel>=u.maxLevel){isDisabled=true;desc="Max Level Reached"}cost=Math.floor(u.baseCost*Math.pow(u.scale,currentLevel))} if(store.world.shards<cost)isDisabled=true; content+=`<div class="skill-card shop-item ${isDisabled?'disabled':''}" data-key="${key}"> <div class="skill-title">${name}</div> <div class="skill-desc">${desc}</div> <div style="color:var(--accent);margin-top:4px;">Cost: ${cost>0?cost:'---'} shards</div> </div>`} grid.innerHTML=content; grid.querySelectorAll(".shop-item").forEach(item=>{item.addEventListener("click",()=>{if(item.classList.contains('disabled'))return; const key=item.dataset.key; const upgrade=SHOP_UPGRADES[key]; let cost=0; if(upgrade.isPremium){cost=upgrade.cost}else{cost=Math.floor(upgrade.baseCost*Math.pow(upgrade.scale,store.player.upgradeLevels[key]||0))} if(store.world.shards>=cost){let purchaseSuccessful=false;if(upgrade.isPremium){purchaseSuccessful=upgrade.apply()}else{upgrade.effect();store.player.upgradeLevels[key]=(store.player.upgradeLevels[key]||0)+1;purchaseSuccessful=true}if(purchaseSuccessful){store.world.shards-=cost}showShop()}})}); panel.classList.remove("hide"); }
     function showShopWithHighlight() { showShop(); announce('Low health! Use the Mech Forge to repair!'); setTimeout(() => { const repairItem = document.querySelector('.shop-item[data-key="repair"]'); if (repairItem) repairItem.classList.add('highlight'); }, 100); }
-    function createHound(side){return{x:store.player.x+50*side,y:store.player.y+20,side,target:null,attackT:0,r:12}}
-    function stepHounds(dt){if(store.player.hasHounds)store.hounds.forEach(h=>{if(!h.target||h.target.dead||h.target.hp<=0){let closest=null,closestDist=1/0;const potentialTargets=store.boss?[...store.enemies,store.boss]:store.enemies;potentialTargets.forEach(e=>{if(!e.dead&&!(e.hp<=0)){const dist=(h.x-e.x)**2+(h.y-e.y)**2;dist<closestDist&&(closest=e,closestDist=dist)}});h.target=closest}if(h.target){const tx=h.target.x,ty=h.target.y,dx=tx-h.x,dy=ty-h.y,dist=Math.sqrt(dx*dx+dy*dy),speed=350;dist>30?(h.x+=dx/dist*speed*dt,h.y+=dy/dist*speed*dt):(h.attackT-=dt,h.attackT<=0&&(h.attackT=.25,h.target.hp-=(h.target===store.boss?2.4:8)*store.player.dmgMult))}else{const tx=store.player.x+50*h.side,ty=store.player.y+20,dx=tx-h.x,dy=ty-h.y,dist=Math.sqrt(dx*dx+dy*dy);dist>5&&(h.x+=5*dx*dt,h.y+=5*dy*dt)}})}
+    function createHound(side) { 
+        return { 
+            x: store.player.x + 50 * side, 
+            y: store.player.y + 20, 
+            side, 
+            target: null, 
+            attackT: 0, 
+            r: 12,
+            killCount: 0
+        }; 
+    }
+    function stepHounds(dt) {
+        if (!store.player.hasHounds) return;
+
+        store.hounds.forEach(h => {
+            if (!h.target || h.target.dead || h.target.hp <= 0) {
+                let closest = null, closestDist = Infinity;
+                const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
+                potentialTargets.forEach(e => {
+                    if (e.dead || e.hp <= 0) return;
+                    const dist = (h.x - e.x)**2 + (h.y - e.y)**2;
+                    if (dist < closestDist) { closest = e; closestDist = dist; }
+                });
+                h.target = closest;
+            }
+
+            if (h.target) {
+                const tx = h.target.x, ty = h.target.y; 
+                const dx = tx - h.x, dy = ty - h.y; 
+                const dist = Math.sqrt(dx * dx + dy * dy); 
+                const speed = 350;
+
+                if (dist > 30) {
+                    h.x += (dx / dist) * speed * dt; 
+                    h.y += (dy / dist) * speed * dt;
+                } else {
+                    h.attackT -= dt;
+                    if (h.attackT <= 0) {
+                        h.attackT = 0.25; 
+                        let dmg = 8 * store.player.dmgMult; 
+                        if (h.target === store.boss) dmg *= 0.3; 
+                        
+                        if (!h.target.dead && h.target.hp > 0) {
+                            h.target.hp -= dmg;
+                            if (h.target.hp <= 0) { // Hound got the kill
+                                h.killCount++;
+                                if (h.killCount > 0 && h.killCount % 12 === 0) {
+                                    playSound('dogs');
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                const tx = store.player.x + h.side * 50, ty = store.player.y + 20; 
+                const dx = tx - h.x, dy = ty - h.y; 
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > 5) {
+                    h.x += dx * 5 * dt; 
+                    h.y += dy * 5 * dt;
+                }
+            }
+        });
+    }
     function drawHound(h){ctx.save();ctx.translate(h.x,h.y);const time=performance.now()/100;ctx.globalAlpha=.5+.2*Math.sin(time+h.side);ctx.fillStyle="#9a66ff";ctx.beginPath();ctx.arc(0,0,h.r,Math.PI,0);ctx.lineTo(h.r,h.r);ctx.lineTo(.6*h.r,.7*h.r);ctx.lineTo(0,h.r);ctx.lineTo(-.6*h.r,.7*h.r);ctx.lineTo(-h.r,h.r);ctx.closePath();ctx.fill();ctx.fillStyle="#000";ctx.beginPath();ctx.arc(-4,-2,2,0,2*Math.PI);ctx.arc(4,-2,2,0,2*Math.PI);ctx.fill();ctx.restore()}
     function activateVoidBeam(){if(store.player.hasVoidBeam&&store.player.voidBeamCooldown<=0&&!store.isPaused){store.player.voidBeamCooldown=20;store.activeEffects.push(createEffect("voidBeam"))}}
     function useGrenade(){if(store.player.grenades>0&&!store.isPaused){store.player.grenades--;store.grenades.push({x:store.player.x,y:store.player.y,vx:0,vy:-200,fuse:1.5,r:8})}}
