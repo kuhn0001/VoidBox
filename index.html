@@ -34,13 +34,13 @@
             position: absolute;
             left: 50%;
             transform: translateX(-50%);
-            top: 70px; /* MOVED: Lowered to avoid overlap */
-            background: linear-gradient(180deg, rgba(0, 255, 150, .26), rgba(0, 255, 150, .1)); /* NEW: Cyberpunk green gradient */
-            border: 1px solid #00ff96; /* NEW: Glowing green border */
+            top: 70px;
+            background: linear-gradient(180deg, rgba(0, 255, 150, .26), rgba(0, 255, 150, .1));
+            border: 1px solid #00ff96;
             padding: 6px 10px;
             border-radius: 10px;
             font-weight: 600;
-            text-shadow: 0 0 10px #00ff96; /* NEW: Green glow */
+            text-shadow: 0 0 10px #00ff96;
             font-family: 'Orbitron', 'Audiowide', ui-sans-serif;
             font-size: 12px;
             color: #fff;
@@ -58,33 +58,50 @@
             background:rgba(26,0,34,.95);
             border:1px solid var(--accent);
             border-radius:16px;
-            padding:15px;
-            width:min(750px, 92vw); /* MODIFIED: Reduced max-width */
+            padding:12px;
+            width:min(600px, 90vw);
             backdrop-filter:blur(12px);
             color:#ffddff;
             box-shadow:0 0 40px rgba(178,102,255,.3);
             z-index:100;
         }
+        .close-btn {
+            position: absolute;
+            top: 5px;
+            right: 12px;
+            background: transparent;
+            border: none;
+            color: var(--accent); /* CHANGED: Color to purple */
+            font-size: 28px;
+            font-weight: bold;
+            line-height: 1;
+            cursor: pointer;
+            opacity: 0.7;
+            transition: opacity 0.2s, transform 0.2s;
+        }
+        .close-btn:hover {
+            opacity: 1;
+            transform: scale(1.1);
+        }
         #shopPanel h2, #levelPanel h2 {
             margin: 0 0 8px 0;
-            font-size: clamp(20px, 2.5vw, 24px);
+            padding-top: 10px;
+            font-size: clamp(18px, 2.2vw, 22px);
             text-align: center;
         }
         #shopPanel p, #levelPanel p {
-            margin: 0 0 12px 0;
+            margin: 0 0 10px 0;
             text-align: center;
         }
         #shopGrid {
-            max-height: 55vh; /* NEW: Added max-height for scrolling */
+            max-height: 55vh;
             overflow-y: auto;
             padding-right: 8px;
         }
-
-        .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
         .grid{
             display:grid;
-            gap:12px;
-            grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); /* MODIFIED: Reduced min-width */
+            gap:10px;
+            grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));
         }
         .hide{display:none!important}
         #belowBoard{width:min(95vw,var(--maxw));margin:8px auto 0;padding:8px;display:grid;gap:8px}
@@ -98,7 +115,7 @@
             font-weight:700;
             color:#c49cff;
             margin-bottom:4px;
-            font-size: 14px; /* MODIFIED: Set explicit smaller size */
+            font-size: 14px;
         }
         .skill-desc{font-size:11px;color:#ffddff}
         .fixed-btn{position:fixed;z-index:5;border-radius:10px;padding:var(--btn-pad-y) var(--btn-pad-x);background:rgba(150,80,255,.2);border:1px solid var(--accent);backdrop-filter:blur(8px);cursor:pointer;font-size:var(--btn-text);color:#ffddff;height:auto;min-width:180px;text-align:center;}
@@ -107,7 +124,7 @@
         #fsEnterBtn{left:20px; bottom:20px;}
         #shopBtn{right:220px; bottom:20px; z-index: 5;}
         #pauseBtn{top:20px;right:20px; z-index:5;}
-        .input{width:100%;padding:8px 10px;border-radius:10px;background:#17001f;color:#ffddff;border:1px solid var(--accent);font-family:'Orbitron','Audiowide',ui-sans-serif}
+        .input{width:100%;padding:8px 10px;border-radius:10px;background:#17001f;color:#ffddff;border:1px solid var(--accent);font-family:'Orbitron','Audiowide',ui-sans-serif; box-sizing: border-box;} /* ADDED: box-sizing */
         
         #abilityBar {
             position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
@@ -148,7 +165,7 @@
                 </div>
                 <canvas id="game" width="960" height="540"></canvas>
                 <div id="diagBox">
-                    <div class="chip">v3.5.0</div>
+                    <div class="chip">v3.5.1</div>
                     <div class="chip">FPS <span id="fps">—</span></div>
                 </div>
                 
@@ -183,6 +200,7 @@
                         <div id="skillsGrid" class="grid"></div>
                     </div>
                     <div id="shopPanel" class="panel hide">
+                        <button type="button" class="close-btn" id="closeShopTopBtn">&times;</button>
                         <h2 style="font-family:'Orbitron';color:var(--accent)">🔧 MECH FORGE 🔧</h2>
                         <p style="color:#ffddff">Available Shards: <span id="shopShards">0</span></p>
                         <div id="shopGrid" class="grid"></div>
@@ -622,8 +640,6 @@
         }
     }
     
-    // --- The rest of the script is unchanged but included for a complete file ---
-    
     function escapeHtml(s) { s = String(s ?? ''); return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
     function announce(text) { const el = q('announce'); el.textContent = text; el.classList.remove('hide'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('hide'), 2500); }
     function updateHUD() { q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0; q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div>${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div>` : ""}`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); if (store.player.hasLauncher || store.player.hasHounds) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const voidBeamBtn = q('voidBeamBtnUI'); if (store.player.hasVoidBeam) { voidBeamBtn.classList.remove('hide'); const cd = store.player.voidBeamCooldown; if (cd > 0) { voidBeamBtn.textContent = `VOID BEAM [${Math.ceil(cd)}s]`; voidBeamBtn.disabled = true; } else { voidBeamBtn.textContent = 'VOID BEAM [READY]'; voidBeamBtn.disabled = false; } } else { voidBeamBtn.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } }
@@ -635,37 +651,7 @@
     function stepBoss(dt) { if (!store.boss) return; const b = store.boss; b.t += dt; if (b.y < 100) b.y += b.vy * dt; const dmgScale = Math.pow(1.065, store.world.wave - 1); switch (b.behavior) { case 'sentinel': stepBossOmegaSentinel(dt, b, dmgScale); break; case 'malignus': stepBossCoreMalignus(dt, b, dmgScale); break; case 'hex': stepBossTheHex(dt, b, dmgScale); break; } }
     function stepBossOmegaSentinel(dt, b, dmgScale) { if (b.y >= 100) { b.moveT += dt; b.x += Math.sin(b.moveT * 2) * 200 * dt; b.x = clamp(b.x, 100, W - 100); } b.fireT -= dt; if (b.fireT <= 0) { if (b.patternPhase % 4 === 0) { b.fireT = 1.5; const n = 12; for (let i = 0; i < n; i++) { const a = (i * Math.PI / 6) + b.t; store.eBullets.push({ x: b.x, y: b.y, vx: 150 * Math.cos(a), vy: 150 * Math.sin(a), r: 4, col: b.color, dmg: 12 * dmgScale }); } } else { b.fireT = 0.2; const a = Math.atan2(store.player.y - b.y, store.player.x - b.x); store.eBullets.push({ x: b.x, y: b.y, vx: 250 * Math.cos(a), vy: 250 * Math.sin(a), r: 5, col: b.color, dmg: 18 * dmgScale }); } b.patternPhase++; } }
     function stepBossCoreMalignus(dt, b, dmgScale) { if (b.hp / b.hpMax <= 0.07 && !b.isEnraged) { b.isEnraged = true; playSound('horn'); } if (b.y >= 100) { b.moveT += dt; b.x = W / 2 + (W / 2 - 100) * Math.sin(b.moveT * 0.5); } b.fireT -= dt; if (b.fireT <= 0) { b.fireT = b.isEnraged ? 0.6 : 0.8; const n = 12, g = 3, s = Math.floor(Math.random() * (n - g)); for (let i = 0; i < n; i++) { if (i >= s && i < s + g) continue; const p = (W / (n + 1)) * (i + 1); store.eBullets.push({ x: p, y: b.y, vx: 0, vy: 180, r: 6, col: b.color, dmg: 20 * dmgScale }); } } }
-    function stepBossTheHex(dt, b, dmgScale) {
-        if (b.y >= 100) {
-            b.moveT += dt;
-            b.x = W * 0.2 + (W * 0.6) * Math.abs(Math.sin(b.moveT * 0.4));
-        }
-        b.fireT -= dt;
-        if (b.fireT <= 0) {
-            b.fireT = 1.5;
-            b.mines.push({ x: b.x, y: b.y + 40, fuse: 2, dead: false });
-            // The repeating sound call that was here has been REMOVED.
-            for (let i = -1; i <= 1; i++) {
-                const a = Math.atan2(store.player.y - b.y, store.player.x - b.x) + i * 0.2;
-                store.eBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 160, vy: Math.sin(a) * 160, r: 4, col: '#80ffff', dmg: 10 * dmgScale });
-            }
-        }
-        b.spawnAddsT -= dt;
-        if (b.spawnAddsT <= 0) {
-            b.spawnAddsT = 12;
-            for (let i = 0; i < 3; i++) {
-                setTimeout(() => {
-                    const enemy = spawnEnemy('trap_king_add');
-                    enemy.x = (i % 2 === 0) ? -30 : W + 30;
-                    enemy.vx = (i % 2 === 0) ? 70 : -70;
-                    enemy.y = b.y + Math.random() * 100;
-                    enemy.v = 50;
-                    enemy.phase = true;
-                    store.enemies.push(enemy);
-                }, i * 400);
-            }
-        }
-    }
+    function stepBossTheHex(dt, b, dmgScale) { if (b.y >= 100) { b.moveT += dt; b.x = W * 0.2 + (W * 0.6) * Math.abs(Math.sin(b.moveT * 0.4)); } b.fireT -= dt; if (b.fireT <= 0) { b.fireT = 1.5; b.mines.push({ x: b.x, y: b.y + 40, fuse: 2, dead: false }); for (let i = -1; i <= 1; i++) { const a = Math.atan2(store.player.y - b.y, store.player.x - b.x) + i * 0.2; store.eBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 160, vy: Math.sin(a) * 160, r: 4, col: '#80ffff', dmg: 10 * dmgScale }); } } b.spawnAddsT -= dt; if (b.spawnAddsT <= 0) { b.spawnAddsT = 12; for (let i = 0; i < 3; i++) { setTimeout(() => { const enemy = spawnEnemy('trap_king_add'); enemy.x = (i % 2 === 0) ? -30 : W + 30; enemy.vx = (i % 2 === 0) ? 70 : -70; enemy.y = b.y + Math.random() * 100; enemy.v = 50; enemy.phase = true; store.enemies.push(enemy); }, i * 400); } } }
     function drawMissile(m) { ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(Math.atan2(m.vy, m.vx) + Math.PI / 2); ctx.fillStyle = "#ffddff"; ctx.shadowColor = '#ff8080'; ctx.shadowBlur = 10; ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(4, 5); ctx.lineTo(-4, 5); ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0; const flameSize = 8 + 4 * Math.sin(performance.now() / 50); ctx.fillStyle = `rgba(255, 128, 128, ${0.6 + 0.4 * Math.random()})`; ctx.beginPath(); ctx.moveTo(0, 5); ctx.lineTo(3, 5 + flameSize / 2); ctx.lineTo(-3, 5 + flameSize / 2); ctx.closePath(); ctx.fill(); ctx.restore(); }
     function drawPowerup(p) { const cfg = POWERUP_TYPES[p.type]; ctx.save(); ctx.translate(p.x, p.y); const pulse = 0.8 + 0.2 * Math.sin(performance.now() / 150); ctx.scale(pulse, pulse); ctx.beginPath(); ctx.arc(0, 0, p.r + 3, 0, Math.PI * 2); const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, p.r + 3); grad.addColorStop(0, '#FFD70099'); grad.addColorStop(1, '#FFD70000'); ctx.fillStyle = grad; ctx.fill(); ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.fillStyle = '#FFD70044'; ctx.fill(); ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 16px Orbitron'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(cfg.icon, 0, 1); ctx.restore(); }
     function drawDrone(d) { const p = store.player; ctx.save(); ctx.translate(p.x + d.offset, p.y + 20); ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(6, 6); ctx.lineTo(-6, 6); ctx.closePath(); ctx.fillStyle = '#c49cff'; ctx.fill(); ctx.restore(); }
@@ -678,77 +664,17 @@
     function explodeGrenade(x,y){store.activeEffects.push(createEffect("grenadeExplosion",x,y));const radius=150;store.enemies.forEach(e=>{(e.x-x)**2+(e.y-y)**2<radius**2&&(e.hp-=.5*e.hpMax)})}
     function showShop(){ store.isPaused=true; q('pauseBtn').classList.add('hide'); const panel=q("shopPanel"),grid=q("shopGrid"),shardsEl=q("shopShards"); shardsEl.textContent=store.world.shards; let content=""; for(const key in SHOP_UPGRADES){ const u=SHOP_UPGRADES[key]; let currentLevel=store.player.upgradeLevels[key]||0,isDisabled=!1,cost=0,desc=u.desc(currentLevel),name=u.name; if(u.isPremium){cost=u.cost;if(key==='repair'){if(store.player.hp>=store.player.hpMax){isDisabled=true;desc="Health is already full."}}else if(u.isUnlock){if((key==='void_beam'&&store.player.hasVoidBeam)||(key==='launcher'&&store.player.hasLauncher)||(key==='ghost_hounds'&&store.player.hasHounds)){isDisabled=true;desc="Already Unlocked"}}else{if(store.player.grenades>=u.max){isDisabled=true;desc="At maximum capacity"}}}else{if(currentLevel>=u.maxLevel){isDisabled=true;desc="Max Level Reached"}cost=Math.floor(u.baseCost*Math.pow(u.scale,currentLevel))} if(store.world.shards<cost)isDisabled=true; content+=`<div class="skill-card shop-item ${isDisabled?'disabled':''}" data-key="${key}"> <div class="skill-title">${name}</div> <div class="skill-desc">${desc}</div> <div style="color:var(--accent);margin-top:4px;">Cost: ${cost>0?cost:'---'} shards</div> </div>`} grid.innerHTML=content; grid.querySelectorAll(".shop-item").forEach(item=>{item.addEventListener("click",()=>{if(item.classList.contains('disabled'))return; const key=item.dataset.key; const upgrade=SHOP_UPGRADES[key]; let cost=0; if(upgrade.isPremium){cost=upgrade.cost}else{cost=Math.floor(upgrade.baseCost*Math.pow(upgrade.scale,store.player.upgradeLevels[key]||0))} if(store.world.shards>=cost){let purchaseSuccessful=false;if(upgrade.isPremium){purchaseSuccessful=upgrade.apply()}else{upgrade.effect();store.player.upgradeLevels[key]=(store.player.upgradeLevels[key]||0)+1;purchaseSuccessful=true}if(purchaseSuccessful){store.world.shards-=cost}showShop()}})}); panel.classList.remove("hide"); }
     function showShopWithHighlight() { showShop(); announce('Low health! Use the Mech Forge to repair!'); setTimeout(() => { const repairItem = document.querySelector('.shop-item[data-key="repair"]'); if (repairItem) repairItem.classList.add('highlight'); }, 100); }
-    function createHound(side) { 
-        return { 
-            x: store.player.x + 50 * side, 
-            y: store.player.y + 20, 
-            side, 
-            target: null, 
-            attackT: 0, 
-            r: 12,
-            killCount: 0
-        }; 
-    }
-    function stepHounds(dt) {
-        if (!store.player.hasHounds) return;
-
-        store.hounds.forEach(h => {
-            if (!h.target || h.target.dead || h.target.hp <= 0) {
-                let closest = null, closestDist = Infinity;
-                const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
-                potentialTargets.forEach(e => {
-                    if (e.dead || e.hp <= 0) return;
-                    const dist = (h.x - e.x)**2 + (h.y - e.y)**2;
-                    if (dist < closestDist) { closest = e; closestDist = dist; }
-                });
-                h.target = closest;
-            }
-
-            if (h.target) {
-                const tx = h.target.x, ty = h.target.y; 
-                const dx = tx - h.x, dy = ty - h.y; 
-                const dist = Math.sqrt(dx * dx + dy * dy); 
-                const speed = 350;
-
-                if (dist > 30) {
-                    h.x += (dx / dist) * speed * dt; 
-                    h.y += (dy / dist) * speed * dt;
-                } else {
-                    h.attackT -= dt;
-                    if (h.attackT <= 0) {
-                        h.attackT = 0.25; 
-                        let dmg = 8 * store.player.dmgMult; 
-                        if (h.target === store.boss) dmg *= 0.3; 
-                        
-                        if (!h.target.dead && h.target.hp > 0) {
-                            h.target.hp -= dmg;
-                            if (h.target.hp <= 0) { // Hound got the kill
-                                h.killCount++;
-                                if (h.killCount > 0 && h.killCount % 12 === 0) {
-                                    playSound('dogs');
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                const tx = store.player.x + h.side * 50, ty = store.player.y + 20; 
-                const dx = tx - h.x, dy = ty - h.y; 
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist > 5) {
-                    h.x += dx * 5 * dt; 
-                    h.y += dy * 5 * dt;
-                }
-            }
-        });
-    }
+    function createHound(side) { return { x: store.player.x + 50 * side, y: store.player.y + 20, side, target: null, attackT: 0, r: 12, killCount: 0 }; }
+    function stepHounds(dt) { if (!store.player.hasHounds) return; store.hounds.forEach(h => { if (!h.target || h.target.dead || h.target.hp <= 0) { let closest = null, closestDist = Infinity; const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies; potentialTargets.forEach(e => { if (e.dead || e.hp <= 0) return; const dist = (h.x - e.x)**2 + (h.y - e.y)**2; if (dist < closestDist) { closest = e; closestDist = dist; } }); h.target = closest; } if (h.target) { const tx = h.target.x, ty = h.target.y; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); const speed = 350; if (dist > 30) { h.x += (dx / dist) * speed * dt; h.y += (dy / dist) * speed * dt; } else { h.attackT -= dt; if (h.attackT <= 0) { h.attackT = 0.25; let dmg = 8 * store.player.dmgMult; if (h.target === store.boss) dmg *= 0.3; if (!h.target.dead && h.target.hp > 0) { h.target.hp -= dmg; if (h.target.hp <= 0) { h.killCount++; if (h.killCount > 0 && h.killCount % 12 === 0) { playSound('dogs'); } } } } } } else { const tx = store.player.x + h.side * 50, ty = store.player.y + 20; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); if (dist > 5) { h.x += dx * 5 * dt; h.y += dy * 5 * dt; } } }); }
     function drawHound(h){ctx.save();ctx.translate(h.x,h.y);const time=performance.now()/100;ctx.globalAlpha=.5+.2*Math.sin(time+h.side);ctx.fillStyle="#9a66ff";ctx.beginPath();ctx.arc(0,0,h.r,Math.PI,0);ctx.lineTo(h.r,h.r);ctx.lineTo(.6*h.r,.7*h.r);ctx.lineTo(0,h.r);ctx.lineTo(-.6*h.r,.7*h.r);ctx.lineTo(-h.r,h.r);ctx.closePath();ctx.fill();ctx.fillStyle="#000";ctx.beginPath();ctx.arc(-4,-2,2,0,2*Math.PI);ctx.arc(4,-2,2,0,2*Math.PI);ctx.fill();ctx.restore()}
     function activateVoidBeam(){if(store.player.hasVoidBeam&&store.player.voidBeamCooldown<=0&&!store.isPaused){store.player.voidBeamCooldown=20;store.activeEffects.push(createEffect("voidBeam"))}}
     function useGrenade(){if(store.player.grenades>0&&!store.isPaused){store.player.grenades--;store.grenades.push({x:store.player.x,y:store.player.y,vx:0,vy:-200,fuse:1.5,r:8})}}
     function ensureName(){if(!store.name){store.isPaused=true;q("namePanel").classList.remove("hide");q("nameInput").value="";setTimeout(()=>q("nameInput").focus(),50)}}
     q("restartBtn").addEventListener("click",resetGame);
     q("saveName").addEventListener("click",()=>{const t=(q("nameInput").value||"").slice(0,16).trim();if(t){store.name=t;q("namePanel").classList.add("hide");store.isPaused=false}});
-    q("closeShop").addEventListener("click",()=>{ q("shopPanel").classList.add('hide'); store.isPaused = false; q('pauseBtn').classList.remove('hide'); const highlighted = document.querySelector('.shop-item.highlight'); if (highlighted) highlighted.classList.remove('highlight'); });
+    const closeShopLogic = () => { q("shopPanel").classList.add('hide'); store.isPaused = false; q('pauseBtn').classList.remove('hide'); const highlighted = document.querySelector('.shop-item.highlight'); if (highlighted) highlighted.classList.remove('highlight'); };
+    q("closeShop").addEventListener("click", closeShopLogic);
+    q("closeShopTopBtn").addEventListener("click", closeShopLogic);
     q("shopBtn").addEventListener("click",showShop);
     q("menuBtn").addEventListener("click",()=>{store.isPaused=true;q('scorePanel').classList.remove('hide');q('pauseBtn').classList.add('hide')});
     q("closeScores").addEventListener("click",()=>{store.isPaused=false;q('scorePanel').classList.add('hide');q('pauseBtn').classList.remove('hide')});
