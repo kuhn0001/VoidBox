@@ -519,6 +519,7 @@
             if (typeKey === 'repair') p.hp = Math.min(p.hpMax, p.hp + 30);
             if (typeKey === 'double') { p.multishot++; announce('SCATTER SHOT!'); }
         }
+        announce(powerup.name);
     }
 
     function initWave() {
@@ -765,7 +766,11 @@
 
             if (e.phase) e.x += Math.sin(e.t * 3) * 80 * dt;
             if (e.y > H + 30 || e.x < -30 || e.x > W + 30) e.dead = true;
-            if (collide(e, store.player)) { takeDamage(15 * dmgScale); e.dead = true; }
+            if (collide(e, store.player)) { 
+                takeDamage(15 * dmgScale); 
+                store.world.shards += e.shards;
+                e.dead = true; 
+            }
             e.fireT -= dt;
             if (e.fireT <= 0 && e.y > 0 && Math.random() < e.fireRateChance) {
                 switch (e.type) {
