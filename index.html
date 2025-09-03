@@ -436,7 +436,7 @@
     ];
     
     const SHOP_UPGRADES = {
-        'dmg': { name: "DAMAGE", icon: '💥', baseCost: 25, scale: 1.5, maxLevel: 10, category: 'attack', effect: () => store.player.dmgMult += 0.1, desc: level => `+10% Damage (Lvl ${level + 1})` },
+        'dmg': { name: "DAMAGE", icon: '💪', baseCost: 25, scale: 1.5, maxLevel: 10, category: 'attack', effect: () => store.player.dmgMult += 0.1, desc: level => `+10% Damage (Lvl ${level + 1})` },
         'speed': { name: "SPEED", icon: '🚀', baseCost: 30, scale: 1.6, maxLevel: 8, category: 'utility', effect: () => store.player.speed += 30, desc: level => `+30 Speed (Lvl ${level + 1})` },
         'hp': { name: "MAX HP", icon: '❤️', baseCost: 20, scale: 1.4, maxLevel: 10, category: 'health', effect: () => { store.player.hpMax += 10; store.player.hp += 10; }, desc: level => `+10 Max HP (Lvl ${level + 1})` },
         'shield': { name: "MAX SHIELD", icon: '🛡️', baseCost: 40, scale: 1.8, maxLevel: 5, category: 'health', effect: () => { store.player.shieldMax += 25; store.player.shield += 25; }, desc: level => `+25 Max Shield (Lvl ${level + 1})` },
@@ -454,7 +454,7 @@
                 if (store.world.shards >= cost && p.vampirismLevel < 4) {
                     store.world.shards -= cost;
                     p.vampirismLevel++;
-                    p.vampirism += 0.01;
+                    p.vampirism += 0.02;
                     return true;
                 }
                 return false;
@@ -463,16 +463,16 @@
                 const p = store.player;
                 if (p.vampirismLevel >= 4) return `Max Level Reached (${(p.vampirism * 100).toFixed(0)}%)`;
                 const cost = 12 + (p.vampirismLevel * 5);
-                return `+1% lifesteal. Cost: ${cost}`;
+                return `+2% lifesteal. Cost: ${cost}`;
             } 
         },
         'magnet_pull': { name: "MAGNET PULL", icon: '🧲', cost: 25, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.magnetRadius) { store.player.magnetRadius = 150; return true; } return false; }, desc: () => `Powerups are drawn to you.` },
-        'luck_boost': { name: "LUCK BOOST", icon: '🍀', cost: 100, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.luckBoost) { store.player.luckBoost = 0.15; return true; } return false; }, desc: () => `+15% chance for powerups.` },
+        'luck_boost': { name: "LUCK BOOST", icon: '🍀', cost: 25, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.luckBoost) { store.player.luckBoost = 0.15; return true; } return false; }, desc: () => `+15% chance for powerups.` },
         'the_iceman': { name: "THE ICEMAN", icon: '❄️', cost: 59, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.hasIceman) { store.player.hasIceman = true; store.iceman = { x: store.player.x, y: store.player.y + 50, t: 0}; return true; } return false; }, desc: () => `A clone mirrors your attacks.` },
         'mine_wall': { name: "MINE WALL", icon: '🔵🔵🔵', cost: 40, isPremium: true, max: 2, category: 'attack', apply: () => { const activeWalls = store.mines.filter(m => m.isWallMine).length > 0; if(!activeWalls) { deployMineWall(); return true; } return false; }, desc: () => `Deploy a wall of mines.` },
         'grenade': { name: "NOVA GRENADE", icon: '💥💣💥', cost: 35, isPremium: true, max: 3, category: 'attack', apply: () => { if (store.player.grenades < 3) { store.player.grenades++; return true; } return false; }, desc: () => `Buy 1 (Max 3)` },
-        'void_beam': { name: "VOID BEAM", icon: '🔴🌠', cost: 75, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; return true; } return false; }, desc: () => `Unlock Ultimate Weapon` },
-        'launcher': { name: 'FRAGMENTATION LAUNCHER', icon: '🎇💣', cost: 50, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasLauncher) { store.player.hasLauncher = true; return true; } return false; }, desc: () => `Adds swirling nova projectiles.` },
+        'void_beam': { name: "VOID BEAM", icon: '☢️☄️☢️', cost: 75, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; return true; } return false; }, desc: () => `Unlock Ultimate Weapon` },
+        'launcher': { name: 'FRAGMENTATION LAUNCHER', icon: '💥', cost: 50, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasLauncher) { store.player.hasLauncher = true; return true; } return false; }, desc: () => `Adds swirling nova projectiles.` },
         'ghost_hounds': { name: "GHOST HOUNDS", icon: '👻🐺', cost: 75, isPremium: true, isUnlock: true, category: 'attack', apply: () => { 
             if (!store.player.hasHounds) { 
                 store.player.hasHounds = true; 
@@ -532,7 +532,7 @@
             announce(`⚡ GUARDIAN: ${store.boss.name} ⚡`);
         } else {
             store.enemies = [];
-            const spawnCount = 6 + Math.floor(store.world.wave * 1.5);
+            const spawnCount = 7 + Math.floor(store.world.wave * 1.8);
             for (let i = 0; i < spawnCount; i++) {
                 const types = ['drone', 'drone', 'hunter', 'phantom', 'mech'];
                 store.enemies.push(spawnEnemy(types[Math.floor(Math.random() * types.length)]));
