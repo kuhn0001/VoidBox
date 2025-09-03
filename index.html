@@ -12,11 +12,11 @@
             --bg:#050008; --fg:#ff99cc; --accent:#b266ff; --accent2:#9a66ff;
             --edge:rgba(178,102,255,.35); --hud-text: clamp(9px, 1vw, 12px);
             --btn-text: clamp(16px, 2vw, 20px); --btn-pad-y: clamp(12px, 1.5vw, 18px);
-            --btn-pad-x: clamp(18px, 2.5vw, 24px); --maxw: 95vw;
+            --btn-pad-x: clamp(18px, 2.5vw, 24px); --maxw: 98vw;
         }
         html,body{height:100%;margin:0;background:radial-gradient(1200px 800px at 50% 40%,#330044,var(--bg));color:var(--fg);font-family:'Audiowide',ui-sans-serif,system-ui}
-        #wrap{position:fixed;inset:0;display:grid;place-items:center;min-height:100svh;padding:calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left))}
-        .stage{width:min(95vw,var(--maxw));aspect-ratio:16/9;position:relative;display:grid;place-items:center;background:#000;border-radius:12px;overflow:hidden;box-shadow:0 0 60px rgba(255,0,255,.4);container-type:inline-size;z-index:2;}
+        #wrap{position:fixed;inset:0;display:grid;place-items:center;min-height:100svh;padding:0;}
+        .stage{width:min(98vw, calc(100vh * 16 / 9));aspect-ratio:16/9;position:relative;display:grid;place-items:center;background:#000;border-radius:12px;overflow:hidden;box-shadow:0 0 60px rgba(255,0,255,.4);container-type:inline-size;z-index:2;}
         canvas{background:transparent;border-radius:16px;touch-action:none;cursor:none}
         
         #ui { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
@@ -106,7 +106,7 @@
             grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));
         }
         .hide{display:none!important}
-        #belowBoard{width:min(95vw,var(--maxw));margin:20px auto 0;padding:8px;display:grid;gap:8px}
+        #belowBoard{width:min(98vw,var(--maxw));margin:50px auto 0;padding:8px;display:grid;gap:8px}
         #hsCard{border:1px solid var(--edge);background:linear-gradient(180deg,rgba(150,80,255,.12),rgba(150,80,255,.06));backdrop-filter:blur(8px);padding:8px;border-radius:8px}
         #hsCard h3{margin:0 0 6px 0;font-family:'Orbitron','Audiowide',ui-sans-serif;text-align:center;font-size:14px;color:#c49cff}
         #hsList{list-style:decimal;margin:0;padding:0 0 0 1rem;line-height:1.4;font-size:12px;color:#ffddff}
@@ -407,7 +407,7 @@
         weaponType: 'default', hasShieldBubble: false, powerupTimers: {}, 
         upgradeLevels: { dmg: 0, speed: 0, hp: 0, shield: 0 }, grenades: 0, hasVoidBeam: false, 
         voidBeamCooldown: 0, hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 0, vampirismLevel: 0, flamethrowerLevel: 0,
-        luckBoost: 0, magnetRadius: 0, hasIceman: false
+        luckBoost: 0, magnetRadius: 0, hasIceman: false, critChance: 0.02, critDamage: 2
     };
     
     const store = {
@@ -545,11 +545,11 @@
         const bossCycle = Math.floor((store.world.wave - 5) / 5) % 3;
         const types = [
             { name: 'MAJOR JUEVO', baseHp: 1200, r: 55, behavior: 'sentinel', color: '#ff8080' },
-            { name: 'TRAP KING', baseHp: 1500, r: 50, behavior: 'hex', color: '#66aaff', spawnAddsT: 8},
+            { name: 'TRAP KING', baseHp: 1500, r: 50, behavior: 'hex', color: '#66aaff'},
             { name: 'CORE MALIGNUS', baseHp: 1800, r: 60, behavior: 'malignus', color: '#2E8B57' }
         ];
         const type = types[bossCycle]; const hp = type.baseHp * scale;
-        return { ...type, x: W / 2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, patternPhase: 0, mines: [], isEnraged: false };
+        return { ...type, x: W / 2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, patternPhase: 0, isEnraged: false, attackPhase: 0, phaseTimer: 0 };
     }
 
     function spawnEnemy(type = 'drone') {
@@ -664,7 +664,18 @@
             if (m.x < -20 || m.x > W + 20 || m.y < -20 || m.y > H + 20) m.dead = true;
             const targets = store.boss ? [...store.enemies, store.boss] : store.enemies;
             for (const e of targets) {
-                if (!e.dead && collide(m, e)) { e.hp -= m.dmg; m.dead = true; explode(m.x, m.y, false, true); break; }
+                if (!e.dead && collide(m, e)) { 
+                    let dmg = m.dmg;
+                    const isCrit = Math.random() < store.player.critChance;
+                    if(isCrit) {
+                        dmg *= store.player.critDamage;
+                        store.activeEffects.push(createEffect('critText', e.x, e.y));
+                    }
+                    e.hp -= dmg; 
+                    m.dead = true; 
+                    explode(m.x, m.y, false, true); 
+                    break; 
+                }
             }
         });
     }
@@ -760,7 +771,13 @@
             if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true;
             store.enemies.forEach(e => { 
                 if (!e.dead && collide(b, e)) { 
-                    const dmg = b.dmg || 20; e.hp -= dmg; 
+                    let dmg = b.dmg || 20;
+                    const isCrit = Math.random() < store.player.critChance;
+                    if(isCrit) {
+                        dmg *= store.player.critDamage;
+                        store.activeEffects.push(createEffect('critText', e.x, e.y));
+                    }
+                    e.hp -= dmg; 
                     if (e.hp <= 0) { 
                         e.dead = true; store.world.score += e.score; store.world.shards += e.shards; store.world.xp += e.xp; store.world.kills++; 
                         spawnPowerup(e.x, e.y); 
@@ -772,7 +789,13 @@
             });
             if (store.boss && !b.dead && collide(b, store.boss)) { 
                 playSound('hit');
-                let dmg = b.dmg || 20; if (b.isDrone) dmg *= 0.4; store.boss.hp -= dmg; 
+                let dmg = b.dmg || 20; if (b.isDrone) dmg *= 0.4;
+                const isCrit = Math.random() < store.player.critChance;
+                if(isCrit) {
+                    dmg *= store.player.critDamage;
+                    store.activeEffects.push(createEffect('critText', store.boss.x, store.boss.y));
+                }
+                store.boss.hp -= dmg; 
                 if (store.boss.hp <= 0) { 
                     store.world.score += 2000; store.world.shards += 25; store.world.xp += 100; store.world.bosses++; 
                     store.boss = null; announce('⚡ GUARDIAN DEFEATED ⚡'); explode(b.x, b.y, true); 
@@ -817,10 +840,9 @@
         store.player.levelUpEffect = { t: 0, maxT: 1 }; store.player.speed *= 1.5; store.player.levelUpMultishotBonus = 2; 
         setTimeout(() => { store.player.speed /= 1.5; store.player.levelUpMultishotBonus = 0; }, 3000); 
         store.isPaused = true; const panel = q('levelPanel'), grid = q('skillsGrid'); 
-        const multiShotUpgrade = LEVEL_UPGRADES.find(u => u.id === 'multi'); 
-        let otherUpgrades = LEVEL_UPGRADES.filter(u => u.id !== 'multi'); 
-        for (let i = otherUpgrades.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [otherUpgrades[i], otherUpgrades[j]] = [otherUpgrades[j], otherUpgrades[i]]; } 
-        const choices = [multiShotUpgrade, ...otherUpgrades.slice(0, 2)]; 
+        const availableUpgrades = LEVEL_UPGRADES.filter(u => u.id !== 'flamethrower' || store.player.weaponType !== 'flamethrower' || store.player.flamethrowerLevel < 3);
+        for (let i = availableUpgrades.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [availableUpgrades[i], availableUpgrades[j]] = [availableUpgrades[j], availableUpgrades[i]]; } 
+        const choices = availableUpgrades.slice(0, 3); 
         grid.innerHTML = choices.map(s => `<div class="skill-card" data-id="${s.id}"><div class="skill-icon">${s.icon}</div><div><div class="skill-title">${s.name}</div><div class="skill-desc">${s.desc}</div></div></div>`).join(''); 
         grid.querySelectorAll('.skill-card').forEach(c => c.addEventListener('click', () => { 
             const id = c.dataset.id; const upgrade = LEVEL_UPGRADES.find(s => s.id === id); 
@@ -942,7 +964,54 @@
     function stepBoss(dt) { if (!store.boss) return; const b = store.boss; b.t += dt; if (b.y < 100) b.y += b.vy * dt; const dmgScale = Math.pow(1.065, store.world.wave - 1); switch (b.behavior) { case 'sentinel': stepBossOmegaSentinel(dt, b, dmgScale); break; case 'malignus': stepBossCoreMalignus(dt, b, dmgScale); break; case 'hex': stepBossTheHex(dt, b, dmgScale); break; } }
     function stepBossOmegaSentinel(dt, b, dmgScale) { if (b.y >= 100) { b.moveT += dt; b.x += Math.sin(b.moveT * 2) * 200 * dt; b.x = clamp(b.x, 100, W - 100); } b.fireT -= dt; if (b.fireT <= 0) { if (b.patternPhase % 4 === 0) { b.fireT = 1.5; const n = 12; for (let i = 0; i < n; i++) { const a = (i * Math.PI / 6) + b.t; store.eBullets.push({ x: b.x, y: b.y, vx: 150 * Math.cos(a), vy: 150 * Math.sin(a), r: 4, col: b.color, dmg: 12 * dmgScale }); } } else { b.fireT = 0.2; const a = Math.atan2(store.player.y - b.y, store.player.x - b.x); store.eBullets.push({ x: b.x, y: b.y, vx: 250 * Math.cos(a), vy: 250 * Math.sin(a), r: 5, col: b.color, dmg: 18 * dmgScale }); } b.patternPhase++; } }
     function stepBossCoreMalignus(dt, b, dmgScale) { if (b.hp / b.hpMax <= 0.07 && !b.isEnraged) { b.isEnraged = true; playSound('horn'); } if (b.y >= 100) { b.moveT += dt; b.x = W / 2 + (W / 2 - 100) * Math.sin(b.moveT * 0.5); } b.fireT -= dt; if (b.fireT <= 0) { b.fireT = b.isEnraged ? 0.6 : 0.8; const n = 12, g = 3, s = Math.floor(Math.random() * (n - g)); for (let i = 0; i < n; i++) { if (i >= s && i < s + g) continue; const p = (W / (n + 1)) * (i + 1); store.eBullets.push({ x: p, y: b.y, vx: 0, vy: 180, r: 6, col: b.color, dmg: 20 * dmgScale }); } } }
-    function stepBossTheHex(dt, b, dmgScale) { if (b.y >= 100) { b.moveT += dt; b.x = W * 0.2 + (W * 0.6) * Math.abs(Math.sin(b.moveT * 0.4)); } b.fireT -= dt; if (b.fireT <= 0) { b.fireT = 1.5; b.mines.push({ x: b.x, y: b.y + 40, fuse: 2, dead: false }); playSound('trap'); for (let i = -1; i <= 1; i++) { const a = Math.atan2(store.player.y - b.y, store.player.x - b.x) + i * 0.2; store.eBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 160, vy: Math.sin(a) * 160, r: 4, col: '#80ffff', dmg: 10 * dmgScale }); } } b.spawnAddsT -= dt; if (b.spawnAddsT <= 0) { b.spawnAddsT = 12; const numAdds = 6; for (let i = 0; i < numAdds; i++) { setTimeout(() => { const enemy = spawnEnemy('trap_king_add'); enemy.isOrbiter = true; enemy.orbitCenter = { x: b.x, y: b.y }; enemy.orbitRadius = 120; enemy.orbitAngle = (i / numAdds) * 2 * Math.PI; enemy.orbitSpeed = 1.5; enemy.x = enemy.orbitCenter.x + enemy.orbitRadius * Math.cos(enemy.orbitAngle); enemy.y = enemy.orbitCenter.y + enemy.orbitRadius * Math.sin(enemy.orbitAngle); enemy.v = 0; store.enemies.push(enemy); }, i * 200); } } }
+    function stepBossTheHex(dt, b, dmgScale) { 
+        if (b.y >= 100) { b.moveT += dt; b.x = W * 0.2 + (W * 0.6) * Math.abs(Math.sin(b.moveT * 0.4)); } 
+        b.fireT -= dt; 
+        
+        if (b.hp / b.hpMax < 0.5 && !b.isEnraged) {
+            b.isEnraged = true;
+            playSound('trap');
+        }
+
+        const fireRate = b.isEnraged ? 0.8 : 1.5;
+
+        if (b.fireT <= 0) {
+            b.fireT = fireRate;
+            b.attackPhase = (b.attackPhase + 1) % 3;
+
+            switch(b.attackPhase) {
+                case 0: // Shard Rain
+                    for (let i=0; i<20; i++) {
+                        setTimeout(() => {
+                           store.eBullets.push({ x: Math.random() * W, y: 0, vx: 0, vy: 250, r: 5, col: '#ffc83d', dmg: 15 * dmgScale });
+                        }, i * 50);
+                    }
+                    break;
+                case 1: // Laser Grid Trap
+                    for (let i = 0; i < 4; i++) {
+                        const isHorizontal = i < 2;
+                        const y = isHorizontal ? 100 + i * 150 : 0;
+                        const x = isHorizontal ? 0 : 200 + (i-2) * 250;
+                        const vx = isHorizontal ? 300 : 0;
+                        const vy = isHorizontal ? 0 : 300;
+                        store.eBullets.push({ x, y, vx, vy, r: 4, col: '#80ffff', dmg: 20 * dmgScale, isLaser: true, life: 2.5 });
+                    }
+                    break;
+                case 2: // Dash
+                    const targetX = store.player.x;
+                    const dx = targetX - b.x;
+                    const dashSpeed = 800;
+                    b.vx = Math.sign(dx) * dashSpeed;
+                    setTimeout(() => b.vx = 0, 500); // Dash for 0.5s
+                    break;
+            }
+        }
+        
+        if(b.vx) { // Leave trail while dashing
+            b.x += b.vx * dt;
+            store.eBullets.push({ x: b.x, y: b.y, vx: 0, vy: 0, r: 8, col: '#ff8080', dmg: 25 * dmgScale, life: 1 });
+        }
+    }
     function drawMissile(m) { ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(Math.atan2(m.vy, m.vx) + Math.PI / 2); ctx.fillStyle = "#ffddff"; ctx.shadowColor = '#ff8080'; ctx.shadowBlur = 10; ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(4, 5); ctx.lineTo(-4, 5); ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0; const flameSize = 8 + 4 * Math.sin(performance.now() / 50); ctx.fillStyle = `rgba(255, 128, 128, ${0.6 + 0.4 * Math.random()})`; ctx.beginPath(); ctx.moveTo(0, 5); ctx.lineTo(3, 5 + flameSize / 2); ctx.lineTo(-3, 5 + flameSize / 2); ctx.closePath(); ctx.fill(); ctx.restore(); }
     function drawPowerup(p) { const cfg = POWERUP_TYPES[p.type]; ctx.save(); ctx.translate(p.x, p.y); const pulse = 0.8 + 0.2 * Math.sin(performance.now() / 150); ctx.scale(pulse, pulse); ctx.beginPath(); ctx.arc(0, 0, p.r + 3, 0, Math.PI * 2); const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, p.r + 3); grad.addColorStop(0, '#FFD70099'); grad.addColorStop(1, '#FFD70000'); ctx.fillStyle = grad; ctx.fill(); ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.fillStyle = '#FFD70044'; ctx.fill(); ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 16px Orbitron'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(cfg.icon, 0, 1); ctx.restore(); }
     function drawDrone(d) { const p = store.player; ctx.save(); ctx.translate(p.x + d.offset, p.y + 20); ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(6, 6); ctx.lineTo(-6, 6); ctx.closePath(); ctx.fillStyle = '#c49cff'; ctx.fill(); ctx.restore(); }
@@ -973,11 +1042,30 @@
                     ctx.restore();
                 };
                 break;
+            case "critText":
+                effect.maxLife = 0.6;
+                effect.text = "CRITICAL!";
+                effect.step = function(dt) {
+                    this.life -= dt / this.maxLife;
+                    this.y -= 30 * dt;
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    ctx.save();
+                    ctx.fillStyle = `rgba(255, 215, 0, ${this.life})`;
+                    ctx.font = 'bold 14px Orbitron';
+                    ctx.textAlign = 'center';
+                    ctx.shadowColor = 'black';
+                    ctx.shadowBlur = 4;
+                    ctx.fillText(this.text, this.x, this.y);
+                    ctx.restore();
+                };
+                break;
         }
         return effect
     }
     function explodeGrenade(x,y){store.activeEffects.push(createEffect("grenadeExplosion",x,y));const radius=150;store.enemies.forEach(e=>{(e.x-x)**2+(e.y-y)**2<radius**2&&(e.hp-=.5*e.hpMax)})}
-    function showShop(){ store.isPaused=true; q('pauseBtn').classList.add('hide'); const panel=q("shopPanel"),grid=q("shopGrid"),shardsEl=q("shopShards"); shardsEl.textContent=store.world.shards; let content=""; for(const key in SHOP_UPGRADES){ const u=SHOP_UPGRADES[key]; let currentLevel=store.player.upgradeLevels[key]||0,isDisabled=!1,cost=0,name=u.name; let desc = typeof u.desc === 'function' ? u.desc(currentLevel) : u.desc; let costText = '---'; if (u.isPremium) { if (key === 'vampirism') { if (store.player.vampirismLevel < u.max) { cost = 12 + (store.player.vampirismLevel * 5); costText = cost; } else { isDisabled = true; } } else { cost = u.cost; costText = cost; } if(key==='repair'){if(store.player.hp>=store.player.hpMax){isDisabled=true;desc="Health is already full."}} else if (key === 'nano_save') { if (store.player.nanoSaves >= u.max) { isDisabled = true; desc = "Max charges reached."; } } else if (key === 'mine_wall') { if (store.mines.filter(m=>m.isWallMine).length > 0) {isDisabled = true; desc = "Wall already deployed.";} } else if(u.isUnlock){if((key==='void_beam'&&store.player.hasVoidBeam)||(key==='launcher'&&store.player.hasLauncher)||(key==='ghost_hounds'&&store.player.hasHounds) || (key==='luck_boost' && store.player.luckBoost > 0) || (key==='magnet_pull' && store.player.magnetRadius > 0) || (key==='the_iceman' && store.player.hasIceman)){isDisabled=true;desc="Already Unlocked"}}else{if(store.player.grenades>=u.max){isDisabled=true;desc="At maximum capacity"}}}else{if(currentLevel>=u.maxLevel){isDisabled=true;desc="Max Level Reached"}cost=Math.floor(u.baseCost*Math.pow(u.scale,currentLevel)); costText=cost;} if(store.world.shards<cost)isDisabled=true; content+=`<div class="skill-card shop-item ${isDisabled?'disabled':''} shop-item-${u.category}" data-key="${key}"><div class="skill-icon">${u.icon}</div><div><div class="skill-title">${name}</div><div class="skill-desc">${desc}</div></div><div style="color:var(--accent);margin-top:4px;font-size:11px;">Cost: ${costText}</div></div>`} grid.innerHTML=content; grid.querySelectorAll(".shop-item").forEach(item=>{item.addEventListener("click",()=>{if(item.classList.contains('disabled'))return; const key=item.dataset.key; const upgrade=SHOP_UPGRADES[key];let purchaseSuccessful = false; if (upgrade.isPremium) { purchaseSuccessful = upgrade.apply(); } else { const cost = Math.floor(upgrade.baseCost*Math.pow(upgrade.scale,store.player.upgradeLevels[key]||0)); if (store.world.shards >= cost) { store.world.shards -= cost; upgrade.effect(); store.player.upgradeLevels[key] = (store.player.upgradeLevels[key]||0) + 1; purchaseSuccessful = true; } } if(purchaseSuccessful){showShop()}})}); panel.classList.remove("hide"); }
+    function showShop(){ store.isPaused=true; q('pauseBtn').classList.add('hide'); const panel=q("shopPanel"),grid=q("shopGrid"),shardsEl=q("shopShards"); shardsEl.textContent=store.world.shards; const shopItems=Object.keys(SHOP_UPGRADES).map(key=>{const u=SHOP_UPGRADES[key];let currentLevel=store.player.upgradeLevels[key]||0,cost=0;if(key==='vampirism'){cost=12+(store.player.vampirismLevel*5);if(store.player.vampirismLevel>=u.max)cost=Infinity}else if(u.isPremium){cost=u.cost}else{if(currentLevel>=u.maxLevel){cost=Infinity}else{cost=Math.floor(u.baseCost*Math.pow(u.scale,currentLevel))}}return{key,...u,cost}});shopItems.sort((a,b)=>a.cost-b.cost);let content="";for(const u of shopItems){const key=u.key;let currentLevel=store.player.upgradeLevels[key]||0,isDisabled=!1,cost=u.cost,desc=typeof u.desc==='function'?u.desc(currentLevel):u.desc,name=u.name;if(u.isPremium){if(key==='vampirism'){if(store.player.vampirismLevel>=u.max)isDisabled=true}else if(key==='repair'){if(store.player.hp>=store.player.hpMax){isDisabled=true;desc="Health is already full."}}else if(key==='nano_save'){if(store.player.nanoSaves>=u.max){isDisabled=true;desc="Max charges reached."}}else if(key==='mine_wall'){if(store.mines.filter(m=>m.isWallMine).length>0){isDisabled=true;desc="Wall already deployed."}}else if(u.isUnlock){if((key==='void_beam'&&store.player.hasVoidBeam)||(key==='launcher'&&store.player.hasLauncher)||(key==='ghost_hounds'&&store.player.hasHounds)||(key==='luck_boost'&&store.player.luckBoost>0)||(key==='magnet_pull'&&store.player.magnetRadius>0)||(key==='the_iceman'&&store.player.hasIceman)){isDisabled=true;desc="Already Unlocked"}}else{if(store.player.grenades>=u.max){isDisabled=true;desc="At maximum capacity"}}}else{if(currentLevel>=u.maxLevel){isDisabled=true;desc="Max Level Reached"}}if(store.world.shards<cost)isDisabled=true;const costText=isFinite(cost)?cost:'---';content+=`<div class="skill-card shop-item ${isDisabled?'disabled':''} shop-item-${u.category}" data-key="${key}"><div class="skill-icon">${u.icon}</div><div><div class="skill-title">${name}</div><div class="skill-desc">${desc}</div></div><div style="color:var(--accent);margin-top:4px;font-size:11px;">Cost: ${costText}</div></div>`}grid.innerHTML=content;grid.querySelectorAll(".shop-item").forEach(item=>{item.addEventListener("click",()=>{if(item.classList.contains('disabled'))return;const key=item.dataset.key;const upgrade=SHOP_UPGRADES[key];let purchaseSuccessful=!1;if(upgrade.isPremium){purchaseSuccessful=upgrade.apply()}else{const cost=Math.floor(upgrade.baseCost*Math.pow(upgrade.scale,store.player.upgradeLevels[key]||0));if(store.world.shards>=cost){store.world.shards-=cost;upgrade.effect();store.player.upgradeLevels[key]=(store.player.upgradeLevels[key]||0)+1;purchaseSuccessful=!0}}if(purchaseSuccessful){showShop()}})});panel.classList.remove("hide")}
     function showShopWithHighlight() { showShop(); announce('Low health! Use the Mech Forge to repair!'); setTimeout(() => { const repairItem = document.querySelector('.shop-item[data-key="repair"]'); if (repairItem) repairItem.classList.add('highlight'); }, 100); }
     function createHound(side) { return { x: store.player.x + 50 * side, y: store.player.y + 20, side, target: null, attackT: 0, r: 12, killCount: 0 }; }
     function stepHounds(dt) { if (!store.player.hasHounds) return; store.hounds.forEach(h => { if (!h.target || h.target.dead || h.target.hp <= 0) { let closest = null, closestDist = Infinity; const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies; potentialTargets.forEach(e => { if (e.dead || e.hp <= 0) return; const dist = (h.x - e.x)**2 + (h.y - e.y)**2; if (dist < closestDist) { closest = e; closestDist = dist; } }); h.target = closest; } if (h.target) { const tx = h.target.x, ty = h.target.y; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); const speed = 350; if (dist > 30) { h.x += (dx / dist) * speed * dt; h.y += (dy / dist) * speed * dt; } else { h.attackT -= dt; if (h.attackT <= 0) { h.attackT = 0.25; let dmg = 8 * store.player.dmgMult; if (h.target === store.boss) dmg *= 0.3; if (!h.target.dead && h.target.hp > 0) { h.target.hp -= dmg; if (h.target.hp <= 0) { h.killCount++; if (h.killCount > 0 && h.killCount % 12 === 0) { playSound('dogs'); } } } } } } else { const tx = store.player.x + h.side * 50, ty = store.player.y + 20; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); if (dist > 5) { h.x += dx * 5 * dt; h.y += dy * 5 * dt; } } }); }
