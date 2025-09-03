@@ -448,6 +448,7 @@
                 const p = store.player;
                 const cost = 12 + (p.vampirismLevel * 5);
                 if (store.world.shards >= cost && p.vampirismLevel < 4) {
+                    store.world.shards -= cost;
                     p.vampirismLevel++;
                     p.vampirism += 0.02;
                     return true;
@@ -725,7 +726,16 @@
         const dmgScale = Math.pow(1.065, store.world.wave - 1);
         store.activeEffects.forEach(e => { if (e.step) e.step(dt); });
         store.grenades.forEach(g => { g.x += g.vx * dt; g.y += g.vy * dt; g.fuse -= dt; if (g.fuse <= 0) { g.dead = true; explodeGrenade(g.x, g.y); } });
-        store.eBullets.forEach(b => { b.x += b.vx * dt; b.y += b.vy * dt; if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true; if (collide(b, store.player)) { takeDamage(b.dmg || 10); b.dead = true; } });
+        store.eBullets.forEach(b => { 
+            b.x += b.vx * dt; 
+            b.y += b.vy * dt; 
+            if(b.life) {
+                b.life -= dt;
+                if(b.life <= 0) b.dead = true;
+            }
+            if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true; 
+            if (collide(b, store.player)) { takeDamage(b.dmg || 10); b.dead = true; } 
+        });
         if (store.boss && store.boss.mines) {
             store.boss.mines.forEach(mine => {
                 mine.fuse -= dt;
