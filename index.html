@@ -448,6 +448,7 @@
                 const p = store.player;
                 const cost = 12 + (p.vampirismLevel * 5);
                 if (store.world.shards >= cost && p.vampirismLevel < 4) {
+                    store.world.shards -= cost;
                     p.vampirismLevel++;
                     p.vampirism += 0.02;
                     return true;
@@ -1227,7 +1228,44 @@
         }
     });
     
-    addEventListener("keydown",e=>{const key=e.key.toLowerCase();if(document.activeElement.tagName==="INPUT")return;if(key===' '){e.preventDefault();useGrenade()}if(key==='b'){activateVoidBeam()}});
+    let cheatCodeBuffer = "";
+    addEventListener("keydown",e=>{
+        const key=e.key.toLowerCase();
+        if(document.activeElement.tagName==="INPUT")return;
+        
+        if (/[1-9]/.test(key)) {
+            cheatCodeBuffer += key;
+            if (cheatCodeBuffer.length > 6) {
+                cheatCodeBuffer = cheatCodeBuffer.substring(cheatCodeBuffer.length - 6);
+            }
+
+            const match = cheatCodeBuffer.match(/(\d)\1{2,}/);
+            if (match) {
+                const num = parseInt(match[1], 10);
+                if (num > 0) {
+                    const waveTarget = (num * 5) - 1;
+                    store.cheatsUsed = true;
+                    store.world.wave = waveTarget;
+                    store.world.shards = num * 100;
+                    
+                    const upgradesToGive = num * 2;
+                    for(let i=0; i< upgradesToGive; i++) {
+                        const randomUpgrade = LEVEL_UPGRADES[Math.floor(Math.random() * LEVEL_UPGRADES.length)];
+                        randomUpgrade.apply();
+                    }
+                    announce(`CHEAT: JUMPING TO WAVE ${waveTarget+1}`);
+                    resetGame();
+                    store.world.wave = waveTarget;
+                    initWave();
+
+                    cheatCodeBuffer = "";
+                }
+            }
+        } else {
+            cheatCodeBuffer = "";
+        }
+        
+        if(key===' '){e.preventDefault();useGrenade()}if(key==='b'){activateVoidBeam()}});
     function frame(now){const dt=Math.min(.033,(now-store.last)/1e3);store.last=now;if(!store.isGameOver&&!store.isPaused){stepWorld(dt)}render(dt);q('fps').textContent=(1/dt).toFixed(0);requestAnimationFrame(frame)}
     try{initWave();refreshScoreList();ensureName();requestAnimationFrame(frame)}catch(error){console.error("Game initialization failed:",error);try{updateLeaderboard(null);ensureName();requestAnimationFrame(frame);console.log("Game started in offline mode")}catch(criticalError){console.error("Critical startup failure:",criticalError);alert("Game failed to start. Please refresh the page.")}}
     
