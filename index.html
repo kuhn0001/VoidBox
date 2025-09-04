@@ -272,7 +272,7 @@
                 </div>
                 <canvas id="game" width="960" height="540"></canvas>
                 <div id="diagBox">
-                    <div class="chip">v3.7.0</div>
+                    <div class="chip">v3.7.1</div>
                     <div class="chip">FPS <span id="fps">—</span></div>
                 </div>
                 
@@ -298,7 +298,7 @@
                                 <div class="skill-icon">🚀</div>
                                 <div>
                                     <div class="skill-title">ROCKETMAN</div>
-                                    <div class="skill-desc">He once ruled the earth.. until he ascended beyond it</div>
+                                    <div class="skill-desc">Homing Missile powerups are stronger and more common.</div>
                                 </div>
                             </div>
                             <div class="skill-card" data-genome="wizard">
@@ -457,7 +457,7 @@
         { id: 'fire', name: 'OVERCLOCK', icon: '🔥', desc: '+25% fire rate', apply: () => store.player.fireRate *= 0.75 },
         { id: 'multi', name: 'SCATTER PROTOCOL', icon: '☄️', desc: '+1 projectile', apply: () => store.player.multishot += 1 },
         { id: 'shield', name: 'VOID SHIELD', icon: '🛡️', desc: '+20 regenerating shield', apply: () => { store.player.shieldMax += 20; store.player.shield = store.player.shieldMax; } },
-        { id: 'flamethrower', name: 'FLAMETHROWER', icon: '🔥🔥🔥', desc: 'Adds a flamethrower to your ship.', apply: () => { 
+        { id: 'flamethrower', name: 'METHANE CHAFF', icon: '🔥🔥🔥', desc: 'Adds a short-range Methane Chaff Cloud to your ship.', apply: () => { 
             store.player.flamethrowerLevel++; 
         } }
     ];
@@ -501,7 +501,7 @@
         'mine_wall': { name: "MINE WALL", icon: '💣', cost: 40, isPremium: true, max: 2, category: 'attack', apply: () => { const activeWalls = store.mines.filter(m => m.isWallMine).length > 0; if(!activeWalls) { deployMineWall(); return true; } return false; }, desc: () => `Deploy a wall of mines.` },
         'launcher': { name: 'FRAGMENTATION LAUNCHER', icon: '💥', cost: 50, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasLauncher) { store.player.hasLauncher = true; return true; } return false; }, desc: () => `Adds swirling nova projectiles.` },
         'the_iceman': { name: "THE ICEMAN", icon: '❄️', cost: 59, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.hasIceman) { store.player.hasIceman = true; store.iceman = { x: store.player.x, y: store.player.y + 50, t: 0}; return true; } return false; }, desc: () => `A clone mirrors your attacks.` },
-        'void_beam': { name: "LORD LAZARUS", icon: '☢️☄️☢️', cost: 75, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; return true; } return false; }, desc: () => `Lazarus periodically smites your foes.` },
+        'void_beam': { name: "GRAVITY WELL", icon: '🕳️', cost: 100, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; store.player.voidBeamCooldown = 15; return true; } return false; }, desc: () => `Unleashes a singularity that traps and crushes foes.` },
         'ghost_hounds': { name: "GHOST HOUNDS", icon: '👻🐺', cost: 75, isPremium: true, isUnlock: true, category: 'attack', apply: () => { 
             if (!store.player.hasHounds) { 
                 store.player.hasHounds = true; 
@@ -666,11 +666,10 @@
         if (p.shieldMax > 0 && p.shield < p.shieldMax) p.shield = Math.min(p.shieldMax, p.shield + 2 * dt);
         for (const key in p.powerupTimers) { p.powerupTimers[key].remaining -= dt; if (p.powerupTimers[key].remaining <= 0) { if (key === 'drones') store.drones = []; delete p.powerupTimers[key]; } }
         
-        // MODIFIED: Auto-trigger for Lazarus ability
-        if (p.hasVoidBeam) {
+        if (p.hasVoidBeam) { // This property now controls Gravity Well
             p.voidBeamCooldown -= dt;
             if (p.voidBeamCooldown <= 0) {
-                activateLazarus();
+                activateGravityWell();
                 p.voidBeamCooldown = 30;
             }
         }
@@ -778,7 +777,6 @@
                 laser.hitEnemies.clear();
             }
             
-            // MODIFIED: Laser damage now scales
             store.enemies.forEach(e => {
                 if (!e.dead && !laser.hitEnemies.has(e) && collide(laser, e)) {
                     e.hp -= 1000 * store.player.dmgMult;
@@ -1114,20 +1112,7 @@
     
     function escapeHtml(s) { s = String(s ?? ''); return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
     function announce(text) { const el = q('announce'); el.textContent = text; el.classList.remove('hide'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('hide'), 2500); }
-    function updateHUD() { q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0; q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div>${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div>` : ""}`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); 
-        const equipEl = q("hudEquipment");
-        let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0;
-        if (hasEquipment) {
-            equipEl.classList.remove('hide');
-            let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`;
-            if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`;
-            if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`;
-            if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`;
-            equipEl.innerHTML = content;
-        } else {
-            equipEl.classList.add('hide');
-        }
-        const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } }
+    function updateHUD() { const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0; const healthText = `HP: ${Math.round(t.hp)} / ${t.hpMax}`; const shieldText = t.shieldMax > 0 ? `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}` : ""; q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } }
     function updateLeaderboard(top10) { const fallbackData = [{ name: "ACE PILOT", score: 50000, waves: 10 },{ name: "VOID RUNNER", score: 35000, waves: 8 },{ name: "STAR HUNTER", score: 25000, waves: 6 },{ name: "NOVA STRIKER", score: 18000, waves: 5 },{ name: "COSMIC GUARD", score: 12000, waves: 4 }]; const data = top10 && top10.length > 0 ? top10 : fallbackData; q("hsList").innerHTML = data.map(s => `<li>${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves ?? "?"})</li>`).join(""); q("hsListPopup").innerHTML = data.map((s, i) => `<li>#${i + 1} ${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves ?? "?"})</li>`).join(""); }
     async function refreshScoreList() { try { const res = await fetch(`${API_BASE}/leaderboard`, { cache: "no-store", timeout: 5000 }); if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`); const data = await res.json(); updateLeaderboard(data); } catch (err) { console.warn("Failed to fetch leaderboard, using offline data:", err.message); updateLeaderboard(null); } }
     async function addScore(score) { 
@@ -1377,6 +1362,92 @@
     function createEffect(type,x,y, radius){
         let effect={isActive:!0,life:1,maxLife:1,x,y};
         switch(type){
+            case "gravityWell":
+                effect.maxLife = 7;
+                effect.life = 7;
+                effect.radius = 0;
+                effect.maxRadius = 300;
+                effect.damagePulseT = 1;
+                effect.step = function(dt) {
+                    this.life -= dt;
+                    if (this.life <= 0) {
+                        this.isActive = false;
+                        return;
+                    }
+                    if (this.radius < this.maxRadius) {
+                        this.radius += 200 * dt;
+                    }
+
+                    this.damagePulseT -= dt;
+                    const damageThisFrame = this.damagePulseT <= 0;
+                    if (damageThisFrame) {
+                        this.damagePulseT = 1;
+                    }
+                    
+                    const pullStrength = 150;
+                    const damageRadiusSq = (this.maxRadius * 0.7)**2;
+
+                    store.enemies.forEach(e => {
+                        if (e.dead) return;
+                        const dx = this.x - e.x;
+                        const dy = this.y - e.y;
+                        const distSq = dx * dx + dy * dy;
+
+                        if (distSq < this.radius**2) {
+                            const dist = Math.sqrt(distSq);
+                            if (dist > 10) { 
+                                const resistance = (e.type === 'mech' || e.type === 'hunter') ? 0.7 : 1.0;
+                                e.x += (dx / dist) * pullStrength * resistance * dt;
+                                e.y += (dy / dist) * pullStrength * resistance * dt;
+                            }
+                            
+                            if (damageThisFrame && distSq < damageRadiusSq) {
+                                e.hp -= e.hpMax * (0.25 * store.player.dmgMult) ;
+                            }
+                        }
+                    });
+                    if (store.boss) {
+                        const b = store.boss;
+                         const dx = this.x - b.x;
+                         const dy = this.y - b.y;
+                         const distSq = dx*dx + dy*dy;
+                         if(distSq < this.radius**2) {
+                             const dist = Math.sqrt(distSq);
+                             if (dist > 50) {
+                                b.x += (dx/dist) * pullStrength * 0.5 * dt;
+                                b.y += (dy/dist) * pullStrength * 0.5 * dt;
+                             }
+                             if (damageThisFrame && distSq < damageRadiusSq) {
+                                 b.hp -= b.hpMax * (0.10 * store.player.dmgMult);
+                             }
+                         }
+                    }
+
+                };
+                effect.draw = function() {
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    const time = performance.now();
+                    
+                    for (let i = 0; i < 5; i++) {
+                        const rotation = (time / (2000 + i * 200)) % (2 * Math.PI);
+                        ctx.strokeStyle = `rgba(150, 50, 255, ${0.5 * (this.life / this.maxLife)})`;
+                        ctx.lineWidth = 2 + i;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, (this.radius / 5) * (i + 1), rotation, rotation + Math.PI * 1.5);
+                        ctx.stroke();
+                    }
+
+                    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, this.radius * 0.7);
+                    grad.addColorStop(0, 'rgba(0,0,0,0.9)');
+                    grad.addColorStop(1, 'rgba(10, 0, 20, 0)');
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius, 0, 2 * Math.PI);
+                    ctx.fill();
+                    ctx.restore();
+                };
+                break;
             case"grenadeExplosion":
                 effect.maxLife=.5;
                 effect.radius=radius || 60;
@@ -1635,14 +1706,12 @@
     }
 
     function showShopWithHighlight() { showShop(); announce('Low health! Use the Mech Forge to repair!'); setTimeout(() => { const repairItem = document.querySelector('.shop-item[data-key="repair"]'); if (repairItem) repairItem.classList.add('highlight'); }, 100); }
-    // MODIFIED: Hound creation now includes color data
     function createHound(side) {
         const isTuxedo = side === -1 || side === -2;
         const color = isTuxedo ? { main: '#222222', accent: '#FFFFFF' } : { main: '#F0E68C', accent: '#BDB76B' };
         return { x: store.player.x + 50 * side, y: store.player.y + 20, side, target: null, attackT: 0, r: 12, killCount: 0, color };
     }
     function stepHounds(dt) { if (!store.player.hasHounds) return; store.hounds.forEach(h => { if (!h.target || h.target.dead || h.target.hp <= 0) { let closest = null, closestDist = Infinity; const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies; potentialTargets.forEach(e => { if (e.dead || e.hp <= 0) return; const dist = (h.x - e.x)**2 + (h.y - e.y)**2; if (dist < closestDist) { closest = e; closestDist = dist; } }); h.target = closest; } if (h.target) { const tx = h.target.x, ty = h.target.y; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); const speed = 350; if (dist > 30) { h.x += (dx / dist) * speed * dt; h.y += (dy / dist) * speed * dt; } else { h.attackT -= dt; if (h.attackT <= 0) { h.attackT = 0.25; let dmg = 8 * store.player.dmgMult; if (h.target === store.boss) dmg *= 0.3; if (!h.target.dead && h.target.hp > 0) { h.target.hp -= dmg; if (h.target.hp <= 0) { h.killCount++; if (h.killCount > 0 && h.killCount % 12 === 0) { playSound('dogs'); } } } } } } else { const tx = store.player.x + h.side * 50, ty = store.player.y + 20; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); if (dist > 5) { h.x += dx * 5 * dt; h.y += dy * 5 * dt; } } }); }
-    // MODIFIED: Hound drawing logic now uses color data
     function drawHound(h) {
         ctx.save();
         ctx.translate(h.x, h.y);
@@ -1693,6 +1762,7 @@
         ctx.beginPath();
         ctx.arc(r * 0.4, -r * 0.2, r * 0.25, 0, 2 * Math.PI);
         ctx.fill();
+        
         ctx.fillStyle = "#000";
         ctx.beginPath();
         ctx.arc(-r * 0.35, -r * 0.15, r * 0.1, 0, 2 * Math.PI);
@@ -1765,8 +1835,7 @@
 
         ctx.restore();
     }
-    // MODIFIED: Renamed function and logic for auto-trigger
-    function activateLazarus(){if(store.player.hasVoidBeam&&!store.isPaused){const angle=Math.random()*2*Math.PI,speed=800,p=store.player;store.lasers.push({x:p.x,y:p.y,prevX:p.x,prevY:p.y,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,life:6,r:12,hitEnemies:new Set})}}
+    function activateGravityWell() { if (!store.isPaused) { store.activeEffects.push(createEffect("gravityWell", W / 2, H / 2)); announce('GRAVITY WELL ACTIVATED'); } }
     function useGrenade() {
         if (store.player.grenades > 0 && !store.isPaused) {
             playSound('explosion');
@@ -1811,7 +1880,7 @@
                 store.player.flamethrowerLevel = 1; 
                 break;
             case 'wizard':
-                store.player.multishot = 4;
+                store.player.multishot = 5;
                 break;
             case 'rocketman':
                 break;
