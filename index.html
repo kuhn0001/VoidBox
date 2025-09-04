@@ -89,14 +89,16 @@
             opacity: 1;
             transform: scale(1.1);
         }
+        /* MODIFIED: Reduced padding, margin, and font size to shrink shop header */
         #shopPanel h2, #levelPanel h2, #scorePanel h2, #namePanel h2, #pilotPanel h2 {
-            margin: 0 0 8px 0;
-            padding-top: 10px;
-            font-size: clamp(18px, 2.2vw, 22px);
+            margin: 0 0 4px 0;
+            padding-top: 4px;
+            font-size: clamp(16px, 2vw, 20px);
             text-align: center;
         }
+        /* MODIFIED: Reduced margin */
         #shopPanel p, #levelPanel p, #namePanel p {
-            margin: 0 0 10px 0;
+            margin: 0 0 8px 0;
             text-align: center;
         }
         #shopGrid, #scorePanel div {
@@ -272,7 +274,7 @@
                 </div>
                 <canvas id="game" width="960" height="540"></canvas>
                 <div id="diagBox">
-                    <div class="chip">v3.6.8</div>
+                    <div class="chip">v3.6.9</div>
                     <div class="chip">FPS <span id="fps">—</span></div>
                 </div>
                 
@@ -291,7 +293,8 @@
                                 <div class="skill-icon">🐮</div>
                                 <div>
                                     <div class="skill-title">BEEF</div>
-                                    <div class="skill-desc">Powerups are more likely to be repairs. Starts with Magnetic Pull.</div>
+                                    <!-- MODIFIED: Updated description for new ability -->
+                                    <div class="skill-desc">Starts with Magnetic Pull and a short-range flamethrower. Powerups are more likely to be repairs.</div>
                                 </div>
                             </div>
                             <div class="skill-card" data-genome="rocketman">
@@ -435,7 +438,8 @@
         x: W / 2, y: H * 0.8, r: 14, hp: 100, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1, fireRate: 0.18, 
         vampirism: 0, shield: 0, shieldMax: 0, multishot: 1, isInvincible: false, piercing: 0, explosive: false, 
         hasShieldBubble: false, powerupTimers: {}, 
-        upgradeLevels: { dmg: 0, speed: 0, hp: 0, shield: 0 }, grenades: 0, hasVoidBeam: false, 
+        // MODIFIED: Added crit_chance to track its upgrade level
+        upgradeLevels: { dmg: 0, speed: 0, hp: 0, shield: 0, crit_chance: 0 }, grenades: 0, hasVoidBeam: false, 
         voidBeamCooldown: 0, hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 0, vampirismLevel: 0, flamethrowerLevel: 0,
         luckBoost: 0, magnetRadius: 0, hasIceman: false, critChance: 0.02, critDamage: 2,
         pilotGenome: null, missileVolley: 2
@@ -495,6 +499,8 @@
         'luck_boost': { name: "LUCK BOOST", icon: '🍀', cost: 25, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.luckBoost) { store.player.luckBoost = 0.15; return true; } return false; }, desc: () => `+15% chance for powerups.` },
         'magnet_pull': { name: "MAGNET PULL", icon: '🧲', cost: 25, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.magnetRadius) { store.player.magnetRadius = 150; return true; } return false; }, desc: () => `Powerups are drawn to you.` },
         'dmg': { name: "DAMAGE", icon: '💪', baseCost: 25, scale: 1.5, maxLevel: 10, category: 'attack', effect: () => store.player.dmgMult += 0.1, desc: level => `+10% Damage (Lvl ${level + 1})` },
+        // ADDED: New crit chance/damage upgrade
+        'crit_chance': { name: "SHINOBI REFLEXES", icon: '🥷', baseCost: 20, increment: 12, maxLevel: 10, category: 'attack', effect: () => { store.player.critChance *= 1.5; store.player.critDamage *= 1.5; }, desc: level => `+50% Crit Chance & Dmg (Lvl ${level + 1})` },
         'speed': { name: "SPEED", icon: '🚀', baseCost: 30, scale: 1.6, maxLevel: 8, category: 'utility', effect: () => store.player.speed += 30, desc: level => `+30 Speed (Lvl ${level + 1})` },
         'grenade': { name: "NOVA GRENADE", icon: '💥💣💥', cost: 35, isPremium: true, max: 3, category: 'attack', apply: () => { if (store.player.grenades < 3) { store.player.grenades++; return true; } return false; }, desc: () => `Buy 1 (Max 3)` },
         'shield': { name: "MAX SHIELD", icon: '🛡️', baseCost: 40, scale: 1.8, maxLevel: 5, category: 'health', effect: () => { store.player.shieldMax += 25; store.player.shield += 25; }, desc: level => `+25 Max Shield (Lvl ${level + 1})` },
@@ -1239,8 +1245,8 @@
                         const numShots = 8;
                         const angleToPlayer = Math.atan2(store.player.y - b.y, store.player.x - b.x);
                         for (let i = 0; i < numShots; i++) {
-                             const angle = angleToPlayer + (i - (numShots - 1) / 2) * (spread * Math.PI / 180) * 0.1;
-                             store.eBullets.push({ x: b.x, y: b.y, vx: 350 * Math.cos(angle), vy: 350 * Math.sin(angle), r: 4, col: '#ff4500', dmg: 22 * dmgScale, life: 2.0 });
+                            const angle = angleToPlayer + (i - (numShots - 1) / 2) * (spread * Math.PI / 180) * 0.1;
+                            store.eBullets.push({ x: b.x, y: b.y, vx: 350 * Math.cos(angle), vy: 350 * Math.sin(angle), r: 4, col: '#ff4500', dmg: 22 * dmgScale, life: 2.0 });
                         }
                         break;
                     case 1: case 3: // Summon Enraged Shards
@@ -1513,7 +1519,12 @@
                 if (currentLevel >= u.maxLevel) {
                     cost = Infinity
                 } else {
-                    cost = Math.floor(u.baseCost * Math.pow(u.scale, currentLevel))
+                    // MODIFIED: Handle linear increment cost for crit upgrade
+                    if (u.increment) {
+                        cost = u.baseCost + (currentLevel * u.increment);
+                    } else {
+                        cost = Math.floor(u.baseCost * Math.pow(u.scale, currentLevel))
+                    }
                 }
             }
             return {
@@ -1610,7 +1621,15 @@
                         }
                     }
                 } else {
-                    const cost = Math.floor(upgrade.baseCost * Math.pow(upgrade.scale, store.player.upgradeLevels[key] || 0));
+                    // MODIFIED: Handle both linear and scaling costs on purchase
+                    const currentLevel = store.player.upgradeLevels[key] || 0;
+                    let cost;
+                    if (upgrade.increment) {
+                        cost = upgrade.baseCost + (currentLevel * upgrade.increment);
+                    } else {
+                        cost = Math.floor(upgrade.baseCost * Math.pow(upgrade.scale, currentLevel));
+                    }
+
                     if (store.world.shards >= cost) {
                         store.world.shards -= cost;
                         upgrade.effect();
@@ -1789,6 +1808,8 @@
         switch(genome) {
             case 'beef':
                 store.player.magnetRadius = 150;
+                // ADDED: Give Beef class one level of flamethrower
+                store.player.flamethrowerLevel = 1; 
                 break;
             case 'wizard':
                 store.player.multishot = 4;
@@ -1887,7 +1908,7 @@
             }
         } else {
              if (key !== ' ' && key !== 'b') {
-                cheatCodeBuffer = "";
+                 cheatCodeBuffer = "";
             }
         }
         
@@ -1899,4 +1920,3 @@
 </script>
 </body>
 </html>
-
