@@ -272,7 +272,7 @@
                 </div>
                 <canvas id="game" width="960" height="540"></canvas>
                 <div id="diagBox">
-                    <div class="chip">v3.5.6</div>
+                    <div class="chip">v3.5.7</div>
                     <div class="chip">FPS <span id="fps">—</span></div>
                 </div>
                 
@@ -490,8 +490,7 @@
         'drones': { name: 'SIDE DRONES', icon: '🚁', duration: 15, type: 'timed' },
         'shield': { name: 'SHIELD BUBBLE', icon: '🛡️', duration: 0, type: 'instant' },
         'repair': { name: 'REPAIR KIT', icon: '❤️', duration: 0, type: 'instant' },
-        'missile': { name: 'HOMING MISSILES', icon: '🚀', duration: 20, type: 'timed' },
-        'stealth': { name: 'STEALTH', icon: '👻', duration: 10, type: 'timed' }
+        'missile': { name: 'HOMING MISSILES', icon: '🚀', duration: 20, type: 'timed' }
     };
 
     // --- GAME MECHANICS ---
@@ -921,6 +920,7 @@
         store.cheatsUsed = false;
         store.cheatInvincibilityCooldown = 0;
         store.cheatDogHealCooldown = 0;
+        shopItemOrder = []; // Reset shop order
         q('gameOverPanel').classList.add('hide'); q('shopPanel').classList.add('hide'); q('levelPanel').classList.add('hide');
         initWave();
     }
@@ -1132,6 +1132,7 @@
     }
     function explodeGrenade(x,y){store.activeEffects.push(createEffect("grenadeExplosion",x,y));const radius=150;store.enemies.forEach(e=>{(e.x-x)**2+(e.y-y)**2<radius**2&&(e.hp-=.5*e.hpMax)})}
     
+    let shopItemOrder = [];
     function showShop() {
         store.isPaused = true;
         q('pauseBtn').classList.add('hide');
@@ -1139,7 +1140,8 @@
             grid = q("shopGrid"),
             shardsEl = q("shopShards");
         shardsEl.textContent = store.world.shards;
-        const shopItems = Object.keys(SHOP_UPGRADES).map(key => {
+
+        const currentItems = Object.keys(SHOP_UPGRADES).map(key => {
             const u = SHOP_UPGRADES[key];
             let currentLevel = store.player.upgradeLevels[key] || 0,
                 cost = 0;
@@ -1163,14 +1165,20 @@
 
         const temporarilyDisabled = ['mine_wall', 'the_iceman', 'ghost_hounds', 'luck_boost', 'grenade'];
 
-        shopItems.sort((a, b) => {
-            const aIsDisabled = temporarilyDisabled.includes(a.key);
-            const bIsDisabled = temporarilyDisabled.includes(b.key);
-            if (aIsDisabled && !bIsDisabled) return 1;
-            if (!aIsDisabled && bIsDisabled) return -1;
-            return a.cost - b.cost;
-        });
+        if (shopItemOrder.length === 0) {
+            const itemsToSort = [...currentItems];
+            itemsToSort.sort((a, b) => {
+                const aIsDisabled = temporarilyDisabled.includes(a.key);
+                const bIsDisabled = temporarilyDisabled.includes(b.key);
+                if (aIsDisabled && !bIsDisabled) return 1;
+                if (!aIsDisabled && bIsDisabled) return -1;
+                return a.cost - b.cost;
+            });
+            shopItemOrder = itemsToSort.map(item => item.key);
+        }
 
+        const shopItems = shopItemOrder.map(key => currentItems.find(item => item.key === key));
+        
         let content = "";
         for (const u of shopItems) {
             const key = u.key;
