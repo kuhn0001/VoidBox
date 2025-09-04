@@ -272,7 +272,7 @@
                 </div>
                 <canvas id="game" width="960" height="540"></canvas>
                 <div id="diagBox">
-                    <div class="chip">v3.7.1</div>
+                    <div class="chip">v3.7.2</div>
                     <div class="chip">FPS <span id="fps">—</span></div>
                 </div>
                 
@@ -434,15 +434,17 @@
         x: W / 2, y: H * 0.8, r: 14, hp: 100, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1, fireRate: 0.18, 
         vampirism: 0, shield: 0, shieldMax: 0, multishot: 1, isInvincible: false, piercing: 0, explosive: false, 
         hasShieldBubble: false, powerupTimers: {}, 
-        upgradeLevels: { dmg: 0, speed: 0, hp: 0, shield: 0, crit_chance: 0, ghost_hounds: 0 }, grenades: 0, hasVoidBeam: false, 
-        voidBeamCooldown: 0, hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 0, vampirismLevel: 0, flamethrowerLevel: 0,
+        upgradeLevels: { dmg: 0, speed: 0, hp: 0, shield: 0, crit_chance: 0, ghost_hounds: 0 }, 
+        grenades: 0, hasVoidBeam: false, voidBeamCooldown: 0, 
+        hasLazarusBeam: false, lazarusBeamCooldown: 0,
+        hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 0, vampirismLevel: 0, flamethrowerLevel: 0,
         luckBoost: 0, magnetRadius: 0, hasIceman: false, critChance: 0.02, critDamage: 2,
         pilotGenome: null, missileVolley: 2
     };
     
     const store = {
         frame: 0, last: performance.now(), isGameOver: false, isPaused: false,
-        world: { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0 },
+        world: { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0, enemyDensityBonus: 1.0 },
         player: { ...player_initial_state },
         boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [],
         iceman: null,
@@ -501,7 +503,8 @@
         'mine_wall': { name: "MINE WALL", icon: '💣', cost: 40, isPremium: true, max: 2, category: 'attack', apply: () => { const activeWalls = store.mines.filter(m => m.isWallMine).length > 0; if(!activeWalls) { deployMineWall(); return true; } return false; }, desc: () => `Deploy a wall of mines.` },
         'launcher': { name: 'FRAGMENTATION LAUNCHER', icon: '💥', cost: 50, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasLauncher) { store.player.hasLauncher = true; return true; } return false; }, desc: () => `Adds swirling nova projectiles.` },
         'the_iceman': { name: "THE ICEMAN", icon: '❄️', cost: 59, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.hasIceman) { store.player.hasIceman = true; store.iceman = { x: store.player.x, y: store.player.y + 50, t: 0}; return true; } return false; }, desc: () => `A clone mirrors your attacks.` },
-        'void_beam': { name: "GRAVITY WELL", icon: '🕳️', cost: 100, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; store.player.voidBeamCooldown = 15; return true; } return false; }, desc: () => `Unleashes a singularity that traps and crushes foes.` },
+        'lazarus_beam': { name: "LORD LAZARUS", icon: '☢️☄️☢️', cost: 75, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasLazarusBeam) { store.player.hasLazarusBeam = true; store.player.lazarusBeamCooldown = 15; return true; } return false; }, desc: () => `Lazarus periodically smites your foes.` },
+        'gravity_well': { name: "GRAVITY WELL", icon: '🕳️', cost: 100, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; store.player.voidBeamCooldown = 15; return true; } return false; }, desc: () => `Unleashes a singularity that traps and crushes foes.` },
         'ghost_hounds': { name: "GHOST HOUNDS", icon: '👻🐺', baseCost: 75, scale: 2, maxLevel: 2, category: 'attack', effect: () => { if (!store.player.hasHounds) { store.player.hasHounds = true; store.hounds = [createHound(-1), createHound(1)]; } else { store.hounds.push(createHound(-2)); store.hounds.push(createHound(2)); } playSound('dogs'); }, desc: level => { if (level === 0) return `Unlocks 2 spectral hounds.`; if (level === 1) return `Add 2 more hounds.`; return "Max hounds reached."; } }
     };
     
@@ -576,7 +579,7 @@
             announce(`⚡ GUARDIAN: ${store.boss.name} ⚡`);
         } else {
             store.enemies = [];
-            const spawnCount = 7 + Math.floor(store.world.wave * 1.8);
+            const spawnCount = Math.floor((7 + Math.floor(store.world.wave * 1.8)) * store.world.enemyDensityBonus);
             for (let i = 0; i < spawnCount; i++) {
                 const types = ['drone', 'drone', 'hunter', 'phantom', 'mech'];
                 store.enemies.push(spawnEnemy(types[Math.floor(Math.random() * types.length)]));
@@ -666,6 +669,14 @@
             if (p.voidBeamCooldown <= 0) {
                 activateGravityWell();
                 p.voidBeamCooldown = 30;
+            }
+        }
+        
+        if (p.hasLazarusBeam) {
+            p.lazarusBeamCooldown -= dt;
+            if (p.lazarusBeamCooldown <= 0) {
+                activateLazarus();
+                p.lazarusBeamCooldown = 30;
             }
         }
 
@@ -920,14 +931,27 @@
                 store.boss.hp -= dmg; 
                 if (store.boss.hp <= 0) { 
                     const fightDuration = (performance.now() - store.world.bossSpawnTime) / 1000;
-                    if (fightDuration < 10) {
-                        store.world.enemyHealthBonus *= 1.1;
-                        announce("ENEMIES ADAPTING...");
-                    }
+                    let healthBonusMultiplier = 1.0;
+                    let announcedAdaptation = false;
+
                     if (store.world.wave > 5 && fightDuration < 4) {
-                        store.world.bossHealthBonus *= 1.1;
-                        announce("GUARDIANS ADAPTING...");
+                        healthBonusMultiplier = 1.40; // 40% increase
+                        store.world.bossHealthBonus *= 1.40;
+                        announce("GUARDIANS ADAPTING RAPIDLY!");
+                        announcedAdaptation = true;
+                    } else if (fightDuration < 10) {
+                        healthBonusMultiplier = 1.10; // 10% increase
+                        store.world.bossHealthBonus *= 1.10;
+                        announce("GUARDIANS ADAPTING!");
+                        announcedAdaptation = true;
                     }
+
+                    if (announcedAdaptation) {
+                        store.world.enemyHealthBonus *= healthBonusMultiplier;
+                        store.world.enemyDensityBonus *= 1.15;
+                        setTimeout(() => announce("ENEMY SWARMS INTENSIFYING!"), 1000);
+                    }
+                    
                     store.world.score += 2000; store.world.shards += 25; store.world.xp += 100; store.world.bosses++; 
                     store.boss = null; announce('⚡ GUARDIAN DEFEATED ⚡'); explode(b.x, b.y, true); 
                 } 
@@ -1046,7 +1070,7 @@
         store.player.pilotGenome = savedGenome;
         applyGenomeBonus(store.player.pilotGenome);
         
-        store.world = { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0 };
+        store.world = { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0, enemyDensityBonus: 1.0 };
         store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = []; 
         store.drones = []; store.hounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = [];
         store.iceman = null;
@@ -1651,7 +1675,12 @@
                         desc = "Wall already deployed."
                     }
                 } else if (u.isUnlock) {
-                    if ((key === 'void_beam' && store.player.hasVoidBeam) || (key === 'launcher' && store.player.hasLauncher) || (key === 'luck_boost' && store.player.luckBoost > 0) || (key === 'magnet_pull' && store.player.magnetRadius > 0) || (key === 'the_iceman' && store.player.hasIceman)) {
+                    if ( (key === 'gravity_well' && store.player.hasVoidBeam) || 
+                         (key === 'lazarus_beam' && store.player.hasLazarusBeam) ||
+                         (key === 'launcher' && store.player.hasLauncher) || 
+                         (key === 'luck_boost' && store.player.luckBoost > 0) || 
+                         (key === 'magnet_pull' && store.player.magnetRadius > 0) || 
+                         (key === 'the_iceman' && store.player.hasIceman)) {
                         isDisabled = true;
                         desc = "Already Unlocked"
                     }
@@ -1850,6 +1879,7 @@
         ctx.restore();
     }
     function activateGravityWell() { if (!store.isPaused) { store.activeEffects.push(createEffect("gravityWell", W / 2, H / 2)); announce('GRAVITY WELL ACTIVATED'); } }
+    function activateLazarus(){if(store.player.hasLazarusBeam&&!store.isPaused){const angle=Math.random()*2*Math.PI,speed=800,p=store.player;store.lasers.push({x:p.x,y:p.y,prevX:p.x,prevY:p.y,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,life:6,r:12,hitEnemies:new Set})}}
     function useGrenade() {
         if (store.player.grenades > 0 && !store.isPaused) {
             playSound('explosion');
