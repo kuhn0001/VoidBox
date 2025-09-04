@@ -272,7 +272,7 @@
                 </div>
                 <canvas id="game" width="960" height="540"></canvas>
                 <div id="diagBox">
-                    <div class="chip">v3.5.3</div>
+                    <div class="chip">v3.5.5</div>
                     <div class="chip">FPS <span id="fps">—</span></div>
                 </div>
                 
@@ -1131,7 +1131,134 @@
         return effect
     }
     function explodeGrenade(x,y){store.activeEffects.push(createEffect("grenadeExplosion",x,y));const radius=150;store.enemies.forEach(e=>{(e.x-x)**2+(e.y-y)**2<radius**2&&(e.hp-=.5*e.hpMax)})}
-    function showShop(){ store.isPaused=true; q('pauseBtn').classList.add('hide'); const panel=q("shopPanel"),grid=q("shopGrid"),shardsEl=q("shopShards"); shardsEl.textContent=store.world.shards; const shopItems=Object.keys(SHOP_UPGRADES).map(key=>{const u=SHOP_UPGRADES[key];let currentLevel=store.player.upgradeLevels[key]||0,cost=0;if(key==='vampirism'){cost=12+(store.player.vampirismLevel*5);if(store.player.vampirismLevel>=u.max)cost=Infinity}else if(u.isPremium){cost=u.cost}else{if(currentLevel>=u.maxLevel){cost=Infinity}else{cost=Math.floor(u.baseCost*Math.pow(u.scale,currentLevel))}}return{key,...u,cost}});shopItems.sort((a,b)=>a.cost-b.cost);let content="";for(const u of shopItems){const key=u.key;let currentLevel=store.player.upgradeLevels[key]||0,isDisabled=!1,cost=u.cost,desc=typeof u.desc==='function'?u.desc(currentLevel):u.desc,name=u.name;if(u.isPremium){if(key==='vampirism'){if(store.player.vampirismLevel>=u.max)isDisabled=true}else if(key==='repair'){if(store.player.hp>=store.player.hpMax){isDisabled=true;desc="Health is already full."}}else if(key==='nano_save'){if(store.player.nanoSaves>=u.max){isDisabled=true;desc="Max charges reached."}}else if(key==='mine_wall'){if(store.mines.filter(m=>m.isWallMine).length>0){isDisabled=true;desc="Wall already deployed."}}else if(u.isUnlock){if((key==='void_beam'&&store.player.hasVoidBeam)||(key==='launcher'&&store.player.hasLauncher)||(key==='ghost_hounds'&&store.player.hasHounds)||(key==='luck_boost'&&store.player.luckBoost>0)||(key==='magnet_pull'&&store.player.magnetRadius>0)||(key==='the_iceman'&&store.player.hasIceman)){isDisabled=true;desc="Already Unlocked"}}else{if(store.player.grenades>=u.max){isDisabled=true;desc="At maximum capacity"}}}else{if(currentLevel>=u.maxLevel){isDisabled=true;desc="Max Level Reached"}}if(store.world.shards<cost)isDisabled=true;const costText=isFinite(cost)?cost:'---';content+=`<div class="skill-card shop-item ${isDisabled?'disabled':''} shop-item-${u.category}" data-key="${key}"><div class="skill-icon">${u.icon}</div><div><div class="skill-title">${name}</div><div class="skill-desc">${desc}</div></div><div style="color:var(--accent);margin-top:4px;font-size:11px;">Cost: ${costText}</div></div>`}grid.innerHTML=content;grid.querySelectorAll(".shop-item").forEach(item=>{item.addEventListener("click",()=>{if(item.classList.contains('disabled'))return;const key=item.dataset.key;const upgrade=SHOP_UPGRADES[key];let purchaseSuccessful=!1;if(upgrade.isPremium){if(key==='vampirism'){const cost=12+(store.player.vampirismLevel*5);if(store.world.shards>=cost){purchaseSuccessful=upgrade.apply()}}else{const cost=upgrade.cost;if(store.world.shards>=cost){store.world.shards-=cost;purchaseSuccessful=upgrade.apply()}}}else{const cost=Math.floor(upgrade.baseCost*Math.pow(upgrade.scale,store.player.upgradeLevels[key]||0));if(store.world.shards>=cost){store.world.shards-=cost;upgrade.effect();store.player.upgradeLevels[key]=(store.player.upgradeLevels[key]||0)+1;purchaseSuccessful=!0}}if(purchaseSuccessful){showShop()}})});panel.classList.remove("hide")}
+    
+    function showShop() {
+        store.isPaused = true;
+        q('pauseBtn').classList.add('hide');
+        const panel = q("shopPanel"),
+            grid = q("shopGrid"),
+            shardsEl = q("shopShards");
+        shardsEl.textContent = store.world.shards;
+        const shopItems = Object.keys(SHOP_UPGRADES).map(key => {
+            const u = SHOP_UPGRADES[key];
+            let currentLevel = store.player.upgradeLevels[key] || 0,
+                cost = 0;
+            if (key === 'vampirism') {
+                cost = 12 + (store.player.vampirismLevel * 5);
+                if (store.player.vampirismLevel >= u.max) cost = Infinity
+            } else if (u.isPremium) {
+                cost = u.cost
+            } else {
+                if (currentLevel >= u.maxLevel) {
+                    cost = Infinity
+                } else {
+                    cost = Math.floor(u.baseCost * Math.pow(u.scale, currentLevel))
+                }
+            }
+            return {
+                key, ...u,
+                cost
+            }
+        });
+
+        const temporarilyDisabled = ['mine_wall', 'the_iceman', 'ghost_hounds', 'magnet_pull', 'luck_boost', 'grenade'];
+
+        shopItems.sort((a, b) => {
+            const aIsDisabled = temporarilyDisabled.includes(a.key);
+            const bIsDisabled = temporarilyDisabled.includes(b.key);
+            if (aIsDisabled && !bIsDisabled) return 1;
+            if (!aIsDisabled && bIsDisabled) return -1;
+            return a.cost - b.cost;
+        });
+
+        let content = "";
+        for (const u of shopItems) {
+            const key = u.key;
+            let currentLevel = store.player.upgradeLevels[key] || 0,
+                isDisabled = false,
+                cost = u.cost,
+                desc = typeof u.desc === 'function' ? u.desc(currentLevel) : u.desc,
+                name = u.name;
+            if (u.isPremium) {
+                if (key === 'vampirism') {
+                    if (store.player.vampirismLevel >= u.max) isDisabled = true
+                } else if (key === 'repair') {
+                    if (store.player.hp >= store.player.hpMax) {
+                        isDisabled = true;
+                        desc = "Health is already full."
+                    }
+                } else if (key === 'nano_save') {
+                    if (store.player.nanoSaves >= u.max) {
+                        isDisabled = true;
+                        desc = "Max charges reached."
+                    }
+                } else if (key === 'mine_wall') {
+                    if (store.mines.filter(m => m.isWallMine).length > 0) {
+                        isDisabled = true;
+                        desc = "Wall already deployed."
+                    }
+                } else if (u.isUnlock) {
+                    if ((key === 'void_beam' && store.player.hasVoidBeam) || (key === 'launcher' && store.player.hasLauncher) || (key === 'ghost_hounds' && store.player.hasHounds) || (key === 'luck_boost' && store.player.luckBoost > 0) || (key === 'magnet_pull' && store.player.magnetRadius > 0) || (key === 'the_iceman' && store.player.hasIceman)) {
+                        isDisabled = true;
+                        desc = "Already Unlocked"
+                    }
+                } else {
+                    if (store.player.grenades >= u.max) {
+                        isDisabled = true;
+                        desc = "At maximum capacity"
+                    }
+                }
+            } else {
+                if (currentLevel >= u.maxLevel) {
+                    isDisabled = true;
+                    desc = "Max Level Reached"
+                }
+            }
+            if (store.world.shards < cost) isDisabled = true;
+            if (temporarilyDisabled.includes(key)) {
+                isDisabled = true;
+                desc = "Under maintenance.";
+            }
+            const costText = isFinite(cost) ? cost : '---';
+            content += `<div class="skill-card shop-item ${isDisabled?'disabled':''} shop-item-${u.category}" data-key="${key}"><div class="skill-icon">${u.icon}</div><div><div class="skill-title">${name}</div><div class="skill-desc">${desc}</div></div><div style="color:var(--accent);margin-top:4px;font-size:11px;">Cost: ${costText}</div></div>`
+        }
+        grid.innerHTML = content;
+        grid.querySelectorAll(".shop-item").forEach(item => {
+            item.addEventListener("click", () => {
+                if (item.classList.contains('disabled')) return;
+                const key = item.dataset.key;
+                const upgrade = SHOP_UPGRADES[key];
+                let purchaseSuccessful = false;
+                if (upgrade.isPremium) {
+                    if (key === 'vampirism') {
+                        const cost = 12 + (store.player.vampirismLevel * 5);
+                        if (store.world.shards >= cost) {
+                            purchaseSuccessful = upgrade.apply()
+                        }
+                    } else {
+                        const cost = upgrade.cost;
+                        if (store.world.shards >= cost) {
+                            store.world.shards -= cost;
+                            purchaseSuccessful = upgrade.apply()
+                        }
+                    }
+                } else {
+                    const cost = Math.floor(upgrade.baseCost * Math.pow(upgrade.scale, store.player.upgradeLevels[key] || 0));
+                    if (store.world.shards >= cost) {
+                        store.world.shards -= cost;
+                        upgrade.effect();
+                        store.player.upgradeLevels[key] = (store.player.upgradeLevels[key] || 0) + 1;
+                        purchaseSuccessful = true;
+                    }
+                }
+                if (purchaseSuccessful) {
+                    showShop()
+                }
+            })
+        });
+        panel.classList.remove("hide")
+    }
+
     function showShopWithHighlight() { showShop(); announce('Low health! Use the Mech Forge to repair!'); setTimeout(() => { const repairItem = document.querySelector('.shop-item[data-key="repair"]'); if (repairItem) repairItem.classList.add('highlight'); }, 100); }
     function createHound(side) { return { x: store.player.x + 50 * side, y: store.player.y + 20, side, target: null, attackT: 0, r: 12, killCount: 0 }; }
     function stepHounds(dt) { if (!store.player.hasHounds) return; store.hounds.forEach(h => { if (!h.target || h.target.dead || h.target.hp <= 0) { let closest = null, closestDist = Infinity; const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies; potentialTargets.forEach(e => { if (e.dead || e.hp <= 0) return; const dist = (h.x - e.x)**2 + (h.y - e.y)**2; if (dist < closestDist) { closest = e; closestDist = dist; } }); h.target = closest; } if (h.target) { const tx = h.target.x, ty = h.target.y; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); const speed = 350; if (dist > 30) { h.x += (dx / dist) * speed * dt; h.y += (dy / dist) * speed * dt; } else { h.attackT -= dt; if (h.attackT <= 0) { h.attackT = 0.25; let dmg = 8 * store.player.dmgMult; if (h.target === store.boss) dmg *= 0.3; if (!h.target.dead && h.target.hp > 0) { h.target.hp -= dmg; if (h.target.hp <= 0) { h.killCount++; if (h.killCount > 0 && h.killCount % 12 === 0) { playSound('dogs'); } } } } } } else { const tx = store.player.x + h.side * 50, ty = store.player.y + 20; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); if (dist > 5) { h.x += dx * 5 * dt; h.y += dy * 5 * dt; } } }); }
@@ -1348,3 +1475,4 @@
 </script>
 </body>
 </html>
+
