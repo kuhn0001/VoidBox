@@ -272,7 +272,7 @@
                 </div>
                 <canvas id="game" width="960" height="540"></canvas>
                 <div id="diagBox">
-                    <div class="chip">v3.6.6</div>
+                    <div class="chip">v3.6.7</div>
                     <div class="chip">FPS <span id="fps">—</span></div>
                 </div>
                 
@@ -418,7 +418,7 @@
         frame: 0, last: performance.now(), isGameOver: false, isPaused: false,
         world: { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false },
         player: { ...player_initial_state },
-        boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], grenades: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [],
+        boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [],
         iceman: null,
         _startTs: performance.now(),
         cheatInvincibilityCooldown: 0,
@@ -758,7 +758,6 @@
 
         const dmgScale = Math.pow(1.065, store.world.wave - 1);
         store.activeEffects.forEach(e => { if (e.step) e.step(dt); });
-        store.grenades.forEach(g => { g.x += g.vx * dt; g.y += g.vy * dt; g.fuse -= dt; if (g.fuse <= 0) { g.dead = true; explodeGrenade(g.x, g.y); } });
         store.eBullets.forEach(b => { 
             b.x += b.vx * dt; 
             b.y += b.vy * dt; 
@@ -885,7 +884,7 @@
             });
         }
 
-        ['bullets', 'eBullets', 'enemies', 'powerups', 'grenades', 'missiles', 'lasers'].forEach(key => store[key] = store[key].filter(i => !i.dead));
+        ['bullets', 'eBullets', 'enemies', 'powerups', 'missiles', 'lasers'].forEach(key => store[key] = store[key].filter(i => !i.dead));
         store.activeEffects = store.activeEffects.filter(e => e.isActive !== false);
         if (!store.boss && store.enemies.length === 0) { store.world.wave++; initWave(); }
         const xpNeeded = store.world.level * 100; 
@@ -896,6 +895,20 @@
     function explode(x, y, isBoss = false, isSmall = false) {
         playSound('explosion');
         if (isBoss) for (let i = 0; i < 5; i++) setTimeout(() => spawnPowerup(x, y), i * 300);
+        if (isSmall) { // This is for explosive rounds from any source
+            const radius = 60;
+            const dmg = 25 * store.player.dmgMult; // Base damage for explosive rounds
+            const targets = store.boss ? [...store.enemies, store.boss] : store.enemies;
+            targets.forEach(e => {
+                if (!e.dead) {
+                    const distSq = (e.x - x)**2 + (e.y - y)**2;
+                    if (distSq < radius**2) {
+                        e.hp -= dmg;
+                    }
+                }
+            });
+            store.activeEffects.push(createEffect("grenadeExplosion", x, y, radius));
+        }
     }
     
     function levelUp() { 
@@ -956,7 +969,7 @@
         store.player = JSON.parse(JSON.stringify(player_initial_state));
         store.world = { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false };
         store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = []; 
-        store.drones = []; store.grenades = []; store.hounds = []; store.missiles = []; store.lasers = []; store.activeEffects = [];
+        store.drones = []; store.hounds = []; store.missiles = []; store.lasers = []; store.activeEffects = [];
         store.iceman = null;
         store._startTs = performance.now(); store.isGameOver = false;
         store.cheatsUsed = false;
@@ -979,7 +992,7 @@
         ctx.globalAlpha = 0.6; for (const s of starsB) { s.y += 60 * dt; if (s.y > H) s.y -= H; ctx.fillStyle = `rgba(204,0,255,${0.4 + 0.6 * Math.sin(time * 1.5 + s.pulse)})`; ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(0.1, s.r * (0.4 + 0.6 * Math.sin(time * 1.5 + s.pulse))), 0, 2 * Math.PI); ctx.fill(); }
         ctx.globalAlpha = 1;
         
-        store.powerups.forEach(p => drawPowerup(p)); store.grenades.forEach(g => drawGrenade(g)); store.missiles.forEach(m => drawMissile(m));
+        store.powerups.forEach(p => drawPowerup(p)); store.missiles.forEach(m => drawMissile(m));
         store.eBullets.forEach(b => { ctx.fillStyle = b.col; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 2 * Math.PI); ctx.fill(); });
         store.bullets.forEach(b => { ctx.fillStyle = b.col; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 2 * Math.PI); ctx.fill(); });
         store.lasers.forEach(l => drawLaser(l));
@@ -1250,12 +1263,21 @@
     }
     function drawBoss(t) { ctx.save();ctx.translate(t.x,t.y); if(t.isEnraged) ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 50); ctx.fillStyle="rgba(0,0,0,0.7)";ctx.fillRect(-60,-t.r-20,120,8);ctx.fillStyle=t.color;ctx.fillRect(-60,-t.r-20,120*(t.hp/t.hpMax),8);ctx.strokeStyle="#fff";ctx.lineWidth=1;ctx.strokeRect(-60,-t.r-20,120,8);if(t.behavior==="malignus"){const time=performance.now()/1e3;ctx.fillStyle=t.color;ctx.beginPath();const pulse=t.r*(.3+.05*Math.sin(4*time));ctx.arc(0,0,pulse,0,2*Math.PI);ctx.fill();ctx.fillStyle="white";ctx.beginPath();ctx.arc(0,0,.4*pulse,0,2*Math.PI);ctx.fill();const numShards=5;for(let i=0;i<numShards;i++){ctx.save();const angle=time*(.5+.1*i)+i*2*Math.PI/numShards,dist=.8*t.r;ctx.rotate(angle);ctx.translate(dist,0);ctx.rotate(2*time);ctx.fillStyle=t.color+"aa";ctx.strokeStyle="#FFFFFF";ctx.lineWidth=2;ctx.beginPath();const shardSize=.3*t.r;ctx.moveTo(0,-shardSize);ctx.lineTo(shardSize/2,shardSize);ctx.lineTo(-shardSize/2,shardSize);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore()}}else if(t.behavior==="hex"){ctx.translate(0,30);const bodyW_top=t.r*1.5,bodyW_bottom=t.r*2.5,bodyH=t.r*1.5;ctx.fillStyle="#66aaff";ctx.strokeStyle="#5599e5";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-bodyW_top/2,-bodyH/2);ctx.lineTo(bodyW_top/2,-bodyH/2);ctx.lineTo(bodyW_bottom/2,bodyH/2);ctx.lineTo(-bodyW_bottom/2,bodyH/2);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#e03434";ctx.strokeStyle="#c02d2d";const crownH=t.r*0.8,crownW=bodyW_top*0.9;ctx.beginPath();ctx.moveTo(-crownW/2,-bodyH/2);ctx.lineTo(-crownW/2+crownW/4,-bodyH/2-crownH);ctx.lineTo(0,-bodyH/2-crownH/2);ctx.lineTo(crownW/2-crownW/4,-bodyH/2-crownH);ctx.lineTo(crownW/2,-bodyH/2);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#000";ctx.fillRect(-t.r*0.6,-t.r*0.3,t.r*0.4,t.r*0.15);ctx.fillRect(t.r*0.2,-t.r*0.3,t.r*0.4,t.r*0.15);ctx.fillRect(-t.r*0.4,0,t.r*0.8,t.r*0.1);ctx.strokeStyle="#ffd700";ctx.lineWidth=8;ctx.beginPath();ctx.arc(0,0,t.r*1.1,0.5,Math.PI-0.5);ctx.stroke();ctx.fillStyle="#ffd700";ctx.strokeStyle="#daa520";ctx.lineWidth=3;const medR=t.r*0.5;ctx.beginPath();ctx.moveTo(0,t.r*1.1+medR);for(let i=1;i<=8;i++){const angle=i*(2*Math.PI/8);ctx.lineTo(medR*Math.sin(angle),t.r*1.1+medR*Math.cos(angle))}ctx.closePath();ctx.fill();ctx.stroke()}else if(t.behavior==="construct"){const phaseColor=t.phase===1?t.color:"#ff4500";ctx.fillStyle=phaseColor+"aa";ctx.strokeStyle=phaseColor;ctx.lineWidth=3;if(t.phase===2){ctx.shadowColor=phaseColor;ctx.shadowBlur=25}const bodyW=t.r*1.2,bodyH=t.r*1.5,headH=t.r*0.7;ctx.beginPath();ctx.moveTo(-bodyW*.5,bodyH*.5);ctx.lineTo(-bodyW*.6,bodyH*.2);ctx.lineTo(-bodyW*.4,-bodyH*.6);ctx.lineTo(0,-bodyH*.5);ctx.lineTo(bodyW*.4,-bodyH*.6);ctx.lineTo(bodyW*.6,bodyH*.2);ctx.lineTo(bodyW*.5,bodyH*.5);ctx.closePath();ctx.fill();ctx.stroke();const shoulderY=-bodyH*.3,shoulderX=bodyW*.4;const armW=.4*t.r,armH=.9*t.r;ctx.beginPath();ctx.moveTo(-shoulderX,shoulderY);ctx.lineTo(-shoulderX-armW*.5,shoulderY+armH*.2);ctx.lineTo(-shoulderX,shoulderY+armH);ctx.lineTo(-shoulderX+armW*.5,shoulderY+armH*.8);ctx.closePath();ctx.fill();ctx.stroke();ctx.beginPath();ctx.moveTo(shoulderX,shoulderY);ctx.lineTo(shoulderX+armW*.5,shoulderY+armH*.2);ctx.lineTo(shoulderX,shoulderY+armH);ctx.lineTo(shoulderX-armW*.5,shoulderY+armH*.8);ctx.closePath();ctx.fill();ctx.stroke();const eyeR=t.r*.2+2*Math.sin(performance.now()/200);const eyeGrad=ctx.createRadialGradient(0,-headH*.1,0,0,-headH*.1,eyeR);eyeGrad.addColorStop(0,"#ffffff");eyeGrad.addColorStop(.3,phaseColor);eyeGrad.addColorStop(1,"#ff4500");ctx.fillStyle=eyeGrad;ctx.beginPath();ctx.arc(0,-headH*.1,eyeR,0,2*Math.PI);ctx.fill()}else if(t.behavior==="avian"){const wingSpan=t.r*1.8,bodyH=t.r*0.8,headR=t.r*0.4;ctx.fillStyle=t.color;ctx.strokeStyle="#e6e6fa";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,-bodyH/2);ctx.lineTo(wingSpan/2,-bodyH/4);ctx.lineTo(wingSpan/2,bodyH/4);ctx.lineTo(0,bodyH/2);ctx.lineTo(-wingSpan/2,bodyH/4);ctx.lineTo(-wingSpan/2,-bodyH/4);ctx.closePath();ctx.fill();ctx.stroke();ctx.beginPath();ctx.arc(0,-bodyH/2,headR,0,2*Math.PI);ctx.fill();ctx.stroke();ctx.fillStyle="#ffd700";ctx.beginPath();ctx.moveTo(0,-bodyH/2-headR/2);ctx.lineTo(headR/2,-bodyH/2+headR/2);ctx.lineTo(-headR/2,-bodyH/2+headR/2);ctx.closePath();ctx.fill();ctx.fillStyle="#ff4500";ctx.beginPath();ctx.arc(-headR/3,-bodyH/2-headR/4,headR/4,0,2*Math.PI);ctx.arc(headR/3,-bodyH/2-headR/4,headR/4,0,2*Math.PI);ctx.fill()}else{const grad=ctx.createRadialGradient(0,0,t.r*0.6,0,0,t.r);grad.addColorStop(0,"#555");grad.addColorStop(1,"#222");ctx.fillStyle=grad;ctx.beginPath();ctx.arc(0,0,t.r,0,2*Math.PI);ctx.fill();ctx.strokeStyle="#888";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-t.r,0);ctx.lineTo(t.r,0);ctx.stroke();for(let i=1;i<6;i++){const y=t.r*i/6;ctx.beginPath();ctx.arc(0,0,t.r,Math.PI-Math.asin(y/t.r),Math.asin(y/t.r));ctx.stroke();ctx.beginPath();ctx.arc(0,0,t.r,Math.PI+Math.asin(y/t.r),-Math.asin(y/t.r));ctx.stroke()}const dishR=t.r*0.3;ctx.fillStyle="#444";ctx.beginPath();ctx.arc(-t.r*0.4, -t.r*0.4, dishR, 0, 2*Math.PI);ctx.fill();ctx.fillStyle="#adff2f";ctx.beginPath();ctx.arc(-t.r*0.4,-t.r*0.4,dishR*0.4+1*Math.sin(performance.now()/150),0,2*Math.PI);ctx.fill()} ctx.globalAlpha = 1.0; ctx.restore() }
     function drawShip(t, e) { ctx.save();ctx.translate(t,e);if(store.player.isInvincible || store.player.hasShieldBubble){ctx.beginPath();ctx.arc(0,0,24,0,2*Math.PI);const g=ctx.createRadialGradient(0,0,18,0,0,24);g.addColorStop(0,"#9a66ff11");g.addColorStop(1,"#9a66ff");ctx.fillStyle=g;ctx.fill()}ctx.beginPath();ctx.moveTo(0,-20);ctx.lineTo(12,8);ctx.lineTo(8,14);ctx.lineTo(0,10);ctx.lineTo(-8,14);ctx.lineTo(-12,8);ctx.closePath();const o=ctx.createLinearGradient(0,-20,0,14);o.addColorStop(0,"#b266ff");o.addColorStop(.5,"#7a49cc");o.addColorStop(1,"#4d2a80");ctx.fillStyle=o;ctx.fill();ctx.lineWidth=2;ctx.strokeStyle="#c49cff";ctx.stroke();ctx.strokeStyle="#b266ff";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-12,5);ctx.lineTo(-20,-2);ctx.lineTo(-18,8);ctx.moveTo(12,5);ctx.lineTo(20,-2);ctx.lineTo(18,8);ctx.stroke();const r=performance.now()/1e3;ctx.globalAlpha=.8+.2*Math.sin(10*r);ctx.fillStyle="#cc99ff";ctx.beginPath();ctx.ellipse(-5,16,3,6,0,0,2*Math.PI);ctx.ellipse(5,16,3,6,0,0,2*Math.PI);ctx.fill();ctx.globalAlpha=1;ctx.fillStyle="#ffffff";ctx.beginPath();ctx.arc(0,-8,3,0,2*Math.PI);ctx.fill();ctx.restore() }
-    function drawGrenade(g) { ctx.save();ctx.translate(g.x,g.y);ctx.rotate(5*g.fuse);ctx.fillStyle="#ff8080";ctx.beginPath();ctx.arc(0,0,8,0,2*Math.PI);ctx.fill();ctx.fillStyle="white";ctx.beginPath();ctx.arc(0,0,3,0,2*Math.PI);ctx.fill();ctx.restore() }
     function drawEnemy(e) { const{x:t,y:o,r:a,type:r,color:n,hp:l,hpMax:s,t:c}=e;ctx.save();ctx.translate(t,o);l<s&&l>0&&(ctx.fillStyle="rgba(0,0,0,0.5)",ctx.fillRect(-a,-a-8,2*a,3),ctx.fillStyle="#b266ff",ctx.fillRect(-a,-a-8,2*a*(l/s),3));ctx.lineWidth=2;ctx.beginPath();switch(r){case"avian_hatchling":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a*1.2);ctx.lineTo(a,-a*0.5);ctx.lineTo(a,a*0.5);ctx.lineTo(0,a*1.2);ctx.lineTo(-a,a*0.5);ctx.lineTo(-a,-a*0.5);ctx.closePath();ctx.fill();ctx.stroke();break;case"construct_shard":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a);ctx.lineTo(a,0);ctx.lineTo(0,a);ctx.lineTo(-a,0);ctx.closePath();ctx.fill();ctx.stroke();break;case"trap_king_add":case"drone":const e=ctx.createLinearGradient(-a,-a,a,a);e.addColorStop(0,"#E0E0E0");e.addColorStop(1,"#A0A0A0");ctx.fillStyle=e;ctx.strokeStyle="#808080";ctx.beginPath();ctx.moveTo(-1.2*a,0);ctx.quadraticCurveTo(0,-a,1.2*a,0);ctx.quadraticCurveTo(0,.6*a,-1.2*a,0);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#aaddff";ctx.strokeStyle="#FFFFFF";ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-.2*a,.6*a,Math.PI,0);ctx.fill();ctx.stroke();ctx.fillStyle=r==="trap_king_add"?"#ffc83d":"#32CD32";ctx.beginPath();ctx.ellipse(0,-.2*a,.3*a,.4*a,0,0,2*Math.PI);ctx.fill();ctx.fillStyle="#000000";ctx.beginPath();ctx.ellipse(-.1*a,-.25*a,.08*a,.15*a,-.5,0,2*Math.PI);ctx.ellipse(.1*a,-.25*a,.08*a,.15*a,.5,0,2*Math.PI);ctx.fill();break;case"hunter":ctx.shadowColor=n;ctx.shadowBlur=15;ctx.strokeStyle=n;ctx.fillStyle=n+"99";ctx.moveTo(0,-a);ctx.lineTo(.8*a,.8*a);ctx.lineTo(0,.3*a);ctx.lineTo(-.8*a,.8*a);ctx.closePath();ctx.fill();ctx.stroke();ctx.shadowBlur=0;break;case"phantom":ctx.globalAlpha=.6+.4*Math.sin(5*c);ctx.strokeStyle=n;ctx.fillStyle=n+"99";ctx.moveTo(0,-.8*a);ctx.quadraticCurveTo(a,-.5*a,.8*a,.8*a);ctx.quadraticCurveTo(0,.5*a,-.8*a,.8*a);ctx.quadraticCurveTo(-a,-.5*a,0,-.8*a);ctx.closePath();ctx.fill();ctx.stroke();for(let e=-1;e<=1;e++)ctx.beginPath(),ctx.moveTo(e*.4*a,.6*a),ctx.quadraticCurveTo(e*.5*a,a,e*.3*a+2*Math.sin(4*c+e),1.2*a),ctx.stroke();break;case"mech":ctx.strokeStyle=n;ctx.fillStyle=n+"99";ctx.rect(-.8*a,-.6*a,1.6*a,1.2*a);ctx.moveTo(-.8*a,-.4*a);ctx.lineTo(-1.2*a,0);ctx.lineTo(-.8*a,.4*a);ctx.moveTo(.8*a,-.4*a);ctx.lineTo(1.2*a,0);ctx.lineTo(.8*a,.4*a);ctx.fill();ctx.stroke();ctx.fillStyle="#ff99cc";ctx.beginPath();ctx.arc(0,0,.3*a,0,2*Math.PI);ctx.fill();break;}ctx.restore() }
-    function createEffect(type,x,y){
+    function createEffect(type,x,y, radius){
         let effect={isActive:!0,life:1,maxLife:1,x,y};
         switch(type){
-            case"grenadeExplosion":effect.maxLife=.5;effect.radius=150;effect.step=function(dt){this.life-=2*dt;this.life<=0&&(this.isActive=!1)};effect.draw=function(){ctx.beginPath();ctx.arc(this.x,this.y,this.radius*(1-this.life),0,2*Math.PI);ctx.fillStyle=`rgba(255, 128, 128, ${.8*this.life})`;ctx.fill()};break;
+            case"grenadeExplosion":
+                effect.maxLife=.5;
+                effect.radius=radius || 60; // Use passed radius or default
+                effect.step=function(dt){this.life-=2*dt;this.life<=0&&(this.isActive=!1)};
+                effect.draw=function(){
+                    ctx.beginPath();
+                    ctx.arc(this.x,this.y,this.radius*(1-this.life),0,2*Math.PI);
+                    ctx.fillStyle=`rgba(255, 153, 51, ${.8*this.life})`;
+                    ctx.fill()
+                };
+                break;
             case"shieldBreak":effect.maxLife=.6;effect.step=function(dt){this.life-=1.5*dt;this.life<=0&&(this.isActive=!1)};effect.draw=function(){ctx.strokeStyle=`rgba(154, 102, 255, ${this.life})`;ctx.lineWidth=4;ctx.beginPath();ctx.arc(this.x,this.y,24*(1.5-this.life),0,2*Math.PI);ctx.stroke()};break;
             case "nanoHeal":
                 effect.maxLife = 0.7;
@@ -1308,7 +1330,6 @@
         }
         return effect
     }
-    function explodeGrenade(x,y){store.activeEffects.push(createEffect("grenadeExplosion",x,y));const radius=150;store.enemies.forEach(e=>{(e.x-x)**2+(e.y-y)**2<radius**2&&(e.hp-=.5*e.hpMax)})}
     
     let shopItemOrder = [];
     function showShop() {
@@ -1341,7 +1362,7 @@
             }
         });
 
-        const temporarilyDisabled = ['mine_wall', 'grenade'];
+        const temporarilyDisabled = ['mine_wall'];
 
         if (shopItemOrder.length === 0) {
             const itemsToSort = [...currentItems];
@@ -1567,7 +1588,26 @@
         ctx.restore();
     }
     function activateVoidBeam(){if(store.player.hasVoidBeam&&store.player.voidBeamCooldown<=0&&!store.isPaused){store.player.voidBeamCooldown=30;const angle=Math.random()*2*Math.PI,speed=800,p=store.player;store.lasers.push({x:p.x,y:p.y,prevX:p.x,prevY:p.y,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,life:6,r:12,hitEnemies:new Set})}}
-    function useGrenade(){if(store.player.grenades>0&&!store.isPaused){store.player.grenades--;store.grenades.push({x:store.player.x,y:store.player.y,vx:0,vy:-200,fuse:1.5,r:8})}}
+    function useGrenade() {
+        if (store.player.grenades > 0 && !store.isPaused) {
+            playSound('explosion'); // Play sound on use
+            store.player.grenades--;
+            const p = store.player;
+            const numBullets = 36;
+            for (let i = 0; i < numBullets; i++) {
+                const angle = (i / numBullets) * 2 * Math.PI;
+                const bulletSpeed = 400;
+                store.bullets.push({
+                    x: p.x, y: p.y,
+                    vx: Math.cos(angle) * bulletSpeed,
+                    vy: Math.sin(angle) * bulletSpeed,
+                    r: 5, col: '#ff8080', dmg: 40 * p.dmgMult,
+                    pierce: true, life: 0.8
+                });
+            }
+            store.activeEffects.push(createEffect("shieldBreak", p.x, p.y));
+        }
+    }
     // --- EVENT LISTENERS & INITIALIZATION ---
     function ensureName(){if(!store.name){store.isPaused=true;q("namePanel").classList.remove("hide");q("nameInput").value="";setTimeout(()=>q("nameInput").focus(),50)}}
     
@@ -1617,6 +1657,32 @@
     });
     
     let cheatCodeBuffer = "";
+    let cheatTapCount = 0;
+    let lastCheatTap = 0;
+    
+    function activatePowerCheat() {
+        store.cheatsUsed = true;
+        announce('CHEAT: POWER UP!');
+        resetGame();
+        store.world.shards = 250;
+        store.player.multishot = 10;
+        initWave();
+        cheatCodeBuffer = "";
+    }
+
+    q('diagBox').children[0].addEventListener('click', () => {
+        const now = performance.now();
+        if (now - lastCheatTap > 500) {
+            cheatTapCount = 0;
+        }
+        lastCheatTap = now;
+        cheatTapCount++;
+        if (cheatTapCount >= 3) {
+            activatePowerCheat();
+            cheatTapCount = 0;
+        }
+    });
+
     addEventListener("keydown",e=>{
         const key=e.key.toLowerCase();
         if(document.activeElement.tagName==="INPUT")return;
@@ -1628,13 +1694,7 @@
             }
 
             if (cheatCodeBuffer.endsWith('power')) {
-                store.cheatsUsed = true;
-                announce('CHEAT: POWER UP!');
-                resetGame();
-                store.world.shards = 250;
-                store.player.multishot = 10;
-                initWave();
-                cheatCodeBuffer = "";
+                activatePowerCheat();
             }
         } else {
              if (key !== ' ' && key !== 'b') {
