@@ -89,14 +89,12 @@
             opacity: 1;
             transform: scale(1.1);
         }
-        /* MODIFIED: Reduced padding, margin, and font size to shrink shop header */
         #shopPanel h2, #levelPanel h2, #scorePanel h2, #namePanel h2, #pilotPanel h2 {
             margin: 0 0 4px 0;
             padding-top: 4px;
             font-size: clamp(16px, 2vw, 20px);
             text-align: center;
         }
-        /* MODIFIED: Reduced margin */
         #shopPanel p, #levelPanel p, #namePanel p {
             margin: 0 0 8px 0;
             text-align: center;
@@ -213,7 +211,7 @@
             z-index: 5;
             position: fixed;
         }
-        .input{width:100%;padding:8px 10px;border-radius:10px;background:#17001f;color:#ffddff;border:1px solid var(--accent);font-family:'Orbitron','Audiowide',ui-sans-serif; box-sizing: border-box;} /* ADDED: box-sizing */
+        .input{width:100%;padding:8px 10px;border-radius:10px;background:#17001f;color:#ffddff;border:1px solid var(--accent);font-family:'Orbitron','Audiowide',ui-sans-serif; box-sizing: border-box;}
         
         #abilityBar {
             position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
@@ -274,7 +272,7 @@
                 </div>
                 <canvas id="game" width="960" height="540"></canvas>
                 <div id="diagBox">
-                    <div class="chip">v3.6.9</div>
+                    <div class="chip">v3.7.0</div>
                     <div class="chip">FPS <span id="fps">—</span></div>
                 </div>
                 
@@ -293,7 +291,6 @@
                                 <div class="skill-icon">🐮</div>
                                 <div>
                                     <div class="skill-title">BEEF</div>
-                                    <!-- MODIFIED: Updated description for new ability -->
                                     <div class="skill-desc">Starts with Magnetic Pull and a short-range flamethrower. Powerups are more likely to be repairs.</div>
                                 </div>
                             </div>
@@ -347,7 +344,6 @@
                 
                 <div id="abilityBar">
                     <button id="grenadeBtnUI" class="fixed-btn ability-btn hide" type="button">GRENADE</button>
-                    <button id="voidBeamBtnUI" class="fixed-btn ability-btn hide" type="button">VOID BEAM</button>
                 </div>
 
             </div>
@@ -438,7 +434,6 @@
         x: W / 2, y: H * 0.8, r: 14, hp: 100, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1, fireRate: 0.18, 
         vampirism: 0, shield: 0, shieldMax: 0, multishot: 1, isInvincible: false, piercing: 0, explosive: false, 
         hasShieldBubble: false, powerupTimers: {}, 
-        // MODIFIED: Added crit_chance to track its upgrade level
         upgradeLevels: { dmg: 0, speed: 0, hp: 0, shield: 0, crit_chance: 0 }, grenades: 0, hasVoidBeam: false, 
         voidBeamCooldown: 0, hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 0, vampirismLevel: 0, flamethrowerLevel: 0,
         luckBoost: 0, magnetRadius: 0, hasIceman: false, critChance: 0.02, critDamage: 2,
@@ -499,7 +494,6 @@
         'luck_boost': { name: "LUCK BOOST", icon: '🍀', cost: 25, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.luckBoost) { store.player.luckBoost = 0.15; return true; } return false; }, desc: () => `+15% chance for powerups.` },
         'magnet_pull': { name: "MAGNET PULL", icon: '🧲', cost: 25, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.magnetRadius) { store.player.magnetRadius = 150; return true; } return false; }, desc: () => `Powerups are drawn to you.` },
         'dmg': { name: "DAMAGE", icon: '💪', baseCost: 25, scale: 1.5, maxLevel: 10, category: 'attack', effect: () => store.player.dmgMult += 0.1, desc: level => `+10% Damage (Lvl ${level + 1})` },
-        // ADDED: New crit chance/damage upgrade
         'crit_chance': { name: "SHINOBI REFLEXES", icon: '🥷', baseCost: 20, increment: 12, maxLevel: 10, category: 'attack', effect: () => { store.player.critChance *= 1.5; store.player.critDamage *= 1.5; }, desc: level => `+50% Crit Chance & Dmg (Lvl ${level + 1})` },
         'speed': { name: "SPEED", icon: '🚀', baseCost: 30, scale: 1.6, maxLevel: 8, category: 'utility', effect: () => store.player.speed += 30, desc: level => `+30 Speed (Lvl ${level + 1})` },
         'grenade': { name: "NOVA GRENADE", icon: '💥💣💥', cost: 35, isPremium: true, max: 3, category: 'attack', apply: () => { if (store.player.grenades < 3) { store.player.grenades++; return true; } return false; }, desc: () => `Buy 1 (Max 3)` },
@@ -507,7 +501,7 @@
         'mine_wall': { name: "MINE WALL", icon: '💣', cost: 40, isPremium: true, max: 2, category: 'attack', apply: () => { const activeWalls = store.mines.filter(m => m.isWallMine).length > 0; if(!activeWalls) { deployMineWall(); return true; } return false; }, desc: () => `Deploy a wall of mines.` },
         'launcher': { name: 'FRAGMENTATION LAUNCHER', icon: '💥', cost: 50, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasLauncher) { store.player.hasLauncher = true; return true; } return false; }, desc: () => `Adds swirling nova projectiles.` },
         'the_iceman': { name: "THE ICEMAN", icon: '❄️', cost: 59, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.hasIceman) { store.player.hasIceman = true; store.iceman = { x: store.player.x, y: store.player.y + 50, t: 0}; return true; } return false; }, desc: () => `A clone mirrors your attacks.` },
-        'void_beam': { name: "VOID BEAM", icon: '☢️☄️☢️', cost: 75, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; return true; } return false; }, desc: () => `Unlock Ultimate Weapon` },
+        'void_beam': { name: "LORD LAZARUS", icon: '☢️☄️☢️', cost: 75, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; return true; } return false; }, desc: () => `Lazarus periodically smites your foes.` },
         'ghost_hounds': { name: "GHOST HOUNDS", icon: '👻🐺', cost: 75, isPremium: true, isUnlock: true, category: 'attack', apply: () => { 
             if (!store.player.hasHounds) { 
                 store.player.hasHounds = true; 
@@ -632,10 +626,7 @@
         p.x += (vx * p.speed * dt * 0.005); p.y += (vy * p.speed * dt * 0.005);
         p.x = clamp(p.x, 20, W - 20); p.y = clamp(p.y, 20, H - 20);
 
-        // --- ICEMAN MOVEMENT ---
         if (p.hasIceman && store.iceman) {
-            // This ensures the iceman always stays in formation relative to the player
-            // and perfectly mirrors the player's movement.
             store.iceman.x = p.x - 50; 
             store.iceman.y = p.y + 40;
         }
@@ -674,9 +665,16 @@
         }
         if (p.shieldMax > 0 && p.shield < p.shieldMax) p.shield = Math.min(p.shieldMax, p.shield + 2 * dt);
         for (const key in p.powerupTimers) { p.powerupTimers[key].remaining -= dt; if (p.powerupTimers[key].remaining <= 0) { if (key === 'drones') store.drones = []; delete p.powerupTimers[key]; } }
-        if (p.voidBeamCooldown > 0) p.voidBeamCooldown -= dt;
+        
+        // MODIFIED: Auto-trigger for Lazarus ability
+        if (p.hasVoidBeam) {
+            p.voidBeamCooldown -= dt;
+            if (p.voidBeamCooldown <= 0) {
+                activateLazarus();
+                p.voidBeamCooldown = 30;
+            }
+        }
 
-        // --- CHEAT CODES FOR TESTING ---
         if (store.cheatInvincibilityCooldown > 0) store.cheatInvincibilityCooldown -= dt;
         if (store.cheatDogHealCooldown > 0) store.cheatDogHealCooldown -= dt;
 
@@ -767,15 +765,10 @@
                 const speed = Math.sqrt(laser.vx**2 + laser.vy**2);
                 let newAngle;
 
-                if (laser.x <= laser.r) { // Hit left wall
-                    newAngle = -Math.PI / 2 + Math.random() * Math.PI; // Point right
-                } else if (laser.x >= W - laser.r) { // Hit right wall
-                    newAngle = Math.PI / 2 + Math.random() * Math.PI; // Point left
-                } else if (laser.y <= laser.r) { // Hit top wall
-                    newAngle = Math.random() * Math.PI; // Point down
-                } else { // Hit bottom wall
-                    newAngle = Math.PI + Math.random() * Math.PI; // Point up
-                }
+                if (laser.x <= laser.r) { newAngle = -Math.PI / 2 + Math.random() * Math.PI; } 
+                else if (laser.x >= W - laser.r) { newAngle = Math.PI / 2 + Math.random() * Math.PI; } 
+                else if (laser.y <= laser.r) { newAngle = Math.random() * Math.PI; } 
+                else { newAngle = Math.PI + Math.random() * Math.PI; }
                 
                 laser.x = clamp(laser.x, laser.r, W - laser.r);
                 laser.y = clamp(laser.y, laser.r, H - laser.r);
@@ -785,15 +778,16 @@
                 laser.hitEnemies.clear();
             }
             
+            // MODIFIED: Laser damage now scales
             store.enemies.forEach(e => {
                 if (!e.dead && !laser.hitEnemies.has(e) && collide(laser, e)) {
-                    e.hp = 0;
+                    e.hp -= 1000 * store.player.dmgMult;
                     laser.hitEnemies.add(e);
                 }
             });
 
             if (store.boss && !laser.hitEnemies.has(store.boss) && collide(laser, store.boss)) {
-                store.boss.hp -= store.boss.hpMax * 0.33;
+                store.boss.hp -= 500 * store.player.dmgMult;
                 laser.hitEnemies.add(store.boss);
             }
         });
@@ -1133,7 +1127,7 @@
         } else {
             equipEl.classList.add('hide');
         }
-        const voidBeamBtn = q('voidBeamBtnUI'); if (store.player.hasVoidBeam) { voidBeamBtn.classList.remove('hide'); const cd = store.player.voidBeamCooldown; if (cd > 0) { voidBeamBtn.textContent = `VOID BEAM [${Math.ceil(cd)}s]`; voidBeamBtn.disabled = true; } else { voidBeamBtn.textContent = 'VOID BEAM [READY]'; voidBeamBtn.disabled = false; } } else { voidBeamBtn.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } }
+        const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } }
     function updateLeaderboard(top10) { const fallbackData = [{ name: "ACE PILOT", score: 50000, waves: 10 },{ name: "VOID RUNNER", score: 35000, waves: 8 },{ name: "STAR HUNTER", score: 25000, waves: 6 },{ name: "NOVA STRIKER", score: 18000, waves: 5 },{ name: "COSMIC GUARD", score: 12000, waves: 4 }]; const data = top10 && top10.length > 0 ? top10 : fallbackData; q("hsList").innerHTML = data.map(s => `<li>${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves ?? "?"})</li>`).join(""); q("hsListPopup").innerHTML = data.map((s, i) => `<li>#${i + 1} ${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves ?? "?"})</li>`).join(""); }
     async function refreshScoreList() { try { const res = await fetch(`${API_BASE}/leaderboard`, { cache: "no-store", timeout: 5000 }); if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`); const data = await res.json(); updateLeaderboard(data); } catch (err) { console.warn("Failed to fetch leaderboard, using offline data:", err.message); updateLeaderboard(null); } }
     async function addScore(score) { 
@@ -1323,7 +1317,7 @@
     function drawDrone(d) { const p = store.player; ctx.save(); ctx.translate(p.x + d.offset, p.y + 20); ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(6, 6); ctx.lineTo(-6, 6); ctx.closePath(); ctx.fillStyle = '#c49cff'; ctx.fill(); ctx.restore(); }
     function drawLaser(laser) {
         ctx.save();
-        const trailLength = 200; // length in pixels
+        const trailLength = 200;
         const angle = Math.atan2(laser.vy, laser.vx);
         const startX = laser.x - Math.cos(angle) * trailLength;
         const startY = laser.y - Math.sin(angle) * trailLength;
@@ -1334,7 +1328,7 @@
         grad.addColorStop(1, 'rgba(255, 255, 255, 1)');
 
         ctx.strokeStyle = grad;
-        ctx.lineWidth = laser.r * 1.5; // Use the laser's radius for thickness
+        ctx.lineWidth = laser.r * 1.5;
         ctx.lineCap = 'round';
         ctx.shadowColor = '#ff0000';
         ctx.shadowBlur = 25;
@@ -1356,7 +1350,6 @@
         const fuseRatio = m.fuse / 5;
         const color = `rgb(255, ${100 * fuseRatio}, ${80 * fuseRatio})`;
 
-        // Pulsing glow
         ctx.beginPath();
         ctx.arc(0, 0, m.r * 1.5 * pulse, 0, 2 * Math.PI);
         const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, m.r * 1.5 * pulse);
@@ -1365,7 +1358,6 @@
         ctx.fillStyle = grad;
         ctx.fill();
 
-        // Main body
         ctx.fillStyle = "#333";
         ctx.beginPath();
         ctx.arc(0, 0, m.r, 0, 2 * Math.PI);
@@ -1374,7 +1366,6 @@
         ctx.lineWidth = 2;
         ctx.stroke();
         
-        // Center light
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(0, 0, m.r * 0.4 * pulse, 0, 2 * Math.PI);
@@ -1388,7 +1379,7 @@
         switch(type){
             case"grenadeExplosion":
                 effect.maxLife=.5;
-                effect.radius=radius || 60; // Use passed radius or default
+                effect.radius=radius || 60;
                 effect.step=function(dt){this.life-=2*dt;this.life<=0&&(this.isActive=!1)};
                 effect.draw=function(){
                     ctx.beginPath();
@@ -1519,7 +1510,6 @@
                 if (currentLevel >= u.maxLevel) {
                     cost = Infinity
                 } else {
-                    // MODIFIED: Handle linear increment cost for crit upgrade
                     if (u.increment) {
                         cost = u.baseCost + (currentLevel * u.increment);
                     } else {
@@ -1621,7 +1611,6 @@
                         }
                     }
                 } else {
-                    // MODIFIED: Handle both linear and scaling costs on purchase
                     const currentLevel = store.player.upgradeLevels[key] || 0;
                     let cost;
                     if (upgrade.increment) {
@@ -1646,17 +1635,24 @@
     }
 
     function showShopWithHighlight() { showShop(); announce('Low health! Use the Mech Forge to repair!'); setTimeout(() => { const repairItem = document.querySelector('.shop-item[data-key="repair"]'); if (repairItem) repairItem.classList.add('highlight'); }, 100); }
-    function createHound(side) { return { x: store.player.x + 50 * side, y: store.player.y + 20, side, target: null, attackT: 0, r: 12, killCount: 0 }; }
+    // MODIFIED: Hound creation now includes color data
+    function createHound(side) {
+        const isTuxedo = side === -1 || side === -2;
+        const color = isTuxedo ? { main: '#222222', accent: '#FFFFFF' } : { main: '#F0E68C', accent: '#BDB76B' };
+        return { x: store.player.x + 50 * side, y: store.player.y + 20, side, target: null, attackT: 0, r: 12, killCount: 0, color };
+    }
     function stepHounds(dt) { if (!store.player.hasHounds) return; store.hounds.forEach(h => { if (!h.target || h.target.dead || h.target.hp <= 0) { let closest = null, closestDist = Infinity; const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies; potentialTargets.forEach(e => { if (e.dead || e.hp <= 0) return; const dist = (h.x - e.x)**2 + (h.y - e.y)**2; if (dist < closestDist) { closest = e; closestDist = dist; } }); h.target = closest; } if (h.target) { const tx = h.target.x, ty = h.target.y; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); const speed = 350; if (dist > 30) { h.x += (dx / dist) * speed * dt; h.y += (dy / dist) * speed * dt; } else { h.attackT -= dt; if (h.attackT <= 0) { h.attackT = 0.25; let dmg = 8 * store.player.dmgMult; if (h.target === store.boss) dmg *= 0.3; if (!h.target.dead && h.target.hp > 0) { h.target.hp -= dmg; if (h.target.hp <= 0) { h.killCount++; if (h.killCount > 0 && h.killCount % 12 === 0) { playSound('dogs'); } } } } } } else { const tx = store.player.x + h.side * 50, ty = store.player.y + 20; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); if (dist > 5) { h.x += dx * 5 * dt; h.y += dy * 5 * dt; } } }); }
+    // MODIFIED: Hound drawing logic now uses color data
     function drawHound(h) {
         ctx.save();
         ctx.translate(h.x, h.y);
         const time = performance.now() / 100;
         ctx.globalAlpha = 0.6 + 0.2 * Math.sin(time + h.side);
         const r = h.r;
+        const { main, accent } = h.color;
+        const isTuxedo = accent === '#FFFFFF';
 
-        // Head shape
-        ctx.fillStyle = "#9a66ff";
+        ctx.fillStyle = main;
         ctx.beginPath();
         ctx.moveTo(-r, -r * 0.5);
         ctx.quadraticCurveTo(0, -r * 1.5, r, -r * 0.5);
@@ -1666,7 +1662,7 @@
         ctx.closePath();
         ctx.fill();
 
-        // Ears
+        ctx.fillStyle = isTuxedo ? main : accent;
         ctx.beginPath();
         ctx.moveTo(-r, -r * 0.4);
         ctx.lineTo(-r * 0.5, -r * 1.2);
@@ -1680,7 +1676,16 @@
         ctx.closePath();
         ctx.fill();
 
-        // Eyes
+        if (isTuxedo) {
+            ctx.fillStyle = accent;
+            ctx.beginPath();
+            ctx.moveTo(-r * 0.6, r * 0.2);
+            ctx.quadraticCurveTo(0, r, r * 0.6, r * 0.2);
+            ctx.lineTo(0, r * 0.5);
+            ctx.closePath();
+            ctx.fill();
+        }
+
         ctx.fillStyle = "#FFF";
         ctx.beginPath();
         ctx.arc(-r * 0.4, -r * 0.2, r * 0.25, 0, 2 * Math.PI);
@@ -1688,7 +1693,6 @@
         ctx.beginPath();
         ctx.arc(r * 0.4, -r * 0.2, r * 0.25, 0, 2 * Math.PI);
         ctx.fill();
-        
         ctx.fillStyle = "#000";
         ctx.beginPath();
         ctx.arc(-r * 0.35, -r * 0.15, r * 0.1, 0, 2 * Math.PI);
@@ -1697,13 +1701,11 @@
         ctx.arc(r * 0.45, -r * 0.15, r * 0.1, 0, 2 * Math.PI);
         ctx.fill();
         
-        // Snout
-        ctx.fillStyle = "#9a66ff";
+        ctx.fillStyle = isTuxedo ? main : accent;
         ctx.beginPath();
-        ctx.ellipse(0, r * 0.3, r * 0.5, r*0.4, 0, 0, 2 * Math.PI);
+        ctx.ellipse(0, r * 0.3, r * 0.5, r * 0.4, 0, 0, 2 * Math.PI);
         ctx.fill();
 
-        // Teeth
         ctx.fillStyle = "#FFF";
         ctx.beginPath();
         ctx.moveTo(-r * 0.3, r * 0.5);
@@ -1726,7 +1728,6 @@
         ctx.translate(x, y);
         ctx.globalAlpha = 0.6 + 0.2 * Math.sin(performance.now() / 200);
 
-        // Main body
         ctx.beginPath();
         ctx.moveTo(0, -20);
         ctx.lineTo(12, 8);
@@ -1746,7 +1747,6 @@
         ctx.strokeStyle = "#d0f8ff";
         ctx.stroke();
 
-        // Wings
         ctx.strokeStyle = "#a0e9ff";
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -1758,7 +1758,6 @@
         ctx.lineTo(18, 8);
         ctx.stroke();
 
-        // Cockpit
         ctx.fillStyle = "#ffffff";
         ctx.beginPath();
         ctx.arc(0, -8, 3, 0, 2 * Math.PI);
@@ -1766,10 +1765,11 @@
 
         ctx.restore();
     }
-    function activateVoidBeam(){if(store.player.hasVoidBeam&&store.player.voidBeamCooldown<=0&&!store.isPaused){store.player.voidBeamCooldown=30;const angle=Math.random()*2*Math.PI,speed=800,p=store.player;store.lasers.push({x:p.x,y:p.y,prevX:p.x,prevY:p.y,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,life:6,r:12,hitEnemies:new Set})}}
+    // MODIFIED: Renamed function and logic for auto-trigger
+    function activateLazarus(){if(store.player.hasVoidBeam&&!store.isPaused){const angle=Math.random()*2*Math.PI,speed=800,p=store.player;store.lasers.push({x:p.x,y:p.y,prevX:p.x,prevY:p.y,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,life:6,r:12,hitEnemies:new Set})}}
     function useGrenade() {
         if (store.player.grenades > 0 && !store.isPaused) {
-            playSound('explosion'); // Play sound on use
+            playSound('explosion');
             store.player.grenades--;
             const p = store.player;
             const numBullets = 36;
@@ -1808,7 +1808,6 @@
         switch(genome) {
             case 'beef':
                 store.player.magnetRadius = 150;
-                // ADDED: Give Beef class one level of flamethrower
                 store.player.flamethrowerLevel = 1; 
                 break;
             case 'wizard':
@@ -1855,8 +1854,6 @@
     q('pauseBtn').addEventListener('click',()=>{if(!store.isGameOver&&q('shopPanel').classList.contains('hide')&&q('levelPanel').classList.contains('hide')&&q('namePanel').classList.contains('hide')&&q('scorePanel').classList.contains('hide')){store.isPaused=!store.isPaused;q('pauseBtn').textContent=store.isPaused?'RESUME':'PAUSE'}});
     
     q('grenadeBtnUI').addEventListener('click',useGrenade);
-    
-    q('voidBeamBtnUI').addEventListener('click',activateVoidBeam);
     
     q("nameInput").addEventListener("keydown",(e)=>{if(e.key==="Enter"){const t=(q("nameInput").value||"").slice(0,16).trim();if(t){store.name=t;q("namePanel").classList.add("hide");store.isPaused=false; initWave();}}});
 
@@ -1912,7 +1909,8 @@
             }
         }
         
-        if(key===' '){e.preventDefault();useGrenade()}if(key==='b'){activateVoidBeam()}});
+        if(key===' '){e.preventDefault();useGrenade()}
+    });
     function frame(now){const dt=Math.min(.033,(now-store.last)/1e3);store.last=now;if(!store.isGameOver&&!store.isPaused){stepWorld(dt)}render(dt);q('fps').textContent=(1/dt).toFixed(0);requestAnimationFrame(frame)}
     try{ showPilotSelect(); refreshScoreList(); requestAnimationFrame(frame) }catch(error){console.error("Game initialization failed:",error);try{updateLeaderboard(null);showPilotSelect();requestAnimationFrame(frame);console.log("Game started in offline mode")}catch(criticalError){console.error("Critical startup failure:",criticalError);alert("Game failed to start. Please refresh the page.")}}
     
@@ -1920,3 +1918,4 @@
 </script>
 </body>
 </html>
+
