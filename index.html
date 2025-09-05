@@ -136,6 +136,12 @@
             margin-bottom: 8px;
             line-height: 1;
         }
+        .pilot-icon {
+            width: 48px;
+            height: 48px;
+            object-fit: contain;
+            margin-bottom: 8px;
+        }
         .skill-title{
             font-weight:700;
             color:#c49cff;
@@ -288,24 +294,24 @@
                         <h2 style="font-family:'Orbitron';color:var(--accent)">Select Pilot Genome Sequence:</h2>
                         <div id="pilotsGrid" class="grid" style="grid-template-columns: repeat(3, 1fr);">
                             <div class="skill-card" data-genome="beef">
-                                <div class="skill-icon">🐮</div>
+                                <div class="skill-icon"><img src="cow.png" class="pilot-icon" alt="BEEF"></div>
                                 <div>
                                     <div class="skill-title">BEEF</div>
                                     <div class="skill-desc">A very beefy gal with Methane Chaff and Magnet ability.  Known to survive repeated ship collisons.</div>
                                 </div>
                             </div>
                             <div class="skill-card" data-genome="rocketman">
-                                <div class="skill-icon">🚀</div>
+                                <div class="skill-icon"><img src="rockyboy.png" class="pilot-icon" alt="ROCKETMAN"></div>
                                 <div>
                                     <div class="skill-title">ROCKETMAN</div>
                                     <div class="skill-desc">He once ruled all of Earth...    Until he ascended beyond it</div>
                                 </div>
                             </div>
                             <div class="skill-card" data-genome="wizard">
-                                <div class="skill-icon">⚫️🧙‍♂️🔮🕳</div>
+                                <div class="skill-icon"><img src="void.png" class="pilot-icon" alt="VOIDMANCER"></div>
                                 <div>
                                     <div class="skill-title">VOIDMANCER</div>
-                                    <div class="skill-desc">Exiled from civilization, Voidmancer's are thought to inhabit the Void</div>
+                                    <div class="skill-desc">Exceptional but ethereal pilots, Voidmancers exist in between the physical realm and the void plane.</div>
                                 </div>
                             </div>
                         </div>
@@ -558,8 +564,12 @@
         const p = store.player;
         const powerup = POWERUP_TYPES[typeKey];
         
-        if (typeKey === 'missile' && p.pilotGenome === 'rocketman') {
-            p.missileVolley = Math.min(10, p.missileVolley + 3);
+        if (typeKey === 'missile') {
+            if (p.pilotGenome === 'rocketman') {
+                p.missileVolley = Math.min(5, p.missileVolley + 2); // Capped at 5, +2 per pickup
+            } else {
+                p.missileVolley = 2; // Capped at 2 for other pilots
+            }
         }
 
         if (powerup.type === 'timed') {
@@ -654,9 +664,12 @@
                     if (dist < closestDist) { closest = e; closestDist = dist; }
                 });
                 if (closest) {
+                    const isRocketman = p.pilotGenome === 'rocketman';
+                    const missileDmg = isRocketman ? (95 * p.dmgMult * 0.7) : (95 * p.dmgMult);
+
                     for (let i = 0; i < p.missileVolley; i++) {
                         const offsetX = (i - (p.missileVolley - 1) / 2) * 15;
-                        store.missiles.push({ x: p.x + offsetX, y: p.y, vx: 0, vy: -300, r: 4, target: closest, speed: 400, turnRate: 5, life: 0, dmg: 95 * p.dmgMult, });
+                        store.missiles.push({ x: p.x + offsetX, y: p.y, vx: 0, vy: -300, r: 4, target: closest, speed: 400, turnRate: 5, life: 0, dmg: missileDmg });
                     }
                     if (p.hasIceman && store.iceman) {
                         for (let i = 0; i < p.missileVolley; i++) {
@@ -664,7 +677,7 @@
                             store.missiles.push({
                                 x: store.iceman.x + offsetX, y: store.iceman.y, vx: 0, vy: -300, r: 4, 
                                 target: closest, speed: 400, turnRate: 5, life: 0, 
-                                dmg: 95 * p.dmgMult * 0.35, 
+                                dmg: missileDmg * 0.35, 
                                 isIceman: true
                             });
                         }
@@ -1038,7 +1051,15 @@
             store.player.hp += hpBonus; 
             initWave(); 
         }
-        const xpNeeded = store.world.level * 100; 
+        
+        let xpNeeded = store.world.level * 100;
+        if (store.world.level >= 8) {
+            xpNeeded *= 1.30; // 10% from level 4-7, plus 20% more for 8+
+        } else if (store.world.level >= 4) {
+            xpNeeded *= 1.10; // 10% increase
+        }
+        xpNeeded = Math.floor(xpNeeded);
+
         if (store.world.xp >= xpNeeded) { store.world.xp -= xpNeeded; store.world.level++; levelUp(); }
         if (store.player.hp <= 0) handleGameOver();
     }
@@ -1149,7 +1170,32 @@
         
         store.powerups.forEach(p => drawPowerup(p)); store.missiles.forEach(m => drawMissile(m));
         store.eBullets.forEach(b => { ctx.fillStyle = b.col; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 2 * Math.PI); ctx.fill(); });
-        store.bullets.forEach(b => { ctx.fillStyle = b.col; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 2 * Math.PI); ctx.fill(); });
+        
+        store.bullets.forEach(b => {
+            ctx.save();
+            ctx.translate(b.x, b.y);
+            ctx.fillStyle = b.col;
+            ctx.beginPath();
+            
+            const r = b.r * 1.5; 
+
+            if (b.isIceman) {
+                // Downward pointing triangle
+                ctx.moveTo(0, r);
+                ctx.lineTo(r * 0.8, -r * 0.8);
+                ctx.lineTo(-r * 0.8, -r * 0.8);
+            } else {
+                // Upward pointing triangle (for player and drones)
+                ctx.moveTo(0, -r);
+                ctx.lineTo(r * 0.8, r * 0.8);
+                ctx.lineTo(-r * 0.8, r * 0.8);
+            }
+
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        });
+
         store.lasers.forEach(l => drawLaser(l));
         store.mines.forEach(m => drawMine(m));
         if(store.boss && store.boss.mines) store.boss.mines.forEach(mine => { ctx.save(); ctx.translate(mine.x, mine.y); ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fillStyle = `rgba(255, 128, 128, ${0.7 + 0.3 * Math.sin(performance.now() / 200)})`; ctx.fill(); ctx.restore(); });
@@ -1202,7 +1248,7 @@
         }
         const name = (store.name || "ROGUE").slice(0, 16); try { const nonceRes = await fetch(`${API_BASE}/session`, { method: "POST", timeout: 5000 }); if (!nonceRes.ok) throw new Error(`Session failed: ${nonceRes.status}`); const { nonce } = await nonceRes.json(); const body = { name, score: Math.floor(score) || 0, waves: store.world.wave | 0, kills: store.world.kills | 0, bosses: store.world.bosses | 0, ms: Math.max(1e4, Math.floor(performance.now() - store._startTs)), nonce }; const res = await fetch(`${API_BASE}/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), timeout: 5000 }); if (!res.ok) throw new Error(`Submit failed: ${res.status}`); const data = await res.json(); if (data.ok) { updateLeaderboard(data.top10); } else { console.warn("Score rejected:", data.err); announce(`Score rejected: ${data.err}`); refreshScoreList(); } } catch (err) { console.warn("Score submission failed, game continues offline:", err.message); } }
     function fireBullet(x, y, vx, vy, props = {}) { const p = store.player; store.bullets.push({ x, y, vx, vy, r: p.explosive ? 5 : 3, col: p.explosive ? "#cc99ff" : "#b266ff", dmg: 20 * p.dmgMult, pierce: p.piercing, explosive: p.explosive, ...props }); }
-    function firePlayer() { const p = store.player; const bulletSpeed = 420; const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0); const angleSpread = 10; if (p.flamethrowerLevel > 0) { let numFlames, angleRange, speed, life; switch(p.flamethrowerLevel) { case 1: numFlames = 8; angleRange = 40; speed = 250; life = 0.35; break; case 2: numFlames = 12; angleRange = 70; speed = 280; life = 0.4; break; default: numFlames = 16; angleRange = 90; speed = 320; life = 0.5; break; } for (let i = 0; i < numFlames; i++) { const angle = (Math.random() - 0.5) * angleRange * Math.PI / 180; const currentSpeed = speed + Math.random() * 40; store.bullets.push({ x: p.x, y: p.y - 12, vx: Math.sin(angle) * currentSpeed, vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 2, col: `rgba(255, ${100 + Math.random() * 100}, 0, 0.7)`, dmg: 3 * p.dmgMult, life: life, isFlame: true }); } if (p.hasIceman && store.iceman) { for (let i = 0; i < numFlames; i++) { const angle = (Math.random() - 0.5) * angleRange * Math.PI / 180; const currentSpeed = speed + Math.random() * 40; store.bullets.push({ x: store.iceman.x, y: store.iceman.y - 12, vx: Math.sin(angle) * currentSpeed, vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 2, col: `rgba(100, 150, 255, 0.7)`, dmg: 3 * p.dmgMult * 0.35, life: life, isFlame: true }); } } } const effectiveMultishot = Math.max(1, Math.min(totalMultishot, 3) + Math.floor(Math.max(0, totalMultishot - 3) * 0.5)); for (let i = 0; i < effectiveMultishot; i++) { const angle = (i - (effectiveMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: p.x + 10 * Math.sin(angle), y: p.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: p.explosive ? "#cc99ff" : "#b266ff", dmg: 20 * p.dmgMult, pierce: p.piercing, explosive: p.explosive }); } if (p.hasIceman && store.iceman) { for (let i = 0; i < effectiveMultishot; i++) { const angle = (i - (effectiveMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: store.iceman.x + 10 * Math.sin(angle), y: store.iceman.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: "#66aaff", dmg: 20 * p.dmgMult * 0.35, pierce: p.piercing, explosive: p.explosive }); } } store.drones.forEach(drone => store.bullets.push({ x: p.x + drone.offset, y: p.y + 20, vx: 0, vy: -bulletSpeed, r: 3, col: "#66aaff", dmg: 20 * p.dmgMult * 0.4, isDrone: true })); if (p.hasLauncher) { const speed = 350; store.bullets.push({ x: p.x - 15, y: p.y, vx: -50, vy: -speed, r: 4, col: '#ff8080', dmg: 5 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true }); store.bullets.push({ x: p.x + 15, y: p.y, vx: 50, vy: -speed, r: 4, col: '#ff8080', dmg: 5 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true }); if (p.hasIceman && store.iceman) { store.bullets.push({ x: store.iceman.x - 15, y: store.iceman.y, vx: -50, vy: -speed, r: 4, col: '#66aaff', dmg: 5 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true }); store.bullets.push({ x: store.iceman.x + 15, y: store.iceman.y, vx: 50, vy: -speed, r: 4, col: '#66aaff', dmg: 5 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true }); } } }
+    function firePlayer() { const p = store.player; const bulletSpeed = 420; const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0); const angleSpread = 10; if (p.flamethrowerLevel > 0) { let numFlames, angleRange, speed, life; switch(p.flamethrowerLevel) { case 1: numFlames = 8; angleRange = 40; speed = 250; life = 0.35; break; case 2: numFlames = 12; angleRange = 70; speed = 280; life = 0.4; break; default: numFlames = 16; angleRange = 90; speed = 320; life = 0.5; break; } for (let i = 0; i < numFlames; i++) { const angle = (Math.random() - 0.5) * angleRange * Math.PI / 180; const currentSpeed = speed + Math.random() * 40; store.bullets.push({ x: p.x, y: p.y - 12, vx: Math.sin(angle) * currentSpeed, vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 2, col: `rgba(255, ${100 + Math.random() * 100}, 0, 0.7)`, dmg: 3 * p.dmgMult, life: life, isFlame: true }); } if (p.hasIceman && store.iceman) { for (let i = 0; i < numFlames; i++) { const angle = (Math.random() - 0.5) * angleRange * Math.PI / 180; const currentSpeed = speed + Math.random() * 40; store.bullets.push({ x: store.iceman.x, y: store.iceman.y - 12, vx: Math.sin(angle) * currentSpeed, vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 2, col: `rgba(100, 150, 255, 0.7)`, dmg: 3 * p.dmgMult * 0.35, life: life, isFlame: true, isIceman: true }); } } } const effectiveMultishot = Math.max(1, Math.min(totalMultishot, 3) + Math.floor(Math.max(0, totalMultishot - 3) * 0.5)); for (let i = 0; i < effectiveMultishot; i++) { const angle = (i - (effectiveMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: p.x + 10 * Math.sin(angle), y: p.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: p.explosive ? "#cc99ff" : "#b266ff", dmg: 20 * p.dmgMult, pierce: p.piercing, explosive: p.explosive }); } if (p.hasIceman && store.iceman) { for (let i = 0; i < effectiveMultishot; i++) { const angle = (i - (effectiveMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: store.iceman.x + 10 * Math.sin(angle), y: store.iceman.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: "#66aaff", dmg: 20 * p.dmgMult * 0.35, pierce: p.piercing, explosive: p.explosive, isIceman: true }); } } store.drones.forEach(drone => store.bullets.push({ x: p.x + drone.offset, y: p.y + 20, vx: 0, vy: -bulletSpeed, r: 3, col: "#66aaff", dmg: 20 * p.dmgMult * 0.4, isDrone: true })); if (p.hasLauncher) { const speed = 350; store.bullets.push({ x: p.x - 15, y: p.y, vx: -50, vy: -speed, r: 4, col: '#ff8080', dmg: 5 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true }); store.bullets.push({ x: p.x + 15, y: p.y, vx: 50, vy: -speed, r: 4, col: '#ff8080', dmg: 5 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true }); if (p.hasIceman && store.iceman) { store.bullets.push({ x: store.iceman.x - 15, y: store.iceman.y, vx: -50, vy: -speed, r: 4, col: '#66aaff', dmg: 5 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true }); store.bullets.push({ x: store.iceman.x + 15, y: store.iceman.y, vx: 50, vy: -speed, r: 4, col: '#66aaff', dmg: 5 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true }); } } }
     function stepBoss(dt) { if (!store.boss) return; const b = store.boss; b.t += dt; if (b.y < 100) b.y += b.vy * dt; const dmgScale = Math.pow(1.065, store.world.wave - 1); switch (b.behavior) { case 'sentinel': stepBossOmegaSentinel(dt, b, dmgScale); break; case 'malignus': stepBossCoreMalignus(dt, b, dmgScale); break; case 'hex': stepBossTheHex(dt, b, dmgScale); break; case 'construct': stepBossGeometron(dt, b, dmgScale); break; case 'avian': stepBossVoidRaven(dt, b, dmgScale); break; } }
     function stepBossOmegaSentinel(dt, b, dmgScale) { if (b.y >= 100) { b.moveT += dt; b.x += Math.sin(b.moveT * 2) * 200 * dt; b.x = clamp(b.x, 100, W - 100); } b.fireT -= dt; if (b.fireT <= 0) { if (b.patternPhase % 4 === 0) { b.fireT = 1.5; const n = 12; for (let i = 0; i < n; i++) { const a = (i * Math.PI / 6) + b.t; store.eBullets.push({ x: b.x, y: b.y, vx: 150 * Math.cos(a), vy: 150 * Math.sin(a), r: 4, col: '#C0C0C0', dmg: 12 * dmgScale }); } } else { b.fireT = 0.2; const a = Math.atan2(store.player.y - b.y, store.player.x - b.x); store.eBullets.push({ x: b.x, y: b.y, vx: 250 * Math.cos(a), vy: 250 * Math.sin(a), r: 5, col: '#C0C0C0', dmg: 18 * dmgScale }); } b.patternPhase++; } }
     function stepBossCoreMalignus(dt, b, dmgScale) { if (b.hp / b.hpMax <= 0.07 && !b.isEnraged) { b.isEnraged = true; playSound('horn'); } if (b.y >= 100) { b.moveT += dt; b.x = W / 2 + (W / 2 - 100) * Math.sin(b.moveT * 0.5); } b.fireT -= dt; if (b.fireT <= 0) { b.fireT = b.isEnraged ? 0.6 : 0.8; const n = 12, g = 3, s = Math.floor(Math.random() * (n - g)); for (let i = 0; i < n; i++) { if (i >= s && i < s + g) continue; const p = (W / (n + 1)) * (i + 1); store.eBullets.push({ x: p, y: b.y, vx: 0, vy: 180, r: 6, col: b.color, dmg: 20 * dmgScale }); } } }
@@ -1443,24 +1489,53 @@
             // Zerg Mutalisk-inspired design
             ctx.shadowColor = n; 
             ctx.shadowBlur = 15; 
-            ctx.strokeStyle = '#BE2545'; // A darker red for the outline
-            ctx.fillStyle = n + "cc"; // A slightly more opaque fill
+            ctx.strokeStyle = '#BE2545';
+            ctx.fillStyle = n + "cc";
             ctx.lineWidth = 2;
 
             ctx.beginPath();
-            // Main body/head - a crescent shape
-            ctx.moveTo(-a, 0); // Start at left tip
-            ctx.quadraticCurveTo(0, -a * 1.2, a, 0); // Top curve
-            ctx.quadraticCurveTo(0, a * 0.8, -a, 0);   // Bottom curve
+            ctx.moveTo(-a, 0);
+            ctx.quadraticCurveTo(0, -a * 1.2, a, 0);
+            ctx.quadraticCurveTo(0, a * 0.8, -a, 0);
             ctx.closePath();
             ctx.fill();
             ctx.stroke();
 
-            // Large top scythe/wing
             ctx.beginPath();
             ctx.moveTo(0, -a * 0.5);
             ctx.bezierCurveTo(a * 0.8, -a * 1.5, a * 1.5, a * 0.5, a * 0.6, a * 1.1);
             ctx.quadraticCurveTo(a * 0.4, a * 0.6, 0, -a * 0.5);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Lobster Tail
+            ctx.strokeStyle = '#B35A36';
+            ctx.fillStyle = n + "99";
+            ctx.beginPath();
+            ctx.moveTo(-a * 0.2, a * 0.5);
+            ctx.quadraticCurveTo(-a * 0.5, a * 1.2, -a * 0.6, a * 1.8);
+            ctx.quadraticCurveTo(-a * 0.7, a * 1.9, -a * 0.5, a * 1.8);
+            ctx.quadraticCurveTo(-a * 0.8, a * 1.2, -a * 0.4, a * 0.5);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Pincer/Head
+            ctx.strokeStyle = '#BE2545';
+            ctx.fillStyle = n + "cc";
+            ctx.beginPath();
+            ctx.moveTo(a * 0.8, -a * 0.2);
+            ctx.bezierCurveTo(a * 1.5, -a * 0.8, a * 1.8, a * 0.2, a * 1.2, a * 0.5);
+            ctx.quadraticCurveTo(a * 1.4, a * 0.1, a * 0.8, -a * 0.2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(a * 0.9, -a * 0.4);
+            ctx.bezierCurveTo(a * 1.7, -a * 1.2, a * 2.2, -a * 0.2, a * 1.4, a * 0.3);
+            ctx.quadraticCurveTo(a * 1.6, -a * 0.1, a * 0.9, -a * 0.4);
             ctx.closePath();
             ctx.fill();
             ctx.stroke();
