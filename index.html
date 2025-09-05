@@ -380,7 +380,7 @@
                             </div>
                         </div>
                     </div>
-                    <div id="storyPanel" class="hide">
+                    <div id="storyPanel" class="panel hide">
                         <p>When we first discovered the voidplane, one of the earliest notes was the similarity of the plane's inhabitant lifeforms to that of deep sea life on Earth.<br><br>
                         Mammalian life developed specialized spacecraft to venture within and colonize the resources of the primitive creatures.<br><br>
                         The hive responded and war ensued.</p>
@@ -922,11 +922,6 @@
         });
     }
     
-    const panels = ['namePanel', 'pilotPanel', 'scorePanel', 'levelPanel', 'shopPanel'];
-    function isAnyPanelOpen() {
-        return panels.some(id => !q(id).classList.contains('hide'));
-    }
-
     function stepWorld(dt) {
         stepPlayer(dt);
         if (store.boss) stepBoss(dt);
@@ -2274,7 +2269,7 @@
         }
     }
 
-    function ensureName(){if(!store.name){store.isPaused=true; q('pauseBtn').classList.add('hide'); q("namePanel").classList.remove("hide");q("nameInput").value="";setTimeout(()=>q("nameInput").focus(),50)} else { store.isPaused = false; initWave(); }}
+    function ensureName(){if(!store.name){store.isPaused=true;q("namePanel").classList.remove("hide");q("nameInput").value="";setTimeout(()=>q("nameInput").focus(),50)} else { store.isPaused = false; initWave(); }}
     
     q("restartBtn").addEventListener("click", resetGame);
     
@@ -2307,7 +2302,7 @@
 
     q("fsEnterBtn").addEventListener('click',()=>{const r=document.documentElement;if(!document.fullscreenElement){if(r.requestFullscreen)r.requestFullscreen();else if(r.webkitRequestFullscreen)r.webkitRequestFullscreen();else if(r.msRequestFullscreen)r.msRequestFullscreen()}else{if(document.exitFullscreen)document.exitFullscreen()}});
     
-    q('pauseBtn').addEventListener('click',()=>{if(!store.isGameOver&&!isAnyPanelOpen()){store.isPaused=!store.isPaused;q('pauseBtn').textContent=store.isPaused?'RESUME':'PAUSE'}});
+    q('pauseBtn').addEventListener('click',()=>{if(!store.isGameOver&&q('shopPanel').classList.contains('hide')&&q('levelPanel').classList.contains('hide')&&q('namePanel').classList.contains('hide')&&q('scorePanel').classList.contains('hide')){store.isPaused=!store.isPaused;q('pauseBtn').textContent=store.isPaused?'RESUME':'PAUSE'}});
     
     q('grenadeBtnUI').addEventListener('click',useGrenade);
     q('storyBtn').addEventListener('click', () => q('storyPanel').classList.remove('hide'));
@@ -2369,11 +2364,10 @@
         
         if(key===' '){e.preventDefault();useGrenade()}
     });
-    function frame(now){const dt=Math.min(.033,(now-store.last)/1e3);store.last=now;if(!store.isGameOver && !store.isPaused && !isAnyPanelOpen()){stepWorld(dt)}render(dt);q('fps').textContent=(1/dt).toFixed(0);requestAnimationFrame(frame)}
+    function frame(now){const dt=Math.min(.033,(now-store.last)/1e3);store.last=now;if(!store.isGameOver&&!store.isPaused){stepWorld(dt)}render(dt);q('fps').textContent=(1/dt).toFixed(0);requestAnimationFrame(frame)}
     try{ ensureName(); refreshScoreList(); requestAnimationFrame(frame) }catch(error){console.error("Game initialization failed:",error);try{updateLeaderboard(null);ensureName();requestAnimationFrame(frame);console.log("Game started in offline mode")}catch(criticalError){console.error("Critical startup failure:",criticalError);alert("Game failed to start. Please refresh the page.")}}
     
 })();
 </script>
 </body>
 </html>
-
