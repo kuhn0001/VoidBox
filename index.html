@@ -6,7 +6,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Audiowide&family=Orbitron:wght@500;700&display=swap" rel="stylesheet" />
-    <title>Through the Void - Game</title>
+    <title>Void Skies</title>
     <style>
         :root {
             --bg:#050008; --fg:#ff99cc; --accent:#b266ff; --accent2:#9a66ff;
@@ -304,8 +304,8 @@
                             <div class="skill-card" data-genome="wizard">
                                 <div class="skill-icon">⚫️🧙‍♂️🔮🕳</div>
                                 <div>
-                                    <div class="skill-title">NEUROMANCER</div>
-                                    <div class="skill-desc">Exiled from society, Neuromancers dwell within the Void</div>
+                                    <div class="skill-title">VOIDMANCER</div>
+                                    <div class="skill-desc">Exiled from civilization, Voidmancer's are thought to inhabit the Void</div>
                                 </div>
                             </div>
                         </div>
@@ -620,7 +620,7 @@
             hunter: { r: 20, v: 100, vx: 0, hp: 20, color: '#DC143C', xp: 8, score: 80, shards: 1, fireRateChance: 0.005 },
             trap_king_add: { r: 6, v: 90, vx: 0, hp: 10, color: '#ffc83d', damage: 5, xp: 2, score: 10, shards: 1 },
             phantom: { r: 14, v: 90, vx: 0, hp: 40, color: '#FFFFFF', xp: 10, score: 100, shards: 2, fireRateChance: 0.006, fireCooldown: 1.5 },
-            mech: { r: 18, v: 40, vx: 0, hp: 90, color: '#FF8500', xp: 15, score: 150, shards: 3, fireRateChance: 0.007 },
+            mech: { r: 18, v: 40, vx: 0, hp: 90, color: '#FF8500', xp: 15, score: 150, shards: 3, fireRateChance: 0.007, attackPhase: 0 },
             construct_shard: { r: 10, v: 120, vx: 0, hp: 15, color: '#e03434', xp: 3, score: 30, shards: 1 },
             avian_hatchling: { r: 8, v: 150, vx: 0, hp: 20, color: '#9370DB', xp: 4, score: 40, shards: 1 }
         };
@@ -847,6 +847,9 @@
         store.eBullets.forEach(b => { 
             b.x += b.vx * dt; 
             b.y += b.vy * dt; 
+            if (b.gravity) {
+                b.vy += b.gravity * dt;
+            }
             if(b.life) {
                 b.life -= dt;
                 if(b.life <= 0) b.dead = true;
@@ -902,7 +905,33 @@
                 switch (e.type) {
                     case 'hunter': { const a=Math.atan2(store.player.y-e.y,store.player.x-e.x); store.eBullets.push({x:e.x,y:e.y,vx:Math.cos(a)*180,vy:Math.sin(a)*180,r:3,col:e.color,dmg:10*dmgScale}); e.fireT=1; break; }
                     case 'phantom': { store.eBullets.push({x:e.x,y:e.y,vx:0,vy:180,r:3,col:e.color,dmg:8*dmgScale}); e.fireT=e.fireCooldown; break; }
-                    case 'mech': { for(let i=-1;i<=1;i++){const a=(90+i*15)*Math.PI/180;store.eBullets.push({x:e.x,y:e.y,vx:Math.cos(a)*140,vy:Math.sin(a)*140,r:4,col:e.color,dmg:12*dmgScale})} e.fireT=2; break; }
+                    case 'mech': {
+                        e.attackPhase = (e.attackPhase || 0) + 1;
+                        if (e.attackPhase % 2 === 1) { // Cannon shot
+                            const cannonLeftX = e.x - e.r * 0.9;
+                            const cannonRightX = e.x + e.r * 0.9;
+                            const cannonY = e.y - e.r * 0.4;
+                            
+                            const angleLeft = Math.atan2(store.player.y - cannonY, store.player.x - cannonLeftX);
+                            store.eBullets.push({ x: cannonLeftX, y: cannonY, vx: Math.cos(angleLeft) * 160, vy: Math.sin(angleLeft) * 160, r: 4, col: e.color, dmg: 12 * dmgScale });
+                            
+                            const angleRight = Math.atan2(store.player.y - cannonY, store.player.x - cannonRightX);
+                            store.eBullets.push({ x: cannonRightX, y: cannonY, vx: Math.cos(angleRight) * 160, vy: Math.sin(angleRight) * 160, r: 4, col: e.color, dmg: 12 * dmgScale });
+
+                        } else { // Lob shot
+                            const dx = store.player.x - e.x;
+                            const dist = Math.sqrt(dx*dx + (store.player.y - e.y)**2);
+                            const timeToTarget = Math.max(0.5, dist / 250);
+                            
+                            const vx = dx / timeToTarget;
+                            const gravity = 350;
+                            const vy = (store.player.y - e.y - 0.5 * gravity * timeToTarget * timeToTarget) / timeToTarget;
+
+                            store.eBullets.push({ x: e.x, y: e.y, vx: vx, vy: vy, r: 6, col: '#ff6347', dmg: 18 * dmgScale, gravity: gravity });
+                        }
+                        e.fireT = 2;
+                        break;
+                    }
                     default: { store.eBullets.push({x:e.x,y:e.y,vx:0,vy:150,r:3,col:e.color,dmg:8*dmgScale}); e.fireT=.5; }
                 }
             }
@@ -1409,7 +1438,65 @@
 
         ctx.restore();
     }
-    function drawEnemy(e) { const{x:t,y:o,r:a,type:r,color:n,hp:l,hpMax:s,t:c}=e;ctx.save();ctx.translate(t,o);l<s&&l>0&&(ctx.fillStyle="rgba(0,0,0,0.5)",ctx.fillRect(-a,-a-8,2*a,3),ctx.fillStyle="#b266ff",ctx.fillRect(-a,-a-8,2*a*(l/s),3));ctx.lineWidth=2;ctx.beginPath();switch(r){case"avian_hatchling":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a*1.2);ctx.lineTo(a,-a*0.5);ctx.lineTo(a,a*0.5);ctx.lineTo(0,a*1.2);ctx.lineTo(-a,a*0.5);ctx.lineTo(-a,-a*0.5);ctx.closePath();ctx.fill();ctx.stroke();break;case"construct_shard":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a);ctx.lineTo(a,0);ctx.lineTo(0,a);ctx.lineTo(-a,0);ctx.closePath();ctx.fill();ctx.stroke();break;case"trap_king_add":case"drone":const e=ctx.createLinearGradient(-a,-a,a,a);e.addColorStop(0,"#E0E0E0");e.addColorStop(1,"#A0A0A0");ctx.fillStyle=e;ctx.strokeStyle="#808080";ctx.beginPath();ctx.moveTo(-1.2*a,0);ctx.quadraticCurveTo(0,-a,1.2*a,0);ctx.quadraticCurveTo(0,.6*a,-1.2*a,0);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#aaddff";ctx.strokeStyle="#FFFFFF";ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-.2*a,.6*a,Math.PI,0);ctx.fill();ctx.stroke();ctx.fillStyle=r==="trap_king_add"?"#ffc83d":"#32CD32";ctx.beginPath();ctx.ellipse(0,-.2*a,.3*a,.4*a,0,0,2*Math.PI);ctx.fill();ctx.fillStyle="#000000";ctx.beginPath();ctx.ellipse(-.1*a,-.25*a,.08*a,.15*a,-.5,0,2*Math.PI);ctx.ellipse(.1*a,-.25*a,.08*a,.15*a,.5,0,2*Math.PI);ctx.fill();break;case"hunter":ctx.shadowColor=n;ctx.shadowBlur=15;ctx.strokeStyle=n;ctx.fillStyle=n+"99";ctx.moveTo(0,-a);ctx.lineTo(.8*a,.8*a);ctx.lineTo(0,.3*a);ctx.lineTo(-.8*a,.8*a);ctx.closePath();ctx.fill();ctx.stroke();ctx.shadowBlur=0;break;case"phantom":ctx.globalAlpha=.6+.4*Math.sin(5*c);ctx.strokeStyle=n;ctx.fillStyle=n+"99";ctx.moveTo(0,-.8*a);ctx.quadraticCurveTo(a,-.5*a,.8*a,.8*a);ctx.quadraticCurveTo(0,.5*a,-.8*a,.8*a);ctx.quadraticCurveTo(-a,-.5*a,0,-.8*a);ctx.closePath();ctx.fill();ctx.stroke();for(let e=-1;e<=1;e++)ctx.beginPath(),ctx.moveTo(e*.4*a,.6*a),ctx.quadraticCurveTo(e*.5*a,a,e*.3*a+2*Math.sin(4*c+e),1.2*a),ctx.stroke();break;case"mech":ctx.strokeStyle=n;ctx.fillStyle=n+"99";ctx.rect(-.8*a,-.6*a,1.6*a,1.2*a);ctx.moveTo(-.8*a,-.4*a);ctx.lineTo(-1.2*a,0);ctx.lineTo(-.8*a,.4*a);ctx.moveTo(.8*a,-.4*a);ctx.lineTo(1.2*a,0);ctx.lineTo(.8*a,.4*a);ctx.fill();ctx.stroke();ctx.fillStyle="#ff99cc";ctx.beginPath();ctx.arc(0,0,.3*a,0,2*Math.PI);ctx.fill();break;}ctx.restore() }
+    function drawEnemy(e) { const{x:t,y:o,r:a,type:r,color:n,hp:l,hpMax:s,t:c}=e;ctx.save();ctx.translate(t,o);l<s&&l>0&&(ctx.fillStyle="rgba(0,0,0,0.5)",ctx.fillRect(-a,-a-8,2*a,3),ctx.fillStyle="#b266ff",ctx.fillRect(-a,-a-8,2*a*(l/s),3));ctx.lineWidth=2;ctx.beginPath();switch(r){case"avian_hatchling":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a*1.2);ctx.lineTo(a,-a*0.5);ctx.lineTo(a,a*0.5);ctx.lineTo(0,a*1.2);ctx.lineTo(-a,a*0.5);ctx.lineTo(-a,-a*0.5);ctx.closePath();ctx.fill();ctx.stroke();break;case"construct_shard":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a);ctx.lineTo(a,0);ctx.lineTo(0,a);ctx.lineTo(-a,0);ctx.closePath();ctx.fill();ctx.stroke();break;case"trap_king_add":case"drone":const e=ctx.createLinearGradient(-a,-a,a,a);e.addColorStop(0,"#E0E0E0");e.addColorStop(1,"#A0A0A0");ctx.fillStyle=e;ctx.strokeStyle="#808080";ctx.beginPath();ctx.moveTo(-1.2*a,0);ctx.quadraticCurveTo(0,-a,1.2*a,0);ctx.quadraticCurveTo(0,.6*a,-1.2*a,0);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#aaddff";ctx.strokeStyle="#FFFFFF";ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-.2*a,.6*a,Math.PI,0);ctx.fill();ctx.stroke();ctx.fillStyle=r==="trap_king_add"?"#ffc83d":"#32CD32";ctx.beginPath();ctx.ellipse(0,-.2*a,.3*a,.4*a,0,0,2*Math.PI);ctx.fill();ctx.fillStyle="#000000";ctx.beginPath();ctx.ellipse(-.1*a,-.25*a,.08*a,.15*a,-.5,0,2*Math.PI);ctx.ellipse(.1*a,-.25*a,.08*a,.15*a,.5,0,2*Math.PI);ctx.fill();break;
+        case "hunter":
+            // Zerg Mutalisk-inspired design
+            ctx.shadowColor = n; 
+            ctx.shadowBlur = 15; 
+            ctx.strokeStyle = '#BE2545'; // A darker red for the outline
+            ctx.fillStyle = n + "cc"; // A slightly more opaque fill
+            ctx.lineWidth = 2;
+
+            ctx.beginPath();
+            // Main body/head - a crescent shape
+            ctx.moveTo(-a, 0); // Start at left tip
+            ctx.quadraticCurveTo(0, -a * 1.2, a, 0); // Top curve
+            ctx.quadraticCurveTo(0, a * 0.8, -a, 0);   // Bottom curve
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Large top scythe/wing
+            ctx.beginPath();
+            ctx.moveTo(0, -a * 0.5);
+            ctx.bezierCurveTo(a * 0.8, -a * 1.5, a * 1.5, a * 0.5, a * 0.6, a * 1.1);
+            ctx.quadraticCurveTo(a * 0.4, a * 0.6, 0, -a * 0.5);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            
+            ctx.shadowBlur = 0;
+            break;
+        case "phantom":
+            ctx.globalAlpha=.6+.4*Math.sin(5*c);ctx.strokeStyle=n;ctx.fillStyle=n+"99";ctx.moveTo(0,-.8*a);ctx.quadraticCurveTo(a,-.5*a,.8*a,.8*a);ctx.quadraticCurveTo(0,.5*a,-.8*a,.8*a);ctx.quadraticCurveTo(-a,-.5*a,0,-.8*a);ctx.closePath();ctx.fill();ctx.stroke();for(let e=-1;e<=1;e++)ctx.beginPath(),ctx.moveTo(e*.4*a,.6*a),ctx.quadraticCurveTo(e*.5*a,a,e*.3*a+2*Math.sin(4*c+e),1.2*a),ctx.stroke();break;
+        case "mech":
+            ctx.strokeStyle = n; ctx.fillStyle = n + "99"; ctx.lineWidth = 2;
+            // Main Body
+            ctx.beginPath();
+            ctx.moveTo(-a * 0.6, -a * 0.8); ctx.lineTo(a * 0.6, -a * 0.8);
+            ctx.lineTo(a * 0.8, a * 0.4); ctx.lineTo(-a * 0.8, a * 0.4);
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+            // Shoulder Cannons
+            ctx.fillStyle = n + "cc";
+            ctx.beginPath();
+            ctx.rect(-a * 1.2, -a * 1.1, a * 0.6, a * 1.5); // Left cannon
+            ctx.rect(a * 0.6, -a * 1.1, a * 0.6, a * 1.5);  // Right cannon
+            ctx.fill(); ctx.stroke();
+            // Cockpit
+            ctx.fillStyle = "#ff99cc";
+            ctx.beginPath();
+            ctx.moveTo(0, -a * 0.8); ctx.lineTo(a * 0.3, -a * 1);
+            ctx.lineTo(-a * 0.3, -a * 1);
+            ctx.closePath(); ctx.fill();
+            // Legs
+            ctx.fillStyle = n + "99";
+            ctx.beginPath();
+            ctx.rect(-a * 0.7, a * 0.4, a * 0.4, a * 0.6); // Left leg
+            ctx.rect(a * 0.3, a * 0.4, a * 0.4, a * 0.6);  // Right leg
+            ctx.fill(); ctx.stroke();
+            break;
+        }ctx.restore() 
+    }
     function createEffect(type,x,y, radius){
         let effect={isActive:!0,life:1,maxLife:1,x,y};
         switch(type){
