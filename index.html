@@ -444,7 +444,7 @@
     
     const store = {
         frame: 0, last: performance.now(), isGameOver: false, isPaused: false,
-        world: { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0, enemyDensityBonus: 1.0 },
+        world: { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, waveStartTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0, enemyDensityBonus: 1.0, powerupCooldown: 0 },
         player: { ...player_initial_state },
         boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [],
         iceman: null,
@@ -455,8 +455,8 @@
     };
 
     const LEVEL_UPGRADES = [
-        { id: 'dmg', name: 'PLASMA CORE', icon: '💥', desc: '+25% damage', apply: () => store.player.dmgMult *= 1.25 },
-        { id: 'fire', name: 'OVERCLOCK', icon: '🔥', desc: '+25% fire rate', apply: () => store.player.fireRate *= 0.75 },
+        { id: 'dmg', name: 'PLASMA CORE', icon: '💥', desc: '+10% damage', apply: () => store.player.dmgMult *= 1.10 },
+        { id: 'fire', name: 'OVERCLOCK', icon: '🔥', desc: '+10% fire rate', apply: () => store.player.fireRate *= 0.90 },
         { id: 'multi', name: 'SCATTER PROTOCOL', icon: '☄️', desc: '+1 projectile', apply: () => store.player.multishot += 1 },
         { id: 'shield', name: 'VOID SHIELD', icon: '🛡️', desc: '+20 regenerating shield', apply: () => { store.player.shieldMax += 20; store.player.shield = store.player.shieldMax; } },
         { id: 'flamethrower', name: 'METHANE CHAFF', icon: '🔥🔥🔥', desc: 'Adds a short-range Methane Chaff Cloud to your ship.', apply: () => { 
@@ -518,30 +518,40 @@
 
     // --- GAME MECHANICS ---
     function spawnPowerup(x, y) { 
-        const p = store.player;
-        const baseChance = 0.15 + (p.luckBoost || 0);
-        const wave = store.world.wave;
-        const waveReductionFactor = 0.005;
-        let chance = Math.max(0.05, baseChance - (wave - 1) * waveReductionFactor);
-        
-        if (p.pilotGenome === 'rocketman') {
-            chance *= 1.5; 
-        }
+        if (store.world.powerupCooldown > 0) return;
 
-        if (Math.random() > chance) return;
+        const p = store.player;
+        const baseChance = 0.075;
+        const wave = store.world.wave;
+        const waveReductionFactor = 0.0025;
+        let finalChance = Math.max(0.025, baseChance - (wave - 1) * waveReductionFactor);
 
         let types = Object.keys(POWERUP_TYPES); 
-        
-        if (p.pilotGenome === 'beef' && Math.random() < 0.4) {
-            types = ['repair', 'shield'];
+        let bonusType = null;
+
+        if (p.pilotGenome === 'beef') {
+            if (Math.random() < 0.25) bonusType = 'shield';
+            else if (Math.random() < 0.15) bonusType = 'repair';
         }
         
-        if (p.pilotGenome === 'rocketman' && Math.random() < 0.4) {
-            types = ['missile'];
+        if (p.pilotGenome === 'rocketman' && Math.random() < 0.2) {
+            finalChance *= 1.5; // Still gets a higher chance overall for any powerup
+            bonusType = 'missile';
+        }
+        
+        const roll = Math.random();
+        
+        if (roll > finalChance && !bonusType) return;
+        
+        let typeKey;
+        if (bonusType && (roll <= finalChance || Math.random() < 0.5)) { // 50% chance to force the bonus type even on a failed normal roll
+            typeKey = bonusType;
+        } else {
+            typeKey = types[Math.floor(Math.random() * types.length)]; 
         }
 
-        const typeKey = types[Math.floor(Math.random() * types.length)]; 
         store.powerups.push({ x, y, r: 12, type: typeKey }); 
+        store.world.powerupCooldown = 5; // 5 second base cooldown
     }
     
     function applyPowerup(typeKey) {
@@ -584,6 +594,7 @@
                 const types = ['drone', 'drone', 'hunter', 'phantom', 'mech'];
                 store.enemies.push(spawnEnemy(types[Math.floor(Math.random() * types.length)]));
             }
+            store.world.waveStartTime = performance.now();
             announce(`◢ SECTOR ${store.world.wave} ◣`);
         }
     }
@@ -826,6 +837,10 @@
         stepMissiles(dt);
         stepLasers(dt);
         stepMines(dt);
+        
+        if (store.world.powerupCooldown > 0) {
+            store.world.powerupCooldown -= dt * (1 + (store.player.luckBoost * 2));
+        }
 
         const dmgScale = Math.pow(1.065, store.world.wave - 1);
         store.activeEffects.forEach(e => { if (e.step) e.step(dt); });
@@ -980,6 +995,14 @@
         ['bullets', 'eBullets', 'enemies', 'powerups', 'mines', 'missiles', 'lasers'].forEach(key => store[key] = store[key].filter(i => !i.dead));
         store.activeEffects = store.activeEffects.filter(e => e.isActive !== false);
         if (!store.boss && store.enemies.length === 0) { 
+            if (store.world.waveStartTime > 0) { // Don't run on first wave
+                const waveClearTime = (performance.now() - store.world.waveStartTime) / 1000;
+                if (waveClearTime < 5 && store.world.wave > 1) { // Threshold of 5 seconds
+                    store.world.enemyDensityBonus *= 1.1; // Increase density by 10%
+                    store.world.enemyHealthBonus *= 1.05; // Increase health by 5%
+                    announce("SWARM INTENSITY RISING!");
+                }
+            }
             store.world.wave++; 
             const hpBonus = 3; 
             store.player.hpMax += hpBonus;
@@ -1070,7 +1093,7 @@
         store.player.pilotGenome = savedGenome;
         applyGenomeBonus(store.player.pilotGenome);
         
-        store.world = { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0, enemyDensityBonus: 1.0 };
+        store.world = { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, waveStartTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0, enemyDensityBonus: 1.0, powerupCooldown: 0 };
         store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = []; 
         store.drones = []; store.hounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = [];
         store.iceman = null;
