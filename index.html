@@ -71,6 +71,7 @@
         }
         #pilotPanel {
             width: min(800px, 94vw);
+            position: relative;
         }
         .close-btn {
             position: absolute;
@@ -129,7 +130,7 @@
             flex-direction: column;
             align-items: center;
             text-align: center;
-            justify-content: space-between;
+            justify-content: flex-start;
         }
         .skill-card:hover{background:rgba(85,0,120,.9);box-shadow:0 0 20px rgba(178,102,255,.6);transform:scale(1.05)}
         .skill-card.disabled{opacity:0.5;cursor:not-allowed;transform:none!important;box-shadow:none!important}
@@ -148,15 +149,65 @@
         .skill-title{
             font-weight:700;
             color:#c49cff;
-            margin-bottom: 4px;
-            font-size: 13px;
+            margin-bottom: 8px;
+            font-size: 14px;
             line-height: 1.1;
         }
         .skill-desc{
-            font-size:10px;
+            font-size:11px;
             color:#ffddff;
-            flex-grow: 1;
-            margin-bottom: 4px;
+            margin-bottom: 8px;
+            min-height: 44px;
+        }
+        .skill-bonuses {
+            font-size: 10px;
+            color: var(--accent);
+            line-height: 1.4;
+            margin-top: auto;
+            padding-top: 8px;
+            border-top: 1px solid var(--edge);
+            width: 100%;
+        }
+
+        #storyBtn {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: transparent;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            font-size: 18px;
+            font-family: 'Orbitron', serif;
+            cursor: pointer;
+            line-height: 26px;
+            padding: 0;
+            transition: all 0.2s;
+        }
+        #storyBtn:hover {
+            background: var(--accent);
+            color: var(--bg);
+            transform: scale(1.1);
+        }
+        #storyPanel {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 200;
+            display: grid;
+            place-items: center;
+            padding: 20px;
+            cursor: pointer;
+        }
+        #storyPanel p {
+            max-width: 600px;
+            text-align: center;
+            font-size: clamp(16px, 2.5vw, 22px);
+            line-height: 1.6;
+            color: #ffddff;
+            text-shadow: 0 0 10px var(--accent);
         }
 
         .fixed-btn{
@@ -294,24 +345,45 @@
                         </div>
                     </div>
                     <div id="pilotPanel" class="panel hide">
-                        <h2 style="font-family:'Orbitron';color:var(--accent)">Select Pilot Genome Sequence:</h2>
+                        <button id="storyBtn" type="button">i</button>
+                        <h2 style="font-family:'Orbitron';color:var(--accent)">Choose Genomic Update</h2>
                         <div id="pilotsGrid" class="grid" style="grid-template-columns: repeat(3, 1fr);">
                             <div class="skill-card" data-genome="beef">
                                 <div class="skill-icon"><img src="cow.png" class="pilot-icon" alt="BEEF"></div>
                                 <div class="skill-title">BEEF</div>
-                                <div class="skill-desc">A very beefy gal with Methane Chaff and Magnet ability.  Known to survive repeated ship collisons.</div>
+                                <div class="skill-desc">A very beefy guy with Methane Chaff and Magnet ability. He's a tank, known to survive repeated ship collisions.</div>
+                                <div class="skill-bonuses">
+                                    + Methane Chaff<br>
+                                    + Magnet Pull<br>
+                                    + Defense
+                                </div>
                             </div>
                             <div class="skill-card" data-genome="rocketman">
                                 <div class="skill-icon"><img src="rockyboy.png" class="pilot-icon" alt="ROCKETMAN"></div>
                                 <div class="skill-title">ROCKETMAN</div>
                                 <div class="skill-desc">He once ruled all of Earth...    Until he ascended beyond it</div>
+                                <div class="skill-bonuses">
+                                    + Enhanced Missiles<br>
+                                    + Higher Missile Drop Rate<br>
+                                    &nbsp;
+                                </div>
                             </div>
                             <div class="skill-card" data-genome="wizard">
                                 <div class="skill-icon"><img src="void.png" class="pilot-icon" alt="VOIDMANCER"></div>
                                 <div class="skill-title">VOIDMANCER</div>
                                 <div class="skill-desc">Exceptional but ethereal pilots, Voidmancers exist in between the physical realm and the void plane.</div>
+                                <div class="skill-bonuses">
+                                    +4 Projectiles<br>
+                                    &nbsp;<br>
+                                    &nbsp;
+                                </div>
                             </div>
                         </div>
+                    </div>
+                    <div id="storyPanel" class="panel hide">
+                        <p>When we first discovered the voidplane, one of the earliest notes was the similarity of the plane's inhabitant lifeforms to that of deep sea life on Earth.<br><br>
+                        Mammalian life developed specialized spacecraft to venture within and colonize the resources of the primitive creatures.<br><br>
+                        The hive responded and war ensued.</p>
                     </div>
                     <div id="namePanel" class="panel hide">
                         <h2 style="font-family:'Orbitron';color:var(--accent);margin-top:0">💀 CALLSIGN 💀</h2>
@@ -447,7 +519,7 @@
     
     const store = {
         frame: 0, last: performance.now(), isGameOver: false, isPaused: false,
-        world: { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, waveStartTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0, enemyDensityBonus: 1.0, powerupCooldown: 0 },
+        world: { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, waveStartTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0, enemyDensityBonus: 1.0, powerupCooldown: 0, xpMultiplier: 1.0 },
         player: { ...player_initial_state },
         boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [],
         iceman: null,
@@ -917,16 +989,16 @@
                     case 'phantom': { store.eBullets.push({x:e.x,y:e.y,vx:0,vy:180,r:3,col:e.color,dmg:8*dmgScale}); e.fireT=e.fireCooldown; break; }
                     case 'mech': {
                         e.attackPhase = (e.attackPhase || 0) + 1;
-                        if (e.attackPhase % 2 === 1) { // Cannon shot
-                            const cannonLeftX = e.x - e.r * 0.9;
-                            const cannonRightX = e.x + e.r * 0.9;
-                            const cannonY = e.y - e.r * 0.4;
+                        if (e.attackPhase % 2 === 1) { // Shoulder cannon shot
+                            const shoulderLeftX = e.x - e.r * 1.2;
+                            const shoulderRightX = e.x + e.r * 1.2;
+                            const shoulderY = e.y - e.r;
+
+                            const angleLeft = Math.atan2(store.player.y - shoulderY, store.player.x - shoulderLeftX);
+                            store.eBullets.push({ x: shoulderLeftX, y: shoulderY, vx: Math.cos(angleLeft) * 160, vy: Math.sin(angleLeft) * 160, r: 4, col: e.color, dmg: 12 * dmgScale });
                             
-                            const angleLeft = Math.atan2(store.player.y - cannonY, store.player.x - cannonLeftX);
-                            store.eBullets.push({ x: cannonLeftX, y: cannonY, vx: Math.cos(angleLeft) * 160, vy: Math.sin(angleLeft) * 160, r: 4, col: e.color, dmg: 12 * dmgScale });
-                            
-                            const angleRight = Math.atan2(store.player.y - cannonY, store.player.x - cannonRightX);
-                            store.eBullets.push({ x: cannonRightX, y: cannonY, vx: Math.cos(angleRight) * 160, vy: Math.sin(angleRight) * 160, r: 4, col: e.color, dmg: 12 * dmgScale });
+                            const angleRight = Math.atan2(store.player.y - shoulderY, store.player.x - shoulderRightX);
+                            store.eBullets.push({ x: shoulderRightX, y: shoulderY, vx: Math.cos(angleRight) * 160, vy: Math.sin(angleRight) * 160, r: 4, col: e.color, dmg: 12 * dmgScale });
 
                         } else { // Lob shot
                             const dx = store.player.x - e.x;
@@ -1006,6 +1078,11 @@
                         setTimeout(() => announce("ENEMY SWARMS INTENSIFYING!"), 1000);
                     }
                     
+                    if (store.boss.name === 'TRAP KING' && store.player.pilotGenome === null) {
+                        store.player.pilotGenome = 'pending'; 
+                        setTimeout(showPilotSelect, 1000);
+                    }
+
                     store.world.score += 2000; store.world.shards += 25; store.world.xp += 100; store.world.bosses++; 
                     store.boss = null; announce('⚡ GUARDIAN DEFEATED ⚡'); explode(b.x, b.y, true); 
                 } 
@@ -1039,6 +1116,7 @@
                 if (waveClearTime < 5 && store.world.wave > 1) { // Threshold of 5 seconds
                     store.world.enemyDensityBonus *= 1.1; // Increase density by 10%
                     store.world.enemyHealthBonus *= 1.05; // Increase health by 5%
+                    store.world.xpMultiplier *= 1.05;
                     announce("SWARM INTENSITY RISING!");
                 }
             }
@@ -1049,11 +1127,15 @@
             initWave(); 
         }
         
-        let xpNeeded = store.world.level * 100;
+        let xpNeeded = store.world.level * 100 * store.world.xpMultiplier;
+        if (store.world.wave > 10) {
+            xpNeeded *= 1.30;
+        }
+
         if (store.world.level >= 8) {
-            xpNeeded *= 1.30; // 10% from level 4-7, plus 20% more for 8+
+            xpNeeded *= 1.30;
         } else if (store.world.level >= 4) {
-            xpNeeded *= 1.10; // 10% increase
+            xpNeeded *= 1.10;
         }
         xpNeeded = Math.floor(xpNeeded);
 
@@ -1135,12 +1217,9 @@
     }
     
     function resetGame() {
-        const savedGenome = store.player.pilotGenome;
         store.player = JSON.parse(JSON.stringify(player_initial_state));
-        store.player.pilotGenome = savedGenome;
-        applyGenomeBonus(store.player.pilotGenome);
         
-        store.world = { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, waveStartTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0, enemyDensityBonus: 1.0, powerupCooldown: 0 };
+        store.world = { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, waveStartTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0, enemyDensityBonus: 1.0, powerupCooldown: 0, xpMultiplier: 1.0 };
         store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = []; 
         store.drones = []; store.hounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = [];
         store.iceman = null;
@@ -1150,7 +1229,7 @@
         store.cheatDogHealCooldown = 0;
         shopItemOrder = []; 
         q('gameOverPanel').classList.add('hide'); q('shopPanel').classList.add('hide'); q('levelPanel').classList.add('hide');
-        initWave();
+        ensureName();
     }
 
     // --- RENDER & DRAW FUNCTIONS ---
@@ -1541,30 +1620,50 @@
             break;
         case "phantom":
             ctx.globalAlpha=.6+.4*Math.sin(5*c);ctx.strokeStyle=n;ctx.fillStyle=n+"99";ctx.moveTo(0,-.8*a);ctx.quadraticCurveTo(a,-.5*a,.8*a,.8*a);ctx.quadraticCurveTo(0,.5*a,-.8*a,.8*a);ctx.quadraticCurveTo(-a,-.5*a,0,-.8*a);ctx.closePath();ctx.fill();ctx.stroke();for(let e=-1;e<=1;e++)ctx.beginPath(),ctx.moveTo(e*.4*a,.6*a),ctx.quadraticCurveTo(e*.5*a,a,e*.3*a+2*Math.sin(4*c+e),1.2*a),ctx.stroke();break;
-        case "mech":
+        case "mech": // Refactored to Mech Gorilla
             ctx.strokeStyle = n; ctx.fillStyle = n + "99"; ctx.lineWidth = 2;
-            // Main Body
+            
+            // Head
             ctx.beginPath();
-            ctx.moveTo(-a * 0.6, -a * 0.8); ctx.lineTo(a * 0.6, -a * 0.8);
-            ctx.lineTo(a * 0.8, a * 0.4); ctx.lineTo(-a * 0.8, a * 0.4);
-            ctx.closePath(); ctx.fill(); ctx.stroke();
-            // Shoulder Cannons
-            ctx.fillStyle = n + "cc";
-            ctx.beginPath();
-            ctx.rect(-a * 1.2, -a * 1.1, a * 0.6, a * 1.5); // Left cannon
-            ctx.rect(a * 0.6, -a * 1.1, a * 0.6, a * 1.5);  // Right cannon
+            ctx.rect(-a * 0.3, -a * 1.4, a * 0.6, a * 0.4);
             ctx.fill(); ctx.stroke();
-            // Cockpit
+
+            // Cockpit/Eye
             ctx.fillStyle = "#ff99cc";
             ctx.beginPath();
-            ctx.moveTo(0, -a * 0.8); ctx.lineTo(a * 0.3, -a * 1);
-            ctx.lineTo(-a * 0.3, -a * 1);
-            ctx.closePath(); ctx.fill();
-            // Legs
+            ctx.rect(-a * 0.2, -a * 1.3, a * 0.4, a * 0.15);
+            ctx.fill();
+
+            // Torso
             ctx.fillStyle = n + "99";
             ctx.beginPath();
-            ctx.rect(-a * 0.7, a * 0.4, a * 0.4, a * 0.6); // Left leg
-            ctx.rect(a * 0.3, a * 0.4, a * 0.4, a * 0.6);  // Right leg
+            ctx.moveTo(-a * 1.2, -a * 1.0); // Top left shoulder
+            ctx.lineTo(a * 1.2, -a * 1.0);  // Top right shoulder
+            ctx.lineTo(a * 0.6, a * 0.6);   // Bottom right waist
+            ctx.lineTo(-a * 0.6, a * 0.6);  // Bottom left waist
+            ctx.closePath();
+            ctx.fill(); ctx.stroke();
+
+            // Arms (Gorilla-like)
+            ctx.beginPath();
+            // Left Arm
+            ctx.rect(-a * 1.6, -a * 0.9, a * 0.6, a * 1.8);
+            // Right Arm
+            ctx.rect(a * 1.0, -a * 0.9, a * 0.6, a * 1.8);
+            ctx.fill(); ctx.stroke();
+            
+            // Fists
+            ctx.fillStyle = n + "cc";
+            ctx.beginPath();
+            ctx.arc(-a * 1.3, a * 1.2, a * 0.5, 0, 2 * Math.PI); // Left fist
+            ctx.arc(a * 1.3, a * 1.2, a * 0.5, 0, 2 * Math.PI);  // Right fist
+            ctx.fill();
+
+            // Legs (Short and stout)
+            ctx.fillStyle = n + "99";
+            ctx.beginPath();
+            ctx.rect(-a * 0.6, a * 0.6, a * 0.5, a * 0.7); // Left leg
+            ctx.rect(a * 0.1, a * 0.6, a * 0.5, a * 0.7);  // Right leg
             ctx.fill(); ctx.stroke();
             break;
         }ctx.restore() 
@@ -2092,8 +2191,9 @@
                 const genome = card.dataset.genome;
                 store.player.pilotGenome = genome;
                 panel.classList.add('hide');
-                applyGenomeBonus(genome); 
-                ensureName();
+                applyGenomeBonus(genome);
+                store.isPaused = false;
+                // No need to call ensureName() here as it's already done
             }, { once: true });
         });
     }
@@ -2149,6 +2249,8 @@
     q('pauseBtn').addEventListener('click',()=>{if(!store.isGameOver&&q('shopPanel').classList.contains('hide')&&q('levelPanel').classList.contains('hide')&&q('namePanel').classList.contains('hide')&&q('scorePanel').classList.contains('hide')){store.isPaused=!store.isPaused;q('pauseBtn').textContent=store.isPaused?'RESUME':'PAUSE'}});
     
     q('grenadeBtnUI').addEventListener('click',useGrenade);
+    q('storyBtn').addEventListener('click', () => q('storyPanel').classList.remove('hide'));
+    q('storyPanel').addEventListener('click', () => q('storyPanel').classList.add('hide'));
     
     q("nameInput").addEventListener("keydown",(e)=>{if(e.key==="Enter"){const t=(q("nameInput").value||"").slice(0,16).trim();if(t){store.name=t;q("namePanel").classList.add("hide");store.isPaused=false; initWave();}}});
 
@@ -2207,11 +2309,11 @@
         if(key===' '){e.preventDefault();useGrenade()}
     });
     function frame(now){const dt=Math.min(.033,(now-store.last)/1e3);store.last=now;if(!store.isGameOver&&!store.isPaused){stepWorld(dt)}render(dt);q('fps').textContent=(1/dt).toFixed(0);requestAnimationFrame(frame)}
-    try{ showPilotSelect(); refreshScoreList(); requestAnimationFrame(frame) }catch(error){console.error("Game initialization failed:",error);try{updateLeaderboard(null);showPilotSelect();requestAnimationFrame(frame);console.log("Game started in offline mode")}catch(criticalError){console.error("Critical startup failure:",criticalError);alert("Game failed to start. Please refresh the page.")}}
+    try{ ensureName(); refreshScoreList(); requestAnimationFrame(frame) }catch(error){console.error("Game initialization failed:",error);try{updateLeaderboard(null);ensureName();requestAnimationFrame(frame);console.log("Game started in offline mode")}catch(criticalError){console.error("Critical startup failure:",criticalError);alert("Game failed to start. Please refresh the page.")}}
     
 })();
 </script>
 </body>
 </html>
-", because I want to change the "beef" class. It says "A very beefy gal" but the picture is of a bull. Change it to be "A very beefy guy" please. also change "She's a tank" to "He's a tank"
+
 
