@@ -351,7 +351,7 @@
                             <div class="skill-card" data-genome="beef">
                                 <div class="skill-icon"><img src="cow.png" class="pilot-icon" alt="BEEF"></div>
                                 <div class="skill-title">BEEF</div>
-                                <div class="skill-desc">The Tauro are peerless in the assault role due to their hybrid-nano biostructure. When there is a problem, there is "BEEF".</div>
+                                <div class="skill-desc">The Tauro are peerless in the assault role due to their hybrid-nano biostructure.  When there is a problem, there is "BEEF".</div>
                                 <div class="skill-bonuses">
                                     + Methane Chaff<br>
                                     + Magnet Pull<br>
@@ -363,8 +363,7 @@
                                 <div class="skill-title">ROCKETMAN</div>
                                 <div class="skill-desc">He once ruled all of Earth...    Until he ascended beyond it</div>
                                 <div class="skill-bonuses">
-                                    + Enhanced Missiles<br>
-                                    + Higher Missile Drop Rate<br>
+                                    + Special Ability<br>
                                     &nbsp;
                                 </div>
                             </div>
@@ -373,7 +372,7 @@
                                 <div class="skill-title">VOIDMANCER</div>
                                 <div class="skill-desc">Exceptional but ethereal pilots, Voidmancers exist in between the physical realm and the void plane.</div>
                                 <div class="skill-bonuses">
-                                    +4 Projectiles<br>
+                                    + Special Ability<br>
                                     &nbsp;<br>
                                     &nbsp;
                                 </div>
@@ -514,8 +513,7 @@
         hasLazarusBeam: false, lazarusBeamCooldown: 0,
         hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 0, vampirismLevel: 0, flamethrowerLevel: 0,
         luckBoost: 0, magnetRadius: 0, hasIceman: false, critChance: 0.02, critDamage: 2,
-        pilotGenome: null, missileVolley: 2,
-        hasRearGuard: false, rearGuardCooldown: 0, rearGuardReady: true
+        pilotGenome: null, missileVolley: 2
     };
     
     const store = {
@@ -577,7 +575,6 @@
         'grenade': { name: "NOVA GRENADE", icon: '💥💣💥', cost: 35, isPremium: true, max: 3, category: 'attack', apply: () => { if (store.player.grenades < 3) { store.player.grenades++; return true; } return false; }, desc: () => `Buy 1 (Max 3)` },
         'shield': { name: "MAX SHIELD", icon: '🛡️', baseCost: 40, scale: 1.8, maxLevel: 5, category: 'health', effect: () => { store.player.shieldMax += 25; store.player.shield += 25; }, desc: level => `+25 Max Shield (Lvl ${level + 1})` },
         'mine_wall': { name: "MINE WALL", icon: '💣', cost: 40, isPremium: true, max: 2, category: 'attack', apply: () => { const activeWalls = store.mines.filter(m => m.isWallMine).length > 0; if(!activeWalls) { deployMineWall(); return true; } return false; }, desc: () => `Deploy a wall of mines.` },
-        'rear_guard': { name: 'AFT FLANKSHIELD', icon: '🛡️✨', cost: 65, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.hasRearGuard) { store.player.hasRearGuard = true; return true; } return false; }, desc: () => `Blocks one enemy volley from behind every 8 seconds.` },
         'launcher': { name: 'FRAGMENTATION LAUNCHER', icon: '💥', cost: 50, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasLauncher) { store.player.hasLauncher = true; return true; } return false; }, desc: () => `Adds swirling nova projectiles.` },
         'the_iceman': { name: "THE ICEMAN", icon: '❄️', cost: 59, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.hasIceman) { store.player.hasIceman = true; store.iceman = { x: store.player.x, y: store.player.y + 50, t: 0}; return true; } return false; }, desc: () => `A clone mirrors your attacks.` },
         'lazarus_beam': { name: "LORD LAZARUS", icon: '☢️☄️☢️', cost: 75, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasLazarusBeam) { store.player.hasLazarusBeam = true; store.player.lazarusBeamCooldown = 15; return true; } return false; }, desc: () => `Lazarus periodically smites your foes.` },
@@ -678,7 +675,6 @@
             store.world.waveStartTime = performance.now();
             announce(`◢ SECTOR ${store.world.wave} ◣`);
         }
-        q('pauseBtn').classList.remove('hide');
     }
     
     function createBoss(scale) {
@@ -760,13 +756,6 @@
         if (p.shieldMax > 0 && p.shield < p.shieldMax) p.shield = Math.min(p.shieldMax, p.shield + 2 * dt);
         for (const key in p.powerupTimers) { p.powerupTimers[key].remaining -= dt; if (p.powerupTimers[key].remaining <= 0) { if (key === 'drones') store.drones = []; delete p.powerupTimers[key]; } }
         
-        if (p.hasRearGuard && p.rearGuardCooldown > 0) {
-            p.rearGuardCooldown -= dt;
-            if (p.rearGuardCooldown <= 0) {
-                p.rearGuardReady = true;
-            }
-        }
-
         if (p.hasVoidBeam) { // This property now controls Gravity Well
             p.voidBeamCooldown -= dt;
             if (p.voidBeamCooldown <= 0) {
@@ -947,19 +936,7 @@
                 if(b.life <= 0) b.dead = true;
             }
             if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true; 
-            if (collide(b, store.player)) { 
-                const p = store.player;
-                const isBehind = b.y < p.y;
-                if(p.hasRearGuard && p.rearGuardReady && isBehind) {
-                    p.rearGuardReady = false;
-                    p.rearGuardCooldown = 8;
-                    b.dead = true;
-                    store.activeEffects.push(createEffect("rearGuardBlock"));
-                } else {
-                    takeDamage(b.dmg || 10); 
-                    b.dead = true;
-                }
-            } 
+            if (collide(b, store.player)) { takeDamage(b.dmg || 10); b.dead = true; } 
         });
         if (store.boss && store.boss.mines) {
             store.boss.mines.forEach(mine => {
@@ -1186,8 +1163,6 @@
     
     function levelUp() { 
         announce(`LEVEL UP! ⚡ CHOOSE YOUR AUGMENTATION!`); 
-        store.isPaused = true; 
-        q('pauseBtn').classList.add('hide');
         
         store.player.isInvincible = true;
         const speedBoost = store.player.speed * 0.75;
@@ -1220,7 +1195,7 @@
             store.player.fireRate += fireRateBoost;
         }, 3000); 
 
-        const panel = q('levelPanel'), grid = q('skillsGrid'); 
+        store.isPaused = true; const panel = q('levelPanel'), grid = q('skillsGrid'); 
         const availableUpgrades = LEVEL_UPGRADES.filter(u => {
             if (u.id === 'flamethrower') return store.player.flamethrowerLevel < 3;
             return true;
@@ -1232,7 +1207,6 @@
         grid.querySelectorAll('.skill-card').forEach(c => c.addEventListener('click', () => { 
             const id = c.dataset.id; const upgrade = LEVEL_UPGRADES.find(s => s.id === id); 
             if (upgrade) upgrade.apply(); panel.classList.add('hide'); store.isPaused = false; 
-            q('pauseBtn').classList.remove('hide');
         })); panel.classList.remove('hide'); 
     }
     
@@ -1303,7 +1277,7 @@
         store.enemies.forEach(e => drawEnemy(e)); if (store.boss) drawBoss(store.boss);
         store.drones.forEach(d => drawDrone(d)); store.hounds.forEach(h => drawHound(h));
         if (store.iceman) drawIceman(store.iceman);
-        drawShip(store.player.x, store.player.y, store.player);
+        drawShip(store.player.x, store.player.y);
         store.activeEffects.forEach(e => e.draw && e.draw());
         updateHUD();
     }
@@ -1553,15 +1527,7 @@
         ctx.restore();
     }
     function drawBoss(t) { ctx.save();ctx.translate(t.x,t.y); if(t.isEnraged) ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 50); ctx.fillStyle="rgba(0,0,0,0.7)";ctx.fillRect(-60,-t.r-20,120,8);ctx.fillStyle=t.color;ctx.fillRect(-60,-t.r-20,120*(t.hp/t.hpMax),8);ctx.strokeStyle="#fff";ctx.lineWidth=1;ctx.strokeRect(-60,-t.r-20,120,8);if(t.behavior==="malignus"){const time=performance.now()/1e3;ctx.fillStyle=t.color;ctx.beginPath();const pulse=t.r*(.3+.05*Math.sin(4*time));ctx.arc(0,0,pulse,0,2*Math.PI);ctx.fill();ctx.fillStyle="white";ctx.beginPath();ctx.arc(0,0,.4*pulse,0,2*Math.PI);ctx.fill();const numShards=5;for(let i=0;i<numShards;i++){ctx.save();const angle=time*(.5+.1*i)+i*2*Math.PI/numShards,dist=.8*t.r;ctx.rotate(angle);ctx.translate(dist,0);ctx.rotate(2*time);ctx.fillStyle=t.color+"aa";ctx.strokeStyle="#FFFFFF";ctx.lineWidth=2;ctx.beginPath();const shardSize=.3*t.r;ctx.moveTo(0,-shardSize);ctx.lineTo(shardSize/2,shardSize);ctx.lineTo(-shardSize/2,shardSize);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore()}}else if(t.behavior==="hex"){ctx.translate(0,30);const bodyW_top=t.r*1.5,bodyW_bottom=t.r*2.5,bodyH=t.r*1.5;ctx.fillStyle="#66aaff";ctx.strokeStyle="#5599e5";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-bodyW_top/2,-bodyH/2);ctx.lineTo(bodyW_top/2,-bodyH/2);ctx.lineTo(bodyW_bottom/2,bodyH/2);ctx.lineTo(-bodyW_bottom/2,bodyH/2);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#e03434";ctx.strokeStyle="#c02d2d";const crownH=t.r*0.8,crownW=bodyW_top*0.9;ctx.beginPath();ctx.moveTo(-crownW/2,-bodyH/2);ctx.lineTo(-crownW/2+crownW/4,-bodyH/2-crownH);ctx.lineTo(0,-bodyH/2-crownH/2);ctx.lineTo(crownW/2-crownW/4,-bodyH/2-crownH);ctx.lineTo(crownW/2,-bodyH/2);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#000";ctx.fillRect(-t.r*0.6,-t.r*0.3,t.r*0.4,t.r*0.15);ctx.fillRect(t.r*0.2,-t.r*0.3,t.r*0.4,t.r*0.15);ctx.fillRect(-t.r*0.4,0,t.r*0.8,t.r*0.1);ctx.strokeStyle="#ffd700";ctx.lineWidth=8;ctx.beginPath();ctx.arc(0,0,t.r*1.1,0.5,Math.PI-0.5);ctx.stroke();ctx.fillStyle="#ffd700";ctx.strokeStyle="#daa520";ctx.lineWidth=3;const medR=t.r*0.5;ctx.beginPath();ctx.moveTo(0,t.r*1.1+medR);for(let i=1;i<=8;i++){const angle=i*(2*Math.PI/8);ctx.lineTo(medR*Math.sin(angle),t.r*1.1+medR*Math.cos(angle))}ctx.closePath();ctx.fill();ctx.stroke()}else if(t.behavior==="construct"){const phaseColor=t.phase===1?t.color:"#ff4500";ctx.fillStyle=phaseColor+"aa";ctx.strokeStyle=phaseColor;ctx.lineWidth=3;if(t.phase===2){ctx.shadowColor=phaseColor;ctx.shadowBlur=25}const bodyW=t.r*1.2,bodyH=t.r*1.5,headH=t.r*0.7;ctx.beginPath();ctx.moveTo(-bodyW*.5,bodyH*.5);ctx.lineTo(-bodyW*.6,bodyH*.2);ctx.lineTo(-bodyW*.4,-bodyH*.6);ctx.lineTo(0,-bodyH*.5);ctx.lineTo(bodyW*.4,-bodyH*.6);ctx.lineTo(bodyW*.6,bodyH*.2);ctx.lineTo(bodyW*.5,bodyH*.5);ctx.closePath();ctx.fill();ctx.stroke();const shoulderY=-bodyH*.3,shoulderX=bodyW*.4;const armW=.4*t.r,armH=.9*t.r;ctx.beginPath();ctx.moveTo(-shoulderX,shoulderY);ctx.lineTo(-shoulderX-armW*.5,shoulderY+armH*.2);ctx.lineTo(-shoulderX,shoulderY+armH);ctx.lineTo(-shoulderX+armW*.5,shoulderY+armH*.8);ctx.closePath();ctx.fill();ctx.stroke();ctx.beginPath();ctx.moveTo(shoulderX,shoulderY);ctx.lineTo(shoulderX+armW*.5,shoulderY+armH*.2);ctx.lineTo(shoulderX,shoulderY+armH);ctx.lineTo(shoulderX-armW*.5,shoulderY+armH*.8);ctx.closePath();ctx.fill();ctx.stroke();const eyeR=t.r*.2+2*Math.sin(performance.now()/200);const eyeGrad=ctx.createRadialGradient(0,-headH*.1,0,0,-headH*.1,eyeR);eyeGrad.addColorStop(0,"#ffffff");eyeGrad.addColorStop(.3,phaseColor);eyeGrad.addColorStop(1,"#ff4500");ctx.fillStyle=eyeGrad;ctx.beginPath();ctx.arc(0,-headH*.1,eyeR,0,2*Math.PI);ctx.fill()}else if(t.behavior==="avian"){const wingSpan=t.r*1.8,bodyH=t.r*0.8,headR=t.r*0.4;ctx.fillStyle=t.color;ctx.strokeStyle="#e6e6fa";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,-bodyH/2);ctx.lineTo(wingSpan/2,-bodyH/4);ctx.lineTo(wingSpan/2,bodyH/4);ctx.lineTo(0,bodyH/2);ctx.lineTo(-wingSpan/2,bodyH/4);ctx.lineTo(-wingSpan/2,-bodyH/4);ctx.closePath();ctx.fill();ctx.stroke();ctx.beginPath();ctx.arc(0,-bodyH/2,headR,0,2*Math.PI);ctx.fill();ctx.stroke();ctx.fillStyle="#ffd700";ctx.beginPath();ctx.moveTo(0,-bodyH/2-headR/2);ctx.lineTo(headR/2,-bodyH/2+headR/2);ctx.lineTo(-headR/2,-bodyH/2+headR/2);ctx.closePath();ctx.fill();ctx.fillStyle="#ff4500";ctx.beginPath();ctx.arc(-headR/3,-bodyH/2-headR/4,headR/4,0,2*Math.PI);ctx.arc(headR/3,-bodyH/2-headR/4,headR/4,0,2*Math.PI);ctx.fill()}else{const grad=ctx.createRadialGradient(0,0,t.r*0.6,0,0,t.r);grad.addColorStop(0,"#555");grad.addColorStop(1,"#222");ctx.fillStyle=grad;ctx.beginPath();ctx.arc(0,0,t.r,0,2*Math.PI);ctx.fill();ctx.strokeStyle="#888";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-t.r,0);ctx.lineTo(t.r,0);ctx.stroke();for(let i=1;i<6;i++){const y=t.r*i/6;ctx.beginPath();ctx.arc(0,0,t.r,Math.PI-Math.asin(y/t.r),Math.asin(y/t.r));ctx.stroke();ctx.beginPath();ctx.arc(0,0,t.r,Math.PI+Math.asin(y/t.r),-Math.asin(y/t.r));ctx.stroke()}const dishR=t.r*0.3;ctx.fillStyle="#444";ctx.beginPath();ctx.arc(-t.r*0.4, -t.r*0.4, dishR, 0, 2*Math.PI);ctx.fill();ctx.fillStyle="#adff2f";ctx.beginPath();ctx.arc(-t.r*0.4,-t.r*0.4,dishR*0.4+1*Math.sin(performance.now()/150),0,2*Math.PI);ctx.fill()} ctx.globalAlpha = 1.0; ctx.restore() }
-    function drawShip(t, e, player) { ctx.save();ctx.translate(t,e);if(player.isInvincible || player.hasShieldBubble){ctx.beginPath();ctx.arc(0,0,24,0,2*Math.PI);const g=ctx.createRadialGradient(0,0,18,0,0,24);g.addColorStop(0,"#9a66ff11");g.addColorStop(1,"#9a66ff");ctx.fillStyle=g;ctx.fill()}ctx.beginPath();ctx.moveTo(0,-20);ctx.lineTo(12,8);ctx.lineTo(8,14);ctx.lineTo(0,10);ctx.lineTo(-8,14);ctx.lineTo(-12,8);ctx.closePath();const o=ctx.createLinearGradient(0,-20,0,14);o.addColorStop(0,"#b266ff");o.addColorStop(.5,"#7a49cc");o.addColorStop(1,"#4d2a80");ctx.fillStyle=o;ctx.fill();ctx.lineWidth=2;ctx.strokeStyle="#c49cff";ctx.stroke();ctx.strokeStyle="#b266ff";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-12,5);ctx.lineTo(-20,-2);ctx.lineTo(-18,8);ctx.moveTo(12,5);ctx.lineTo(20,-2);ctx.lineTo(18,8);ctx.stroke();const r=performance.now()/1e3;ctx.globalAlpha=.8+.2*Math.sin(10*r);ctx.fillStyle="#cc99ff";ctx.beginPath();ctx.ellipse(-5,16,3,6,0,0,2*Math.PI);ctx.ellipse(5,16,3,6,0,0,2*Math.PI);ctx.fill();ctx.globalAlpha=1;ctx.fillStyle="#ffffff";ctx.beginPath();ctx.arc(0,-8,3,0,2*Math.PI);ctx.fill();
-        if (player.hasRearGuard && player.rearGuardReady) {
-            ctx.fillStyle = `rgba(100, 255, 255, ${0.4 + 0.3 * Math.sin(performance.now() / 200)})`;
-            ctx.beginPath();
-            ctx.arc(0, 15, 8, 0, 2 * Math.PI);
-            ctx.fill();
-        }
-        ctx.restore(); 
-    }
+    function drawShip(t, e) { ctx.save();ctx.translate(t,e);if(store.player.isInvincible || store.player.hasShieldBubble){ctx.beginPath();ctx.arc(0,0,24,0,2*Math.PI);const g=ctx.createRadialGradient(0,0,18,0,0,24);g.addColorStop(0,"#9a66ff11");g.addColorStop(1,"#9a66ff");ctx.fillStyle=g;ctx.fill()}ctx.beginPath();ctx.moveTo(0,-20);ctx.lineTo(12,8);ctx.lineTo(8,14);ctx.lineTo(0,10);ctx.lineTo(-8,14);ctx.lineTo(-12,8);ctx.closePath();const o=ctx.createLinearGradient(0,-20,0,14);o.addColorStop(0,"#b266ff");o.addColorStop(.5,"#7a49cc");o.addColorStop(1,"#4d2a80");ctx.fillStyle=o;ctx.fill();ctx.lineWidth=2;ctx.strokeStyle="#c49cff";ctx.stroke();ctx.strokeStyle="#b266ff";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-12,5);ctx.lineTo(-20,-2);ctx.lineTo(-18,8);ctx.moveTo(12,5);ctx.lineTo(20,-2);ctx.lineTo(18,8);ctx.stroke();const r=performance.now()/1e3;ctx.globalAlpha=.8+.2*Math.sin(10*r);ctx.fillStyle="#cc99ff";ctx.beginPath();ctx.ellipse(-5,16,3,6,0,0,2*Math.PI);ctx.ellipse(5,16,3,6,0,0,2*Math.PI);ctx.fill();ctx.globalAlpha=1;ctx.fillStyle="#ffffff";ctx.beginPath();ctx.arc(0,-8,3,0,2*Math.PI);ctx.fill();ctx.restore() }
     function drawMine(m) {
         ctx.save();
         ctx.translate(m.x, m.y);
@@ -1710,21 +1676,6 @@
     function createEffect(type,x,y, radius){
         let effect={isActive:!0,life:1,maxLife:1,x,y};
         switch(type){
-            case "rearGuardBlock":
-                effect.maxLife = 0.5;
-                effect.step = function(dt) { this.life -= dt / this.maxLife; if(this.life <= 0) this.isActive = false; };
-                effect.draw = function() {
-                    ctx.save();
-                    ctx.translate(store.player.x, store.player.y);
-                    ctx.strokeStyle = `rgba(100, 255, 255, ${this.life})`;
-                    ctx.lineWidth = 3;
-                    ctx.beginPath();
-                    // Arc at the back of the ship
-                    ctx.arc(0, 5, 20 * (1.2 - this.life), Math.PI * 0.2, Math.PI * 0.8);
-                    ctx.stroke();
-                    ctx.restore();
-                };
-                break;
             case "gravityWell":
                 effect.maxLife = 7;
                 effect.life = 7;
@@ -2015,7 +1966,6 @@
                          (key === 'launcher' && store.player.hasLauncher) || 
                          (key === 'luck_boost' && store.player.luckBoost > 0) || 
                          (key === 'magnet_pull' && store.player.magnetRadius > 0) || 
-                         (key === 'rear_guard' && store.player.hasRearGuard) ||
                          (key === 'the_iceman' && store.player.hasIceman)) {
                         isDisabled = true;
                         desc = "Already Unlocked"
@@ -2239,7 +2189,6 @@
     // --- EVENT LISTENERS & INITIALIZATION ---
     function showPilotSelect() {
         store.isPaused = true;
-        q('pauseBtn').classList.add('hide');
         const panel = q('pilotPanel');
         panel.classList.remove('hide');
         panel.querySelectorAll('.skill-card').forEach(card => {
@@ -2249,7 +2198,7 @@
                 panel.classList.add('hide');
                 applyGenomeBonus(genome);
                 store.isPaused = false;
-                q('pauseBtn').classList.remove('hide');
+                // No need to call ensureName() here as it's already done
             }, { once: true });
         });
     }
@@ -2273,7 +2222,7 @@
     
     q("restartBtn").addEventListener("click", resetGame);
     
-    q("saveName").addEventListener("click",()=>{const t=(q("nameInput").value||"").slice(0,16).trim();if(t){store.name=t;q("namePanel").classList.add("hide");if(store.player.pilotGenome === null) { initWave(); } else { store.isPaused = false; q('pauseBtn').classList.remove('hide');}}});
+    q("saveName").addEventListener("click",()=>{const t=(q("nameInput").value||"").slice(0,16).trim();if(t){store.name=t;q("namePanel").classList.add("hide");store.isPaused=false; initWave();}});
     
     const closeShopLogic = () => { q("shopPanel").classList.add('hide'); store.isPaused = false; q('pauseBtn').classList.remove('hide'); const highlighted = document.querySelector('.shop-item.highlight'); if (highlighted) highlighted.classList.remove('highlight'); };
     q("closeShop").addEventListener("click", closeShopLogic);
@@ -2308,7 +2257,7 @@
     q('storyBtn').addEventListener('click', () => q('storyPanel').classList.remove('hide'));
     q('storyPanel').addEventListener('click', () => q('storyPanel').classList.add('hide'));
     
-    q("nameInput").addEventListener("keydown",(e)=>{if(e.key==="Enter"){const t=(q("nameInput").value||"").slice(0,16).trim();if(t){store.name=t;q("namePanel").classList.add("hide");if(store.player.pilotGenome === null) { initWave(); } else { store.isPaused = false; q('pauseBtn').classList.remove('hide');}}}});
+    q("nameInput").addEventListener("keydown",(e)=>{if(e.key==="Enter"){const t=(q("nameInput").value||"").slice(0,16).trim();if(t){store.name=t;q("namePanel").classList.add("hide");store.isPaused=false; initWave();}}});
 
     q("namePanel").addEventListener("click", (e) => {
         if(e.target.id !== 'nameInput' && e.target.id !== 'saveName') {
