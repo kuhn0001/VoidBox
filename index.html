@@ -1561,60 +1561,66 @@
     }
     function drawEnemy(e) { const{x:t,y:o,r:a,type:r,color:n,hp:l,hpMax:s,t:c}=e;ctx.save();ctx.translate(t,o);l<s&&l>0&&(ctx.fillStyle="rgba(0,0,0,0.5)",ctx.fillRect(-a,-a-8,2*a,3),ctx.fillStyle="#b266ff",ctx.fillRect(-a,-a-8,2*a*(l/s),3));ctx.lineWidth=2;ctx.beginPath();switch(r){case"avian_hatchling":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a*1.2);ctx.lineTo(a,-a*0.5);ctx.lineTo(a,a*0.5);ctx.lineTo(0,a*1.2);ctx.lineTo(-a,a*0.5);ctx.lineTo(-a,-a*0.5);ctx.closePath();ctx.fill();ctx.stroke();break;case"construct_shard":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a);ctx.lineTo(a,0);ctx.lineTo(0,a);ctx.lineTo(-a,0);ctx.closePath();ctx.fill();ctx.stroke();break;case"trap_king_add":case"drone":const e=ctx.createLinearGradient(-a,-a,a,a);e.addColorStop(0,"#E0E0E0");e.addColorStop(1,"#A0A0A0");ctx.fillStyle=e;ctx.strokeStyle="#808080";ctx.beginPath();ctx.moveTo(-1.2*a,0);ctx.quadraticCurveTo(0,-a,1.2*a,0);ctx.quadraticCurveTo(0,.6*a,-1.2*a,0);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#aaddff";ctx.strokeStyle="#FFFFFF";ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-.2*a,.6*a,Math.PI,0);ctx.fill();ctx.stroke();ctx.fillStyle=r==="trap_king_add"?"#ffc83d":"#32CD32";ctx.beginPath();ctx.ellipse(0,-.2*a,.3*a,.4*a,0,0,2*Math.PI);ctx.fill();ctx.fillStyle="#000000";ctx.beginPath();ctx.ellipse(-.1*a,-.25*a,.08*a,.15*a,-.5,0,2*Math.PI);ctx.ellipse(.1*a,-.25*a,.08*a,.15*a,.5,0,2*Math.PI);ctx.fill();break;
         case "hunter":
-            // Zerg Mutalisk-inspired design
-            ctx.shadowColor = n; 
-            ctx.shadowBlur = 15; 
+            // Void Serpent design
             ctx.strokeStyle = '#BE2545';
             ctx.fillStyle = n + "cc";
             ctx.lineWidth = 2;
+            ctx.shadowColor = n;
+            ctx.shadowBlur = 15;
 
-            ctx.beginPath();
-            ctx.moveTo(-a, 0);
-            ctx.quadraticCurveTo(0, -a * 1.2, a, 0);
-            ctx.quadraticCurveTo(0, a * 0.8, -a, 0);
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-
-            ctx.beginPath();
-            ctx.moveTo(0, -a * 0.5);
-            ctx.bezierCurveTo(a * 0.8, -a * 1.5, a * 1.5, a * 0.5, a * 0.6, a * 1.1);
-            ctx.quadraticCurveTo(a * 0.4, a * 0.6, 0, -a * 0.5);
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-
-            // Lobster Tail
-            ctx.strokeStyle = '#B35A36';
-            ctx.fillStyle = n + "99";
-            ctx.beginPath();
-            ctx.moveTo(-a * 0.2, a * 0.5);
-            ctx.quadraticCurveTo(-a * 0.5, a * 1.2, -a * 0.6, a * 1.8);
-            ctx.quadraticCurveTo(-a * 0.7, a * 1.9, -a * 0.5, a * 1.8);
-            ctx.quadraticCurveTo(-a * 0.8, a * 1.2, -a * 0.4, a * 0.5);
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-
-            // Pincer/Head
-            ctx.strokeStyle = '#BE2545';
-            ctx.fillStyle = n + "cc";
-            ctx.beginPath();
-            ctx.moveTo(a * 0.8, -a * 0.2);
-            ctx.bezierCurveTo(a * 1.5, -a * 0.8, a * 1.8, a * 0.2, a * 1.2, a * 0.5);
-            ctx.quadraticCurveTo(a * 1.4, a * 0.1, a * 0.8, -a * 0.2);
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-
-            ctx.beginPath();
-            ctx.moveTo(a * 0.9, -a * 0.4);
-            ctx.bezierCurveTo(a * 1.7, -a * 1.2, a * 2.2, -a * 0.2, a * 1.4, a * 0.3);
-            ctx.quadraticCurveTo(a * 1.6, -a * 0.1, a * 0.9, -a * 0.4);
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
+            const segments = 12;
+            const length = a * 1.8;
+            const amplitude = a * 0.5; // Controls side-to-side curve
             
+            ctx.beginPath();
+            
+            // Generate points for one side of the snake
+            const points1 = [];
+            for (let i = 0; i <= segments; i++) {
+                const progress = i / segments;
+                // Body is thickest in the middle, tapers at ends
+                const segmentWidth = a * Math.sin(progress * Math.PI) * 0.5; 
+                const x = Math.sin(progress * 2.5 * Math.PI + c * 5) * amplitude;
+                const y = (progress - 0.5) * length;
+                points1.push({ x: x + segmentWidth, y: y });
+            }
+
+            // Generate points for the other side of the snake in reverse
+            const points2 = [];
+            for (let i = segments; i >= 0; i--) {
+                const progress = i / segments;
+                const segmentWidth = a * Math.sin(progress * Math.PI) * 0.5;
+                const x = Math.sin(progress * 2.5 * Math.PI + c * 5) * amplitude;
+                const y = (progress - 0.5) * length;
+                points2.push({ x: x - segmentWidth, y: y });
+            }
+
+            // Draw the path by connecting all points
+            ctx.moveTo(points1[0].x, points1[0].y);
+            for(let i = 1; i < points1.length; i++) {
+                ctx.lineTo(points1[i].x, points1[i].y);
+            }
+            ctx.lineTo(points2[0].x, points2[0].y);
+             for(let i = 1; i < points2.length; i++) {
+                ctx.lineTo(points2[i].x, points2[i].y);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Head details
+            const headX = Math.sin(c * 5) * amplitude;
+            const headY = -0.5 * length;
+            // Eyes
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(headX - a*0.2, headY, a * 0.1, 0, 2*Math.PI);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(headX + a*0.2, headY, a * 0.1, 0, 2*Math.PI);
+            ctx.fill();
+
+
             ctx.shadowBlur = 0;
             break;
         case "phantom":
@@ -2314,5 +2320,4 @@
 </script>
 </body>
 </html>
-
 
