@@ -332,7 +332,7 @@
                 </div>
                 <canvas id="game" width="960" height="540"></canvas>
                 <div id="diagBox">
-                    <div class="chip">v3.7.2</div>
+                    <div class="chip">v3.7.3</div>
                     <div class="chip">FPS <span id="fps">—</span></div>
                 </div>
                 
@@ -348,31 +348,31 @@
                         <button id="storyBtn" type="button">i</button>
                         <h2 style="font-family:'Orbitron';color:var(--accent)">Choose Genomic Update</h2>
                         <div id="pilotsGrid" class="grid" style="grid-template-columns: repeat(3, 1fr);">
-                            <div class="skill-card" data-genome="">
-                                <div class="skill-icon"><img src="cow.png" class="pilot-icon" alt=""></div>
+                            <div class="skill-card" data-genome="beef">
+                                <div class="skill-icon"><img src="https://placehold.co/128x128/330044/ff99cc?text=BEEF" class="pilot-icon" alt=""></div>
                                 <div class="skill-title">BEEF</div>
-                                <div class="skill-desc">The Tauro are peerless in the assault role due to their hybrid-nano biostructure. When there is a problem, there is "BEEF".</div>
+                                <div class="skill-desc">A charging juggernaut. Use Gust of Rage to stun enemies in your path.</div>
                                 <div class="skill-bonuses">
-                                    + Defense<br>
-                                    + Special Ability<br>
+                                    + Methane Chaff<br>
+                                    + Gust of Rage
                                 </div>
                             </div>
                             <div class="skill-card" data-genome="rocketman">
-                                <div class="skill-icon"><img src="rockyboy.png" class="pilot-icon" alt="ROCKETMAN"></div>
+                                <div class="skill-icon"><img src="https://placehold.co/128x128/330044/ff99cc?text=ROCKET" class="pilot-icon" alt="ROCKETMAN"></div>
                                 <div class="skill-title">ROCKETMAN</div>
-                                <div class="skill-desc">He once ruled all of Earth...    Until he ascended beyond it</div>
+                                <div class="skill-desc">A master of area denial. Leaves a damaging flame wall when boosting horizontally.</div>
                                 <div class="skill-bonuses">
-                                    + Special Ability<br>
-                                    &nbsp;
+                                    + Enhanced Missiles<br>
+                                    + Flame Barrier
                                 </div>
                             </div>
                             <div class="skill-card" data-genome="wizard">
-                                <div class="skill-icon"><img src="void.png" class="pilot-icon" alt="VOIDMANCER"></div>
+                                <div class="skill-icon"><img src="https://placehold.co/128x128/330044/ff99cc?text=VOID" class="pilot-icon" alt="VOIDMANCER"></div>
                                 <div class="skill-title">VOIDMANCER</div>
-                                <div class="skill-desc">Exceptional but ethereal pilots, Voidmancers exist in between the physical realm and the void plane.</div>
+                                <div class="skill-desc">Whip the cursor to blink a short distance, phasing through attacks.</div>
                                 <div class="skill-bonuses">
-                                    + Special Ability<br>
-                                    &nbsp;
+                                    + Scatter Protocol<br>
+                                    + Void Step
                                 </div>
                             </div>
                         </div>
@@ -416,6 +416,7 @@
                 
                 <div id="abilityBar">
                     <button id="grenadeBtnUI" class="fixed-btn ability-btn hide" type="button">GRENADE</button>
+                    <button id="beefChargeBtn" class="fixed-btn ability-btn hide" type="button">GUST OF RAGE</button>
                 </div>
 
             </div>
@@ -429,11 +430,11 @@
     </div>
 
     <audio id="bgmAudio" loop></audio>
-    <audio id="audioExplosion" src="Explosion.m4a" preload="auto"></audio>
-    <audio id="audioHorn" src="Horn.wav" preload="auto"></audio>
-    <audio id="audioHit" src="thunk.wav" preload="auto"></audio>
-    <audio id="audioTrap" src="trap.m4a" preload="auto"></audio>
-    <audio id="audioDogs" src="dogs.m4a" preload="auto"></audio>
+    <audio id="audioExplosion" src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_18210332d3.mp3?filename=explosion-6805.mp3" preload="auto"></audio>
+    <audio id="audioHorn" src="https://cdn.pixabay.com/download/audio/2022/04/08/audio_f574a2539f.mp3?filename=a-war-horn-for-a-viking-army-14421.mp3" preload="auto"></audio>
+    <audio id="audioHit" src="https://cdn.pixabay.com/download/audio/2021/08/04/audio_a133a82209.mp3?filename=thunk-34903.mp3" preload="auto"></audio>
+    <audio id="audioTrap" src="https://cdn.pixabay.com/download/audio/2024/02/01/audio_eb6700c01b.mp3?filename=dark-trap-loop-184589.mp3" preload="auto"></audio>
+    <audio id="audioDogs" src="https://cdn.pixabay.com/download/audio/2022/02/11/audio_95930e1572.mp3?filename=aggressive-dog-barking-7239.mp3" preload="auto"></audio>
 
     <button id="fsEnterBtn" class="fixed-btn" type="button">FULLSCREEN</button>
     <div id="bottom-right-controls">
@@ -512,7 +513,11 @@
         hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 0, vampirismLevel: 0, flamethrowerLevel: 0,
         luckBoost: 0, magnetRadius: 0, hasIceman: false, critChance: 0.02, critDamage: 2,
         pilotGenome: null, missileVolley: 2,
-        hasRearGuard: false, rearGuardCooldown: 0, rearGuardReady: true
+        hasRearGuard: false, rearGuardCooldown: 0, rearGuardReady: true,
+        // Rocketman ability state
+        flameWallCooldown: 0, lastX: W/2,
+        // BEEF ability state
+        beefChargeState: 'ready', beefChargeCooldown: 0, beefChargeOrigin: null, beefChargeTarget: null, beefChargeT: 0,
     };
     
     const store = {
@@ -597,7 +602,7 @@
         'ghost_hounds': { name: "GHOST HOUNDS", icon: '👻🐺', baseCost: 75, scale: 2, maxLevel: 2, category: 'attack', effect: () => { if (!store.player.hasHounds) { store.player.hasHounds = true; store.hounds = [createHound(-1), createHound(1)]; } else { store.hounds.push(createHound(-2)); store.hounds.push(createHound(2)); } playSound('dogs'); }, desc: level => { if (level === 0) return `Unlocks 2 spectral hounds.`; if (level === 1) return `Add 2 more hounds.`; return "Max hounds reached."; } }
     };
     
-   const POWERUP_TYPES = {
+    const POWERUP_TYPES = {
         'double': { name: 'SCATTER SHOT', icon: '⬆️', duration: 0, type: 'instant' },
         'drones': { name: 'SIDE DRONES', icon: '🚁', duration: 15, type: 'timed' },
         'shield': { name: 'SHIELD BUBBLE', icon: '🛡️', duration: 0, type: 'instant' },
@@ -729,25 +734,94 @@
         c.hp *= Math.pow(1.075, wave) * store.world.enemyHealthBonus;
         const collarBonus = 1 + (store.world.collarStacks > 0 ? 0.4 + (store.world.collarStacks - 1) * 0.1 : 0);
         c.hp *= collarBonus;
-        return { ...c, type, x: 20 + Math.random() * (W - 40), y: -50 - Math.random() * 250, hpMax: c.hp, phase: type === 'phantom', t: 0, fireT: (c.fireCooldown || 0), isBursting: false, burstTimer: 0 };
+        return { ...c, type, x: 20 + Math.random() * (W - 40), y: -50 - Math.random() * 250, hpMax: c.hp, phase: type === 'phantom', t: 0, fireT: (c.fireCooldown || 0), isBursting: false, burstTimer: 0, stunTimer: 0, hitByCharge: false };
     }
 
     function stepPlayer(dt) {
         const p = store.player;
-
-        if (p.pilotGenome === 'wizard') {
-            maybeAutoVoidStep(p,)
+    
+        // --- ABILITY STATE MACHINE (BEEF) ---
+        if (p.pilotGenome === 'beef' && p.beefChargeState !== 'ready') {
+            p.beefChargeT += dt;
+            const chargeDuration = 0.2;
+            const returnDuration = 0.3;
+    
+            if (p.beefChargeState === 'charging') {
+                const progress = Math.min(p.beefChargeT / chargeDuration, 1);
+                p.x = p.beefChargeOrigin.x + (p.beefChargeTarget.x - p.beefChargeOrigin.x) * progress;
+                p.y = p.beefChargeOrigin.y + (p.beefChargeTarget.y - p.beefChargeOrigin.y) * progress;
+    
+                const chargeHitbox = { x: p.x, y: p.y, r: p.r * 2.5 };
+                const allTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
+                allTargets.forEach(e => {
+                    if (!e.dead && !e.hitByCharge && collide(chargeHitbox, e)) {
+                        e.hitByCharge = true;
+                        e.hp -= 50 * p.dmgMult;
+                        e.stunTimer = 2.0;
+                    }
+                });
+    
+                if (progress >= 1) {
+                    p.beefChargeState = 'returning';
+                    p.beefChargeT = 0;
+                }
+            } else if (p.beefChargeState === 'returning') {
+                const progress = Math.min(p.beefChargeT / returnDuration, 1);
+                p.x = p.beefChargeTarget.x + (p.beefChargeOrigin.x - p.beefChargeTarget.x) * progress;
+                p.y = p.beefChargeTarget.y + (p.beefChargeOrigin.y - p.beefChargeTarget.y) * progress;
+    
+                if (progress >= 1) {
+                    p.beefChargeState = 'ready';
+                    p.isInvincible = false;
+                    const allTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
+                    allTargets.forEach(e => e.hitByCharge = false);
+                }
+            }
+        } else {
+            // --- NORMAL MOVEMENT ---
+            const vx = mouse.x - p.x, vy = mouse.y - p.y;
+            p.x += (vx * p.speed * dt * 0.005); p.y += (vy * p.speed * dt * 0.005);
+            p.x = clamp(p.x, 20, W - 20); p.y = clamp(p.y, 20, H - 20);
         }
-
-        const vx = mouse.x - p.x, vy = mouse.y - p.y;
-        p.x += (vx * p.speed * dt * 0.005); p.y += (vy * p.speed * dt * 0.005);
-        p.x = clamp(p.x, 20, W - 20); p.y = clamp(p.y, 20, H - 20);
-
+    
+        // --- GENOME ABILITIES & COOLDOWNS ---
+        if (p.pilotGenome === 'wizard') {
+            maybeAutoVoidStep(p);
+        }
+    
+        if (p.pilotGenome === 'rocketman') {
+            if (!p.flameWallCooldown) p.flameWallCooldown = 20;
+            p.flameWallCooldown -= dt;
+            const h_vel = Math.abs(p.x - p.lastX) / dt;
+    
+            if (p.flameWallCooldown <= 0 && h_vel > 350) {
+                p.flameWallCooldown = 20;
+                const wallWidth = 150;
+                const numFlames = 10;
+                for (let i = 0; i < numFlames; i++) {
+                    const offsetX = (i - (numFlames - 1) / 2) * (wallWidth / numFlames);
+                    store.bullets.push({
+                        x: p.x + offsetX, y: p.y, vx: 0, vy: 0,
+                        r: 8 + Math.random() * 4,
+                        col: `rgba(255, ${100 + Math.random() * 100}, 0, 0.8)`,
+                        dmg: 15 * p.dmgMult,
+                        life: 5, isFlame: true, pierce: true
+                    });
+                }
+            }
+            p.lastX = p.x;
+        }
+    
+        if (p.pilotGenome === 'beef' && p.beefChargeCooldown > 0) {
+            p.beefChargeCooldown -= dt;
+        }
+    
+        // --- Standard player logic ---
         if (p.hasIceman && store.iceman) {
             store.iceman.x = p.x - 50; 
             store.iceman.y = p.y + 40;
         }
-
+    
         p.fireT -= dt;
         if (p.fireT <= 0) { firePlayer(); p.fireT = p.fireRate; }
         if (p.powerupTimers['missile']) {
@@ -764,7 +838,7 @@
                 if (closest) {
                     const isRocketman = p.pilotGenome === 'rocketman';
                     const missileDmg = isRocketman ? (95 * p.dmgMult * 0.7) : (95 * p.dmgMult);
-
+    
                     for (let i = 0; i < p.missileVolley; i++) {
                         const offsetX = (i - (p.missileVolley - 1) / 2) * 15;
                         store.missiles.push({ x: p.x + offsetX, y: p.y, vx: 0, vy: -300, r: 4, target: closest, speed: 400, turnRate: 5, life: 0, dmg: missileDmg });
@@ -792,7 +866,7 @@
                 p.rearGuardReady = true;
             }
         }
-
+    
         if (p.hasVoidBeam) { // This property now controls Gravity Well
             p.voidBeamCooldown -= dt;
             if (p.voidBeamCooldown <= 0) {
@@ -808,10 +882,10 @@
                 p.lazarusBeamCooldown = 30;
             }
         }
-
+    
         if (store.cheatInvincibilityCooldown > 0) store.cheatInvincibilityCooldown -= dt;
         if (store.cheatDogHealCooldown > 0) store.cheatDogHealCooldown -= dt;
-
+    
         if (p.x < 50 && p.y < 50 && store.cheatInvincibilityCooldown <= 0) {
             store.cheatsUsed = true;
             p.isInvincible = true;
@@ -825,7 +899,7 @@
             }, 15000);
             store.cheatInvincibilityCooldown = 15 + 10;
         }
-
+    
         if (p.x > W - 50 && p.y < 50 && store.cheatDogHealCooldown <= 0) {
             store.cheatsUsed = true;
             p.hp = Math.min(p.hpMax, p.hp + p.hpMax * 0.20);
@@ -997,90 +1071,99 @@
             store.boss.mines = store.boss.mines.filter(m => !m.dead);
         }
         store.enemies.forEach(e => {
-            if (e.stationary) {
-                e.y += e.v * dt; // They can still drift downwards
-            } else if(e.type === 'construct_shard' || e.type === 'avian_hatchling') {
-                 const dx = store.player.x - e.x, dy = store.player.y - e.y;
-                 const dist = Math.sqrt(dx * dx + dy * dy);
-                 if (dist > 1) {
-                     e.x += (dx / dist) * e.v * dt;
-                     e.y += (dy / dist) * e.v * dt;
-                 }
+            if (e.stunTimer && e.stunTimer > 0) {
+                e.stunTimer -= dt;
+                // Enemy is stunned: skip movement and attacks
             } else {
-                if(store.player.powerupTimers['stealth']) {
-                    e.fireT = 1; 
-                    return;
-                }
-
-                if (e.isOrbiter) {
-                    if (store.boss) {
-                        e.orbitCenter.x = store.boss.x;
-                        e.orbitCenter.y = store.boss.y;
-                    }
-                    e.orbitAngle += e.orbitSpeed * dt;
-                    e.x = e.orbitCenter.x + e.orbitRadius * Math.cos(e.orbitAngle);
-                    e.y = e.orbitCenter.y + e.orbitRadius * Math.sin(e.orbitAngle);
+                // --- ENEMY MOVEMENT AND ATTACKS ---
+                if (e.stationary) {
+                    e.y += e.v * dt; // They can still drift downwards
+                } else if(e.type === 'construct_shard' || e.type === 'avian_hatchling') {
+                     const dx = store.player.x - e.x, dy = store.player.y - e.y;
+                     const dist = Math.sqrt(dx * dx + dy * dy);
+                     if (dist > 1) {
+                         e.x += (dx / dist) * e.v * dt;
+                         e.y += (dy / dist) * e.v * dt;
+                     }
                 } else {
-                    e.x += (e.vx || 0) * dt;
-                    e.y += e.v * dt;
+                    if(store.player.powerupTimers['stealth']) {
+                        e.fireT = 1; 
+                        return;
+                    }
+    
+                    if (e.isOrbiter) {
+                        if (store.boss) {
+                            e.orbitCenter.x = store.boss.x;
+                            e.orbitCenter.y = store.boss.y;
+                        }
+                        e.orbitAngle += e.orbitSpeed * dt;
+                        e.x = e.orbitCenter.x + e.orbitRadius * Math.cos(e.orbitAngle);
+                        e.y = e.orbitCenter.y + e.orbitRadius * Math.sin(e.orbitAngle);
+                    } else {
+                        e.x += (e.vx || 0) * dt;
+                        e.y += e.v * dt;
+                    }
                 }
-            }
+    
+                if (e.phase) e.x += Math.sin(e.t * 3) * 80 * dt;
+    
+                e.fireT -= dt;
+                if (e.fireT <= 0 && e.y > 0 && Math.random() < e.fireRateChance) {
+                    switch (e.type) {
+                        case 'hunter': { const a=Math.atan2(store.player.y-e.y,store.player.x-e.x); store.eBullets.push({x:e.x,y:e.y,vx:Math.cos(a)*180,vy:Math.sin(a)*180,r:3,col:e.color,dmg:10*dmgScale}); e.fireT=1; break; }
+                        case 'phantom': { store.eBullets.push({x:e.x,y:e.y,vx:0,vy:180,r:3,col:e.color,dmg:8*dmgScale}); e.fireT=e.fireCooldown; break; }
+                        case 'mech': {
+                            e.attackPhase = (e.attackPhase || 0) + 1;
+                            if (e.attackPhase % 2 === 1) { // Shoulder cannon shot
+                                const shoulderLeftX = e.x - e.r * 1.2;
+                                const shoulderRightX = e.x + e.r * 1.2;
+                                const shoulderY = e.y - e.r;
+    
+                                const angleLeft = Math.atan2(store.player.y - shoulderY, store.player.x - shoulderLeftX);
+                                store.eBullets.push({ x: shoulderLeftX, y: shoulderY, vx: Math.cos(angleLeft) * 160, vy: Math.sin(angleLeft) * 160, r: 4, col: e.color, dmg: 12 * dmgScale });
+                                
+                                const angleRight = Math.atan2(store.player.y - shoulderY, store.player.x - shoulderRightX);
+                                store.eBullets.push({ x: shoulderRightX, y: shoulderY, vx: Math.cos(angleRight) * 160, vy: Math.sin(angleRight) * 160, r: 4, col: e.color, dmg: 12 * dmgScale });
+    
+                            } else { // Lob shot
+                                const dx = store.player.x - e.x;
+                                const dist = Math.sqrt(dx*dx + (store.player.y - e.y)**2);
+                                const timeToTarget = Math.max(0.5, dist / 250);
+                                
+                                const vx = dx / timeToTarget;
+                                const gravity = 350;
+                                const vy = (store.player.y - e.y - 0.5 * gravity * timeToTarget * timeToTarget) / timeToTarget;
+    
+                                store.eBullets.push({ x: e.x, y: e.y, vx: vx, vy: vy, r: 6, col: '#ff6347', dmg: 18 * dmgScale, gravity: gravity });
+                            }
+                            e.fireT = 2;
+                            break;
+                        }
+                        case 'angler': { 
+                            const a = Math.atan2(store.player.y - e.y, store.player.x - e.x);
+                            store.eBullets.push({x:e.x,y:e.y,vx:Math.cos(a)*120,vy:Math.sin(a)*120,r:4,col:e.color,dmg:15*dmgScale, life: 5});
+                            e.fireT = 2.5; 
+                            break;
+                        }
+                        case 'manta': {
+                            for(let i=-1; i<=1; i++) {
+                                const angle = (90 + i * 30) * Math.PI/180;
+                                store.eBullets.push({x:e.x, y:e.y, vx:Math.cos(angle)*150, vy:Math.sin(angle)*150, r:3, col:e.color, dmg:12*dmgScale});
+                            }
+                            e.fireT = 2.8;
+                            break;
+                        }
+                        default: { store.eBullets.push({x:e.x,y:e.y,vx:0,vy:150,r:3,col:e.color,dmg:8*dmgScale}); e.fireT=.5; }
+                    }
+                }
+            } // end of !isStunned block
 
-            if (e.phase) e.x += Math.sin(e.t * 3) * 80 * dt;
+            // --- COLLISION LOGIC (always runs) ---
             if (e.y > H + 30 || e.x < -30 || e.x > W + 30) e.dead = true;
             if (collide(e, store.player)) { 
                 takeDamage(15 * dmgScale); 
                 store.world.shards += e.shards;
                 e.dead = true; 
-            }
-            e.fireT -= dt;
-            if (e.fireT <= 0 && e.y > 0 && Math.random() < e.fireRateChance) {
-                switch (e.type) {
-                    case 'hunter': { const a=Math.atan2(store.player.y-e.y,store.player.x-e.x); store.eBullets.push({x:e.x,y:e.y,vx:Math.cos(a)*180,vy:Math.sin(a)*180,r:3,col:e.color,dmg:10*dmgScale}); e.fireT=1; break; }
-                    case 'phantom': { store.eBullets.push({x:e.x,y:e.y,vx:0,vy:180,r:3,col:e.color,dmg:8*dmgScale}); e.fireT=e.fireCooldown; break; }
-                    case 'mech': {
-                        e.attackPhase = (e.attackPhase || 0) + 1;
-                        if (e.attackPhase % 2 === 1) { // Shoulder cannon shot
-                            const shoulderLeftX = e.x - e.r * 1.2;
-                            const shoulderRightX = e.x + e.r * 1.2;
-                            const shoulderY = e.y - e.r;
-
-                            const angleLeft = Math.atan2(store.player.y - shoulderY, store.player.x - shoulderLeftX);
-                            store.eBullets.push({ x: shoulderLeftX, y: shoulderY, vx: Math.cos(angleLeft) * 160, vy: Math.sin(angleLeft) * 160, r: 4, col: e.color, dmg: 12 * dmgScale });
-                            
-                            const angleRight = Math.atan2(store.player.y - shoulderY, store.player.x - shoulderRightX);
-                            store.eBullets.push({ x: shoulderRightX, y: shoulderY, vx: Math.cos(angleRight) * 160, vy: Math.sin(angleRight) * 160, r: 4, col: e.color, dmg: 12 * dmgScale });
-
-                        } else { // Lob shot
-                            const dx = store.player.x - e.x;
-                            const dist = Math.sqrt(dx*dx + (store.player.y - e.y)**2);
-                            const timeToTarget = Math.max(0.5, dist / 250);
-                            
-                            const vx = dx / timeToTarget;
-                            const gravity = 350;
-                            const vy = (store.player.y - e.y - 0.5 * gravity * timeToTarget * timeToTarget) / timeToTarget;
-
-                            store.eBullets.push({ x: e.x, y: e.y, vx: vx, vy: vy, r: 6, col: '#ff6347', dmg: 18 * dmgScale, gravity: gravity });
-                        }
-                        e.fireT = 2;
-                        break;
-                    }
-                    case 'angler': { 
-                        const a = Math.atan2(store.player.y - e.y, store.player.x - e.x);
-                        store.eBullets.push({x:e.x,y:e.y,vx:Math.cos(a)*120,vy:Math.sin(a)*120,r:4,col:e.color,dmg:15*dmgScale, life: 5});
-                        e.fireT = 2.5; 
-                        break;
-                    }
-                    case 'manta': {
-                        for(let i=-1; i<=1; i++) {
-                            const angle = (90 + i * 30) * Math.PI/180;
-                            store.eBullets.push({x:e.x, y:e.y, vx:Math.cos(angle)*150, vy:Math.sin(angle)*150, r:3, col:e.color, dmg:12*dmgScale});
-                        }
-                        e.fireT = 2.8;
-                        break;
-                    }
-                    default: { store.eBullets.push({x:e.x,y:e.y,vx:0,vy:150,r:3,col:e.color,dmg:8*dmgScale}); e.fireT=.5; }
-                }
             }
         });
         store.bullets.forEach(b => {
@@ -1387,7 +1470,7 @@
     
     function escapeHtml(s) { s = String(s ?? ''); return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
     function announce(text) { const el = q('announce'); el.textContent = text; el.classList.remove('hide'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('hide'), 2500); }
-    function updateHUD() { const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0; const healthText = `HP: ${Math.round(t.hp)} / ${t.hpMax}`; const shieldText = t.shieldMax > 0 ? `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}` : ""; q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } }
+    function updateHUD() { const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0; const healthText = `HP: ${Math.round(t.hp)} / ${t.hpMax}`; const shieldText = t.shieldMax > 0 ? `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}` : ""; q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } const beefBtn = q('beefChargeBtn'); if (store.player.pilotGenome === 'beef') { beefBtn.classList.remove('hide'); const onCooldown = store.player.beefChargeCooldown > 0; const isCharging = store.player.beefChargeState !== 'ready'; beefBtn.disabled = onCooldown || isCharging; if (isCharging) { beefBtn.textContent = `CHARGING...`; } else if (onCooldown) { beefBtn.textContent = `RECHARGING (${Math.ceil(store.player.beefChargeCooldown)})`; } else { beefBtn.textContent = 'GUST OF RAGE'; } } else { beefBtn.classList.add('hide'); } }
     function updateLeaderboard(top10) { const fallbackData = [{ name: "ACE PILOT", score: 50000, waves: 10 },{ name: "VOID RUNNER", score: 35000, waves: 8 },{ name: "STAR HUNTER", score: 25000, waves: 6 },{ name: "NOVA STRIKER", score: 18000, waves: 5 },{ name: "COSMIC GUARD", score: 12000, waves: 4 }]; const data = top10 && top10.length > 0 ? top10 : fallbackData; q("hsList").innerHTML = data.map(s => `<li>${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves ?? "?"})</li>`).join(""); q("hsListPopup").innerHTML = data.map((s, i) => `<li>#${i + 1} ${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves ?? "?"})</li>`).join(""); }
     async function refreshScoreList() { try { const res = await fetch(`${API_BASE}/leaderboard`, { cache: "no-store", timeout: 5000 }); if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`); const data = await res.json(); updateLeaderboard(data); } catch (err) { console.warn("Failed to fetch leaderboard, using offline data:", err.message); updateLeaderboard(null); } }
     async function addScore(score) { 
@@ -1799,7 +1882,14 @@
             ctx.restore();
             break;
         }
-        }ctx.restore() 
+    }
+    if (e.stunTimer && e.stunTimer > 0) {
+        ctx.fillStyle = `rgba(255, 255, 0, ${0.5 + 0.3 * Math.sin(performance.now() / 100)})`;
+        ctx.font = 'bold 12px Orbitron';
+        ctx.textAlign = 'center';
+        ctx.fillText('STUN', 0, -a - 12);
+    }
+    ctx.restore() 
     }
     function createEffect(type,x,y, radius){
         let effect={isActive:!0,life:1,maxLife:1,x,y};
@@ -1872,8 +1962,8 @@
                          if(distSq < this.radius**2) {
                              const dist = Math.sqrt(distSq);
                              if (dist > 50) {
-                                b.x += (dx/dist) * pullStrength * 0.5 * dt;
-                                b.y += (dy/dist) * pullStrength * 0.5 * dt;
+                                 b.x += (dx/dist) * pullStrength * 0.5 * dt;
+                                 b.y += (dy/dist) * pullStrength * 0.5 * dt;
                              }
                              if (damageThisFrame && distSq < damageRadiusSq) {
                                  const damageToDeal = b.hpMax * (0.10 * store.player.dmgMult);
@@ -2329,7 +2419,25 @@
             store.activeEffects.push(createEffect("shieldBreak", p.x, p.y));
         }
     }
-
+    function useBeefCharge() {
+        const p = store.player;
+        if (p.pilotGenome !== 'beef' || p.beefChargeCooldown > 0 || p.beefChargeState !== 'ready' || store.isPaused) return;
+    
+        p.beefChargeCooldown = 15;
+        p.beefChargeState = 'charging';
+        p.beefChargeOrigin = { x: p.x, y: p.y };
+        p.beefChargeT = 0;
+        p.isInvincible = true;
+    
+        const chargeDist = 300;
+        const angle = Math.atan2(mouse.y - p.y, mouse.x - p.x);
+        const target = {
+            x: p.x + Math.cos(angle) * chargeDist,
+            y: p.y + Math.sin(angle) * chargeDist
+        };
+        const { nx, ny } = clampToField(target.x, target.y);
+        p.beefChargeTarget = { x: nx, y: ny };
+    }
     // --- VOID STEP ABILITY ---
     const VOIDSTEP = {
         cooldownMs: 3500,
@@ -2344,7 +2452,7 @@
     let invulUntil = 0;
     const rifts = []; 
     const blinkFlashes = [];
-
+    function spawnBlinkFlash(x, y, life=200){ blinkFlashes.push({x, y, life, birth: performance.now(), dead:false}); }
     function spawnRift(x1,y1,x2,y2, life=VOIDSTEP.riftMs){
         rifts.push({ x1,y1,x2,y2, birth: performance.now(), life, dead:false });
     }
@@ -2371,7 +2479,6 @@
         }
     };
 
-// ...existing code...
 function clampToField(nx, ny){
     const pad = VOIDSTEP.edgePadding;
     nx = Math.max(pad, Math.min(W - pad, nx));
@@ -2407,7 +2514,6 @@ function tryVoidStep(player, inputDir, now = performance.now()){
     return true;
 }
 
-// ...existing code...
 function maybeAutoVoidStep(player){
     const now = performance.now();
     if (now - lastVoidStep < VOIDSTEP.cooldownMs) return;
@@ -2416,7 +2522,6 @@ function maybeAutoVoidStep(player){
     const dir = MouseWhip.dir();
     tryVoidStep(player, dir, now);
 }
-// ...existing code...
     
     function updateVoidStepSystems(enemies){
       for (const r of rifts) if (!r.dead) {
@@ -2496,15 +2601,16 @@ function maybeAutoVoidStep(player){
 
     function applyGenomeBonus(genome) {
         if (!genome) return;
+        const p = store.player;
         switch(genome) {
             case 'beef':
-                store.player.magnetRadius = 150;
-                store.player.flamethrowerLevel = 1; 
+                p.flamethrowerLevel = 1; 
                 break;
             case 'wizard':
-                store.player.multishot = 5;
+                p.multishot = 5;
                 break;
             case 'rocketman':
+                // Bonus is handled by missile pickups and flame wall passive
                 break;
         }
     }
@@ -2560,6 +2666,8 @@ function maybeAutoVoidStep(player){
     });
     
     q('grenadeBtnUI').addEventListener('click',useGrenade);
+    q('beefChargeBtn').addEventListener('click',useBeefCharge);
+
     q('storyBtn').addEventListener('click', (e) => { 
         e.stopPropagation(); // Prevents pilotPanel from capturing the click
         pauseGame();
