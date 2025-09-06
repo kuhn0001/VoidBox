@@ -363,7 +363,9 @@
                                 <div class="skill-title">ROCKETMAN</div>
                                 <div class="skill-desc">He once ruled all of Earth...    Until he ascended beyond it</div>
                                 <div class="skill-bonuses">
-                                    + Special Ability
+                                    + Enhanced Missiles<br>
+                                    + Higher Missile Drop Rate<br>
+                                    &nbsp;
                                 </div>
                             </div>
                             <div class="skill-card" data-genome="wizard">
@@ -371,7 +373,9 @@
                                 <div class="skill-title">VOIDMANCER</div>
                                 <div class="skill-desc">Exceptional but ethereal pilots, Voidmancers exist in between the physical realm and the void plane.</div>
                                 <div class="skill-bonuses">
-                                    + Special Ability
+                                    +4 Projectiles<br>
+                                    + Void Step<br>
+                                    &nbsp;
                                 </div>
                             </div>
                         </div>
@@ -574,7 +578,23 @@
         'mine_wall': { name: "MINE WALL", icon: '💣', cost: 40, isPremium: true, max: 2, category: 'attack', apply: () => { const activeWalls = store.mines.filter(m => m.isWallMine).length > 0; if(!activeWalls) { deployMineWall(); return true; } return false; }, desc: () => `Deploy a wall of mines.` },
         'rear_guard': { name: 'AFT FLANKSHIELD', icon: '🛡️✨', baseCost: 65, scale: 2, maxLevel: 2, category: 'utility', effect: (level) => { if (level === 0) store.player.hasRearGuard = true; else store.player.rearGuardCooldown = 6; }, desc: level => level === 0 ? `Blocks one enemy volley from behind every 8s.` : `Reduce cooldown to 6s.` },
         'launcher': { name: 'FRAG LAUNCHER', icon: '💥', baseCost: 50, scale: 2, maxLevel: 3, category: 'attack', effect: () => { store.player.upgradeLevels.launcher = (store.player.upgradeLevels.launcher || 0) + 1; store.player.hasLauncher = true; }, desc: level => `+2 projectiles (Lvl ${level + 1})` },
-        'the_iceman': { name: "THE ICEMAN", icon: '❄️', baseCost: 59, scale: 2, maxLevel: 2, category: 'utility', effect: (level) => { if (level === 0) { store.player.hasIceman = true; store.iceman = { x: store.player.x, y: store.player.y + 50, t: 0, isClone2: false }; } else { store.activeEffects.push({ id: 'iceman2', x: store.player.x, y: store.player.y + 50, isClone2: true }); } }, desc: level => level === 0 ? `A clone mirrors your attacks.` : `Add a second, stronger clone.` },
+        'iceman': { 
+            name: "THE ICEMAN", 
+            icon: '❄️', 
+            cost: 59, 
+            isPremium: true, 
+            isUnlock: true, 
+            category: 'utility', 
+            apply: () => { 
+                if (!store.player.hasIceman) { 
+                    store.player.hasIceman = true; 
+                    store.iceman = { x: store.player.x, y: store.player.y + 50, t: 0 }; 
+                    return true;
+                } 
+                return false;
+            }, 
+            desc: () => `A clone mirrors your attacks.` 
+        },
         'lazarus_beam': { name: "LORD LAZARUS", icon: '☢️☄️☢️', cost: 75, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasLazarusBeam) { store.player.hasLazarusBeam = true; store.player.lazarusBeamCooldown = 15; return true; } return false; }, desc: () => `Lazarus periodically smites your foes.` },
         'gravity_well': { name: "GRAVITY WELL", icon: '🕳️', cost: 100, isPremium: true, isUnlock: true, category: 'attack', apply: () => { if (!store.player.hasVoidBeam) { store.player.hasVoidBeam = true; store.player.voidBeamCooldown = 15; return true; } return false; }, desc: () => `Unleashes a singularity that traps and crushes foes.` },
         'ghost_hounds': { name: "GHOST HOUNDS", icon: '👻🐺', baseCost: 75, scale: 2, maxLevel: 2, category: 'attack', effect: () => { if (!store.player.hasHounds) { store.player.hasHounds = true; store.hounds = [createHound(-1), createHound(1)]; } else { store.hounds.push(createHound(-2)); store.hounds.push(createHound(2)); } playSound('dogs'); }, desc: level => { if (level === 0) return `Unlocks 2 spectral hounds.`; if (level === 1) return `Add 2 more hounds.`; return "Max hounds reached."; } }
@@ -682,7 +702,7 @@
     function createBoss(scale) {
         const bossCycle = Math.floor((store.world.wave - 5) / 5) % 5;
         const types = [
-            { name: 'EVIL BABYMOON', baseHp: 1300, r: 55, behavior: 'sentinel', color: '#00008b' },
+            { name: 'MILDLY DANGEROUS MOON', baseHp: 1300, r: 55, behavior: 'sentinel', color: '#ff8080' },
             { name: 'TRAP KING', baseHp: 1500, r: 50, behavior: 'hex', color: '#66aaff'},
             { name: 'CORE MALIGNUS', baseHp: 1800, r: 60, behavior: 'malignus', color: '#2E8B57' },
             { name: 'GEOMETRON', baseHp: 2200, r: 65, behavior: 'construct', color: '#e03434', phase: 1 },
@@ -719,7 +739,7 @@
         const p = store.player;
 
         if (p.pilotGenome === 'wizard') {
-            maybeAutoVoidStep(p, cvs);
+            maybeAutoVoidStep(p,)
         }
 
         const vx = mouse.x - p.x, vy = mouse.y - p.y;
@@ -2092,7 +2112,7 @@
                          (key === 'luck_boost' && store.player.luckBoost > 0) || 
                          (key === 'magnet_pull' && store.player.magnetRadius > 0) || 
                          (key === 'rear_guard' && store.player.hasRearGuard) ||
-                         (key === 'the_iceman' && store.player.hasIceman)) {
+                         (key === 'iceman' && store.player.hasIceman)) {
                         isDisabled = true;
                         desc = "Already Unlocked"
                     }
@@ -2354,51 +2374,52 @@
         }
     };
 
-    function clampToField(nx, ny, canvas){
-        const pad = VOIDSTEP.edgePadding;
-        nx = Math.max(pad, Math.min(canvas.width - pad, nx));
-        ny = Math.max(pad, Math.min(canvas.height - pad, ny));
-        return { nx, ny };
-    }
+// ...existing code...
+function clampToField(nx, ny){
+    const pad = VOIDSTEP.edgePadding;
+    nx = Math.max(pad, Math.min(W - pad, nx));
+    ny = Math.max(pad, Math.min(H - pad, ny));
+    return { nx, ny };
+}
 
-    function spawnBlinkFlash(x,y){ blinkFlashes.push({ x,y, birth:performance.now(), life:220 }); }
+function tryVoidStep(player, inputDir, now = performance.now()){
+    const cd = VOIDSTEP.cooldownMs;
+    if (now - lastVoidStep < cd) return false;
 
-    function tryVoidStep(player, inputDir, now = performance.now(), canvas){
-        const cd = VOIDSTEP.cooldownMs;
-        if (now - lastVoidStep < cd) return false;
+    const maxDist = Math.min(
+        VOIDSTEP.baseDist,
+        VOIDSTEP.maxFieldFrac * Math.min(W, H)
+    );
 
-        const maxDist = Math.min(
-            VOIDSTEP.baseDist,
-            VOIDSTEP.maxFieldFrac * Math.min(canvas.width, canvas.height)
-        );
+    const dx = inputDir.x, dy = inputDir.y;
+    const len = Math.hypot(dx,dy) || 1;
 
-        const dx = inputDir.x, dy = inputDir.y;
-        const len = Math.hypot(dx,dy) || 1;
+    const start = { x: player.x, y: player.y };
+    let nx = player.x + (dx/len) * maxDist;
+    let ny = player.y + (dy/len) * maxDist;
 
-        const start = { x: player.x, y: player.y };
-        let nx = player.x + (dx/len) * maxDist;
-        let ny = player.y + (dy/len) * maxDist;
+    ({ nx, ny } = clampToField(nx, ny));
 
-        ({ nx, ny } = clampToField(nx, ny, canvas));
+    spawnRift(start.x, start.y, nx, ny, VOIDSTEP.riftMs);
 
-        spawnRift(start.x, start.y, nx, ny, VOIDSTEP.riftMs);
+    player.x = nx; player.y = ny;
+    invulUntil = now + VOIDSTEP.iframeMs;
+    lastVoidStep = now;
 
-        player.x = nx; player.y = ny;
-        invulUntil = now + VOIDSTEP.iframeMs;
-        lastVoidStep = now;
+    spawnBlinkFlash(nx, ny);
+    return true;
+}
 
-        spawnBlinkFlash(nx, ny);
-        return true;
-    }
-
-    function maybeAutoVoidStep(player, canvas){
-        const now = performance.now();
-        if (now - lastVoidStep < VOIDSTEP.cooldownMs) return;
-        const speed = MouseWhip.speed();
-        if (speed < VOIDSTEP.whipThresholdPxPerSec) return;
-        const dir = MouseWhip.dir();
-        tryVoidStep(player, dir, now, canvas);
-    }
+// ...existing code...
+function maybeAutoVoidStep(player){
+    const now = performance.now();
+    if (now - lastVoidStep < VOIDSTEP.cooldownMs) return;
+    const speed = MouseWhip.speed();
+    if (speed < VOIDSTEP.whipThresholdPxPerSec) return;
+    const dir = MouseWhip.dir();
+    tryVoidStep(player, dir, now);
+}
+// ...existing code...
     
     function updateVoidStepSystems(enemies){
       for (const r of rifts) if (!r.dead) {
