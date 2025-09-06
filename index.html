@@ -754,14 +754,20 @@
             mech: { r: 18, v: 40, vx: 0, hp: 90, color: '#FF8500', xp: 15, score: 150, shards: 3, fireRateChance: 0.007, attackPhase: 0 },
             construct_shard: { r: 10, v: 120, vx: 0, hp: 15, color: '#e03434', xp: 3, score: 30, shards: 1 },
             avian_hatchling: { r: 8, v: 150, vx: 0, hp: 20, color: '#9370DB', xp: 4, score: 40, shards: 1 },
-            angler: { r: 22, v: 20, vx: 0, hp: 120, color: '#13A8A2', xp: 18, score: 180, shards: 4, fireRateChance: 0.008, stationary: true },
+            angler: { r: 22, v: 30, vx: 0, hp: 120, color: '#00008b', xp: 18, score: 180, shards: 4, fireRateChance: 0.008 },
             manta: { r: 26, v: 50, vx: 0, hp: 150, color: '#53B6FF', xp: 22, score: 220, shards: 5, fireRateChance: 0.009 }
         };
         let c = { ...cfgs[type] }; const wave = store.world.wave;
         c.hp *= Math.pow(1.075, wave) * store.world.enemyHealthBonus;
         const collarBonus = 1 + (store.world.collarStacks > 0 ? 0.4 + (store.world.collarStacks - 1) * 0.1 : 0);
         c.hp *= collarBonus;
-        return { ...c, type, x: 20 + Math.random() * (W - 40), y: -50 - Math.random() * 250, hpMax: c.hp, phase: type === 'phantom', t: 0, fireT: (c.fireCooldown || 0), isBursting: false, burstTimer: 0, stunTimer: 0, knockback: null };
+        const e = { ...c, type, x: 20 + Math.random() * (W - 40), y: -50 - Math.random() * 250, hpMax: c.hp, phase: type === 'phantom', t: 0, fireT: (c.fireCooldown || 0), isBursting: false, burstTimer: 0, stunTimer: 0, knockback: null };
+        if (e.type === 'manta') {
+            e.startX = e.x;
+            e.amplitude = 150 + Math.random() * 100;
+            e.frequency = 0.5 + Math.random() * 0.5;
+        }
+        return e;
     }
 
     function stepPlayer(dt) {
@@ -1111,7 +1117,7 @@
             }
             if(b.life) {
                 b.life -= dt;
-                if(b.life <= 0) b.dead = true;
+                if (b.life <= 0) b.dead = true;
             }
             if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true; 
             if (collide(b, store.player)) { 
@@ -1149,15 +1155,24 @@
                 // Enemy is stunned: skip movement and attacks
             } else {
                 // --- ENEMY MOVEMENT AND ATTACKS ---
-                if (e.stationary) {
-                    e.y += e.v * dt; // They can still drift downwards
-                } else if(e.type === 'construct_shard' || e.type === 'avian_hatchling') {
+                if(e.type === 'construct_shard' || e.type === 'avian_hatchling') {
                      const dx = store.player.x - e.x, dy = store.player.y - e.y;
                      const dist = Math.sqrt(dx * dx + dy * dy);
                      if (dist > 1) {
                          e.x += (dx / dist) * e.v * dt;
                          e.y += (dy / dist) * e.v * dt;
                      }
+                } else if (e.type === 'angler') {
+                    const dx = store.player.x - e.x;
+                    const chaseSpeed = 30; // slow horizontal drift
+                    if(Math.abs(dx) > 10) {
+                        e.x += Math.sign(dx) * chaseSpeed * dt;
+                    }
+                    e.y += e.v * dt; // slow vertical descent
+                } else if (e.type === 'manta') {
+                    e.t += dt;
+                    e.x = e.startX + e.amplitude * Math.sin(e.t * e.frequency);
+                    e.y += e.v * dt; // medium vertical descent
                 } else {
                     if(store.player.powerupTimers['stealth']) {
                         e.fireT = 1; 
@@ -1234,7 +1249,7 @@
             // --- COLLISION LOGIC (always runs) ---
             if (e.y > H + 30 || e.x < -30 || e.x > W + 30) e.dead = true;
             if (collide(e, store.player)) { 
-                takeDamage(15 * dmgScale); 
+                takeDamage(15 * dmgScale);
                 store.world.shards += e.shards;
                 e.dead = true; 
             }
@@ -1756,7 +1771,10 @@
 
         ctx.restore();
     }
-    function drawBoss(t) { ctx.save();ctx.translate(t.x,t.y); if(t.isEnraged) ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 50); ctx.fillStyle="rgba(0,0,0,0.7)";ctx.fillRect(-60,-t.r-20,120,8);ctx.fillStyle=t.color;ctx.fillRect(-60,-t.r-20,120*(t.hp/t.hpMax),8);ctx.strokeStyle="#fff";ctx.lineWidth=1;ctx.strokeRect(-60,-t.r-20,120,8);if(t.behavior==="malignus"){const time=performance.now()/1e3;ctx.fillStyle=t.color;ctx.beginPath();const pulse=t.r*(.3+.05*Math.sin(4*time));ctx.arc(0,0,pulse,0,2*Math.PI);ctx.fill();ctx.fillStyle="white";ctx.beginPath();ctx.arc(0,0,.4*pulse,0,2*Math.PI);ctx.fill();const numShards=5;for(let i=0;i<numShards;i++){ctx.save();const angle=time*(.5+.1*i)+i*2*Math.PI/numShards,dist=.8*t.r;ctx.rotate(angle);ctx.translate(dist,0);ctx.rotate(2*time);ctx.fillStyle=t.color+"aa";ctx.strokeStyle="#FFFFFF";ctx.lineWidth=2;ctx.beginPath();const shardSize=.3*t.r;ctx.moveTo(0,-shardSize);ctx.lineTo(shardSize/2,shardSize);ctx.lineTo(-shardSize/2,shardSize);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore()}}else if(t.behavior==="hex"){ctx.translate(0,30);const bodyW_top=t.r*1.5,bodyW_bottom=t.r*2.5,bodyH=t.r*1.5;ctx.fillStyle="#66aaff";ctx.strokeStyle="#5599e5";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-bodyW_top/2,-bodyH/2);ctx.lineTo(bodyW_top/2,-bodyH/2);ctx.lineTo(bodyW_bottom/2,bodyH/2);ctx.lineTo(-bodyW_bottom/2,bodyH/2);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#e03434";ctx.strokeStyle="#c02d2d";const crownH=t.r*0.8,crownW=bodyW_top*0.9;ctx.beginPath();ctx.moveTo(-crownW/2,-bodyH/2);ctx.lineTo(-crownW/2+crownW/4,-bodyH/2-crownH);ctx.lineTo(0,-bodyH/2-crownH/2);ctx.lineTo(crownW/2-crownW/4,-bodyH/2-crownH);ctx.lineTo(crownW/2,-bodyH/2);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#000";ctx.fillRect(-t.r*0.6,-t.r*0.3,t.r*0.4,t.r*0.15);ctx.fillRect(t.r*0.2,-t.r*0.3,t.r*0.4,t.r*0.15);ctx.fillRect(-t.r*0.4,0,t.r*0.8,t.r*0.1);ctx.strokeStyle="#ffd700";ctx.lineWidth=8;ctx.beginPath();ctx.arc(0,0,t.r*1.1,0.5,Math.PI-0.5);ctx.stroke();ctx.fillStyle="#ffd700";ctx.strokeStyle="#daa520";ctx.lineWidth=3;const medR=t.r*0.5;ctx.beginPath();ctx.moveTo(0,t.r*1.1+medR);for(let i=1;i<=8;i++){const angle=i*(2*Math.PI/8);ctx.lineTo(medR*Math.sin(angle),t.r*1.1+medR*Math.cos(angle))}ctx.closePath();ctx.fill();ctx.stroke()}else if(t.behavior==="construct"){const phaseColor=t.phase===1?t.color:"#ff4500";ctx.fillStyle=phaseColor+"aa";ctx.strokeStyle=phaseColor;ctx.lineWidth=3;if(t.phase===2){ctx.shadowColor=phaseColor;ctx.shadowBlur=25}const bodyW=t.r*1.2,bodyH=t.r*1.5,headH=t.r*0.7;ctx.beginPath();ctx.moveTo(-bodyW*.5,bodyH*.5);ctx.lineTo(-bodyW*.6,bodyH*.2);ctx.lineTo(-bodyW*.4,-bodyH*.6);ctx.lineTo(0,-bodyH*.5);ctx.lineTo(bodyW*.4,-bodyH*.6);ctx.lineTo(bodyW*.6,bodyH*.2);ctx.lineTo(bodyW*.5,bodyH*.5);ctx.closePath();ctx.fill();ctx.stroke();const shoulderY=-bodyH*.3,shoulderX=bodyW*.4;const armW=.4*t.r,armH=.9*t.r;ctx.beginPath();ctx.moveTo(-shoulderX,shoulderY);ctx.lineTo(-shoulderX-armW*.5,shoulderY+armH*.2);ctx.lineTo(-shoulderX,shoulderY+armH);ctx.lineTo(-shoulderX+armW*.5,shoulderY+armH*.8);ctx.closePath();ctx.fill();ctx.stroke();ctx.beginPath();ctx.moveTo(shoulderX,shoulderY);ctx.lineTo(shoulderX+armW*.5,shoulderY+armH*.2);ctx.lineTo(shoulderX,shoulderY+armH);ctx.lineTo(shoulderX-armW*.5,shoulderY+armH*.8);ctx.closePath();ctx.fill();ctx.stroke();const eyeR=t.r*.2+2*Math.sin(performance.now()/200);const eyeGrad=ctx.createRadialGradient(0,-headH*.1,0,0,-headH*.1,eyeR);eyeGrad.addColorStop(0,"#ffffff");eyeGrad.addColorStop(.3,phaseColor);eyeGrad.addColorStop(1,"#ff4500");ctx.fillStyle=eyeGrad;ctx.beginPath();ctx.arc(0,-headH*.1,eyeR,0,2*Math.PI);ctx.fill()}else if(t.behavior==="avian"){const wingSpan=t.r*1.8,bodyH=t.r*0.8,headR=t.r*0.4;ctx.fillStyle=t.color;ctx.strokeStyle="#e6e6fa";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,-bodyH/2);ctx.lineTo(wingSpan/2,-bodyH/4);ctx.lineTo(wingSpan/2,bodyH/4);ctx.lineTo(0,bodyH/2);ctx.lineTo(-wingSpan/2,bodyH/4);ctx.lineTo(-wingSpan/2,-bodyH/4);ctx.closePath();ctx.fill();ctx.stroke();ctx.beginPath();ctx.arc(0,-bodyH/2,headR,0,2*Math.PI);ctx.fill();ctx.stroke();ctx.fillStyle="#ffd700";ctx.beginPath();ctx.moveTo(0,-bodyH/2-headR/2);ctx.lineTo(headR/2,-bodyH/2+headR/2);ctx.lineTo(-headR/2,-bodyH/2+headR/2);ctx.closePath();ctx.fill();ctx.fillStyle="#ff4500";ctx.beginPath();ctx.arc(-headR/3,-bodyH/2-headR/4,headR/4,0,2*Math.PI);ctx.arc(headR/3,-bodyH/2-headR/4,headR/4,0,2*Math.PI);ctx.fill()}else{const grad=ctx.createRadialGradient(0,0,t.r*0.6,0,0,t.r);grad.addColorStop(0,"#555");grad.addColorStop(1,"#222");ctx.fillStyle=grad;ctx.beginPath();ctx.arc(0,0,t.r,0,2*Math.PI);ctx.fill();ctx.strokeStyle="#888";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-t.r,0);ctx.lineTo(t.r,0);ctx.stroke();for(let i=1;i<6;i++){const y=t.r*i/6;ctx.beginPath();ctx.arc(0,0,t.r,Math.PI-Math.asin(y/t.r),Math.asin(y/t.r));ctx.stroke();ctx.beginPath();ctx.arc(0,0,t.r,Math.PI+Math.asin(y/t.r),-Math.asin(y/t.r));ctx.stroke()}const dishR=t.r*0.3;ctx.fillStyle="#444";ctx.beginPath();ctx.arc(-t.r*0.4, -t.r*0.4, dishR, 0, 2*Math.PI);ctx.fill();ctx.fillStyle="#adff2f";ctx.beginPath();ctx.arc(-t.r*0.4,-t.r*0.4,dishR*0.4+1*Math.sin(performance.now()/150),0,2*Math.PI);ctx.fill()} ctx.globalAlpha = 1.0; ctx.restore() }
+    function drawBoss(t) { ctx.save();ctx.translate(t.x,t.y); if(t.isEnraged) ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 50); ctx.fillStyle="rgba(0,0,0,0.7)";ctx.fillRect(-60,-t.r-20,120,8);
+        const healthBarColor = t.name === 'EVIL BABYMOON' ? '#ffd700' : t.color;
+        ctx.fillStyle = healthBarColor;
+        ctx.fillRect(-60,-t.r-20,120*(t.hp/t.hpMax),8);ctx.strokeStyle="#fff";ctx.lineWidth=1;ctx.strokeRect(-60,-t.r-20,120,8);if(t.behavior==="malignus"){const time=performance.now()/1e3;ctx.fillStyle=t.color;ctx.beginPath();const pulse=t.r*(.3+.05*Math.sin(4*time));ctx.arc(0,0,pulse,0,2*Math.PI);ctx.fill();ctx.fillStyle="white";ctx.beginPath();ctx.arc(0,0,.4*pulse,0,2*Math.PI);ctx.fill();const numShards=5;for(let i=0;i<numShards;i++){ctx.save();const angle=time*(.5+.1*i)+i*2*Math.PI/numShards,dist=.8*t.r;ctx.rotate(angle);ctx.translate(dist,0);ctx.rotate(2*time);ctx.fillStyle=t.color+"aa";ctx.strokeStyle="#FFFFFF";ctx.lineWidth=2;ctx.beginPath();const shardSize=.3*t.r;ctx.moveTo(0,-shardSize);ctx.lineTo(shardSize/2,shardSize);ctx.lineTo(-shardSize/2,shardSize);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore()}}else if(t.behavior==="hex"){ctx.translate(0,30);const bodyW_top=t.r*1.5,bodyW_bottom=t.r*2.5,bodyH=t.r*1.5;ctx.fillStyle="#66aaff";ctx.strokeStyle="#5599e5";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-bodyW_top/2,-bodyH/2);ctx.lineTo(bodyW_top/2,-bodyH/2);ctx.lineTo(bodyW_bottom/2,bodyH/2);ctx.lineTo(-bodyW_bottom/2,bodyH/2);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#e03434";ctx.strokeStyle="#c02d2d";const crownH=t.r*0.8,crownW=bodyW_top*0.9;ctx.beginPath();ctx.moveTo(-crownW/2,-bodyH/2);ctx.lineTo(-crownW/2+crownW/4,-bodyH/2-crownH);ctx.lineTo(0,-bodyH/2-crownH/2);ctx.lineTo(crownW/2-crownW/4,-bodyH/2-crownH);ctx.lineTo(crownW/2,-bodyH/2);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#000";ctx.fillRect(-t.r*0.6,-t.r*0.3,t.r*0.4,t.r*0.15);ctx.fillRect(t.r*0.2,-t.r*0.3,t.r*0.4,t.r*0.15);ctx.fillRect(-t.r*0.4,0,t.r*0.8,t.r*0.1);ctx.strokeStyle="#ffd700";ctx.lineWidth=8;ctx.beginPath();ctx.arc(0,0,t.r*1.1,0.5,Math.PI-0.5);ctx.stroke();ctx.fillStyle="#ffd700";ctx.strokeStyle="#daa520";ctx.lineWidth=3;const medR=t.r*0.5;ctx.beginPath();ctx.moveTo(0,t.r*1.1+medR);for(let i=1;i<=8;i++){const angle=i*(2*Math.PI/8);ctx.lineTo(medR*Math.sin(angle),t.r*1.1+medR*Math.cos(angle))}ctx.closePath();ctx.fill();ctx.stroke()}else if(t.behavior==="construct"){const phaseColor=t.phase===1?t.color:"#ff4500";ctx.fillStyle=phaseColor+"aa";ctx.strokeStyle=phaseColor;ctx.lineWidth=3;if(t.phase===2){ctx.shadowColor=phaseColor;ctx.shadowBlur=25}const bodyW=t.r*1.2,bodyH=t.r*1.5,headH=t.r*0.7;ctx.beginPath();ctx.moveTo(-bodyW*.5,bodyH*.5);ctx.lineTo(-bodyW*.6,bodyH*.2);ctx.lineTo(-bodyW*.4,-bodyH*.6);ctx.lineTo(0,-bodyH*.5);ctx.lineTo(bodyW*.4,-bodyH*.6);ctx.lineTo(bodyW*.6,bodyH*.2);ctx.lineTo(bodyW*.5,bodyH*.5);ctx.closePath();ctx.fill();ctx.stroke();const shoulderY=-bodyH*.3,shoulderX=bodyW*.4;const armW=.4*t.r,armH=.9*t.r;ctx.beginPath();ctx.moveTo(-shoulderX,shoulderY);ctx.lineTo(-shoulderX-armW*.5,shoulderY+armH*.2);ctx.lineTo(-shoulderX,shoulderY+armH);ctx.lineTo(-shoulderX+armW*.5,shoulderY+armH*.8);ctx.closePath();ctx.fill();ctx.stroke();ctx.beginPath();ctx.moveTo(shoulderX,shoulderY);ctx.lineTo(shoulderX+armW*.5,shoulderY+armH*.2);ctx.lineTo(shoulderX,shoulderY+armH);ctx.lineTo(shoulderX-armW*.5,shoulderY+armH*.8);ctx.closePath();ctx.fill();ctx.stroke();const eyeR=t.r*.2+2*Math.sin(performance.now()/200);const eyeGrad=ctx.createRadialGradient(0,-headH*.1,0,0,-headH*.1,eyeR);eyeGrad.addColorStop(0,"#ffffff");eyeGrad.addColorStop(.3,phaseColor);eyeGrad.addColorStop(1,"#ff4500");ctx.fillStyle=eyeGrad;ctx.beginPath();ctx.arc(0,-headH*.1,eyeR,0,2*Math.PI);ctx.fill()}else if(t.behavior==="avian"){const wingSpan=t.r*1.8,bodyH=t.r*0.8,headR=t.r*0.4;ctx.fillStyle=t.color;ctx.strokeStyle="#e6e6fa";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,-bodyH/2);ctx.lineTo(wingSpan/2,-bodyH/4);ctx.lineTo(wingSpan/2,bodyH/4);ctx.lineTo(0,bodyH/2);ctx.lineTo(-wingSpan/2,bodyH/4);ctx.lineTo(-wingSpan/2,-bodyH/4);ctx.closePath();ctx.fill();ctx.stroke();ctx.beginPath();ctx.arc(0,-bodyH/2,headR,0,2*Math.PI);ctx.fill();ctx.stroke();ctx.fillStyle="#ffd700";ctx.beginPath();ctx.moveTo(0,-bodyH/2-headR/2);ctx.lineTo(headR/2,-bodyH/2+headR/2);ctx.lineTo(-headR/2,-bodyH/2+headR/2);ctx.closePath();ctx.fill();ctx.fillStyle="#ff4500";ctx.beginPath();ctx.arc(-headR/3,-bodyH/2-headR/4,headR/4,0,2*Math.PI);ctx.arc(headR/3,-bodyH/2-headR/4,headR/4,0,2*Math.PI);ctx.fill()}else{const grad=ctx.createRadialGradient(0,0,t.r*0.6,0,0,t.r);grad.addColorStop(0,t.color);grad.addColorStop(1,"#000000");ctx.fillStyle=grad;ctx.beginPath();ctx.arc(0,0,t.r,0,2*Math.PI);ctx.fill();ctx.strokeStyle="#888";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-t.r,0);ctx.lineTo(t.r,0);ctx.stroke();for(let i=1;i<6;i++){const y=t.r*i/6;ctx.beginPath();ctx.arc(0,0,t.r,Math.PI-Math.asin(y/t.r),Math.asin(y/t.r));ctx.stroke();ctx.beginPath();ctx.arc(0,0,t.r,Math.PI+Math.asin(y/t.r),-Math.asin(y/t.r));ctx.stroke()}const dishR=t.r*0.3;ctx.fillStyle="#444";ctx.beginPath();ctx.arc(-t.r*0.4, -t.r*0.4, dishR, 0, 2*Math.PI);ctx.fill();ctx.fillStyle="white";ctx.beginPath();ctx.arc(-t.r*0.4,-t.r*0.4,dishR*0.4+1*Math.sin(performance.now()/150),0,2*Math.PI);ctx.fill()} ctx.globalAlpha = 1.0; ctx.restore() }
     function drawShip(t, e, player) { ctx.save();ctx.translate(t,e);if(player.isInvincible || player.hasShieldBubble){ctx.beginPath();ctx.arc(0,0,24,0,2*Math.PI);const g=ctx.createRadialGradient(0,0,18,0,0,24);g.addColorStop(0,"#9a66ff11");g.addColorStop(1,"#9a66ff");ctx.fillStyle=g;ctx.fill()}ctx.beginPath();ctx.moveTo(0,-20);ctx.lineTo(12,8);ctx.lineTo(8,14);ctx.lineTo(0,10);ctx.lineTo(-8,14);ctx.lineTo(-12,8);ctx.closePath();const o=ctx.createLinearGradient(0,-20,0,14);o.addColorStop(0,"#b266ff");o.addColorStop(.5,"#7a49cc");o.addColorStop(1,"#4d2a80");ctx.fillStyle=o;ctx.fill();ctx.lineWidth=2;ctx.strokeStyle="#c49cff";ctx.stroke();ctx.strokeStyle="#b266ff";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-12,5);ctx.lineTo(-20,-2);ctx.lineTo(-18,8);ctx.moveTo(12,5);ctx.lineTo(20,-2);ctx.lineTo(18,8);ctx.stroke();const r=performance.now()/1e3;ctx.globalAlpha=.8+.2*Math.sin(10*r);ctx.fillStyle="#cc99ff";ctx.beginPath();ctx.ellipse(-5,16,3,6,0,0,2*Math.PI);ctx.ellipse(5,16,3,6,0,0,2*Math.PI);ctx.fill();ctx.globalAlpha=1;ctx.fillStyle="#ffffff";ctx.beginPath();ctx.arc(0,-8,3,0,2*Math.PI);ctx.fill();
         if (player.hasRearGuard && player.rearGuardReady) {
             ctx.fillStyle = `rgba(100, 255, 255, ${0.4 + 0.3 * Math.sin(performance.now() / 200)})`;
@@ -2857,10 +2875,4 @@ function maybeAutoVoidStep(player){
 </script>
 </body>
 </html>
-"
-and the user has asked "beef's ability isnt triggering.  i also want it to make beef stop shooting during the sequence so it doesnt just kill all the enemies before he gets there.
-
-can i have the cursor back for desktop but make it small slightly opaque white.
-
-make sure cheats dont allow a high score.  i dont want beef having magnet or methane by default anymore either."
 
