@@ -459,12 +459,19 @@
         ctx.setTransform(cvs.width / W, 0, 0, cvs.height / H, 0, 0); 
     }).observe(stage);
     const mouse = { x: W / 2, y: H * 0.8 };
-    const pointFromEvent = (e) => { 
-        const r = cvs.getBoundingClientRect(), 
-        cx = 'clientX' in e ? e.clientX : e.touches[0].clientX, 
-        cy = 'clientY' in e ? e.clientY : e.touches[0].clientY; 
-        return { x: (cx - r.left) * (W / r.width), y: (cy - r.top) * (H / r.height) }; 
+    const pointFromEvent = (e) => {
+        const r = cvs.getBoundingClientRect();
+        let touch = e;
+        if (e.changedTouches && e.changedTouches.length > 0) {
+            touch = e.changedTouches[0];
+        } else if (e.touches && e.touches.length > 0) {
+            touch = e.touches[0];
+        }
+        const cx = touch.clientX;
+        const cy = touch.clientY;
+        return { x: (cx - r.left) * (W / r.width), y: (cy - r.top) * (H / r.height) };
     };
+
 
     // --- NEW FLAME PARTICLE CLASS ---
     class FlameParticle {
@@ -551,13 +558,6 @@
     cvs.addEventListener('mousemove', (e) => { const p = pointFromEvent(e); mouse.x = p.x; mouse.y = p.y; });
     cvs.addEventListener('touchstart', (e) => { const p = pointFromEvent(e); mouse.x = p.x; mouse.y = p.y; e.preventDefault(); }, { passive: false });
     cvs.addEventListener('touchmove', (e) => { const p = pointFromEvent(e); mouse.x = p.x; mouse.y = p.y; e.preventDefault(); }, { passive: false });
-    cvs.addEventListener('contextmenu', e => {
-        e.preventDefault();
-        if (store.player.pilotGenome === 'wizard' && !store.isPaused && !store.isGameOver) {
-            const p = pointFromEvent(e);
-            tryVoidStep(store.player, p);
-        }
-    });
     
     // --- AUDIO ---
     const bgm = q('bgmAudio');
@@ -951,9 +951,7 @@
                     });
                 }
             }
-        }
-    
-        if (p.pilotGenome === 'rocketman') {
+        } else if (p.pilotGenome === 'rocketman') {
             // --- New Flame Wall Logic ---
             if (p.flameWallCooldown > 0) p.flameWallCooldown -= dt;
             if (p.flameWallActiveT > 0) p.flameWallActiveT -= dt;
@@ -3171,6 +3169,30 @@ function tryVoidStep(player, target, now = performance.now()){
         }
         
         if(key===' '){e.preventDefault();useGrenade()}
+    });
+
+    let lastTapTime = 0;
+    cvs.addEventListener('touchend', e => {
+        e.preventDefault();
+        if (store.player.pilotGenome === 'wizard' && !store.isPaused && !store.isGameOver) {
+            const now = performance.now();
+            const DOUBLE_TAP_DELAY = 300; // ms
+            if (now - lastTapTime < DOUBLE_TAP_DELAY) {
+                const p = pointFromEvent(e);
+                tryVoidStep(store.player, p);
+                lastTapTime = 0; 
+            } else {
+                lastTapTime = now;
+            }
+        }
+    }, { passive: false });
+
+    cvs.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        if (store.player.pilotGenome === 'wizard' && !store.isPaused && !store.isGameOver) {
+            const p = pointFromEvent(e);
+            tryVoidStep(store.player, p);
+        }
     });
 
     function frame(now){
