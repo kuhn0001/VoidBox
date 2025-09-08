@@ -17,7 +17,7 @@
         html,body{height:100%;margin:0;background:radial-gradient(1200px 800px at 50% 40%,#330044,var(--bg));color:var(--fg);font-family:'Audiowide',ui-sans-serif,system-ui}
         #wrap{position:fixed;inset:0;display:grid;place-items:center;min-height:100svh;padding:0;}
         .stage{width:100vw; height:100svh; position:relative;display:grid;place-items:center;background:#000;border-radius:0;overflow:hidden;box-shadow:0 0 60px rgba(255,0,255,.4);container-type:inline-size;z-index:2;}
-        canvas{background:transparent;border-radius:16px;touch-action:none;cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="rgba(255,255,255,0.7)" viewBox="0 0 16 16"><circle cx="8" cy="8" r="8"/></svg>'), auto;}
+        canvas{background:transparent;border-radius:16px;touch-action:none;cursor: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' stroke='rgba(255,153,204,0.8)' stroke-width='2' fill='none'/%3E%3Ccircle cx='16' cy='16' r='8' stroke='rgba(255,153,204,0.6)' stroke-width='2' fill='none'/%3E%3Cline x1='16' y1='0' x2='16' y2='32' stroke='rgba(255,153,204,0.5)' stroke-width='1'/%3E%3Cline x1='0' y1='16' x2='32' y2='16' stroke='rgba(255,153,204,0.5)' stroke-width='1'/%3E%3C/svg%3E") 16 16, auto;}
         
         #ui { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
         .panel { pointer-events: auto; }
@@ -429,11 +429,11 @@
     </div>
 
     <audio id="bgmAudio" loop></audio>
-    <audio id="audioExplosion" src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_18210332d3.mp3?filename=explosion-6805.mp3" preload="auto"></audio>
-    <audio id="audioHorn" src="https://cdn.pixabay.com/download/audio/2022/04/08/audio_f574a2539f.mp3?filename=a-war-horn-for-a-viking-army-14421.mp3" preload="auto"></audio>
-    <audio id="audioHit" src="https://cdn.pixabay.com/download/audio/2021/08/04/audio_a133a82209.mp3?filename=thunk-34903.mp3" preload="auto"></audio>
-    <audio id="audioTrap" src="https://cdn.pixabay.com/download/audio/2024/02/01/audio_eb6700c01b.mp3?filename=dark-trap-loop-184589.mp3" preload="auto"></audio>
-    <audio id="audioDogs" src="https://cdn.pixabay.com/download/audio/2022/02/11/audio_95930e1572.mp3?filename=aggressive-dog-barking-7239.mp3" preload="auto"></audio>
+    <audio id="audioExplosion" src="Explosion.m4a" preload="auto"></audio>
+    <audio id="audioHorn" src="Horn.wav" preload="auto"></audio>
+    <audio id="audioHit" src="thunk.wav" preload="auto"></audio>
+    <audio id="audioTrap" src="trap.m4a" preload="auto"></audio>
+    <audio id="audioDogs" src="dogs.m4a" preload="auto"></audio>
 
     <button id="fsEnterBtn" class="fixed-btn" type="button">FULLSCREEN</button>
     <div id="bottom-right-controls">
@@ -466,9 +466,98 @@
         return { x: (cx - r.left) * (W / r.width), y: (cy - r.top) * (H / r.height) }; 
     };
 
+    // --- NEW FLAME PARTICLE CLASS ---
+    class FlameParticle {
+        constructor(x, y) {
+            this.x = x + (Math.random() - 0.5) * 8;
+            this.y = y;
+            this.vx = (Math.random() - 0.5) * 20;
+            this.vy = -Math.random() * 80 - 40;
+            this.maxLife = 7; // 7 second life
+            this.life = this.maxLife * (0.7 + Math.random() * 0.3);
+            this.size = Math.random() * 12 + 6;
+            this.heat = Math.random();
+            this.wobble = Math.random() * Math.PI * 2;
+            this.wobbleSpeed = Math.random() * 2 + 1;
+        }
+
+        update(dt) {
+            this.life -= dt;
+            if (this.life <= 0) return false;
+
+            this.y += this.vy * dt;
+            this.x += this.vx * dt;
+            
+            this.vy -= 100 * dt; 
+            
+            this.wobble += this.wobbleSpeed * dt;
+            this.x += Math.sin(this.wobble) * 15 * dt;
+            
+            this.size *= 1 + (0.1 * dt);
+            
+            return true;
+        }
+
+        draw() {
+            if (this.life <= 0) return;
+            
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            
+            const lifeRatio = this.life / this.maxLife;
+            
+            const layers = [
+                { size: this.size * 2.5, alpha: lifeRatio * 0.15 },
+                { size: this.size * 1.5, alpha: lifeRatio * 0.3 },
+                { size: this.size, alpha: lifeRatio * 0.8 }
+            ];
+            
+            layers.forEach(layer => {
+                ctx.globalAlpha = layer.alpha;
+                
+                const gradient = ctx.createRadialGradient(
+                    this.x, this.y, 0,
+                    this.x, this.y, layer.size
+                );
+                
+                if (this.heat > 0.6) {
+                    gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+                    gradient.addColorStop(0.2, 'rgba(200, 220, 255, 0.8)');
+                    gradient.addColorStop(0.5, 'rgba(255, 200, 100, 0.5)');
+                    gradient.addColorStop(1, 'rgba(255, 100, 0, 0)');
+                } else if (this.heat > 0.3) {
+                    gradient.addColorStop(0, 'rgba(255, 240, 180, 1)');
+                    gradient.addColorStop(0.3, 'rgba(255, 180, 50, 0.8)');
+                    gradient.addColorStop(0.6, 'rgba(255, 100, 0, 0.4)');
+                    gradient.addColorStop(1, 'rgba(200, 50, 0, 0)');
+                } else {
+                    gradient.addColorStop(0, 'rgba(255, 150, 50, 1)');
+                    gradient.addColorStop(0.4, 'rgba(255, 80, 0, 0.6)');
+                    gradient.addColorStop(0.7, 'rgba(200, 30, 0, 0.3)');
+                    gradient.addColorStop(1, 'rgba(100, 0, 0, 0)');
+                }
+                
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, layer.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            ctx.restore();
+        }
+    }
+
+
     cvs.addEventListener('mousemove', (e) => { const p = pointFromEvent(e); mouse.x = p.x; mouse.y = p.y; });
     cvs.addEventListener('touchstart', (e) => { const p = pointFromEvent(e); mouse.x = p.x; mouse.y = p.y; e.preventDefault(); }, { passive: false });
     cvs.addEventListener('touchmove', (e) => { const p = pointFromEvent(e); mouse.x = p.x; mouse.y = p.y; e.preventDefault(); }, { passive: false });
+    cvs.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        if (store.player.pilotGenome === 'wizard' && !store.isPaused && !store.isGameOver) {
+            const p = pointFromEvent(e);
+            tryVoidStep(store.player, p);
+        }
+    });
     
     // --- AUDIO ---
     const bgm = q('bgmAudio');
@@ -516,7 +605,8 @@
         // Projectile progression
         rearMultishot: 0, addFrontNext: true,
         // Rocketman ability state
-        flameWallCooldown: 0, lastX: W/2,
+        flameWallCooldown: 0,
+        flameWallActiveT: 0,
         // BEEF ability state
         beefChargeState: 'ready', beefChargeCooldown: 0, beefChargeOrigin: null, beefChargeTarget: null, beefChargeT: 0,
     };
@@ -526,6 +616,7 @@
         world: { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, waveStartTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0, enemyDensityBonus: 1.0, powerupCooldown: 0, xpMultiplier: 1.0, collarStacks: 0 },
         player: { ...player_initial_state },
         boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [],
+        flameParticles: [],
         iceman: null,
         _startTs: performance.now(),
         cheatInvincibilityCooldown: 0,
@@ -534,8 +625,8 @@
     };
 
     const LEVEL_UPGRADES = [
-        { id: 'dmg', name: 'PLASMA CORE', icon: '💥', desc: '+7% damage', apply: () => store.player.dmgMult *= 1.07 },
-        { id: 'fire', name: 'OVERCLOCK', icon: '🔥', desc: '+10% fire rate', apply: () => store.player.fireRate *= 0.90 },
+        { id: 'dmg', name: 'PLASMA CORE', icon: '💥', desc: '+7% damage', apply: () => { store.player.dmgMult *= 1.07; } },
+        { id: 'fire', name: 'OVERCLOCK', icon: '🔥', desc: '+10% fire rate', apply: () => { store.player.fireRate *= 0.90; } },
         { id: 'multi', name: 'SCATTER PROTOCOL', icon: '☄️', desc: '+1 projectile', apply: () => {
             const p = store.player;
             if (p.multishot < 5) {
@@ -808,9 +899,6 @@
         }
     
         // --- GENOME ABILITIES & COOLDOWNS ---
-        if (p.pilotGenome === 'wizard') {
-            maybeAutoVoidStep(p);
-        }
     
         if (p.pilotGenome === 'beef') {
             if (p.beefChargeCooldown > 0) {
@@ -866,27 +954,21 @@
         }
     
         if (p.pilotGenome === 'rocketman') {
-            if (!p.flameWallCooldown) p.flameWallCooldown = 14; // Default cooldown
-            p.flameWallCooldown -= dt;
-            const h_vel = Math.abs(p.x - p.lastX) / dt;
-    
-            if (p.flameWallCooldown <= 0 && h_vel > 350) {
-                p.flameWallCooldown = 14; // Cooldown reduced by 30% (from 20)
-                const wallWidth = 150;
-                const numFlames = 10;
-                for (let i = 0; i < numFlames; i++) {
-                    const offsetX = (i - (numFlames - 1) / 2) * (wallWidth / numFlames);
-                    store.bullets.push({
-                        x: p.x + offsetX, y: p.y, vx: 0, vy: 0,
-                        r: 8 + Math.random() * 4,
-                        col: `rgba(255, ${100 + Math.random() * 100}, 0, 0.8)`,
-                        dmg: 15 * p.dmgMult,
-                        life: 8, isFlame: true, pierce: true, // Persist longer
-                        particles: [], particleSpawnT: 0 // For new flame effect
-                    });
+            // --- New Flame Wall Logic ---
+            if (p.flameWallCooldown > 0) p.flameWallCooldown -= dt;
+            if (p.flameWallActiveT > 0) p.flameWallActiveT -= dt;
+
+            if (p.flameWallCooldown <= 0) {
+                p.flameWallActiveT = 0.5; // Activate for 0.5 seconds
+                p.flameWallCooldown = 10; // Reset cooldown to 10 seconds
+            }
+
+            if (p.flameWallActiveT > 0) {
+                // Spawn a cluster of particles for a thicker effect
+                for (let i = 0; i < 5; i++) {
+                     store.flameParticles.push(new FlameParticle(p.x, p.y + 10)); // spawn behind ship
                 }
             }
-            p.lastX = p.x;
         }
     
         // --- Standard player logic ---
@@ -1095,6 +1177,15 @@
         });
     }
     
+    function stepFlameParticles(dt) {
+        for (let i = store.flameParticles.length - 1; i >= 0; i--) {
+            const p = store.flameParticles[i];
+            if (!p.update(dt)) {
+                store.flameParticles.splice(i, 1);
+            }
+        }
+    }
+
     function stepWorld(dt) {
         stepPlayer(dt);
         if (store.boss) stepBoss(dt);
@@ -1102,6 +1193,7 @@
         stepMissiles(dt);
         stepLasers(dt);
         stepMines(dt);
+        stepFlameParticles(dt);
         updateVoidStepSystems(store.enemies);
         
         if (store.world.powerupCooldown > 0) {
@@ -1156,24 +1248,30 @@
                 // Enemy is stunned: skip movement and attacks
             } else {
                 // --- ENEMY MOVEMENT AND ATTACKS ---
+                let speedMultiplier = 1.0;
+                if (e.slowTimer > 0) {
+                    speedMultiplier = 0.3; // 70% slow
+                    e.slowTimer -= dt;
+                }
+
                 if(e.type === 'construct_shard' || e.type === 'avian_hatchling') {
                      const dx = store.player.x - e.x, dy = store.player.y - e.y;
                      const dist = Math.sqrt(dx * dx + dy * dy);
                      if (dist > 1) {
-                         e.x += (dx / dist) * e.v * dt;
-                         e.y += (dy / dist) * e.v * dt;
+                         e.x += (dx / dist) * e.v * speedMultiplier * dt;
+                         e.y += (dy / dist) * e.v * speedMultiplier * dt;
                      }
                 } else if (e.type === 'angler') {
                     const dx = store.player.x - e.x;
                     const chaseSpeed = 30; // slow horizontal drift
                     if(Math.abs(dx) > 10) {
-                        e.x += Math.sign(dx) * chaseSpeed * dt;
+                        e.x += Math.sign(dx) * chaseSpeed * speedMultiplier * dt;
                     }
-                    e.y += e.v * dt; // slow vertical descent
+                    e.y += e.v * speedMultiplier * dt; // slow vertical descent
                 } else if (e.type === 'manta') {
                     e.t += dt;
                     e.x = e.startX + e.amplitude * Math.sin(e.t * e.frequency);
-                    e.y += e.v * dt; // medium vertical descent
+                    e.y += e.v * speedMultiplier * dt; // medium vertical descent
                 } else {
                     if(store.player.powerupTimers['stealth']) {
                         e.fireT = 1; 
@@ -1185,12 +1283,12 @@
                             e.orbitCenter.x = store.boss.x;
                             e.orbitCenter.y = store.boss.y;
                         }
-                        e.orbitAngle += e.orbitSpeed * dt;
+                        e.orbitAngle += e.orbitSpeed * speedMultiplier * dt;
                         e.x = e.orbitCenter.x + e.orbitRadius * Math.cos(e.orbitAngle);
                         e.y = e.orbitCenter.y + e.orbitRadius * Math.sin(e.orbitAngle);
                     } else {
-                        e.x += (e.vx || 0) * dt;
-                        e.y += e.v * dt;
+                        e.x += (e.vx || 0) * speedMultiplier * dt;
+                        e.y += e.v * speedMultiplier * dt;
                     }
                 }
     
@@ -1262,7 +1360,6 @@
             if (b.isFlame) {
                 b.life -= dt;
                 if (b.life <= 0) b.dead = true;
-                if (collide(b, store.player)) b.dead = true; // Disappear on contact with player
 
                 // Particle logic for crackling flames
                 b.particleSpawnT -= dt;
@@ -1294,6 +1391,9 @@
             if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true;
             store.enemies.forEach(e => { 
                 if (!e.dead && collide(b, e)) { 
+                    if (b.isFlame) {
+                        e.slowTimer = 1.0; // Apply 1 second slow
+                    }
                     let dmg = b.dmg || 20;
                     const isCrit = Math.random() < store.player.critChance;
                     if(isCrit) {
@@ -1312,6 +1412,9 @@
                 } 
             });
             if (store.boss && !b.dead && collide(b, store.boss)) { 
+                if (b.isFlame) {
+                    store.boss.slowTimer = 1.0;
+                }
                 playSound('hit');
                 let dmg = b.dmg || 20; if (b.isDrone) dmg *= 0.4;
                 const isCrit = Math.random() < store.player.critChance;
@@ -1378,7 +1481,7 @@
             });
         }
 
-        ['bullets', 'eBullets', 'enemies', 'powerups', 'mines', 'missiles', 'lasers'].forEach(key => store[key] = store[key].filter(i => !i.dead));
+        ['bullets', 'eBullets', 'enemies', 'powerups', 'mines', 'missiles', 'lasers', 'flameParticles'].forEach(key => store[key] = store[key].filter(i => !i.dead));
         store.activeEffects = store.activeEffects.filter(e => e.isActive !== false);
         if (!store.boss && store.enemies.length === 0) { 
             if (store.world.waveStartTime > 0) { // Don't run on first wave
@@ -1494,7 +1597,7 @@
         
         store.world = { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, waveStartTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0, enemyDensityBonus: 1.0, powerupCooldown: 0, xpMultiplier: 1.0, collarStacks: 0 };
         store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = []; 
-        store.drones = []; store.hounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = [];
+        store.drones = []; store.hounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
         store.iceman = null;
         store._startTs = performance.now(); store.isGameOver = false;
         store.cheatsUsed = false;
@@ -1518,6 +1621,10 @@
         ctx.globalAlpha = 1;
         
         store.powerups.forEach(p => drawPowerup(p)); store.missiles.forEach(m => drawMissile(m));
+        
+        // Draw new flame particles
+        store.flameParticles.forEach(p => p.draw());
+
         store.eBullets.forEach(b => { ctx.fillStyle = b.col; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 2 * Math.PI); ctx.fill(); });
         
         store.bullets.forEach(b => {
@@ -1528,7 +1635,7 @@
             
             const r = b.r * 1.5; 
 
-            if (b.isLavaChunk) { // NEW DRAWING LOGIC
+            if (b.isLavaChunk) { // This is for the flamethrower upgrade
                 // Main rocky shape
                 ctx.beginPath();
                 ctx.moveTo(0, -r);
@@ -1549,16 +1656,21 @@
                     ctx.fill();
                 });
 
-            } else if (b.isFlame) { // This is now just for Rocketman
+            } else if (b.isFlame) { // This is for mine explosions etc.
+                 // Draw a semi-transparent core for visibility
+                ctx.fillStyle = `rgba(255, 150, 50, ${0.3 * (b.life / 50)})`; // Fades out with life
+                ctx.beginPath();
+                ctx.arc(0, 0, b.r * 0.5, 0, 2 * Math.PI);
+                ctx.fill();
                  // Render particles for a crackling effect
                 b.particles.forEach(p => {
                     const t = p.life / p.maxLife;
-                    const r = p.r * t;
+                    const r_particle = p.r * t;
                     const g = Math.floor(255 * (0.4 + t * 0.6));
                     const b_val = Math.floor(100 * t);
                     ctx.fillStyle = `rgba(${g}, ${b_val}, 0, ${0.8 * t})`;
                     ctx.beginPath();
-                    ctx.arc(p.x, p.y, r, 0, 2 * Math.PI);
+                    ctx.arc(p.x, p.y, r_particle, 0, 2 * Math.PI);
                     ctx.fill();
                 });
             } else if (b.isSwirl || b.explosive) {
@@ -2143,23 +2255,23 @@
                           const dy = this.y - b.y;
                           const distSq = dx*dx + dy*dy;
                           if(distSq < this.radius**2) {
-                               const dist = Math.sqrt(distSq);
-                               if (dist > 50) {
-                                   b.x += (dx/dist) * pullStrength * 0.5 * dt;
-                                   b.y += (dy/dist) * pullStrength * 0.5 * dt;
-                               }
-                               if (damageThisFrame && distSq < damageRadiusSq) {
-                                   const damageToDeal = b.hpMax * (0.10 * store.player.dmgMult);
-                                   const cap = b.hpMax * 0.5;
-                                   let actualDamage = damageToDeal;
-                                   if (this.totalDamageDealtToBoss + actualDamage > cap) {
-                                       actualDamage = cap - this.totalDamageDealtToBoss;
-                                   }
-                                   if (actualDamage > 0) {
-                                       b.hp -= actualDamage;
-                                       this.totalDamageDealtToBoss += actualDamage;
-                                   }
-                               }
+                              const dist = Math.sqrt(distSq);
+                              if (dist > 50) {
+                                  b.x += (dx/dist) * pullStrength * 0.5 * dt;
+                                  b.y += (dy/dist) * pullStrength * 0.5 * dt;
+                              }
+                              if (damageThisFrame && distSq < damageRadiusSq) {
+                                  const damageToDeal = b.hpMax * (0.10 * store.player.dmgMult);
+                                  const cap = b.hpMax * 0.5;
+                                  let actualDamage = damageToDeal;
+                                  if (this.totalDamageDealtToBoss + actualDamage > cap) {
+                                      actualDamage = cap - this.totalDamageDealtToBoss;
+                                  }
+                                  if (actualDamage > 0) {
+                                      b.hp -= actualDamage;
+                                      this.totalDamageDealtToBoss += actualDamage;
+                                  }
+                              }
                            }
                      }
 
@@ -2453,88 +2565,280 @@
     function showShopWithHighlight() { showShop(); announce('Low health! Use the Mech Forge to repair!'); setTimeout(() => { const repairItem = document.querySelector('.shop-item[data-key="repair"]'); if (repairItem) repairItem.classList.add('highlight'); }, 100); }
     function createHound(side) {
         const isTuxedo = side === -1 || side === -2;
-        const color = isTuxedo ? { main: '#222222', accent: '#FFFFFF' } : { main: '#F0E68C', accent: '#BDB76B' };
-        return { x: store.player.x + 50 * side, y: store.player.y + 20, side, target: null, attackT: 0, r: 12, killCount: 0, color };
+        // Default color logic
+        let color = isTuxedo ? { main: '#222222', accent: '#FFFFFF' } : { main: '#F0E68C', accent: '#BDB76B' };
+        
+        // New properties for upgraded hounds
+        let isUpgraded = false;
+        let eyeType = 'normal';
+        let expression = 'normal';
+
+        if (Math.abs(side) > 1) { // This is the second, upgraded pair
+            isUpgraded = true;
+            if (side === -2) { // The bigger, silly one
+                color = { main: '#c4b5a0', accent: '#333' }; // whitish blonde
+                eyeType = 'swirly';
+                expression = 'silly';
+            } else { // side === 2, the smaller, crazy one
+                color = { main: '#ffb366', accent: '#000' }; // orangish blonde
+                eyeType = 'dilated';
+                expression = 'mischievous';
+            }
+        }
+
+        return { 
+            x: store.player.x + 50 * side, 
+            y: store.player.y + 20, 
+            side, 
+            target: null, 
+            attackT: 0, 
+            r: 12, 
+            killCount: 0, 
+            color,
+            isUpgraded,
+            eyeType,
+            expression
+        };
     }
     function stepHounds(dt) { if (!store.player.hasHounds) return; store.hounds.forEach(h => { if (!h.target || h.target.dead || h.target.hp <= 0) { let closest = null, closestDist = Infinity; const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies; potentialTargets.forEach(e => { if (e.dead || e.hp <= 0) return; const dist = (h.x - e.x)**2 + (h.y - e.y)**2; if (dist < closestDist) { closest = e; closestDist = dist; } }); h.target = closest; } if (h.target) { const tx = h.target.x, ty = h.target.y; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); const speed = 350; if (dist > 30) { h.x += (dx / dist) * speed * dt; h.y += (dy / dist) * speed * dt; } else { h.attackT -= dt; if (h.attackT <= 0) { h.attackT = 0.25; let dmg = 8 * store.player.dmgMult; if (h.target === store.boss) dmg *= 0.3; if (!h.target.dead && h.target.hp > 0) { h.target.hp -= dmg; if (h.target.hp <= 0) { h.killCount++; if (h.killCount > 0 && h.killCount % 12 === 0) { playSound('dogs'); } } } } } } else { const tx = store.player.x + h.side * 50, ty = store.player.y + 20; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); if (dist > 5) { h.x += dx * 5 * dt; h.y += dy * 5 * dt; } } }); }
     function drawHound(h) {
         ctx.save();
         ctx.translate(h.x, h.y);
-        const time = performance.now() / 100;
-        ctx.globalAlpha = 0.6 + 0.2 * Math.sin(time + h.side);
+        const time = performance.now();
+        ctx.globalAlpha = 0.6 + 0.2 * Math.sin(time / 1000 + h.side);
         const r = h.r;
-        const { main, accent } = h.color;
-        const isTuxedo = accent === '#FFFFFF';
 
-        ctx.fillStyle = main;
-        ctx.beginPath();
-        ctx.moveTo(-r, -r * 0.5);
-        ctx.quadraticCurveTo(0, -r * 1.5, r, -r * 0.5);
-        ctx.quadraticCurveTo(r * 1.2, 0, r, r);
-        ctx.lineTo(-r, r);
-        ctx.quadraticCurveTo(-r * 1.2, 0, -r, -r * 0.5);
-        ctx.closePath();
-        ctx.fill();
+        if (!h.isUpgraded) {
+            // --- EXISTING DRAW LOGIC for first pair ---
+            const { main, accent } = h.color;
+            const isTuxedo = accent === '#FFFFFF';
 
-        ctx.fillStyle = isTuxedo ? main : accent;
-        ctx.beginPath();
-        ctx.moveTo(-r, -r * 0.4);
-        ctx.lineTo(-r * 0.5, -r * 1.2);
-        ctx.lineTo(-r * 0.2, -r * 0.6);
-        ctx.closePath();
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(r, -r * 0.4);
-        ctx.lineTo(r * 0.5, -r * 1.2);
-        ctx.lineTo(r * 0.2, -r * 0.6);
-        ctx.closePath();
-        ctx.fill();
-
-        if (isTuxedo) {
-            ctx.fillStyle = accent;
+            ctx.fillStyle = main;
             ctx.beginPath();
-            ctx.moveTo(-r * 0.6, r * 0.2);
-            ctx.quadraticCurveTo(0, r, r * 0.6, r * 0.2);
-            ctx.lineTo(0, r * 0.5);
+            ctx.moveTo(-r, -r * 0.5);
+            ctx.quadraticCurveTo(0, -r * 1.5, r, -r * 0.5);
+            ctx.quadraticCurveTo(r * 1.2, 0, r, r);
+            ctx.lineTo(-r, r);
+            ctx.quadraticCurveTo(-r * 1.2, 0, -r, -r * 0.5);
             ctx.closePath();
             ctx.fill();
+
+            ctx.fillStyle = isTuxedo ? main : accent;
+            ctx.beginPath();
+            ctx.moveTo(-r, -r * 0.4);
+            ctx.lineTo(-r * 0.5, -r * 1.2);
+            ctx.lineTo(-r * 0.2, -r * 0.6);
+            ctx.closePath();
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(r, -r * 0.4);
+            ctx.lineTo(r * 0.5, -r * 1.2);
+            ctx.lineTo(r * 0.2, -r * 0.6);
+            ctx.closePath();
+            ctx.fill();
+
+            if (isTuxedo) {
+                ctx.fillStyle = accent;
+                ctx.beginPath();
+                ctx.moveTo(-r * 0.6, r * 0.2);
+                ctx.quadraticCurveTo(0, r, r * 0.6, r * 0.2);
+                ctx.lineTo(0, r * 0.5);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            ctx.fillStyle = "#FFF";
+            ctx.beginPath();
+            ctx.arc(-r * 0.4, -r * 0.2, r * 0.25, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(r * 0.4, -r * 0.2, r * 0.25, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.fillStyle = "#000";
+            ctx.beginPath();
+            ctx.arc(-r * 0.35, -r * 0.15, r * 0.1, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(r * 0.45, -r * 0.15, r * 0.1, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.fillStyle = isTuxedo ? main : accent;
+            ctx.beginPath();
+            ctx.ellipse(0, r * 0.3, r * 0.5, r * 0.4, 0, 0, 2 * Math.PI);
+            ctx.fill();
+
+            ctx.fillStyle = "#FFF";
+            ctx.beginPath();
+            ctx.moveTo(-r * 0.3, r * 0.5);
+            ctx.lineTo(-r * 0.1, r * 0.5);
+            ctx.lineTo(-r * 0.2, r * 0.9);
+            ctx.closePath();
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(r * 0.3, r * 0.5);
+            ctx.lineTo(r * 0.1, r * 0.5);
+            ctx.lineTo(r * 0.2, r * 0.9);
+            ctx.closePath();
+            ctx.fill();
+        } else {
+             // --- NEW DRAW LOGIC for upgraded pair ---
+            const color = h.color.main;
+            const opacity = ctx.globalAlpha; // Use the calculated opacity
+            const eyeType = h.eyeType;
+            const expression = h.expression;
+            const radius = r * 1.5; // Make them a bit bigger to match example
+
+            // If it's the crazy one, draw its hat first
+            if (h.side === 2) {
+                ctx.save();
+                ctx.globalAlpha = 0.7 * opacity;
+                ctx.fillStyle = '#9966ff';
+                ctx.beginPath();
+                ctx.moveTo(0, -radius * 1.8);
+                ctx.lineTo(-radius * 0.8, -radius * 0.9);
+                ctx.lineTo(radius * 0.8, -radius * 0.9);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // Draw main circular body
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(0, 0, radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw pointy ears
+            ctx.beginPath();
+            ctx.moveTo(-radius * 0.6, -radius * 0.7);
+            ctx.lineTo(-radius * 0.4, -radius * 1.2);
+            ctx.lineTo(-radius * 0.2, -radius * 0.8);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.moveTo(radius * 0.6, -radius * 0.7);
+            ctx.lineTo(radius * 0.4, -radius * 1.2);
+            ctx.lineTo(radius * 0.2, -radius * 0.8);
+            ctx.fill();
+
+            // Draw wavy ghost bottom
+            ctx.beginPath();
+            ctx.moveTo(-radius, 0);
+            for(let i = 0; i <= 6; i++) {
+                let waveX = -radius + (radius * 2 / 6) * i;
+                let waveY = radius + Math.sin(i * 0.8 + time * 0.005) * radius * 0.2; // use time instead of time++
+                ctx.lineTo(waveX, waveY);
+            }
+            ctx.lineTo(radius, 0);
+            ctx.fill();
+
+            // Draw crazy eyes based on type
+            ctx.fillStyle = 'white';
+            
+            if (eyeType === 'dilated') {
+                // Left eye - super dilated
+                ctx.beginPath();
+                ctx.ellipse(-radius * 0.35, -radius * 0.1, radius * 0.28, radius * 0.35, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Right eye - different size for crazy look
+                ctx.beginPath();
+                ctx.ellipse(radius * 0.35, -radius * 0.15, radius * 0.25, radius * 0.32, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Pupils - tiny and off-center
+                ctx.fillStyle = 'black';
+                ctx.beginPath();
+                ctx.arc(-radius * 0.3 + Math.sin(time * 0.001) * radius * 0.05, 
+                        -radius * 0.05, radius * 0.08, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(radius * 0.4, 
+                        -radius * 0.2 + Math.cos(time * 0.001) * radius * 0.05, 
+                        radius * 0.06, 0, Math.PI * 2);
+                ctx.fill();
+            } else { // 'swirly'
+                // Swirly hypnotized eyes
+                ctx.beginPath();
+                ctx.arc(-radius * 0.35, -radius * 0.1, radius * 0.25, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(radius * 0.35, -radius * 0.1, radius * 0.25, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Draw swirls in eyes
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = radius * 0.04;
+                
+                // Left eye swirl
+                ctx.beginPath();
+                for(let t = 0; t < Math.PI * 4; t += 0.1) {
+                    let r_swirl = t * radius * 0.02;
+                    let sx = -radius * 0.35 + Math.cos(t + time * 0.001) * r_swirl;
+                    let sy = -radius * 0.1 + Math.sin(t + time * 0.001) * r_swirl;
+                    if(t === 0) ctx.moveTo(sx, sy);
+                    else ctx.lineTo(sx, sy);
+                }
+                ctx.stroke();
+                
+                // Right eye swirl
+                ctx.beginPath();
+                for(let t = 0; t < Math.PI * 4; t += 0.1) {
+                    let r_swirl = t * radius * 0.02;
+                    let sx = radius * 0.35 + Math.cos(t - time * 0.001) * r_swirl;
+                    let sy = -radius * 0.1 + Math.sin(t - time * 0.001) * r_swirl;
+                    if(t === 0) ctx.moveTo(sx, sy);
+                    else ctx.lineTo(sx, sy);
+                }
+                ctx.stroke();
+            }
+            
+            // Draw vampire fangs
+            ctx.fillStyle = 'white';
+            
+            // Left fang
+            ctx.beginPath();
+            ctx.moveTo(-radius * 0.25, radius * 0.2);
+            ctx.lineTo(-radius * 0.2, radius * 0.5);
+            ctx.lineTo(-radius * 0.15, radius * 0.2);
+            ctx.fill();
+            
+            // Right fang
+            ctx.beginPath();
+            ctx.moveTo(radius * 0.25, radius * 0.2);
+            ctx.lineTo(radius * 0.2, radius * 0.5);
+            ctx.lineTo(radius * 0.15, radius * 0.2);
+            ctx.fill();
+            
+            // Small middle teeth
+            for(let i = -1; i <= 1; i++) {
+                if(i === 0) continue;
+                ctx.beginPath();
+                ctx.moveTo(i * radius * 0.08, radius * 0.2);
+                ctx.lineTo(i * radius * 0.08 + radius * 0.02, radius * 0.35);
+                ctx.lineTo(i * radius * 0.08 - radius * 0.02, radius * 0.35);
+                ctx.fill();
+            }
+            
+            // Draw mouth/expression
+            ctx.strokeStyle = expression === 'silly' ? '#000' : '#333';
+            ctx.lineWidth = radius * 0.03;
+            ctx.beginPath();
+            
+            if (expression === 'silly') {
+                // Wavy silly mouth
+                ctx.moveTo(-radius * 0.3, radius * 0.15);
+                ctx.quadraticCurveTo(-radius * 0.1, radius * 0.05, 0, radius * 0.15);
+                ctx.quadraticCurveTo(radius * 0.1, radius * 0.25, radius * 0.3, radius * 0.15);
+            } else {
+                // Mischievous grin
+                ctx.arc(0, 0, radius * 0.35, Math.PI * 0.2, Math.PI * 0.8);
+            }
+            ctx.stroke();
         }
-
-        ctx.fillStyle = "#FFF";
-        ctx.beginPath();
-        ctx.arc(-r * 0.4, -r * 0.2, r * 0.25, 0, 2 * Math.PI);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(r * 0.4, -r * 0.2, r * 0.25, 0, 2 * Math.PI);
-        ctx.fill();
-        
-        ctx.fillStyle = "#000";
-        ctx.beginPath();
-        ctx.arc(-r * 0.35, -r * 0.15, r * 0.1, 0, 2 * Math.PI);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(r * 0.45, -r * 0.15, r * 0.1, 0, 2 * Math.PI);
-        ctx.fill();
-        
-        ctx.fillStyle = isTuxedo ? main : accent;
-        ctx.beginPath();
-        ctx.ellipse(0, r * 0.3, r * 0.5, r * 0.4, 0, 0, 2 * Math.PI);
-        ctx.fill();
-
-        ctx.fillStyle = "#FFF";
-        ctx.beginPath();
-        ctx.moveTo(-r * 0.3, r * 0.5);
-        ctx.lineTo(-r * 0.1, r * 0.5);
-        ctx.lineTo(-r * 0.2, r * 0.9);
-        ctx.closePath();
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(r * 0.3, r * 0.5);
-        ctx.lineTo(r * 0.1, r * 0.5);
-        ctx.lineTo(r * 0.2, r * 0.9);
-        ctx.closePath();
-        ctx.fill();
-        
         ctx.restore();
     }
     function drawIceman(iceman) {
@@ -2606,11 +2910,8 @@
     // --- VOID STEP ABILITY ---
     const VOIDSTEP = {
         cooldownMs: 3500,
-        baseDist: 200,
-        maxFieldFrac: 0.25,
         iframeMs: 220,
         riftMs: 600,
-        whipThresholdPxPerSec: 1200,
         edgePadding: 6
     };
     let lastVoidStep = -9999;
@@ -2621,28 +2922,6 @@
     function spawnRift(x1,y1,x2,y2, life=VOIDSTEP.riftMs){
         rifts.push({ x1,y1,x2,y2, birth: performance.now(), life, dead:false });
     }
-    const MouseWhip = {
-        x: 0, y: 0, vx: 0, vy: 0, t: performance.now(),
-        init(canvas){
-            const rect = () => canvas.getBoundingClientRect();
-            window.addEventListener('mousemove', (e) => {
-                const now = performance.now();
-                const dt = Math.max(1, now - MouseWhip.t); // ms
-                const rx = e.clientX - rect().left;
-                const ry = e.clientY - rect().top;
-                const vx = (rx - MouseWhip.x) / (dt/1000); // px/s
-                const vy = (ry - MouseWhip.y) / (dt/1000); // px/s
-                MouseWhip.vx = vx; MouseWhip.vy = vy;
-                MouseWhip.x = rx; MouseWhip.y = ry;
-                MouseWhip.t = now;
-            }, { passive: true });
-        },
-        speed(){ return Math.hypot(this.vx, this.vy); },
-        dir(){
-            const s = this.speed() || 1;
-            return { x: this.vx / s, y: this.vy / s };
-        }
-    };
 
 function clampToField(nx, ny){
     const pad = VOIDSTEP.edgePadding;
@@ -2651,23 +2930,12 @@ function clampToField(nx, ny){
     return { nx, ny };
 }
 
-function tryVoidStep(player, inputDir, now = performance.now()){
+function tryVoidStep(player, target, now = performance.now()){
     const cd = VOIDSTEP.cooldownMs;
     if (now - lastVoidStep < cd) return false;
 
-    const maxDist = Math.min(
-        VOIDSTEP.baseDist,
-        VOIDSTEP.maxFieldFrac * Math.min(W, H)
-    );
-
-    const dx = inputDir.x, dy = inputDir.y;
-    const len = Math.hypot(dx,dy) || 1;
-
     const start = { x: player.x, y: player.y };
-    let nx = player.x + (dx/len) * maxDist;
-    let ny = player.y + (dy/len) * maxDist;
-
-    ({ nx, ny } = clampToField(nx, ny));
+    let { nx, ny } = clampToField(target.x, target.y);
 
     spawnRift(start.x, start.y, nx, ny, VOIDSTEP.riftMs);
 
@@ -2677,15 +2945,6 @@ function tryVoidStep(player, inputDir, now = performance.now()){
 
     spawnBlinkFlash(nx, ny);
     return true;
-}
-
-function maybeAutoVoidStep(player){
-    const now = performance.now();
-    if (now - lastVoidStep < VOIDSTEP.cooldownMs) return;
-    const speed = MouseWhip.speed();
-    if (speed < VOIDSTEP.whipThresholdPxPerSec) return;
-    const dir = MouseWhip.dir();
-    tryVoidStep(player, dir, now);
 }
     
     function updateVoidStepSystems(enemies){
@@ -2703,12 +2962,12 @@ function maybeAutoVoidStep(player){
         rifts.forEach(r => {
             const t = (performance.now() - r.birth)/r.life;
             if (t>=1) { r.dead = true; return; }
-            const a = 1 - t;
+            const a = (1 - t) * 0.8 + 0.2; // Starts more opaque, fades to 20%
             ctx.save();
             ctx.globalAlpha = a;
-            ctx.strokeStyle = "#66FFDA";
-            ctx.lineWidth = 4*(1-t);
-            ctx.shadowColor = "#66FFDA"; ctx.shadowBlur = 12*(1-t);
+            ctx.strokeStyle = "#ff99cc"; // More magical color
+            ctx.lineWidth = 10 * (1-t); // Thicker trail
+            ctx.shadowColor = "#b266ff"; ctx.shadowBlur = 25 * (1-t);
             ctx.beginPath(); ctx.moveTo(r.x1, r.y1); ctx.lineTo(r.x2, r.y2); ctx.stroke();
             ctx.restore();
         });
@@ -2716,10 +2975,19 @@ function maybeAutoVoidStep(player){
             const t = (performance.now() - f.birth)/f.life;
             if (t>=1) { f.dead = true; return; }
             ctx.save();
+            // Outer shockwave
             ctx.globalAlpha = 1 - t;
-            ctx.shadowColor="#66FFDA"; ctx.shadowBlur=18*(1-t);
-            ctx.beginPath(); ctx.arc(f.x, f.y, 8 + 8*t, 0, Math.PI*2);
-            ctx.fillStyle="#66FFDA"; ctx.fill();
+            ctx.strokeStyle = "#ff99cc";
+            ctx.lineWidth = 4 * (1 - t);
+            ctx.shadowColor="#b266ff"; ctx.shadowBlur=20;
+            ctx.beginPath();
+            ctx.arc(f.x, f.y, 20 + 30 * t, 0, Math.PI*2);
+            ctx.stroke();
+
+            // Inner core
+            ctx.globalAlpha = 1 - t*t; // Fade out faster at the end
+            ctx.beginPath(); ctx.arc(f.x, f.y, 20 * (1-t), 0, Math.PI*2);
+            ctx.fillStyle="#ffddff"; ctx.fill();
             ctx.restore();
         });
     }
@@ -2917,7 +3185,6 @@ function maybeAutoVoidStep(player){
     }
     
     try{ 
-        MouseWhip.init(cvs);
         ensureName(); 
         refreshScoreList(); 
         requestAnimationFrame(frame) 
