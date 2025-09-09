@@ -600,7 +600,29 @@
    
     const store = {
         frame: 0, last: performance.now(), isGameOver: false, isPaused: false,
-        world: { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, waveStartTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0, enemyDensityBonus: 1.0, powerupCooldown: 0, xpMultiplier: 1.0, collarStacks: 0, consecutiveFastKills: 0, fastKillBonus: 0 },
+        isDamageOff: false,          // <-- ADD THIS
+        savedPlayerState: null,      // <-- AND THIS
+        world: { 
+            wave: 1, 
+            score: 0, 
+            shards: 0, 
+            xp: 0, 
+            level: 1, 
+            kills: 0, 
+            bosses: 0,
+            bossesAtPilotSelection: null, // <-- AND THIS
+            lowHealthTutorialShown: false, 
+            bossSpawnTime: 0, 
+            waveStartTime: 0, 
+            enemyHealthBonus: 1.0, 
+            bossHealthBonus: 1.0, 
+            enemyDensityBonus: 1.0, 
+            powerupCooldown: 0, 
+            xpMultiplier: 1.0, 
+            collarStacks: 0, 
+            consecutiveFastKills: 0, 
+            fastKillBonus: 0 
+        },
         player: { ...player_initial_state },
         boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [],
         flameParticles: [],
@@ -1384,31 +1406,32 @@
    
     function resetGame() {
         store.player = JSON.parse(JSON.stringify(player_initial_state));
-       
+    
         store.world = { 
-        wave: 1, 
-        score: 0, 
-        shards: 0, 
-        xp: 0, 
-        level: 1, 
-        kills: 0, 
-        bosses: 0,
-        bossesAtPilotSelection: null, // <-- ADD THIS LINE
-        lowHealthTutorialShown: false, 
-        bossSpawnTime: 0, 
-        waveStartTime: 0, 
-        enemyHealthBonus: 1.0, 
-        bossHealthBonus: 1.0, 
-        enemyDensityBonus: 1.0, 
-        powerupCooldown: 0, 
-        xpMultiplier: 1.0, 
-        collarStacks: 0, 
-        consecutiveFastKills: 0, 
-        fastKillBonus: 0 
-    },
+            wave: 1, 
+            score: 0, 
+            shards: 0, 
+            xp: 0, 
+            level: 1, 
+            kills: 0, 
+            bosses: 0,
+            bossesAtPilotSelection: null,
+            lowHealthTutorialShown: false, 
+            bossSpawnTime: 0, 
+            waveStartTime: 0, 
+            enemyHealthBonus: 1.0, 
+            bossHealthBonus: 1.0, 
+            enemyDensityBonus: 1.0, 
+            powerupCooldown: 0, 
+            xpMultiplier: 1.0, 
+            collarStacks: 0, 
+            consecutiveFastKills: 0, 
+            fastKillBonus: 0 
+        }; // <-- ERROR FIXED: Changed comma to semicolon
+        
         store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = [];
         store.drones = []; store.hounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
-        store.lightningBolts = []; // <<< ADDED FOR NEW ABILITY
+        store.lightningBolts = [];
         store.iceman = null;
         store._startTs = performance.now(); store.isGameOver = false;
         store.cheatsUsed = false;
@@ -1568,8 +1591,24 @@
                 case 2: numFlames = 12; angleRange = 70; speed = 280; life = 0.4; break;
                 default: numFlames = 16; angleRange = 90; speed = 320; life = 0.5; break;
             }
-            for (let i = 0; i < numFlames; i++) { const angle = (Math.random() - 0.5) * angleRange * Math.PI / 180; const currentSpeed = speed + Math.random() * 40; const sideOffset = (i % 2 === 0) ? -15 : 15; const spawnX = p.x + sideOffset; const spawnY = p.y + 5; store.bullets.push({ x: spawnX, y: spawnY, vx: Math.sin(angle) * currentSpeed + (sideOffset * 2), vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 3, col: `rgba(255, ${60 + Math.random() * 60}, 0, 0.9)`, dmg: 5 * p.dmgMult, life: life * 1.5, isFlame: true, isLavaChunk: true, particles: [], particleSpawnT: 0 }); }
-            if (p.hasIceman && store.iceman) { for (let i = 0; i < numFlames; i++) { const angle = (Math.random() - 0.5) * angleRange * Math.PI / 180; const currentSpeed = speed + Math.random() * 40; const sideOffset = (i % 2 === 0) ? -15 : 15; const spawnX = store.iceman.x + sideOffset; const spawnY = store.iceman.y + 5; store.bullets.push({ x: spawnX, y: spawnY, vx: Math.sin(angle) * currentSpeed + (sideOffset * 2), vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 2, col: `rgba(100, 150, 255, 0.7)`, dmg: 3 * p.dmgMult * 0.35, life: life, isFlame: true, isIceman: true, isLavaChunk: true, particles: [], particleSpawnT: 0 }); } }
+            for (let i = 0; i < numFlames; i++) {
+                const angle = (Math.random() - 0.5) * angleRange * Math.PI / 180;
+                const currentSpeed = speed + Math.random() * 40;
+                const sideOffset = (i % 2 === 0) ? -15 : 15;
+                const spawnX = p.x + sideOffset;
+                const spawnY = p.y + 5;
+                store.bullets.push({ x: spawnX, y: spawnY, vx: Math.sin(angle) * currentSpeed + (sideOffset * 2), vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 3, col: `rgba(255, ${60 + Math.random() * 60}, 0, 0.9)`, dmg: 2 * p.dmgMult, life: life * 1.5, isFlame: true, isLavaChunk: true, particles: [], particleSpawnT: 0 });
+            }
+            if (p.hasIceman && store.iceman) {
+                for (let i = 0; i < numFlames; i++) {
+                    const angle = (Math.random() - 0.5) * angleRange * Math.PI / 180;
+                    const currentSpeed = speed + Math.random() * 40;
+                    const sideOffset = (i % 2 === 0) ? -15 : 15;
+                    const spawnX = store.iceman.x + sideOffset;
+                    const spawnY = store.iceman.y + 5;
+                    store.bullets.push({ x: spawnX, y: spawnY, vx: Math.sin(angle) * currentSpeed + (sideOffset * 2), vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 2, col: `rgba(100, 150, 255, 0.7)`, dmg: 2 * p.dmgMult * 0.35, life: life, isFlame: true, isIceman: true, isLavaChunk: true, particles: [], particleSpawnT: 0 });
+                }
+            }
         }
         for (let i = 0; i < totalMultishot; i++) { const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: p.x + 10 * Math.sin(angle), y: p.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: p.explosive ? "#cc99ff" : "#b266ff", dmg: 20 * p.dmgMult, pierce: p.piercing, explosive: p.explosive }); }
         if (p.hasIceman && store.iceman) { for (let i = 0; i < totalMultishot; i++) { const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: store.iceman.x + 10 * Math.sin(angle), y: store.iceman.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: "#66aaff", dmg: 20 * p.dmgMult * 0.35, pierce: p.piercing, explosive: p.explosive, isIceman: true }); } }
@@ -1581,186 +1620,34 @@
             for (let i = 0; i < numPairs; i++) {
                 const spread = 15 + i * 10;
                 const vx_offset = 50 + i * 20;
-                store.bullets.push({ x: p.x - spread, y: p.y, vx: -vx_offset, vy: -speed, r: 4, col: '#ff8080', dmg: 5 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true });
-                store.bullets.push({ x: p.x + spread, y: p.y, vx: vx_offset, vy: -speed, r: 4, col: '#ff8080', dmg: 5 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true });
+                store.bullets.push({ x: p.x - spread, y: p.y, vx: -vx_offset, vy: -speed, r: 4, col: '#ff8080', dmg: 2 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true });
+                store.bullets.push({ x: p.x + spread, y: p.y, vx: vx_offset, vy: -speed, r: 4, col: '#ff8080', dmg: 2 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true });
                 if (p.hasIceman && store.iceman) {
-                    store.bullets.push({ x: store.iceman.x - spread, y: store.iceman.y, vx: -vx_offset, vy: -speed, r: 4, col: '#66aaff', dmg: 5 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true });
-                    store.bullets.push({ x: store.iceman.x + spread, y: store.iceman.y, vx: vx_offset, vy: -speed, r: 4, col: '#66aaff', dmg: 5 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true });
+                    store.bullets.push({ x: store.iceman.x - spread, y: store.iceman.y, vx: -vx_offset, vy: -speed, r: 4, col: '#66aaff', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true });
+                    store.bullets.push({ x: store.iceman.x + spread, y: store.iceman.y, vx: vx_offset, vy: -speed, r: 4, col: '#66aaff', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true });
                 }
             }
         }
     }
-    function stepBoss(dt) { if (!store.boss) return; const b = store.boss; b.t += dt; if (b.y < 100) b.y += b.vy * dt; const dmgScale = Math.pow(1.065, store.world.wave - 1); switch (b.behavior) { case 'sentinel': stepBossOmegaSentinel(dt, b, dmgScale); break; case 'malignus': stepBossCoreMalignus(dt, b, dmgScale); break; case 'hex': stepBossTheHex(dt, b, dmgScale); break; case 'construct': stepBossGeometron(dt, b, dmgScale); break; case 'avian': stepBossVoidRaven(dt, b, dmgScale); break; } }
     function stepBossOmegaSentinel(dt, b, dmgScale) { if (b.y >= 100) { b.moveT += dt; b.x += Math.sin(b.moveT * 2) * 200 * dt; b.x = clamp(b.x, 100, W - 100); } b.fireT -= dt; if (b.fireT <= 0) { if (b.patternPhase % 4 === 0) { b.fireT = 1.5; const n = 12; for (let i = 0; i < n; i++) { const a = (i * Math.PI / 6) + b.t; store.eBullets.push({ x: b.x, y: b.y, vx: 150 * Math.cos(a), vy: 150 * Math.sin(a), r: 4, col: '#4169e1', dmg: 12 * dmgScale }); } } else { b.fireT = 0.2; const a = Math.atan2(store.player.y - b.y, store.player.x - b.x); store.eBullets.push({ x: b.x, y: b.y, vx: 250 * Math.cos(a), vy: 250 * Math.sin(a), r: 5, col: '#add8e6', dmg: 18 * dmgScale }); } b.patternPhase++; } }
     function stepBossCoreMalignus(dt, b, dmgScale) { if (b.hp / b.hpMax <= 0.07 && !b.isEnraged) { b.isEnraged = true; playSound('horn'); } if (b.y >= 100) { b.moveT += dt; b.x = W / 2 + (W / 2 - 100) * Math.sin(b.moveT * 0.5); } b.fireT -= dt; if (b.fireT <= 0) { b.fireT = b.isEnraged ? 0.6 : 0.8; const n = 12, g = 3, s = Math.floor(Math.random() * (n - g)); for (let i = 0; i < n; i++) { if (i >= s && i < s + g) continue; const p = (W / (n + 1)) * (i + 1); store.eBullets.push({ x: p, y: b.y, vx: 0, vy: 180, r: 6, col: b.color, dmg: 20 * dmgScale }); } } }
-    function stepBossTheHex(dt, b, dmgScale) {
-        if (b.y >= 100) { b.moveT += dt; b.x = W * 0.2 + (W * 0.6) * Math.abs(Math.sin(b.moveT * 0.4)); }
-        b.fireT -= dt;
-       
-        if (b.hp / b.hpMax < 0.5 && !b.isEnraged) {
-            b.isEnraged = true;
-            playSound('trap');
-        }
+    function stepBossTheHex(dt, b, dmgScale) { if (b.y >= 100) { b.moveT += dt; b.x = W * 0.2 + (W * 0.6) * Math.abs(Math.sin(b.moveT * 0.4)); } b.fireT -= dt; if (b.hp / b.hpMax < 0.5 && !b.isEnraged) { b.isEnraged = true; playSound('trap'); } const fireRate = b.isEnraged ? 0.8 : 1.5; if (b.fireT <= 0) { b.fireT = fireRate; b.attackPhase = (b.attackPhase + 1) % 3; switch(b.attackPhase) { case 0: for (let i=0; i<20; i++) { setTimeout(() => { store.eBullets.push({ x: Math.random() * W, y: 0, vx: 0, vy: 250, r: 5, col: '#ffc83d', dmg: 15 * dmgScale }); }, i * 50); } break; case 1: for (let i = 0; i < 4; i++) { const isHorizontal = i < 2; const y = isHorizontal ? 100 + i * 150 : 0; const x = isHorizontal ? 0 : 200 + (i-2) * 250; const vx = isHorizontal ? 300 : 0; const vy = isHorizontal ? 0 : 300; store.eBullets.push({ x, y, vx, vy, r: 4, col: '#80ffff', dmg: 20 * dmgScale, isLaser: true, life: 2.5 }); } break; case 2: const targetX = store.player.x; const dx = targetX - b.x; const dashSpeed = 800; b.vx = Math.sign(dx) * dashSpeed; setTimeout(() => b.vx = 0, 500); break; } } if(b.vx) { b.x += b.vx * dt; store.eBullets.push({ x: b.x, y: b.y, vx: 0, vy: 0, r: 8, col: '#ff8080', dmg: 25 * dmgScale, life: 1 }); } }
+    function stepBossGeometron(dt, b, dmgScale) { if (b.hp / b.hpMax < 0.5 && b.phase === 1) { b.phase = 2; b.isInvincible = true; playSound('horn'); store.activeEffects.push(createEffect("bossPhaseChange", b.x, b.y)); b.attackPhase = 0; b.fireT = 2.0; setTimeout(() => { b.isInvincible = false; }, 2000); announce('GEOMETRON ENRAGED!'); } if (b.y >= 100) { b.moveT += dt; const moveSpeed = (b.phase === 1) ? 0.3 : 0.7; b.x = W / 2 + (W / 2 - 120) * Math.sin(b.moveT * moveSpeed); } b.fireT -= dt; if (b.fireT <= 0) { if (b.phase === 1) { b.attackPhase = (b.attackPhase + 1) % 4; b.fireT = 2.5; switch(b.attackPhase) { case 0: case 2: const n = 16; for (let i = 0; i < n; i++) { const a = (i * 2 * Math.PI / n) + b.t * 0.5; store.eBullets.push({ x: b.x, y: b.y, vx: 180 * Math.cos(a), vy: 180 * Math.sin(a), r: 5, col: b.color, dmg: 15 * dmgScale }); } break; case 1: case 3: const numShards = 3 + Math.floor(store.world.wave / 10); for(let i = 0; i < numShards; i++) { const shard = spawnEnemy('construct_shard'); shard.x = b.x + (Math.random() - 0.5) * 100; shard.y = b.y + 50; store.enemies.push(shard); } break; } } else { b.attackPhase = (b.attackPhase + 1) % 4; b.fireT = 2.0; switch(b.attackPhase) { case 0: case 2: const spread = 8; const numShots = 8; const angleToPlayer = Math.atan2(store.player.y - b.y, store.player.x - b.x); for (let i = 0; i < numShots; i++) { const angle = angleToPlayer + (i - (numShots - 1) / 2) * (spread * Math.PI / 180) * 0.1; store.eBullets.push({ x: b.x, y: b.y, vx: 350 * Math.cos(angle), vy: 350 * Math.sin(angle), r: 4, col: '#ff4500', dmg: 22 * dmgScale, life: 2.0 }); } break; case 1: case 3: const numShards = 2; for(let i = 0; i < numShards; i++) { const shard = spawnEnemy('construct_shard'); shard.x = b.x + (i === 0 ? -50 : 50); shard.y = b.y + 50; shard.hp *= 1.5; shard.v *= 1.3; shard.color = '#ff4500'; store.enemies.push(shard); } break; } } } }
+    function stepBossVoidRaven(dt, b, dmgScale) { b.moveT += dt; if (!b.isDiving) { b.y = 100 + Math.sin(b.moveT * 2) * 20; b.x = W/2 + Math.cos(b.moveT * 0.5) * (W/2 - 100); } b.fireT -= dt; if (b.fireT <=0) { b.attackPhase = (b.attackPhase + 1) % 5; switch(b.attackPhase) { case 0: case 2: b.fireT = 1.2; for(let i = 0; i < 7; i++) { const angle = Math.atan2(store.player.y - b.y, store.player.x - b.x) + (i - 3) * 0.1; store.eBullets.push({ x: b.x, y: b.y, vx: Math.cos(angle) * 220, vy: Math.sin(angle) * 220, r: 4, col: b.color, dmg: 18 * dmgScale }); } break; case 1: case 3: b.fireT = 2.0; const numHatchlings = 2 + Math.floor(store.world.wave / 15); for(let i = 0; i < numHatchlings; i++) { const hatchling = spawnEnemy('avian_hatchling'); hatchling.x = b.x + (Math.random() - 0.5) * 80; hatchling.y = b.y + 40; store.enemies.push(hatchling); } break; case 4: b.fireT = 4.0; b.isDiving = true; b.diveTarget = { x: store.player.x, y: store.player.y }; const dx = b.diveTarget.x - b.x; const dy = b.diveTarget.y - b.y; const dist = Math.sqrt(dx*dx + dy*dy); b.vx = (dx / dist) * 400; b.vy = (dy / dist) * 400; setTimeout(() => { b.isDiving = false; b.vx = 0; b.vy = 30; }, 1500); break; } } if (b.isDiving) { b.x += b.vx * dt; b.y += b.vy * dt; } }
+    function stepBoss(dt) {
+        const b = store.boss;
+        b.t += dt;
+        if (b.y < 100) { b.y += b.vy * dt; }
+        const dmgScale = Math.pow(1.065, store.world.wave - 1);
+        
+        if (b.slowTimer > 0) { b.slowTimer -= dt; dt *= 0.3; }
 
-        const fireRate = b.isEnraged ? 0.8 : 1.5;
-
-        if (b.fireT <= 0) {
-            b.fireT = fireRate;
-            b.attackPhase = (b.attackPhase + 1) % 3;
-
-            switch(b.attackPhase) {
-                case 0: // Shard Rain
-                    for (let i=0; i<20; i++) {
-                        setTimeout(() => {
-                            store.eBullets.push({ x: Math.random() * W, y: 0, vx: 0, vy: 250, r: 5, col: '#ffc83d', dmg: 15 * dmgScale });
-                        }, i * 50);
-                    }
-                    break;
-                case 1: // Laser Grid Trap
-                    for (let i = 0; i < 4; i++) {
-                        const isHorizontal = i < 2;
-                        const y = isHorizontal ? 100 + i * 150 : 0;
-                        const x = isHorizontal ? 0 : 200 + (i-2) * 250;
-                        const vx = isHorizontal ? 300 : 0;
-                        const vy = isHorizontal ? 0 : 300;
-                        store.eBullets.push({ x, y, vx, vy, r: 4, col: '#80ffff', dmg: 20 * dmgScale, isLaser: true, life: 2.5 });
-                    }
-                    break;
-                case 2: // Dash
-                    const targetX = store.player.x;
-                    const dx = targetX - b.x;
-                    const dashSpeed = 800;
-                    b.vx = Math.sign(dx) * dashSpeed;
-                    setTimeout(() => b.vx = 0, 500); // Dash for 0.5s
-                    break;
-            }
-        }
-       
-        if(b.vx) { // Leave trail while dashing
-            b.x += b.vx * dt;
-            store.eBullets.push({ x: b.x, y: b.y, vx: 0, vy: 0, r: 8, col: '#ff8080', dmg: 25 * dmgScale, life: 1 });
-        }
-    }
-    function stepBossGeometron(dt, b, dmgScale) {
-        if (b.hp / b.hpMax < 0.5 && b.phase === 1) {
-            b.phase = 2;
-            b.isInvincible = true;
-            playSound('horn');
-            store.activeEffects.push(createEffect("bossPhaseChange", b.x, b.y));
-            b.attackPhase = 0;
-            b.fireT = 2.0;
-            setTimeout(() => { b.isInvincible = false; }, 2000);
-            announce('GEOMETRON ENRAGED!');
-        }
-
-        if (b.y >= 100) {
-            b.moveT += dt;
-            const moveSpeed = (b.phase === 1) ? 0.3 : 0.7;
-            b.x = W / 2 + (W / 2 - 120) * Math.sin(b.moveT * moveSpeed);
-        }
-
-        b.fireT -= dt;
-        if (b.fireT <= 0) {
-            if (b.phase === 1) {
-                b.attackPhase = (b.attackPhase + 1) % 4;
-                b.fireT = 2.5;
-                switch(b.attackPhase) {
-                    case 0: case 2: // Radial Burst
-                        const n = 16;
-                        for (let i = 0; i < n; i++) {
-                            const a = (i * 2 * Math.PI / n) + b.t * 0.5;
-                            store.eBullets.push({ x: b.x, y: b.y, vx: 180 * Math.cos(a), vy: 180 * Math.sin(a), r: 5, col: b.color, dmg: 15 * dmgScale });
-                        }
-                        break;
-                    case 1: case 3: // Summon Shards
-                        const numShards = 3 + Math.floor(store.world.wave / 10);
-                        for(let i = 0; i < numShards; i++) {
-                            const shard = spawnEnemy('construct_shard');
-                            shard.x = b.x + (Math.random() - 0.5) * 100;
-                            shard.y = b.y + 50;
-                            store.enemies.push(shard);
-                        }
-                        break;
-                }
-            } else { // Phase 2
-                b.attackPhase = (b.attackPhase + 1) % 4;
-                b.fireT = 2.0;
-                switch(b.attackPhase) {
-                    case 0: case 2: // Laser Shotgun
-                        const spread = 8;
-                        const numShots = 8;
-                        const angleToPlayer = Math.atan2(store.player.y - b.y, store.player.x - b.x);
-                        for (let i = 0; i < numShots; i++) {
-                            const angle = angleToPlayer + (i - (numShots - 1) / 2) * (spread * Math.PI / 180) * 0.1;
-                            store.eBullets.push({ x: b.x, y: b.y, vx: 350 * Math.cos(angle), vy: 350 * Math.sin(angle), r: 4, col: '#ff4500', dmg: 22 * dmgScale, life: 2.0 });
-                        }
-                        break;
-                    case 1: case 3: // Summon Enraged Shards
-                        const numShards = 2;
-                        for(let i = 0; i < numShards; i++) {
-                            const shard = spawnEnemy('construct_shard');
-                            shard.x = b.x + (i === 0 ? -50 : 50);
-                            shard.y = b.y + 50;
-                            shard.hp *= 1.5; // More health
-                            shard.v *= 1.3;   // Faster
-                            shard.color = '#ff4500';
-                            store.enemies.push(shard);
-                        }
-                        break;
-                }
-            }
-        }
-    }
-    function stepBossVoidRaven(dt, b, dmgScale) {
-        b.moveT += dt;
-        if (!b.isDiving) {
-            b.y = 100 + Math.sin(b.moveT * 2) * 20;
-            b.x = W/2 + Math.cos(b.moveT * 0.5) * (W/2 - 100);
-        }
-
-        b.fireT -= dt;
-        if (b.fireT <=0) {
-            b.attackPhase = (b.attackPhase + 1) % 5;
-            switch(b.attackPhase) {
-                case 0: case 2: // Feather Shotgun
-                    b.fireT = 1.2;
-                    for(let i = 0; i < 7; i++) {
-                        const angle = Math.atan2(store.player.y - b.y, store.player.x - b.x) + (i - 3) * 0.1;
-                        store.eBullets.push({ x: b.x, y: b.y, vx: Math.cos(angle) * 220, vy: Math.sin(angle) * 220, r: 4, col: b.color, dmg: 18 * dmgScale });
-                    }
-                    break;
-                case 1: case 3: // Summon Hatchlings
-                    b.fireT = 2.0;
-                    const numHatchlings = 2 + Math.floor(store.world.wave / 15);
-                     for(let i = 0; i < numHatchlings; i++) {
-                        const hatchling = spawnEnemy('avian_hatchling');
-                        hatchling.x = b.x + (Math.random() - 0.5) * 80;
-                        hatchling.y = b.y + 40;
-                        store.enemies.push(hatchling);
-                    }
-                    break;
-                case 4: // Dive Bomb
-                    b.fireT = 4.0;
-                    b.isDiving = true;
-                    b.diveTarget = { x: store.player.x, y: store.player.y };
-                    const dx = b.diveTarget.x - b.x;
-                    const dy = b.diveTarget.y - b.y;
-                    const dist = Math.sqrt(dx*dx + dy*dy);
-                    b.vx = (dx / dist) * 400;
-                    b.vy = (dy / dist) * 400;
-
-                    setTimeout(() => {
-                        b.isDiving = false;
-                        b.vx = 0;
-                        b.vy = 30; // Return to top slowly
-                    }, 1500);
-                    break;
-            }
-        }
-
-        if (b.isDiving) {
-            b.x += b.vx * dt;
-            b.y += b.vy * dt;
+        switch (b.behavior) {
+            case 'sentinel': stepBossOmegaSentinel(dt, b, dmgScale); break;
+            case 'malignus': stepBossCoreMalignus(dt, b, dmgScale); break;
+            case 'hex':      stepBossTheHex(dt, b, dmgScale); break;
+            case 'construct':stepBossGeometron(dt, b, dmgScale); break;
+            case 'avian':    stepBossVoidRaven(dt, b, dmgScale); break;
         }
     }
     function drawMissile(m) {
@@ -1794,13 +1681,14 @@
         ctx.lineTo(3, 5);  // Go to the right base
         ctx.lineTo(0, 5 + flameSize); // Go to the tip of the flame
         ctx.closePath();
-    ctx.fill();
-    // --- END: ADDED CODE FOR FLAME ---
+        ctx.fill(); // <-- MOVED THIS LINE INSIDE THE FUNCTION
+        // --- END: ADDED CODE FOR FLAME ---
 
-    ctx.restore(); // Restore the canvas state
-}
-function drawPowerup(p) { const cfg = POWERUP_TYPES[p.type]; ctx.save(); ctx.translate(p.x, p.y); const pulse = 0.8 + 0.2 * Math.sin(performance.now() / 150); ctx.scale(pulse, pulse); ctx.beginPath(); ctx.arc(0, 0, p.r + 3, 0, Math.PI * 2); const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, p.r + 3); grad.addColorStop(0, '#FFD70099'); grad.addColorStop(1, '#FFD70000'); ctx.fillStyle = grad; ctx.fill(); ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.fillStyle = '#FFD70044'; ctx.fill(); ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 16px Orbitron'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(cfg.icon, 0, 1); ctx.restore(); }
-function drawDrone(d) { const p = store.player; ctx.save(); ctx.translate(p.x + d.offset, p.y + 20); ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(6, 6); ctx.lineTo(-6, 6); ctx.closePath(); ctx.fillStyle = '#c49cff'; ctx.fill(); ctx.restore(); }
+        ctx.restore(); // Restore the canvas state
+    }
+    function drawPowerup(p) { const cfg = POWERUP_TYPES[p.type]; ctx.save(); ctx.translate(p.x, p.y); const pulse = 0.8 + 0.2 * Math.sin(performance.now() / 150); ctx.scale(pulse, pulse); ctx.beginPath(); ctx.arc(0, 0, p.r + 3, 0, Math.PI * 2); const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, p.r + 3); grad.addColorStop(0, '#FFD70099'); grad.addColorStop(1, '#FFD70000'); ctx.fillStyle = grad; ctx.fill(); ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.fillStyle = '#FFD70044'; ctx.fill(); ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 16px Orbitron'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(cfg.icon, 0, 1); ctx.restore(); }
+    function drawDrone(d) { const p = store.player; ctx.save(); ctx.translate(p.x + d.offset, p.y + 20); ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(6, 6); ctx.lineTo(-6, 6); ctx.closePath(); ctx.fillStyle = '#c49cff'; ctx.fill(); ctx.restore(); }
+    
     function drawLaser(laser) {
         ctx.save();
         const trailLength = 200;
@@ -3256,6 +3144,58 @@ function tryVoidStep(player, target, now = performance.now()){
     let cheatCodeBuffer = "";
     let cheatTapCount = 0;
     let lastCheatTap = 0;
+
+    function activateDamageOffCheat() {
+    if (store.isDamageOff) return; // Cheat is already active
+    store.isDamageOff = true;
+    store.cheatsUsed = true;
+    announce('CHEAT: DAMAGE & ABILITIES OFF');
+
+    const p = store.player;
+    const propsToDisable = [
+        'dmgMult', 'multishot', 'rearMultishot', 'piercing', 'explosive', 
+        'flamethrowerLevel', 'missileVolley', 'critChance', 'critDamage', 
+        'hasLauncher', 'hasHounds', 'hasLazarusBeam', 'hasVoidBeam', 
+        'hasChainLightning', 'hasIceman', 'blinkDamage', 'missilePierce', 'missileCluster'
+    ];
+    
+    store.savedPlayerState = {};
+    propsToDisable.forEach(prop => {
+        store.savedPlayerState[prop] = p[prop]; // Save the current value
+        // Set the property to a "disabled" state
+        if (typeof p[prop] === 'number') {
+            p[prop] = 0;
+        } else if (typeof p[prop] === 'boolean') {
+            p[prop] = false;
+        }
+    });
+
+    // Special handling for entities that are not simple properties
+    store.savedPlayerState.hounds = store.hounds;
+    store.hounds = [];
+    store.savedPlayerState.iceman = store.iceman;
+    store.iceman = null;
+}
+
+    function deactivateDamageOffCheat() {
+        if (!store.isDamageOff || !store.savedPlayerState) return; // Cheat isn't active or no state saved
+        store.isDamageOff = false;
+        announce('CHEAT: DAMAGE & ABILITIES ON');
+
+        const p = store.player;
+        // Restore all saved properties
+        for (const prop in store.savedPlayerState) {
+            if (prop === 'hounds') {
+                store.hounds = store.savedPlayerState.hounds;
+            } else if (prop === 'iceman') {
+                store.iceman = store.savedPlayerState.iceman;
+            } else if (p.hasOwnProperty(prop)) {
+                p[prop] = store.savedPlayerState[prop];
+            }
+        }
+        
+        store.savedPlayerState = null; // Clear the saved state
+}
 
     function activateSubclassCheat() {
         // A pilot genome must be selected to see subclass choices.
