@@ -1396,7 +1396,48 @@
 
 
 
+    function handleBossDefeat() {
+        const fightDuration = (performance.now() - store.world.bossSpawnTime) / 1000;
+        if (store.boss.name === 'TRAP KING' && store.player.pilotGenome === null) {
+            store.player.pilotGenome = 'pending';
+            setTimeout(showPilotSelect, 1000);
+        }
+        if (store.world.bossesAtPilotSelection !== null && (store.world.bosses - store.world.bossesAtPilotSelection) === 2 && !store.player.subclass) {
+            setTimeout(showSubclassSelect, 1500);
+        }
+        store.world.score += 2000; store.world.shards += 25; store.world.xp += 100; store.world.bosses++;
+        const bossX = store.boss.x;
+        const bossY = store.boss.y;
+        store.boss = null;
+        announce('⚡ GUARDIAN DEFEATED ⚡');
+        explode(bossX, bossY, true);
 
+        let healthBonusMultiplier = 1.0, announcedAdaptation = false;
+        if (fightDuration <= 4) {
+            announcedAdaptation = true;
+            if (store.world.wave >= 15) {
+                store.world.consecutiveFastKills++;
+                if (store.world.consecutiveFastKills === 1) { store.world.fastKillBonus = 0.20; } else { store.world.fastKillBonus *= 2; }
+                healthBonusMultiplier = 1.4 + store.world.fastKillBonus;
+                announce(`STREAK x${store.world.consecutiveFastKills}! GUARDIAN OVERDRIVE!`);
+            } else { healthBonusMultiplier = 1.4; announce("GUARDIANS ADAPTING RAPIDLY!"); }
+            store.world.collarStacks++;
+        } else if (fightDuration > 10) {
+            store.world.collarStacks = 0; store.world.consecutiveFastKills = 0; store.world.fastKillBonus = 0;
+            healthBonusMultiplier = 1.0; announce("ADAPTATION RESET!");
+        } else {
+            announcedAdaptation = true; healthBonusMultiplier = 1.10;
+            store.world.consecutiveFastKills = 0; store.world.fastKillBonus = 0;
+            announce("GUARDIANS ADAPTING!");
+        }
+        store.world.bossHealthBonus *= healthBonusMultiplier;
+        if (announcedAdaptation) {
+            const enemyHealthBonus = healthBonusMultiplier > 1.1 ? 1.15 : 1.05;
+            store.world.enemyHealthBonus *= enemyHealthBonus;
+            store.world.enemyDensityBonus *= 1.10;
+            setTimeout(() => announce("ENEMY SWARMS INTENSIFYING!"), 1000);
+        }
+        }
     function explode(x, y, isBoss = false, isSmall = false) {
         playSound('explosion');
         if (isBoss) for (let i = 0; i < 5; i++) setTimeout(() => spawnPowerup(x, y), i * 300);
