@@ -1453,25 +1453,53 @@
         ctx.globalAlpha = 0.8; for (const s of starsA) { s.y += 30 * dt; if (s.y > H) s.y -= H; ctx.fillStyle = `rgba(255,0,255,${0.5 + 0.5 * Math.sin(time * 2 + s.pulse)})`; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 2 * Math.PI); ctx.fill(); }
         ctx.globalAlpha = 0.6; for (const s of starsB) { s.y += 60 * dt; if (s.y > H) s.y -= H; ctx.fillStyle = `rgba(204,0,255,${0.4 + 0.6 * Math.sin(time * 1.5 + s.pulse)})`; ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(0.1, s.r * (0.4 + 0.6 * Math.sin(time * 1.5 + s.pulse))), 0, 2 * Math.PI); ctx.fill(); }
         ctx.globalAlpha = 1;
-       
-        store.powerups.forEach(p => drawPowerup(p)); store.missiles.forEach(m => drawMissile(m));
-        store.lightningBolts.forEach(l => drawLightningBolt(l)); // <<< ADDED FOR NEW ABILITY
-       
-        // Draw new flame particles
+
+        // --- START: New logic for proximity effects ---
+        
+        // 1. Sort enemy bullets into "close" and "far" groups.
+        const closeBullets = [];
+        const farBullets = [];
+        const proximityThreshold = 110; // Approx. 4 ship lengths (player radius is 14)
+        const playerPos = store.player;
+
+        store.eBullets.forEach(b => {
+            const dx = b.x - playerPos.x;
+            const dy = b.y - playerPos.y;
+            // Use squared distance for efficiency (avoids square root)
+            const distSq = dx * dx + dy * dy; 
+            if (distSq < proximityThreshold * proximityThreshold) {
+                // Store the calculated distance to use for the fade effect
+                closeBullets.push({ bullet: b, dist: Math.sqrt(distSq) });
+            } else {
+                farBullets.push(b);
+            }
+        });
+        
+        // --- END: New logic ---
+
+        store.powerups.forEach(p => drawPowerup(p));
+        store.missiles.forEach(m => drawMissile(m));
+        store.lightningBolts.forEach(l => drawLightningBolt(l));
         store.flameParticles.forEach(p => p.draw());
 
-        store.eBullets.forEach(b => { ctx.fillStyle = b.col; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 2 * Math.PI); ctx.fill(); });
-       
+        // --- RENDER "FAR" BULLETS NORMALLY ---
+        farBullets.forEach(b => {
+            ctx.fillStyle = b.col;
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        
+        // --- RENDER PLAYER BULLETS (this happens before close enemy bullets) ---
         store.bullets.forEach(b => {
             ctx.save();
             ctx.translate(b.x, b.y);
             ctx.fillStyle = b.col;
             ctx.beginPath();
-           
+            
             const r = b.r * 1.5;
 
-            if (b.isLavaChunk) { // This is for the flamethrower upgrade
-                // Main rocky shape
+            if (b.isLavaChunk) {
                 ctx.beginPath();
                 ctx.moveTo(0, -r);
                 ctx.lineTo(r, r * 0.2);
@@ -1480,8 +1508,6 @@
                 ctx.lineTo(-r, r * 0.2);
                 ctx.closePath();
                 ctx.fill();
-
-                // Particle trail (smaller than rocketman's)
                 b.particles.forEach(p => {
                     const t = p.life / p.maxLife;
                     const particleR = p.r * t;
@@ -1490,14 +1516,11 @@
                     ctx.arc(p.x, p.y, particleR, 0, 2 * Math.PI);
                     ctx.fill();
                 });
-
-            } else if (b.isFlame) { // This is for mine explosions etc.
-                 // Draw a semi-transparent core for visibility
-                ctx.fillStyle = `rgba(255, 150, 50, ${0.3 * (b.life / 50)})`; // Fades out with life
+            } else if (b.isFlame) {
+                ctx.fillStyle = `rgba(255, 150, 50, ${0.3 * (b.life / 50)})`;
                 ctx.beginPath();
                 ctx.arc(0, 0, b.r * 0.5, 0, 2 * Math.PI);
                 ctx.fill();
-                 // Render particles for a crackling effect
                 b.particles.forEach(p => {
                     const t = p.life / p.maxLife;
                     const r_particle = p.r * t;
@@ -1527,14 +1550,65 @@
 
         store.lasers.forEach(l => drawLaser(l));
         store.mines.forEach(m => drawMine(m));
-        if(store.boss && store.boss.mines) store.boss.mines.forEach(mine => { ctx.save(); ctx.translate(mine.x, mine.y); ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fillStyle = `rgba(255, 128, 128, ${0.7 + 0.3 * Math.sin(performance.now() / 200)})`; ctx.fill(); ctx.restore(); });
-        store.enemies.forEach(e => drawEnemy(e)); if (store.boss) drawBoss(store.boss);
-        store.drones.forEach(d => drawDrone(d)); store.hounds.forEach(h => drawHound(h));
+        if (store.boss && store.boss.mines) store.boss.mines.forEach(mine => { ctx.save(); ctx.translate(mine.x, mine.y); ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fillStyle = `rgba(255, 128, 128, ${0.7 + 0.3 * Math.sin(performance.now() / 200)})`; ctx.fill(); ctx.restore(); });
+        store.enemies.forEach(e => drawEnemy(e));
+        if (store.boss) drawBoss(store.boss);
+        store.drones.forEach(d => drawDrone(d));
+        store.hounds.forEach(h => drawHound(h));
         if (store.iceman) drawIceman(store.iceman);
         drawShip(store.player.x, store.player.y, store.player);
+        
+        // --- RENDER "CLOSE" BULLETS LAST (so they appear on top) ---
+        closeBullets.forEach(item => {
+            const b = item.bullet;
+            const dist = item.dist;
+            
+            // This factor is 1 when the bullet is very close, and 0 at the edge of the threshold.
+            const proxFactor = 1.0 - (dist / proximityThreshold);
+
+            // 1. Draw the glow, which fades in based on proximity
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = proxFactor; // The glow is invisible at the edge and fully visible up close
+            const glowRadius = b.r * 4.0;
+            const gradient = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, glowRadius);
+            gradient.addColorStop(0.3, b.col);
+            gradient.addColorStop(1, b.col + '00');
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, glowRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore(); // Restores alpha and composite operation
+
+            // 2. Draw the main bullet body at its original size and color
+            ctx.fillStyle = b.col;
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 3. Draw a small, bright "hot" center that also fades in
+            ctx.fillStyle = `rgba(255, 255, 255, ${proxFactor * 0.8})`;
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.r * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        
         store.activeEffects.forEach(e => e.draw && e.draw());
         renderVoidStepSystems(ctx);
         updateHUD();
+
+        // Low health "heartbeat" warning
+        const player = store.player;
+        const healthRatio = player.hp / player.hpMax;
+        if (healthRatio < 0.25) {
+            const pulseSpeed = 8;
+            const pulseIntensity = 0.15 + (0.25 - healthRatio) * 0.4; 
+            const pulse = pulseIntensity * (0.5 + 0.5 * Math.sin(performance.now() * pulseSpeed / 1000));
+            ctx.save();
+            ctx.fillStyle = `rgba(255, 0, 0, ${pulse})`;
+            ctx.fillRect(0, 0, W, H);
+            ctx.restore();
+        }
     }
    
     function takeDamage(dmg) {
