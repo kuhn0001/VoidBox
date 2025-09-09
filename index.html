@@ -613,7 +613,7 @@
     
     const store = {
         frame: 0, last: performance.now(), isGameOver: false, isPaused: false,
-        world: { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, waveStartTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0, enemyDensityBonus: 1.0, powerupCooldown: 0, xpMultiplier: 1.0, collarStacks: 0 },
+        world: { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, waveStartTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0, enemyDensityBonus: 1.0, powerupCooldown: 0, xpMultiplier: 1.0, collarStacks: 0, consecutiveFastKills: 0, fastKillBonus: 0 },
         player: { ...player_initial_state },
         boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [],
         flameParticles: [],
@@ -1424,30 +1424,6 @@
                 store.boss.hp -= dmg; 
                 if (store.boss.hp <= 0) { 
                     const fightDuration = (performance.now() - store.world.bossSpawnTime) / 1000;
-                    let healthBonusMultiplier = 1.0;
-                    let announcedAdaptation = false;
-
-                    if (store.world.wave > 5 && fightDuration < 4) {
-                        healthBonusMultiplier = 1.40; // 40% increase
-                        store.world.bossHealthBonus *= 1.40;
-                        announce("GUARDIANS ADAPTING RAPIDLY!");
-                        announcedAdaptation = true;
-                        store.world.collarStacks++;
-                    } else if (fightDuration < 10) {
-                        healthBonusMultiplier = 1.10; // 10% increase
-                        store.world.bossHealthBonus *= 1.10;
-                        announce("GUARDIANS ADAPTING!");
-                        announcedAdaptation = true;
-                    } else if (fightDuration > 10) {
-                        store.world.collarStacks = 0;
-                        announce("ADAPTATION RESET");
-                    }
-
-                    if (announcedAdaptation) {
-                        store.world.enemyHealthBonus *= healthBonusMultiplier;
-                        store.world.enemyDensityBonus *= 1.15;
-                        setTimeout(() => announce("ENEMY SWARMS INTENSIFYING!"), 1000);
-                    }
                     
                     if (store.boss.name === 'TRAP KING' && store.player.pilotGenome === null) {
                         store.player.pilotGenome = 'pending'; 
@@ -1456,6 +1432,51 @@
 
                     store.world.score += 2000; store.world.shards += 25; store.world.xp += 100; store.world.bosses++; 
                     store.boss = null; announce('⚡ GUARDIAN DEFEATED ⚡'); explode(b.x, b.y, true); 
+
+                    // --- NEW BOSS SCALING LOGIC ---
+                    let healthBonusMultiplier = 1.0;
+                    let announcedAdaptation = false;
+
+                    if (fightDuration <= 4) {
+                        announcedAdaptation = true;
+                        if (store.world.wave >= 15) { // Boss #3 onwards (wave 15)
+                            store.world.consecutiveFastKills++;
+                            if (store.world.consecutiveFastKills === 1) {
+                                store.world.fastKillBonus = 0.20; // Start at 20%
+                            } else {
+                                store.world.fastKillBonus *= 2; // Double it
+                            }
+                            healthBonusMultiplier = 1.4 + store.world.fastKillBonus;
+                            announce(`STREAK x${store.world.consecutiveFastKills}! GUARDIAN OVERDRIVE!`);
+                        } else { // First 2 bosses have simpler scaling
+                            healthBonusMultiplier = 1.4;
+                            announce("GUARDIANS ADAPTING RAPIDLY!");
+                        }
+                        store.world.collarStacks++;
+                    } else if (fightDuration > 10) {
+                        // Slow kill resets all streaks and bonuses
+                        store.world.collarStacks = 0;
+                        store.world.consecutiveFastKills = 0;
+                        store.world.fastKillBonus = 0;
+                        healthBonusMultiplier = 1.0; // No bonus
+                        announce("ADAPTATION RESET!");
+                    } else { // Normal kill (between 4 and 10s)
+                        announcedAdaptation = true;
+                        healthBonusMultiplier = 1.10;
+                        // Reset the fast kill streak, but keep normal adaptation
+                        store.world.consecutiveFastKills = 0;
+                        store.world.fastKillBonus = 0;
+                        announce("GUARDIANS ADAPTING!");
+                    }
+
+                    store.world.bossHealthBonus *= healthBonusMultiplier;
+
+                    if (announcedAdaptation) {
+                        const enemyHealthBonus = healthBonusMultiplier > 1.1 ? 1.15 : 1.05;
+                        store.world.enemyHealthBonus *= enemyHealthBonus;
+                        store.world.enemyDensityBonus *= 1.10;
+                        setTimeout(() => announce("ENEMY SWARMS INTENSIFYING!"), 1000);
+                    }
                 } 
                 if (b.explosive) explode(b.x, b.y, false, true); if (!b.pierce) b.dead = true; 
             }
@@ -1593,7 +1614,7 @@
     function resetGame() {
         store.player = JSON.parse(JSON.stringify(player_initial_state));
         
-        store.world = { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, waveStartTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0, enemyDensityBonus: 1.0, powerupCooldown: 0, xpMultiplier: 1.0, collarStacks: 0 };
+        store.world = { wave: 1, score: 0, shards: 0, xp: 0, level: 1, kills: 0, bosses: 0, lowHealthTutorialShown: false, bossSpawnTime: 0, waveStartTime: 0, enemyHealthBonus: 1.0, bossHealthBonus: 1.0, enemyDensityBonus: 1.0, powerupCooldown: 0, xpMultiplier: 1.0, collarStacks: 0, consecutiveFastKills: 0, fastKillBonus: 0 };
         store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = []; 
         store.drones = []; store.hounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
         store.iceman = null;
@@ -1741,7 +1762,7 @@
         }
         const name = (store.name || "ROGUE").slice(0, 16); try { const nonceRes = await fetch(`${API_BASE}/session`, { method: "POST", timeout: 5000 }); if (!nonceRes.ok) throw new Error(`Session failed: ${nonceRes.status}`); const { nonce } = await nonceRes.json(); const body = { name, score: Math.floor(score) || 0, waves: store.world.wave | 0, kills: store.world.kills | 0, bosses: store.world.bosses | 0, ms: Math.max(1e4, Math.floor(performance.now() - store._startTs)), nonce }; const res = await fetch(`${API_BASE}/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), timeout: 5000 }); if (!res.ok) throw new Error(`Submit failed: ${res.status}`); const data = await res.json(); if (data.ok) { updateLeaderboard(data.top10); } else { console.warn("Score rejected:", data.err); announce(`Score rejected: ${data.err}`); refreshScoreList(); } } catch (err) { console.warn("Score submission failed, game continues offline:", err.message); } }
     function fireBullet(x, y, vx, vy, props = {}) { const p = store.player; store.bullets.push({ x, y, vx, vy, r: p.explosive ? 5 : 3, col: p.explosive ? "#ED2F32" : "#b266ff", dmg: 20 * p.dmgMult, pierce: p.piercing, explosive: p.explosive, ...props }); }
-    function firePlayer() { const p = store.player; if (p.beefChargeState && p.beefChargeState !== 'ready') return; const bulletSpeed = 420; const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0); const angleSpread = 10; if (p.flamethrowerLevel > 0) { let numFlames, angleRange, speed, life; switch(p.flamethrowerLevel) { case 1: numFlames = 8; angleRange = 40; speed = 250; life = 0.35; break; case 2: numFlames = 12; angleRange = 70; speed = 280; life = 0.4; break; default: numFlames = 16; angleRange = 90; speed = 320; life = 0.5; break; } for (let i = 0; i < numFlames; i++) { const angle = (Math.random() - 0.5) * angleRange * Math.PI / 180; const currentSpeed = speed + Math.random() * 40; store.bullets.push({ x: p.x, y: p.y - 12, vx: Math.sin(angle) * currentSpeed, vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 3, col: `rgba(255, ${60 + Math.random() * 60}, 0, 0.9)`, dmg: 5 * p.dmgMult, life: life * 1.5, isFlame: true, isLavaChunk: true, particles: [], particleSpawnT: 0 }); } if (p.hasIceman && store.iceman) { for (let i = 0; i < numFlames; i++) { const angle = (Math.random() - 0.5) * angleRange * Math.PI / 180; const currentSpeed = speed + Math.random() * 40; store.bullets.push({ x: store.iceman.x, y: store.iceman.y - 12, vx: Math.sin(angle) * currentSpeed, vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 2, col: `rgba(100, 150, 255, 0.7)`, dmg: 3 * p.dmgMult * 0.35, life: life, isFlame: true, isIceman: true, isLavaChunk: true, particles: [], particleSpawnT: 0 }); } } } for (let i = 0; i < totalMultishot; i++) { const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: p.x + 10 * Math.sin(angle), y: p.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: p.explosive ? "#cc99ff" : "#b266ff", dmg: 20 * p.dmgMult, pierce: p.piercing, explosive: p.explosive }); } if (p.hasIceman && store.iceman) { for (let i = 0; i < totalMultishot; i++) { const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: store.iceman.x + 10 * Math.sin(angle), y: store.iceman.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: "#66aaff", dmg: 20 * p.dmgMult * 0.35, pierce: p.piercing, explosive: p.explosive, isIceman: true }); } } if (p.rearMultishot > 0) { const rearAngleSpread = 15; for (let i = 0; i < p.rearMultishot; i++) { const angle = (i - (p.rearMultishot - 1) / 2) * rearAngleSpread; const radAngle = angle * Math.PI / 180; store.bullets.push({ x: p.x + 10 * Math.sin(radAngle), y: p.y + 12, vx: Math.sin(radAngle) * bulletSpeed, vy: Math.cos(radAngle) * bulletSpeed, r: 3, col: "#ffddff", dmg: 15 * p.dmgMult, pierce: p.piercing > 0 ? p.piercing -1 : 0 }); } } store.drones.forEach(drone => store.bullets.push({ x: p.x + drone.offset, y: p.y + 20, vx: 0, vy: -bulletSpeed, r: 3, col: "#66aaff", dmg: 20 * p.dmgMult * 0.4, isDrone: true })); if (p.hasLauncher) { const speed = 350; store.bullets.push({ x: p.x - 15, y: p.y, vx: -50, vy: -speed, r: 4, col: '#ff8080', dmg: 5 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true }); store.bullets.push({ x: p.x + 15, y: p.y, vx: 50, vy: -speed, r: 4, col: '#ff8080', dmg: 5 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true }); if (p.hasIceman && store.iceman) { store.bullets.push({ x: store.iceman.x - 15, y: store.iceman.y, vx: -50, vy: -speed, r: 4, col: '#66aaff', dmg: 5 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true }); store.bullets.push({ x: store.iceman.x + 15, y: store.iceman.y, vx: 50, vy: -speed, r: 4, col: '#66aaff', dmg: 5 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true }); } } }
+    function firePlayer() { const p = store.player; if (p.beefChargeState && p.beefChargeState !== 'ready') return; const bulletSpeed = 420; const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0); const angleSpread = 10; if (p.flamethrowerLevel > 0) { let numFlames, angleRange, speed, life; switch(p.flamethrowerLevel) { case 1: numFlames = 8; angleRange = 40; speed = 250; life = 0.35; break; case 2: numFlames = 12; angleRange = 70; speed = 280; life = 0.4; break; default: numFlames = 16; angleRange = 90; speed = 320; life = 0.5; break; } for (let i = 0; i < numFlames; i++) { const angle = (Math.random() - 0.5) * angleRange * Math.PI / 180; const currentSpeed = speed + Math.random() * 40; const sideOffset = (i % 2 === 0) ? -15 : 15; const spawnX = p.x + sideOffset; const spawnY = p.y + 5; store.bullets.push({ x: spawnX, y: spawnY, vx: Math.sin(angle) * currentSpeed + (sideOffset * 2), vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 3, col: `rgba(255, ${60 + Math.random() * 60}, 0, 0.9)`, dmg: 5 * p.dmgMult, life: life * 1.5, isFlame: true, isLavaChunk: true, particles: [], particleSpawnT: 0 }); } if (p.hasIceman && store.iceman) { for (let i = 0; i < numFlames; i++) { const angle = (Math.random() - 0.5) * angleRange * Math.PI / 180; const currentSpeed = speed + Math.random() * 40; const sideOffset = (i % 2 === 0) ? -15 : 15; const spawnX = store.iceman.x + sideOffset; const spawnY = store.iceman.y + 5; store.bullets.push({ x: spawnX, y: spawnY, vx: Math.sin(angle) * currentSpeed + (sideOffset * 2), vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 2, col: `rgba(100, 150, 255, 0.7)`, dmg: 3 * p.dmgMult * 0.35, life: life, isFlame: true, isIceman: true, isLavaChunk: true, particles: [], particleSpawnT: 0 }); } } } for (let i = 0; i < totalMultishot; i++) { const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: p.x + 10 * Math.sin(angle), y: p.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: p.explosive ? "#cc99ff" : "#b266ff", dmg: 20 * p.dmgMult, pierce: p.piercing, explosive: p.explosive }); } if (p.hasIceman && store.iceman) { for (let i = 0; i < totalMultishot; i++) { const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: store.iceman.x + 10 * Math.sin(angle), y: store.iceman.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: "#66aaff", dmg: 20 * p.dmgMult * 0.35, pierce: p.piercing, explosive: p.explosive, isIceman: true }); } } if (p.rearMultishot > 0) { const rearAngleSpread = 15; for (let i = 0; i < p.rearMultishot; i++) { const angle = (i - (p.rearMultishot - 1) / 2) * rearAngleSpread; const radAngle = angle * Math.PI / 180; store.bullets.push({ x: p.x + 10 * Math.sin(radAngle), y: p.y + 12, vx: Math.sin(radAngle) * bulletSpeed, vy: Math.cos(radAngle) * bulletSpeed, r: 3, col: "#ffddff", dmg: 15 * p.dmgMult, pierce: p.piercing > 0 ? p.piercing -1 : 0 }); } } store.drones.forEach(drone => store.bullets.push({ x: p.x + drone.offset, y: p.y + 20, vx: 0, vy: -bulletSpeed, r: 3, col: "#66aaff", dmg: 20 * p.dmgMult * 0.4, isDrone: true })); if (p.hasLauncher) { const speed = 350; store.bullets.push({ x: p.x - 15, y: p.y, vx: -50, vy: -speed, r: 4, col: '#ff8080', dmg: 5 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true }); store.bullets.push({ x: p.x + 15, y: p.y, vx: 50, vy: -speed, r: 4, col: '#ff8080', dmg: 5 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true }); if (p.hasIceman && store.iceman) { store.bullets.push({ x: store.iceman.x - 15, y: store.iceman.y, vx: -50, vy: -speed, r: 4, col: '#66aaff', dmg: 5 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true }); store.bullets.push({ x: store.iceman.x + 15, y: store.iceman.y, vx: 50, vy: -speed, r: 4, col: '#66aaff', dmg: 5 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true }); } } }
     function stepBoss(dt) { if (!store.boss) return; const b = store.boss; b.t += dt; if (b.y < 100) b.y += b.vy * dt; const dmgScale = Math.pow(1.065, store.world.wave - 1); switch (b.behavior) { case 'sentinel': stepBossOmegaSentinel(dt, b, dmgScale); break; case 'malignus': stepBossCoreMalignus(dt, b, dmgScale); break; case 'hex': stepBossTheHex(dt, b, dmgScale); break; case 'construct': stepBossGeometron(dt, b, dmgScale); break; case 'avian': stepBossVoidRaven(dt, b, dmgScale); break; } }
     function stepBossOmegaSentinel(dt, b, dmgScale) { if (b.y >= 100) { b.moveT += dt; b.x += Math.sin(b.moveT * 2) * 200 * dt; b.x = clamp(b.x, 100, W - 100); } b.fireT -= dt; if (b.fireT <= 0) { if (b.patternPhase % 4 === 0) { b.fireT = 1.5; const n = 12; for (let i = 0; i < n; i++) { const a = (i * Math.PI / 6) + b.t; store.eBullets.push({ x: b.x, y: b.y, vx: 150 * Math.cos(a), vy: 150 * Math.sin(a), r: 4, col: '#4169e1', dmg: 12 * dmgScale }); } } else { b.fireT = 0.2; const a = Math.atan2(store.player.y - b.y, store.player.x - b.x); store.eBullets.push({ x: b.x, y: b.y, vx: 250 * Math.cos(a), vy: 250 * Math.sin(a), r: 5, col: '#add8e6', dmg: 18 * dmgScale }); } b.patternPhase++; } }
     function stepBossCoreMalignus(dt, b, dmgScale) { if (b.hp / b.hpMax <= 0.07 && !b.isEnraged) { b.isEnraged = true; playSound('horn'); } if (b.y >= 100) { b.moveT += dt; b.x = W / 2 + (W / 2 - 100) * Math.sin(b.moveT * 0.5); } b.fireT -= dt; if (b.fireT <= 0) { b.fireT = b.isEnraged ? 0.6 : 0.8; const n = 12, g = 3, s = Math.floor(Math.random() * (n - g)); for (let i = 0; i < n; i++) { if (i >= s && i < s + g) continue; const p = (W / (n + 1)) * (i + 1); store.eBullets.push({ x: p, y: b.y, vx: 0, vy: 180, r: 6, col: b.color, dmg: 20 * dmgScale }); } } }
@@ -2206,13 +2227,25 @@
                 effect.maxLife = 7;
                 effect.life = 7;
                 effect.radius = 0;
-                effect.maxRadius = 300;
+                effect.maxRadius = 150; // Smaller radius
                 effect.damagePulseT = 1;
                 effect.totalDamageDealtToBoss = 0;
+                effect.stars = [];
+                for (let i = 0; i < 50; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const dist = Math.random() * effect.maxRadius;
+                    effect.stars.push({
+                        x: Math.cos(angle) * dist,
+                        y: Math.sin(angle) * dist,
+                        r: Math.random() * 1.5,
+                        initialDist: dist
+                    });
+                }
                 effect.step = function(dt) {
                     this.life -= dt;
                     if (this.life <= 0) {
                         this.isActive = false;
+                        screenFlash(1, 400, 'rgba(255, 255, 255, 0.5)');
                         return;
                     }
                     if (this.radius < this.maxRadius) {
@@ -2272,29 +2305,54 @@
                               }
                            }
                      }
-
                 };
                 effect.draw = function() {
                     ctx.save();
                     ctx.translate(this.x, this.y);
                     const time = performance.now();
-                    
+                    const lifeRatio = this.life / this.maxLife;
+
+                    // Draw swirling stars first
+                    ctx.fillStyle = 'white';
+                    this.stars.forEach(star => {
+                        const pullFactor = 1 - lifeRatio;
+                        const currentDist = star.initialDist * (1 - pullFactor * 0.95);
+                        const angle = Math.atan2(star.y, star.x) + pullFactor * 3;
+                        const sx = Math.cos(angle) * currentDist;
+                        const sy = Math.sin(angle) * currentDist;
+                        
+                        if (currentDist < this.radius) {
+                            ctx.globalAlpha = lifeRatio * (currentDist / this.radius);
+                            ctx.beginPath();
+                            ctx.arc(sx, sy, star.r, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    });
+                    ctx.globalAlpha = 1;
+
+                    // Dark swirl effect
                     for (let i = 0; i < 5; i++) {
                         const rotation = (time / (2000 + i * 200)) % (2 * Math.PI);
-                        ctx.strokeStyle = `rgba(150, 50, 255, ${0.5 * (this.life / this.maxLife)})`;
-                        ctx.lineWidth = 2 + i;
+                        ctx.strokeStyle = `rgba(0, 0, 5, ${0.4 * lifeRatio})`;
+                        ctx.lineWidth = (2 + i) * 2;
                         ctx.beginPath();
                         ctx.arc(0, 0, (this.radius / 5) * (i + 1), rotation, rotation + Math.PI * 1.5);
                         ctx.stroke();
                     }
-
-                    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, this.radius * 0.7);
-                    grad.addColorStop(0, 'rgba(0,0,0,0.9)');
-                    grad.addColorStop(1, 'rgba(10, 0, 20, 0)');
-                    ctx.fillStyle = grad;
+                    
+                    // Pulsating matter at the core
+                    const corePulse = 3 + Math.sin(time / 100) * 2;
+                    const coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, corePulse * 2);
+                    coreGrad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+                    coreGrad.addColorStop(0.5, 'rgba(200, 220, 255, 0.7)');
+                    coreGrad.addColorStop(1, 'rgba(150, 150, 255, 0)');
+                    ctx.fillStyle = coreGrad;
+                    ctx.shadowColor = 'white';
+                    ctx.shadowBlur = 15;
                     ctx.beginPath();
-                    ctx.arc(0, 0, this.radius, 0, 2 * Math.PI);
+                    ctx.arc(0, 0, corePulse * 2, 0, Math.PI * 2);
                     ctx.fill();
+                    
                     ctx.restore();
                 };
                 break;
@@ -2356,6 +2414,22 @@
                     ctx.beginPath();
                     ctx.arc(this.x, this.y, this.radius, 0, 2 * Math.PI);
                     ctx.stroke();
+                };
+                break;
+             case "screenFlash":
+                effect.maxLife = y / 1000; // duration
+                effect.life = effect.maxLife;
+                effect.color = radius; // color
+                effect.step = function(dt) {
+                    this.life -= dt;
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    ctx.save();
+                    ctx.globalAlpha = this.life / this.maxLife;
+                    ctx.fillStyle = this.color;
+                    ctx.fillRect(0, 0, W, H);
+                    ctx.restore();
                 };
                 break;
         }
@@ -2882,7 +2956,15 @@
 
         ctx.restore();
     }
-    function activateGravityWell() { if (!store.isPaused) { store.activeEffects.push(createEffect("gravityWell", W / 2, H / 2)); announce('GRAVITY WELL ACTIVATED'); } }
+    function activateGravityWell() { 
+        if (!store.isPaused) { 
+            const spawnX = W * 0.2 + Math.random() * W * 0.6;
+            const spawnY = H * 0.2 + Math.random() * H * 0.6;
+            store.activeEffects.push(createEffect("gravityWell", spawnX, spawnY)); 
+            announce('GRAVITY WELL ACTIVATED');
+            screenFlash(2, 250, 'rgba(255, 255, 255, 0.7)');
+        } 
+    }
     function activateLazarus(){if(store.player.hasLazarusBeam&&!store.isPaused){const angle=Math.random()*2*Math.PI,speed=800,p=store.player;store.lasers.push({x:p.x,y:p.y,prevX:p.x,prevY:p.y,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,life:6,r:12,hitEnemies:new Set})}}
     function useGrenade() {
         if (store.player.grenades > 0 && !store.isPaused) {
@@ -2991,6 +3073,14 @@ function tryVoidStep(player, target, now = performance.now()){
     }
     
     function playerIsInvulnerable(){ return performance.now() < invulUntil; }
+    
+    function screenFlash(count, duration, color) {
+        for (let i = 0; i < count; i++) {
+            setTimeout(() => {
+                store.activeEffects.push(createEffect("screenFlash", 0, duration, color));
+            }, i * (duration / 2));
+        }
+    }
 
     // --- PAUSE & MENU LOGIC ---
     const PANELS = ['namePanel', 'pilotPanel', 'scorePanel', 'levelPanel', 'shopPanel', 'storyPanel'];
@@ -3195,17 +3285,23 @@ function tryVoidStep(player, target, now = performance.now()){
         }
     });
 
-    function frame(now){
-        const dt=Math.min(.033,(now-store.last)/1e3);
-        store.last=now;
-        if(!store.isGameOver && !store.isPaused && !isAnyPanelOpen()) {
-            stepWorld(dt)
+    cvs.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        if (store.player.pilotGenome === 'wizard' && !store.isPaused && !store.isGameOver) {
+            const p = pointFromEvent(e);
+            tryVoidStep(store.player, p);
+        }
+    });
+
+    function frame(now) {
+        const dt = Math.min((now - store.last) / 1000, 0.07);
+        store.last = now;
+        if (!store.isPaused && !store.isGameOver) {
+            stepWorld(dt);
         }
         render(dt);
-        q('fps').textContent=(1/dt).toFixed(0);
-        requestAnimationFrame(frame)
+        requestAnimationFrame(frame);
     }
-    
     try{ 
         ensureName(); 
         refreshScoreList(); 
@@ -3227,4 +3323,3 @@ function tryVoidStep(player, target, now = performance.now()){
 </script>
 </body>
 </html>
-
