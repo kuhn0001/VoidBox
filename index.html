@@ -93,7 +93,7 @@
             opacity: 1;
             transform: scale(1.1);
         }
-        #shopPanel h2, #levelPanel h2, #scorePanel h2, #namePanel h2, #pilotPanel h2 {
+        #shopPanel h2, #levelPanel h2, #scorePanel h2, #namePanel h2, #pilotPanel h2, #subclassPanel h2 {
             margin: 0 0 4px 0;
             padding-top: 4px;
             font-size: clamp(16px, 2vw, 20px);
@@ -377,6 +377,12 @@
                             </div>
                         </div>
                     </div>
+                     <div id="subclassPanel" class="panel hide">
+                        <h2 style="font-family:'Orbitron';color:var(--accent)">CHOOSE SPECIALIZATION</h2>
+                        <div id="subclassGrid" class="grid" style="grid-template-columns: repeat(2, 1fr);">
+                            <!-- Subclass options will be injected here -->
+                        </div>
+                    </div>
                     <div id="storyPanel" class="panel hide">
                         <p>When we first discovered the voidplane, one of the earliest notes was the similarity of the plane's inhabitant lifeforms to that of deep sea life on Earth.<br><br>
                         Mammalian life developed specialized spacecraft to venture within and colonize the resources of the primitive creatures.<br><br>
@@ -608,7 +614,11 @@
         flameWallCooldown: 0,
         flameWallActiveT: 0,
         // BEEF ability state
-        beefChargeState: 'ready', beefChargeCooldown: 0, beefChargeOrigin: null, beefChargeTarget: null, beefChargeT: 0,
+        beefChargeState: 'ready', beefChargeCooldown: 0, beefChargeOrigin: null, beefChargeTarget: null, beefChargeT: 0, beefCharges: 1, beefMaxCharges: 1,
+        // Voidmancer
+        hasChainLightning: false, chainLightningCooldown: 0,
+        // Subclass
+        subclass: null, missilePierce: 0, missileCluster: false, blinkDamage: false
     };
     
     const store = {
@@ -903,7 +913,12 @@
         if (p.pilotGenome === 'beef') {
             if (p.beefChargeCooldown > 0) {
                 p.beefChargeCooldown -= dt;
-            } else if (p.beefChargeState === 'ready') {
+            } else if (p.beefCharges < p.beefMaxCharges) {
+                p.beefChargeCooldown = 8; // Start cooldown to regen a charge
+                p.beefCharges++;
+            }
+            
+            if (p.beefChargeState === 'ready' && p.beefCharges > 0) {
                 const chargeRadius = 120;
                 let closestEnemy = null;
                 let closestDistSq = chargeRadius * chargeRadius;
@@ -921,6 +936,7 @@
                 });
     
                 if (closestEnemy) {
+                    p.beefCharges--;
                     p.beefChargeCooldown = 8;
                     p.beefChargeState = 'charging';
                     p.beefChargeOrigin = { x: p.x, y: p.y };
@@ -930,7 +946,11 @@
     
                     store.activeEffects.push(createEffect("beefCharge", p.beefChargeOrigin, p.beefChargeTarget));
     
-                    const impactRadius = 80;
+                    const impactRadius = p.subclass === 'juggernaut' ? 120 : 80; // Larger radius for Juggernaut
+                    if (p.subclass === 'juggernaut') {
+                        explode(closestEnemy.x, closestEnemy.y, false, true);
+                    }
+
                     potentialTargets.forEach(e => {
                         if (e.dead) return;
                         const dx = e.x - closestEnemy.x;
@@ -967,6 +987,14 @@
                      store.flameParticles.push(new FlameParticle(p.x, p.y + 10)); // spawn behind ship
                 }
             }
+        } else if (p.pilotGenome === 'wizard') {
+            if (p.hasChainLightning) {
+                p.chainLightningCooldown -= dt;
+                if (p.chainLightningCooldown <= 0) {
+                    fireChainLightning();
+                    p.chainLightningCooldown = 1.5;
+                }
+            }
         }
     
         // --- Standard player logic ---
@@ -994,7 +1022,7 @@
     
                     for (let i = 0; i < p.missileVolley; i++) {
                         const offsetX = (i - (p.missileVolley - 1) / 2) * 15;
-                        store.missiles.push({ x: p.x + offsetX, y: p.y, vx: 0, vy: -300, r: 4, target: closest, speed: 400, turnRate: 5, life: 0, dmg: missileDmg });
+                        store.missiles.push({ x: p.x + offsetX, y: p.y, vx: 0, vy: -300, r: 4, target: closest, speed: 400, turnRate: 5, life: 0, dmg: missileDmg, pierce: p.missilePierce, cluster: p.missileCluster });
                     }
                     if (p.hasIceman && store.iceman) {
                         for (let i = 0; i < p.missileVolley; i++) {
@@ -1003,7 +1031,9 @@
                                 x: store.iceman.x + offsetX, y: store.iceman.y, vx: 0, vy: -300, r: 4, 
                                 target: closest, speed: 400, turnRate: 5, life: 0, 
                                 dmg: missileDmg * 0.35, 
-                                isIceman: true
+                                isIceman: true,
+                                pierce: p.missilePierce, 
+                                cluster: p.missileCluster
                             });
                         }
                     }
@@ -1101,9 +1131,20 @@
                         if (Math.random() < 0.05) { spawnPowerup(e.x, e.y); }
                     }
                     e.hp -= dmg; 
-                    m.dead = true; 
+                    if (m.cluster) {
+                        for (let i = 0; i < 3; i++) {
+                            const angle = Math.random() * 2 * Math.PI;
+                            fireBullet(m.x, m.y, Math.cos(angle) * 150, Math.sin(angle) * 150, { dmg: m.dmg * 0.25, r: 2 });
+                        }
+                    }
+
+                    if (m.pierce > 0) {
+                        m.pierce--;
+                    } else {
+                        m.dead = true; 
+                    }
                     explode(m.x, m.y, false, true); 
-                    break; 
+                    if(m.dead) break; 
                 }
             }
         });
@@ -1429,6 +1470,9 @@
                         store.player.pilotGenome = 'pending'; 
                         setTimeout(showPilotSelect, 1000);
                     }
+                    if(store.world.wave === 20 && !store.player.subclass) {
+                        setTimeout(showSubclassSelect, 1500);
+                    }
 
                     store.world.score += 2000; store.world.shards += 25; store.world.xp += 100; store.world.bosses++; 
                     store.boss = null; announce('⚡ GUARDIAN DEFEATED ⚡'); explode(b.x, b.y, true); 
@@ -1623,7 +1667,7 @@
         store.cheatInvincibilityCooldown = 0;
         store.cheatDogHealCooldown = 0;
         shopItemOrder = []; 
-        q('gameOverPanel').classList.add('hide'); q('shopPanel').classList.add('hide'); q('levelPanel').classList.add('hide');
+        q('gameOverPanel').classList.add('hide'); q('shopPanel').classList.add('hide'); q('levelPanel').classList.add('hide'); q('subclassPanel').classList.add('hide');
         ensureName();
     }
 
@@ -3017,6 +3061,28 @@ function tryVoidStep(player, target, now = performance.now()){
     const start = { x: player.x, y: player.y };
     let { nx, ny } = clampToField(target.x, target.y);
 
+    if (player.blinkDamage) {
+        const dx = nx - start.x;
+        const dy = ny - start.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        const damage = 150 * player.dmgMult;
+        
+        store.enemies.forEach(e => {
+            if (e.dead) return;
+            const dot = (((e.x - start.x) * dx) + ((e.y - start.y) * dy)) / (dist * dist);
+            const closestX = start.x + dot * dx;
+            const closestY = start.y + dot * dy;
+            
+            const onSegment = dot > 0 && dot < 1;
+            if (onSegment) {
+                 const distToLine = Math.sqrt((e.x - closestX)**2 + (e.y - closestY)**2);
+                 if (distToLine < e.r + 10) { // 10 is the laser width
+                    e.hp -= damage;
+                 }
+            }
+        });
+    }
+
     spawnRift(start.x, start.y, nx, ny, VOIDSTEP.riftMs);
 
     player.x = nx; player.y = ny;
@@ -3083,7 +3149,7 @@ function tryVoidStep(player, target, now = performance.now()){
     }
 
     // --- PAUSE & MENU LOGIC ---
-    const PANELS = ['namePanel', 'pilotPanel', 'scorePanel', 'levelPanel', 'shopPanel', 'storyPanel'];
+    const PANELS = ['namePanel', 'pilotPanel', 'scorePanel', 'levelPanel', 'shopPanel', 'storyPanel', 'subclassPanel'];
     function isAnyPanelOpen() {
         return PANELS.some(id => !q(id).classList.contains('hide'));
     }
@@ -3136,6 +3202,61 @@ function tryVoidStep(player, target, now = performance.now()){
                 break;
         }
     }
+    
+    const SUBCLASSES = {
+        rocketman: [
+            { id: 'railgunner', name: 'Railgunner', desc: 'Missiles pierce through multiple enemies.', icon: 'rail.png' },
+            { id: 'demolitionist', name: 'Demolitionist', desc: 'Missiles explode into smaller cluster bombs on impact.', icon: 'demo.png' }
+        ],
+        beef: [
+            { id: 'juggernaut', name: 'Juggernaut', desc: 'Charge ability creates a damaging explosion on impact.', icon: 'jug.png' },
+            { id: 'marauder', name: 'Marauder', desc: 'Gain a second charge for your special ability.', icon: 'marauder.png' }
+        ],
+        wizard: [
+            { id: 'phasestriker', name: 'Phase Striker', desc: 'Blink now damages all enemies you pass through.', icon: 'phase.png' },
+            { id: 'stormcaller', name: 'Stormcaller', desc: 'Unlocks a new weapon: a chain lightning cannon.', icon: 'storm.png' }
+        ]
+    };
+
+    function showSubclassSelect() {
+        pauseGame();
+        const panel = q('subclassPanel');
+        const grid = q('subclassGrid');
+        const genome = store.player.pilotGenome;
+        const choices = SUBCLASSES[genome];
+
+        if (!choices) {
+            resumeGame();
+            return;
+        }
+        
+        grid.innerHTML = choices.map(s => `<div class="skill-card" data-subclass="${s.id}"><div class="skill-icon"><img src="${s.icon}" class="pilot-icon"></div><div><div class="skill-title">${s.name}</div><div class="skill-desc">${s.desc}</div></div></div>`).join('');
+        
+        grid.querySelectorAll('.skill-card').forEach(card => {
+            card.addEventListener('click', () => {
+                const subclassId = card.dataset.subclass;
+                store.player.subclass = subclassId;
+                applySubclassBonus(subclassId);
+                panel.classList.add('hide');
+                resumeGame();
+            }, { once: true });
+        });
+
+        panel.classList.remove('hide');
+    }
+
+    function applySubclassBonus(subclass) {
+        const p = store.player;
+        switch(subclass) {
+            case 'railgunner': p.missilePierce = 2; break;
+            case 'demolitionist': p.missileCluster = true; break;
+            case 'juggernaut': /* Handled in charge logic */ break;
+            case 'marauder': p.beefMaxCharges = 2; p.beefCharges = 2; break;
+            case 'phasestriker': p.blinkDamage = true; break;
+            case 'stormcaller': p.hasChainLightning = true; break;
+        }
+    }
+
 
     function ensureName(){
         if(!store.name){
@@ -3276,14 +3397,6 @@ function tryVoidStep(player, target, now = performance.now()){
             }
         }
     }, { passive: false });
-
-    cvs.addEventListener('contextmenu', e => {
-        e.preventDefault();
-        if (store.player.pilotGenome === 'wizard' && !store.isPaused && !store.isGameOver) {
-            const p = pointFromEvent(e);
-            tryVoidStep(store.player, p);
-        }
-    });
 
     cvs.addEventListener('contextmenu', e => {
         e.preventDefault();
