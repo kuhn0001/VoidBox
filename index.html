@@ -435,6 +435,7 @@
     </div>
 
     <audio id="bgmAudio" loop></audio>
+    <audio id="audioHeartbeat" src="heartbeat.mp3" preload="auto"></audio>
     <audio id="audioExplosion" src="Explosion.m4a" preload="auto"></audio>
     <audio id="audioHorn" src="Horn.wav" preload="auto"></audio>
     <audio id="audioHit" src="thunk.wav" preload="auto"></audio>
@@ -556,7 +557,8 @@
         horn: q('audioHorn'),
         hit: q('audioHit'),
         trap: q('audioTrap'),
-        dogs: q('audioDogs')
+        dogs: q('audioDogs'),
+        heartbeat: q('audioHeartbeat') // <-- ADD THIS LINE
     };
     let lastExplosionSoundTime = 0;
     let lastBossHitSoundTime = 0;
@@ -621,7 +623,8 @@
             xpMultiplier: 1.0, 
             collarStacks: 0, 
             consecutiveFastKills: 0, 
-            fastKillBonus: 0 
+            fastKillBonus: 0,
+            isLowHealth: false // <-- ADD THIS LINE
         },
         player: { ...player_initial_state },
         boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [],
@@ -631,6 +634,7 @@
         _startTs: performance.now(),
         cheatInvincibilityCooldown: 0,
         cheatDogHealCooldown: 0,
+        heartbeatT: 0, // <-- ADD THIS LINE
         cheatsUsed: false
     };
 
@@ -1124,10 +1128,18 @@
         }
     }
 
+
+
+
     function stepWorld(dt) {
+        // --- 1. UPDATE CORE ENTITIES ---
         stepPlayer(dt);
-        if (store.boss) stepBoss(dt);
-        stepPowerups(dt); 
+        if (store.boss) {
+            stepBoss(dt);
+        }
+
+        // --- 2. UPDATE PROJECTILES & PICKUPS ---
+        stepPowerups(dt);
         stepHounds(dt);
         stepMissiles(dt);
         stepLasers(dt);
@@ -1135,200 +1147,256 @@
         stepFlameParticles(dt);
         stepLightning(dt);
         updateVoidStepSystems(store.enemies);
-        if (store.world.powerupCooldown > 0) { store.world.powerupCooldown -= dt * (1 + (store.player.luckBoost * 2)); }
-        const dmgScale = Math.pow(1.065, store.world.wave - 1);
+
+        // --- 3. UPDATE ACTIVE EFFECTS & COOLDOWNS ---
         store.activeEffects.forEach(e => { if (e.step) e.step(dt); });
+        if (store.world.powerupCooldown > 0) {
+            store.world.powerupCooldown -= dt * (1 + (store.player.luckBoost * 2));
+        }
+
+        // --- 4. HANDLE ENEMY BULLET LOGIC & COLLISIONS ---
+        const dmgScale = Math.pow(1.065, store.world.wave - 1);
         store.eBullets.forEach(b => {
-            b.x += b.vx * dt; b.y += b.vy * dt;
+            b.x += b.vx * dt;
+            b.y += b.vy * dt;
             if (b.gravity) { b.vy += b.gravity * dt; }
-            if(b.life) { b.life -= dt; if (b.life <= 0) b.dead = true; }
+            if (b.life) { b.life -= dt; if (b.life <= 0) b.dead = true; }
             if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true;
+
             if (collide(b, store.player)) {
                 const p = store.player;
-                if(p.hasRearGuard && p.rearGuardReady && b.y < p.y) {
-                    p.rearGuardReady = false; p.rearGuardCooldown = 8; b.dead = true;
+                if (p.hasRearGuard && p.rearGuardReady && b.y < p.y) {
+                    p.rearGuardReady = false;
+                    p.rearGuardCooldown = 8;
+                    b.dead = true;
                     store.activeEffects.push(createEffect("rearGuardBlock"));
                 } else {
-                    takeDamage(b.dmg || 10); b.dead = true;
+                    takeDamage(b.dmg || 10);
+                    b.dead = true;
                 }
             }
         });
+
+        // --- 5. HANDLE ENEMY & PLAYER BULLET LOGIC & COLLISIONS ---
         if (store.boss && store.boss.mines) {
             store.boss.mines.forEach(mine => {
                 mine.fuse -= dt;
-                if (mine.fuse <= 0) { store.eBullets.push({ x: mine.x, y: mine.y, vx: 0, vy: 100, r: 8, col: '#ff8080', dmg: 25 * dmgScale }); mine.dead = true; }
-                if (collide(mine, store.player)) { takeDamage(50 * dmgScale); mine.dead = true; }
+                if (mine.fuse <= 0) {
+                    store.eBullets.push({ x: mine.x, y: mine.y, vx: 0, vy: 100, r: 8, col: '#ff8080', dmg: 25 * dmgScale });
+                    mine.dead = true;
+                }
+                if (collide(mine, store.player)) {
+                    takeDamage(50 * dmgScale);
+                    mine.dead = true;
+                }
             });
             store.boss.mines = store.boss.mines.filter(m => !m.dead);
         }
+
         store.enemies.forEach(e => {
+            // Handle movement and status effects
             if (e.knockback) {
-                e.x += e.knockback.vx * dt; e.y += e.knockback.vy * dt; e.knockback.duration -= dt;
-                if (e.knockback.duration <= 0) { e.knockback = null; }
+                e.x += e.knockback.vx * dt;
+                e.y += e.knockback.vy * dt;
+                e.knockback.duration -= dt;
+                if (e.knockback.duration <= 0) e.knockback = null;
             } else if (e.stunTimer && e.stunTimer > 0) {
                 e.stunTimer -= dt;
             } else {
-                let speedMultiplier = 1.0;
-                if (e.slowTimer > 0) { speedMultiplier = 0.3; e.slowTimer -= dt; }
-                if(e.type === 'construct_shard' || e.type === 'avian_hatchling') {
-                     const dx = store.player.x - e.x, dy = store.player.y - e.y, dist = Math.sqrt(dx * dx + dy * dy);
-                     if (dist > 1) { e.x += (dx / dist) * e.v * speedMultiplier * dt; e.y += (dy / dist) * e.v * speedMultiplier * dt; }
+                let speedMultiplier = (e.slowTimer > 0) ? 0.3 : 1.0;
+                if (e.slowTimer > 0) e.slowTimer -= dt;
+
+                // Different movement patterns
+                if (e.type === 'construct_shard' || e.type === 'avian_hatchling') {
+                    const dx = store.player.x - e.x, dy = store.player.y - e.y, dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist > 1) {
+                        e.x += (dx / dist) * e.v * speedMultiplier * dt;
+                        e.y += (dy / dist) * e.v * speedMultiplier * dt;
+                    }
                 } else if (e.type === 'angler') {
                     const dx = store.player.x - e.x;
-                    if(Math.abs(dx) > 10) { e.x += Math.sign(dx) * 30 * speedMultiplier * dt; }
+                    if (Math.abs(dx) > 10) e.x += Math.sign(dx) * 30 * speedMultiplier * dt;
                     e.y += e.v * speedMultiplier * dt;
                 } else if (e.type === 'manta') {
-                    e.t += dt; e.x = e.startX + e.amplitude * Math.sin(e.t * e.frequency); e.y += e.v * speedMultiplier * dt;
-                } else {
-                    if(store.player.powerupTimers['stealth']) { e.fireT = 1; return; }
-                    if (e.isOrbiter) {
-                        if (store.boss) { e.orbitCenter.x = store.boss.x; e.orbitCenter.y = store.boss.y; }
-                        e.orbitAngle += e.orbitSpeed * speedMultiplier * dt;
-                        e.x = e.orbitCenter.x + e.orbitRadius * Math.cos(e.orbitAngle);
-                        e.y = e.orbitCenter.y + e.orbitRadius * Math.sin(e.orbitAngle);
-                    } else {
-                        e.x += (e.vx || 0) * speedMultiplier * dt; e.y += e.v * speedMultiplier * dt;
-                    }
+                    e.t += dt;
+                    e.x = e.startX + e.amplitude * Math.sin(e.t * e.frequency);
+                    e.y += e.v * speedMultiplier * dt;
+                } else if (!e.isOrbiter) {
+                    e.x += (e.vx || 0) * speedMultiplier * dt;
+                    e.y += e.v * speedMultiplier * dt;
+                } else { // Orbiter logic
+                    if (store.boss) { e.orbitCenter.x = store.boss.x; e.orbitCenter.y = store.boss.y; }
+                    e.orbitAngle += e.orbitSpeed * speedMultiplier * dt;
+                    e.x = e.orbitCenter.x + e.orbitRadius * Math.cos(e.orbitAngle);
+                    e.y = e.orbitCenter.y + e.orbitRadius * Math.sin(e.orbitAngle);
                 }
                 if (e.phase) e.x += Math.sin(e.t * 3) * 80 * dt;
-                e.fireT -= dt;
-                if (e.fireT <= 0 && e.y > 0 && Math.random() < e.fireRateChance) {
-                    switch (e.type) {
-                        case 'hunter': { const a=Math.atan2(store.player.y-e.y,store.player.x-e.x); store.eBullets.push({x:e.x,y:e.y,vx:Math.cos(a)*180,vy:Math.sin(a)*180,r:3,col:e.color,dmg:10*dmgScale}); e.fireT=1; break; }
-                        case 'phantom': { store.eBullets.push({x:e.x,y:e.y,vx:0,vy:180,r:3,col:e.color,dmg:8*dmgScale}); e.fireT=e.fireCooldown; break; }
-                        case 'mech': {
-                            e.attackPhase = (e.attackPhase || 0) + 1;
-                            if (e.attackPhase % 2 === 1) {
-                                const shoulderLeftX = e.x - e.r * 1.2, shoulderRightX = e.x + e.r * 1.2, shoulderY = e.y - e.r;
-                                const angleLeft = Math.atan2(store.player.y - shoulderY, store.player.x - shoulderLeftX);
-                                store.eBullets.push({ x: shoulderLeftX, y: shoulderY, vx: Math.cos(angleLeft) * 160, vy: Math.sin(angleLeft) * 160, r: 4, col: e.color, dmg: 12 * dmgScale });
-                                const angleRight = Math.atan2(store.player.y - shoulderY, store.player.x - shoulderRightX);
-                                store.eBullets.push({ x: shoulderRightX, y: shoulderY, vx: Math.cos(angleRight) * 160, vy: Math.sin(angleRight) * 160, r: 4, col: e.color, dmg: 12 * dmgScale });
-                            } else {
-                                const dx = store.player.x - e.x, dist = Math.sqrt(dx*dx + (store.player.y - e.y)**2), timeToTarget = Math.max(0.5, dist / 250);
-                                const vx = dx / timeToTarget, gravity = 350, vy = (store.player.y - e.y - 0.5 * gravity * timeToTarget * timeToTarget) / timeToTarget;
-                                store.eBullets.push({ x: e.x, y: e.y, vx: vx, vy: vy, r: 6, col: '#ff6347', dmg: 18 * dmgScale, gravity: gravity });
-                            }
-                            e.fireT = 2; break;
+            }
+
+            // Handle enemy firing
+            if (e.fireT > 0) e.fireT -= dt;
+            if (e.fireT <= 0 && e.y > 0 && Math.random() < e.fireRateChance) {
+                switch (e.type) {
+                    case 'hunter': { const a=Math.atan2(store.player.y-e.y,store.player.x-e.x); store.eBullets.push({x:e.x,y:e.y,vx:Math.cos(a)*180,vy:Math.sin(a)*180,r:3,col:e.color,dmg:10*dmgScale}); e.fireT=1; break; }
+                    case 'phantom': { store.eBullets.push({x:e.x,y:e.y,vx:0,vy:180,r:3,col:e.color,dmg:8*dmgScale}); e.fireT=e.fireCooldown; break; }
+                    case 'mech': {
+                        e.attackPhase = (e.attackPhase || 0) + 1;
+                        if (e.attackPhase % 2 === 1) {
+                            const shoulderLeftX = e.x - e.r * 1.2, shoulderRightX = e.x + e.r * 1.2, shoulderY = e.y - e.r;
+                            const angleLeft = Math.atan2(store.player.y - shoulderY, store.player.x - shoulderLeftX);
+                            store.eBullets.push({ x: shoulderLeftX, y: shoulderY, vx: Math.cos(angleLeft) * 160, vy: Math.sin(angleLeft) * 160, r: 4, col: e.color, dmg: 12 * dmgScale });
+                            const angleRight = Math.atan2(store.player.y - shoulderY, store.player.x - shoulderRightX);
+                            store.eBullets.push({ x: shoulderRightX, y: shoulderY, vx: Math.cos(angleRight) * 160, vy: Math.sin(angleRight) * 160, r: 4, col: e.color, dmg: 12 * dmgScale });
+                        } else {
+                            const dx = store.player.x - e.x, dist = Math.sqrt(dx*dx + (store.player.y - e.y)**2), timeToTarget = Math.max(0.5, dist / 250);
+                            const vx = dx / timeToTarget, gravity = 350, vy = (store.player.y - e.y - 0.5 * gravity * timeToTarget * timeToTarget) / timeToTarget;
+                            store.eBullets.push({ x: e.x, y: e.y, vx: vx, vy: vy, r: 6, col: '#ff6347', dmg: 18 * dmgScale, gravity: gravity });
                         }
-                        case 'angler': { const a = Math.atan2(store.player.y - e.y, store.player.x - e.x); store.eBullets.push({x:e.x,y:e.y,vx:Math.cos(a)*120,vy:Math.sin(a)*120,r:4,col:e.color,dmg:15*dmgScale, life: 5}); e.fireT = 2.5; break; }
-                        case 'manta': { for(let i=-1; i<=1; i++) { const angle = (90 + i * 30) * Math.PI/180; store.eBullets.push({x:e.x, y:e.y, vx:Math.cos(angle)*150, vy:Math.sin(angle)*150, r:3, col:e.color, dmg:12*dmgScale}); } e.fireT = 2.8; break; }
-                        default: { store.eBullets.push({x:e.x,y:e.y,vx:0,vy:150,r:3,col:e.color,dmg:8*dmgScale}); e.fireT=.5; }
+                        e.fireT = 2; break;
                     }
+                    case 'angler': { const a = Math.atan2(store.player.y - e.y, store.player.x - e.x); store.eBullets.push({x:e.x,y:e.y,vx:Math.cos(a)*120,vy:Math.sin(a)*120,r:4,col:e.color,dmg:15*dmgScale, life: 5}); e.fireT = 2.5; break; }
+                    case 'manta': { for(let i=-1; i<=1; i++) { const angle = (90 + i * 30) * Math.PI/180; store.eBullets.push({x:e.x, y:e.y, vx:Math.cos(angle)*150, vy:Math.sin(angle)*150, r:3, col:e.color, dmg:12*dmgScale}); } e.fireT = 2.8; break; }
+                    default: { store.eBullets.push({x:e.x,y:e.y,vx:0,vy:150,r:3,col:e.color,dmg:8*dmgScale}); e.fireT=.5; }
                 }
             }
+
+            // Off-screen and collision checks
             if (e.y > H + 30 || e.x < -30 || e.x > W + 30) e.dead = true;
-            if (collide(e, store.player)) { takeDamage(15 * dmgScale); store.world.shards += e.shards; e.dead = true; }
+            if (collide(e, store.player)) {
+                takeDamage(15 * dmgScale);
+                store.world.shards += e.shards;
+                e.dead = true;
+            }
         });
+
         store.bullets.forEach(b => {
-            b.x += b.vx * dt; b.y += b.vy * dt;
-            if (b.isSwirl) { b.life = (b.life || 0) + dt; b.x += Math.sin(b.life * 15) * 150 * dt; }
+            b.x += b.vx * dt;
+            b.y += b.vy * dt;
+            if (b.isSwirl) {
+                b.life = (b.life || 0) + dt;
+                b.x += Math.sin(b.life * 15) * 150 * dt;
+            }
             if (b.isFlame) {
-                b.life -= dt; if (b.life <= 0) b.dead = true;
+                b.life -= dt;
+                if (b.life <= 0) b.dead = true;
                 b.particleSpawnT -= dt;
-                if(b.particleSpawnT <= 0) {
+                if (b.particleSpawnT <= 0) {
                     b.particleSpawnT = b.isLavaChunk ? 0.04 : 0.02;
                     const life = 0.3 + Math.random() * 0.3, angle = Math.random() * 2 * Math.PI, speed = b.isLavaChunk ? 10 + Math.random() * 15 : 20 + Math.random() * 20;
                     b.particles.push({ x: 0, y: 0, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: life, maxLife: life, r: 1 + Math.random() * (b.isLavaChunk ? 1.5 : 2) });
                 }
-                b.particles.forEach(p => { p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; });
-                b.particles = b.particles.filter(p => p.life > 0);
-            } else if (b.isLevelUpPulse) { b.life -= dt; if(b.life <= 0) b.dead = true; }
+                b.particles = b.particles.filter(p => {
+                    p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt;
+                    return p.life > 0;
+                });
+            } else if (b.isLevelUpPulse) {
+                b.life -= dt;
+                if (b.life <= 0) b.dead = true;
+            }
+
             if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true;
-            store.enemies.forEach(e => {
-                if (!e.dead && collide(b, e)) {
-                    if (b.isFlame) { e.slowTimer = 1.0; }
+
+            const targets = store.boss ? [store.boss, ...store.enemies] : store.enemies;
+            for (const e of targets) {
+                if (b.dead || e.dead) continue;
+                if (collide(b, e)) {
+                    if (b.isFlame) e.slowTimer = 1.0;
+                    
                     let dmg = b.dmg || 20;
+                    if (e === store.boss && b.isDrone) dmg *= 0.4;
+                    
                     if (Math.random() < store.player.critChance) {
                         dmg *= store.player.critDamage;
                         store.activeEffects.push(createEffect('critText', e.x, e.y));
-                        if (Math.random() < 0.05) { spawnPowerup(e.x, e.y); }
+                        if (Math.random() < 0.05) spawnPowerup(e.x, e.y);
                     }
+                    
+                    if (e === store.boss) playSound('hit');
                     e.hp -= dmg;
+
                     if (e.hp <= 0) {
-                        e.dead = true; store.world.score += e.score; store.world.shards += e.shards; store.world.xp += e.xp; store.world.kills++;
-                        spawnPowerup(e.x, e.y);
-                        if (store.player.vampirism > 0) store.player.hp = Math.min(store.player.hpMax, store.player.hp + dmg * store.player.vampirism);
-                        explode(e.x, e.y);
+                        e.dead = true;
+                        if (e === store.boss) {
+                            handleBossDefeat();
+                        } else {
+                            store.world.score += e.score;
+                            store.world.shards += e.shards;
+                            store.world.xp += e.xp;
+                            store.world.kills++;
+                            spawnPowerup(e.x, e.y);
+                            if (store.player.vampirism > 0) store.player.hp = Math.min(store.player.hpMax, store.player.hp + dmg * store.player.vampirism);
+                            explode(e.x, e.y);
+                        }
                     }
-                    if (b.explosive) explode(b.x, b.y, false, true); if (!b.pierce) b.dead = true;
+
+                    if (b.explosive) explode(b.x, b.y, false, true);
+                    if (!b.pierce) b.dead = true;
                 }
-            });
-            if (store.boss && !b.dead && collide(b, store.boss)) {
-                if (b.isFlame) { store.boss.slowTimer = 1.0; }
-                playSound('hit');
-                let dmg = b.dmg || 20; if (b.isDrone) dmg *= 0.4;
-                if (Math.random() < store.player.critChance) {
-                    dmg *= store.player.critDamage;
-                    store.activeEffects.push(createEffect('critText', store.boss.x, store.boss.y));
-                    if (Math.random() < 0.05) { spawnPowerup(store.boss.x, store.boss.y); }
-                }
-                store.boss.hp -= dmg;
-                if (store.boss.hp <= 0) {
-                    const fightDuration = (performance.now() - store.world.bossSpawnTime) / 1000;
-                    if (store.boss.name === 'TRAP KING' && store.player.pilotGenome === null) {
-                        store.player.pilotGenome = 'pending';
-                        setTimeout(showPilotSelect, 1000);
-                    }
-                    // --- START: MODIFIED CODE ---
-                    // NEW: Trigger two boss kills after pilot selection.
-                    if (store.world.bossesAtPilotSelection !== null && (store.world.bosses - store.world.bossesAtPilotSelection) === 2 && !store.player.subclass) {
-                        setTimeout(showSubclassSelect, 1500);
-                    }
-                    // --- END: MODIFIED CODE ---
-                    store.world.score += 2000; store.world.shards += 25; store.world.xp += 100; store.world.bosses++;
-                    store.boss = null; announce('⚡ GUARDIAN DEFEATED ⚡'); explode(b.x, b.y, true);
-                    let healthBonusMultiplier = 1.0, announcedAdaptation = false;
-                    if (fightDuration <= 4) {
-                        announcedAdaptation = true;
-                        if (store.world.wave >= 15) {
-                            store.world.consecutiveFastKills++;
-                            if (store.world.consecutiveFastKills === 1) { store.world.fastKillBonus = 0.20; } else { store.world.fastKillBonus *= 2; }
-                            healthBonusMultiplier = 1.4 + store.world.fastKillBonus;
-                            announce(`STREAK x${store.world.consecutiveFastKills}! GUARDIAN OVERDRIVE!`);
-                        } else { healthBonusMultiplier = 1.4; announce("GUARDIANS ADAPTING RAPIDLY!"); }
-                        store.world.collarStacks++;
-                    } else if (fightDuration > 10) {
-                        store.world.collarStacks = 0; store.world.consecutiveFastKills = 0; store.world.fastKillBonus = 0;
-                        healthBonusMultiplier = 1.0; announce("ADAPTATION RESET!");
-                    } else {
-                        announcedAdaptation = true; healthBonusMultiplier = 1.10;
-                        store.world.consecutiveFastKills = 0; store.world.fastKillBonus = 0;
-                        announce("GUARDIANS ADAPTING!");
-                    }
-                    store.world.bossHealthBonus *= healthBonusMultiplier;
-                    if (announcedAdaptation) {
-                        const enemyHealthBonus = healthBonusMultiplier > 1.1 ? 1.15 : 1.05;
-                        store.world.enemyHealthBonus *= enemyHealthBonus;
-                        store.world.enemyDensityBonus *= 1.10;
-                        setTimeout(() => announce("ENEMY SWARMS INTENSIFYING!"), 1000);
-                    }
-                }
-                if (b.explosive) explode(b.x, b.y, false, true); if (!b.pierce) b.dead = true;
             }
         });
+
+        // --- 6. HEARTBEAT & GAME STATE CHECKS ---
+        const p = store.player;
+        const healthRatio = p.hp / p.hpMax;
+        const lowHealthThreshold = 0.35;
+
+        if (healthRatio < lowHealthThreshold) {
+            if (!store.world.isLowHealth) {
+                store.world.isLowHealth = true;
+                store.heartbeatT = 5.0;
+                playSound('heartbeat');
+                store.activeEffects.push(createEffect("heartbeatPulse"));
+            } else {
+                if (store.heartbeatT > 0) {
+                    store.heartbeatT -= dt;
+                } else {
+                    store.heartbeatT = 5.0;
+                    playSound('heartbeat');
+                    store.activeEffects.push(createEffect("heartbeatPulse"));
+                }
+            }
+        } else if (store.world.isLowHealth) {
+            store.world.isLowHealth = false;
+        }
+
         ['bullets', 'eBullets', 'enemies', 'powerups', 'mines', 'missiles', 'lasers', 'flameParticles', 'lightningBolts'].forEach(key => store[key] = store[key].filter(i => !i.dead));
         store.activeEffects = store.activeEffects.filter(e => e.isActive !== false);
+
         if (!store.boss && store.enemies.length === 0) {
             if (store.world.waveStartTime > 0) {
                 const waveClearTime = (performance.now() - store.world.waveStartTime) / 1000;
                 if (waveClearTime < 5 && store.world.wave > 1) {
-                    store.world.enemyDensityBonus *= 1.1; store.world.enemyHealthBonus *= 1.05;
-                    store.world.xpMultiplier *= 1.05; store.world.collarStacks++;
+                    store.world.enemyDensityBonus *= 1.1;
+                    store.world.enemyHealthBonus *= 1.05;
+                    store.world.xpMultiplier *= 1.05;
+                    store.world.collarStacks++;
                     announce("SWARM INTENSITY RISING!");
                 }
             }
             store.world.wave++;
-            const hpBonus = 3; store.player.hpMax += hpBonus; store.player.hp += hpBonus;
+            const hpBonus = 3;
+            store.player.hpMax += hpBonus;
+            store.player.hp += hpBonus;
             initWave();
         }
-        let xpNeeded = store.world.level * 100 * store.world.xpMultiplier;
-        if (store.world.wave > 10) { xpNeeded *= 1.30; }
-        if (store.world.level >= 8) { xpNeeded *= 1.30; } else if (store.world.level >= 4) { xpNeeded *= 1.10; }
-        xpNeeded = Math.floor(xpNeeded);
-        if (store.world.xp >= xpNeeded) { store.world.xp -= xpNeeded; store.world.level++; levelUp(); }
-        if (store.player.hp <= 0) handleGameOver();
+
+        let xpNeeded = Math.floor(store.world.level * 100 * store.world.xpMultiplier * (store.world.level >= 8 ? 1.3 : store.world.level >= 4 ? 1.1 : 1) * (store.world.wave > 10 ? 1.3 : 1));
+        if (store.world.xp >= xpNeeded) {
+            store.world.xp -= xpNeeded;
+            store.world.level++;
+            levelUp();
+        }
+
+        if (store.player.hp <= 0) {
+            handleGameOver();
+        }
     }
+
+
+
+
+
+
     function explode(x, y, isBoss = false, isSmall = false) {
         playSound('explosion');
         if (isBoss) for (let i = 0; i < 5; i++) setTimeout(() => spawnPowerup(x, y), i * 300);
@@ -1570,7 +1638,7 @@
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
             ctx.globalAlpha = proxFactor; // The glow is invisible at the edge and fully visible up close
-            const glowRadius = b.r * 4.0;
+            const glowRadius = b.r * 2;
             const gradient = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, glowRadius);
             gradient.addColorStop(0.3, b.col);
             gradient.addColorStop(1, b.col + '00');
@@ -1597,18 +1665,6 @@
         renderVoidStepSystems(ctx);
         updateHUD();
 
-        // Low health "heartbeat" warning
-        const player = store.player;
-        const healthRatio = player.hp / player.hpMax;
-        if (healthRatio < 0.25) {
-            const pulseSpeed = 8;
-            const pulseIntensity = 0.15 + (0.25 - healthRatio) * 0.4; 
-            const pulse = pulseIntensity * (0.5 + 0.5 * Math.sin(performance.now() * pulseSpeed / 1000));
-            ctx.save();
-            ctx.fillStyle = `rgba(255, 0, 0, ${pulse})`;
-            ctx.fillRect(0, 0, W, H);
-            ctx.restore();
-        }
     }
    
     function takeDamage(dmg) {
@@ -2002,6 +2058,22 @@
     function createEffect(type,x,y, radius){
         let effect={isActive:!0,life:1,maxLife:1,x,y};
         switch(type){
+            case "heartbeatPulse":
+                effect.maxLife = 0.6; // The pulse will last 0.6 seconds
+                effect.life = effect.maxLife;
+                effect.step = function(dt) {
+                    this.life -= dt;
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    // This curve creates a smooth "swell" and fade-out for the pulse
+                    const alpha = Math.sin((this.life / this.maxLife) * Math.PI) * 0.4;
+                    ctx.save();
+                    ctx.fillStyle = `rgba(255, 105, 180, ${alpha})`;
+                    ctx.fillRect(0, 0, W, H);
+                    ctx.restore();
+                };
+                break;
             case "beefCharge":
                 effect.maxLife = 0.4;
                 effect.origin = x;
