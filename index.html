@@ -1094,7 +1094,7 @@
         return e;
     }
 
-function stepPlayer(dt) {
+    function stepPlayer(dt) {
         const p = store.player;
 
         // MOVEMENT LOGIC
@@ -1107,52 +1107,119 @@ function stepPlayer(dt) {
         } else {
             // Mouse Movement (Original Logic)
             if (p.pilotGenome === 'beef' && p.beefChargeState !== 'ready') {
-                // Charge movement logic remains the same
+                p.beefChargeT += dt;
+                const chargeDuration = 0.25;
+                const returnDuration = 0.35;
+                if (p.beefChargeState === 'charging') {
+                    const progress = Math.min(p.beefChargeT / chargeDuration, 1);
+                    p.x = p.beefChargeOrigin.x + (p.beefChargeTarget.x - p.beefChargeOrigin.x) * progress;
+                    p.y = p.beefChargeOrigin.y + (p.beefChargeTarget.y - p.beefChargeOrigin.y) * progress;
+                    if (progress >= 1) {
+                        p.beefChargeState = 'returning';
+                        p.beefChargeT = 0;
+                    }
+                } else if (p.beefChargeState === 'returning') {
+                    const progress = Math.min(p.beefChargeT / returnDuration, 1);
+                    p.x = p.beefChargeTarget.x + (p.beefChargeOrigin.x - p.beefChargeTarget.x) * progress;
+                    p.y = p.beefChargeTarget.y + (p.beefChargeOrigin.y - p.beefChargeTarget.y) * progress;
+                    if (progress >= 1) {
+                        p.x = p.beefChargeOrigin.x;
+                        p.y = p.beefChargeOrigin.y;
+                        p.beefChargeState = 'ready';
+                        p.isInvincible = false;
+                    }
+                }
             } else {
-                const vx = mouse.x - p.x, vy = mouse.y - p.y;
-                p.x += (vx * p.speed * dt * 0.005); p.y += (vy * p.speed * dt * 0.005);
-                p.x = clamp(p.x, 20, W - 20); p.y = clamp(p.y, 20, H - 20);
+                const vx = mouse.x - p.x,
+                    vy = mouse.y - p.y;
+                p.x += (vx * p.speed * dt * 0.005);
+                p.y += (vy * p.speed * dt * 0.005);
+                p.x = clamp(p.x, 20, W - 20);
+                p.y = clamp(p.y, 20, H - 20);
             }
         }
 
-        // BEEF CHARGE LOGIC (Refactored for both auto and manual)
+        // ABILITY LOGIC
         if (p.pilotGenome === 'beef') {
-            if (p.beefChargeCooldown > 0) { p.beefChargeCooldown -= dt; } else if (p.beefCharges < p.beefMaxCharges) { p.beefChargeCooldown = 8; p.beefCharges++; }
+            if (p.beefChargeCooldown > 0) {
+                p.beefChargeCooldown -= dt;
+            } else if (p.beefCharges < p.beefMaxCharges) {
+                p.beefChargeCooldown = 8;
+                p.beefCharges++;
+            }
             
-            // The charge is triggered either by the button OR automatically by proximity
             const shouldCharge = p.isRequestingCharge || !document.body.classList.contains('mobile-controls-active');
 
             if (p.beefChargeState === 'ready' && p.beefCharges > 0 && shouldCharge) {
-                p.isRequestingCharge = false; // Reset the flag
-                const chargeRadius = 120; let closestEnemy = null; let closestDistSq = chargeRadius * chargeRadius;
+                p.isRequestingCharge = false;
+                const chargeRadius = 120;
+                let closestEnemy = null;
+                let closestDistSq = chargeRadius * chargeRadius;
+                
+                // --- THIS IS THE CRITICAL FIX ---
+                // 'potentialTargets' is now defined here so both the 'if' and 'else' blocks can access it.
                 const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
+                // --- END OF FIX ---
+
                 potentialTargets.forEach(e => {
                     if (e.dead || e.stunTimer > 0) return;
-                    const dx = e.x - p.x; const dy = e.y - p.y; const distSq = dx * dx + dy * dy;
-                    if (distSq < closestDistSq) { closestDistSq = distSq; closestEnemy = e; }
+                    const dx = e.x - p.x;
+                    const dy = e.y - p.y;
+                    const distSq = dx * dx + dy * dy;
+                    if (distSq < closestDistSq) {
+                        closestDistSq = distSq;
+                        closestEnemy = e;
+                    }
                 });
 
                 if (closestEnemy) {
-                    p.beefCharges--; p.beefChargeCooldown = 8; p.beefChargeState = 'charging'; p.beefChargeOrigin = { x: p.x, y: p.y }; p.beefChargeTarget = { x: closestEnemy.x, y: closestEnemy.y }; p.beefChargeT = 0; p.isInvincible = true;
+                    p.beefCharges--;
+                    p.beefChargeCooldown = 8;
+                    p.beefChargeState = 'charging';
+                    p.beefChargeOrigin = { x: p.x, y: p.y };
+                    p.beefChargeTarget = { x: closestEnemy.x, y: closestEnemy.y };
+                    p.beefChargeT = 0;
+                    p.isInvincible = true;
                     store.activeEffects.push(createEffect("beefCharge", p.beefChargeOrigin, p.beefChargeTarget));
-                    const impactRadius = p.subclass === 'juggernaut' ? 120 : 80;
+
                     if (p.subclass === 'juggernaut') {
                         playSound('charge');
-                        explode(closestEnemy.x, closestEnemy.y, false, true);
+                        createClusterExplosion(closestEnemy.x, closestEnemy.y);
+                        const explosionRadius = 120;
+                        const explosionDmg = 100 * p.dmgMult;
+                        potentialTargets.forEach(e => {
+                            if (e.dead) return;
+                            const dx = e.x - closestEnemy.x;
+                            const dy = e.y - closestEnemy.y;
+                            if (dx * dx + dy * dy < explosionRadius * explosionRadius) {
+                                e.hp -= explosionDmg;
+                                e.stunTimer = 2.5;
+                                const knockbackForce = 250;
+                                const angle = Math.atan2(e.y - p.y, e.x - p.x);
+                                e.knockback = { vx: Math.cos(angle) * knockbackForce, vy: Math.sin(angle) * knockbackForce, duration: 0.3 };
+                            }
+                        });
+                    } else {
+                        potentialTargets.forEach(e => {
+                            if (e.dead) return;
+                            const impactRadius = 80;
+                            const dx = e.x - closestEnemy.x;
+                            const dy = e.y - closestEnemy.y;
+                            const distSq = dx * dx + dy * dy;
+                            if (distSq < impactRadius * impactRadius) {
+                                e.hp -= 80 * p.dmgMult;
+                                e.stunTimer = 2.5;
+                                const knockbackForce = 250;
+                                const angle = Math.atan2(e.y - p.y, e.x - p.x);
+                                e.knockback = { vx: Math.cos(angle) * knockbackForce, vy: Math.sin(angle) * knockbackForce, duration: 0.3 };
+                            }
+                        });
                     }
-                    potentialTargets.forEach(e => {
-                        if (e.dead) return;
-                        const dx = e.x - closestEnemy.x; const dy = e.y - closestEnemy.y; const distSq = dx * dx + dy * dy;
-                        if (distSq < impactRadius * impactRadius) {
-                            e.hp -= 80 * p.dmgMult; e.stunTimer = 2.5;
-                            const knockbackForce = 250; const angle = Math.atan2(e.y - p.y, e.x - p.x);
-                            e.knockback = { vx: Math.cos(angle) * knockbackForce, vy: Math.sin(angle) * knockbackForce, duration: 0.3 };
-                        }
-                    });
                 }
             }
         }
-        // The rest of the original stepPlayer logic...
+
+        // --- The rest of the original stepPlayer function ---
         if (p.pilotGenome === 'rocketman') {
             if (p.flameWallCooldown > 0) p.flameWallCooldown -= dt;
             if (p.flameWallActiveT > 0) p.flameWallActiveT -= dt;
@@ -1182,7 +1249,6 @@ function stepPlayer(dt) {
                     const isRocketman = p.pilotGenome === 'rocketman';
                     const missileDmg = isRocketman ? (95 * p.dmgMult * 0.7) : (95 * p.dmgMult);
                     const missileProps = { r: 4, target: closest, speed: 400, life: 0, dmg: missileDmg, hits: 0 };
-
                     if (p.subclass === 'demolitionist') {
                         const spreadAngle = 10; const initialSpeed = 300;
                         for (let i = 0; i < p.missileVolley; i++) {
@@ -1190,7 +1256,7 @@ function stepPlayer(dt) {
                             store.missiles.push({ ...missileProps, x: p.x, y: p.y, vx: Math.sin(angleOffset) * initialSpeed, vy: -Math.cos(angleOffset) * initialSpeed, turnRate: 4, pierce: 0, cluster: true });
                         }
                         if (p.hasIceman && store.iceman) {
-                             for (let i = 0; i < p.missileVolley; i++) {
+                            for (let i = 0; i < p.missileVolley; i++) {
                                 const angleOffset = (i - (p.missileVolley - 1) / 2) * spreadAngle * (Math.PI / 180);
                                 store.missiles.push({ ...missileProps, x: store.iceman.x, y: store.iceman.y, vx: Math.sin(angleOffset) * initialSpeed, vy: -Math.cos(angleOffset) * initialSpeed, dmg: missileDmg * 0.35, isIceman: true, turnRate: 4, pierce: 0, cluster: true });
                             }
