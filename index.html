@@ -380,8 +380,7 @@
                      <div id="subclassPanel" class="panel hide">
                         <h2 style="font-family:'Orbitron';color:var(--accent)">CHOOSE SPECIALIZATION</h2>
                         <div id="subclassGrid" class="grid" style="grid-template-columns: repeat(2, 1fr);">
-                            <!-- Subclass options will be injected here -->
-                        </div>
+                            </div>
                     </div>
                     <div id="storyPanel" class="panel hide">
                         <p>When we first discovered the voidplane, one of the earliest notes was the similarity of the plane's inhabitant lifeforms to that of deep sea life on Earth.<br><br>
@@ -441,6 +440,10 @@
     <audio id="audioHit" src="thunk.wav" preload="auto"></audio>
     <audio id="audioTrap" src="trap.m4a" preload="auto"></audio>
     <audio id="audioDogs" src="dogs.m4a" preload="auto"></audio>
+    <audio id="audioCharge" src="charge.m4a" preload="auto"></audio>
+    <audio id="audioEpicHorn" src="epichorntrimmed.m4a" preload="auto"></audio>
+    <audio id="audioCluster" src="cluster.mp3" preload="auto"></audio>
+    <audio id="audioThunder" src="thunder.mp3" preload="auto"></audio>
 
     <button id="fsEnterBtn" class="fixed-btn" type="button">FULLSCREEN</button>
     <div id="bottom-right-controls">
@@ -549,7 +552,7 @@
     cvs.addEventListener('mousemove', (e) => { const p = pointFromEvent(e); mouse.x = p.x; mouse.y = p.y; });
     cvs.addEventListener('touchstart', (e) => { const p = pointFromEvent(e); mouse.x = p.x; mouse.y = p.y; e.preventDefault(); }, { passive: false });
     cvs.addEventListener('touchmove', (e) => { const p = pointFromEvent(e); mouse.x = p.x; mouse.y = p.y; e.preventDefault(); }, { passive: false });
-   
+    
     // --- AUDIO ---
     const bgm = q('bgmAudio');
     const sounds = {
@@ -558,11 +561,16 @@
         hit: q('audioHit'),
         trap: q('audioTrap'),
         dogs: q('audioDogs'),
-        heartbeat: q('audioHeartbeat') // <-- ADD THIS LINE
+        heartbeat: q('audioHeartbeat'),
+        charge: q('audioCharge'),
+        epicHorn: q('audioEpicHorn'),
+        cluster: q('audioCluster'),
+        thunder: q('audioThunder')
     };
     let lastExplosionSoundTime = 0;
     let lastBossHitSoundTime = 0;
-   
+    let lastClusterSoundTime = 0;
+    
     function playSound(name) {
         const audio = sounds[name];
         if (!audio) return;
@@ -570,6 +578,10 @@
         if (name === 'explosion') {
             if (now - lastExplosionSoundTime < 50) return;
             lastExplosionSoundTime = now;
+        }
+        if (name === 'cluster') {
+            if (now - lastClusterSoundTime < 60) return;
+            lastClusterSoundTime = now;
         }
         if (name === 'hit') {
             if (now - lastBossHitSoundTime < 100) return;
@@ -599,7 +611,7 @@
         hasChainLightning: false, chainLightningCooldown: 0,
         subclass: null, missilePierce: 0, missileCluster: false, blinkDamage: false
     };
-   
+    
     const store = {
         frame: 0, last: performance.now(), isGameOver: false, isPaused: false,
         isDamageOff: false,          // <-- ADD THIS
@@ -648,7 +660,7 @@
         { id: 'shield', name: 'VOID SHIELD', icon: '🛡️', desc: '+20 regenerating shield', apply: () => { store.player.shieldMax += 20; store.player.shield = store.player.shieldMax; } },
         { id: 'flamethrower', name: 'LAVA CHUNKS', icon: '🌋', desc: 'Spews chunks of molten rock in a cone.', apply: () => { store.player.flamethrowerLevel++; } }
     ];
-   
+    
     const SHOP_UPGRADES = {
         'repair': { name: "NANO REPAIR", icon: '🔧', cost: 3, isPremium: true, category: 'health', apply: () => { if (store.player.hp < store.player.hpMax) { store.player.hp = Math.min(store.player.hpMax, store.player.hp + store.player.hpMax * 0.25); return true; } return false; }, desc: () => `Restore 25% of max HP.` },
         'vampirism': {
@@ -695,7 +707,7 @@
         'gravity_well': { name: "GRAVITY WELL", icon: '🕳️', baseCost: 150, scale: 2, maxLevel: 2, category: 'attack', effect: (level) => { if (level === 0) { store.player.hasVoidBeam = true; store.player.voidBeamCooldown = 15; }}, desc: level => { if (level === 0) return 'Unleash a singularity that traps and crushes foes.'; if (level === 1) return 'Summon a second, smaller singularity.'; return 'Max Level'; }},
         'ghost_hounds': { name: "GHOST HOUNDS", icon: '👻🐺', baseCost: 75, scale: 2, maxLevel: 2, category: 'attack', effect: () => { if (!store.player.hasHounds) { store.player.hasHounds = true; store.hounds = [createHound(-1), createHound(1)]; } else { store.hounds.push(createHound(-2)); store.hounds.push(createHound(2)); } playSound('dogs'); }, desc: level => { if (level === 0) return `Unlocks 2 spectral hounds.`; if (level === 1) return `Add 2 more hounds.`; return "Max hounds reached."; } }
     };
-   
+    
     const POWERUP_TYPES = {
         'double': { name: 'SCATTER SHOT', icon: '⬆️', duration: 0, type: 'instant' },
         'drones': { name: 'SIDE DRONES', icon: '🚁', duration: 15, type: 'timed' },
@@ -733,7 +745,7 @@
         store.powerups.push({ x, y, r: 12, type: typeKey });
         store.world.powerupCooldown = 5;
     }
-   
+    
     function applyPowerup(typeKey) {
         const p = store.player;
         const powerup = POWERUP_TYPES[typeKey];
@@ -783,7 +795,7 @@
             announce(`◢ SECTOR ${store.world.wave} ◣`);
         }
     }
-   
+    
     function createBoss(scale) {
         const bossCycle = Math.floor((store.world.wave - 5) / 5) % 5;
         const types = [
@@ -856,7 +868,10 @@
                     p.beefCharges--; p.beefChargeCooldown = 8; p.beefChargeState = 'charging'; p.beefChargeOrigin = { x: p.x, y: p.y }; p.beefChargeTarget = { x: closestEnemy.x, y: closestEnemy.y }; p.beefChargeT = 0; p.isInvincible = true;
                     store.activeEffects.push(createEffect("beefCharge", p.beefChargeOrigin, p.beefChargeTarget));
                     const impactRadius = p.subclass === 'juggernaut' ? 120 : 80;
-                    if (p.subclass === 'juggernaut') { explode(closestEnemy.x, closestEnemy.y, false, true); }
+                    if (p.subclass === 'juggernaut') {
+                        playSound('charge');
+                        explode(closestEnemy.x, closestEnemy.y, false, true);
+                    }
                     potentialTargets.forEach(e => {
                         if (e.dead) return;
                         const dx = e.x - closestEnemy.x; const dy = e.y - closestEnemy.y; const distSq = dx * dx + dy * dy;
@@ -975,7 +990,7 @@
     function detonateClusterRocket(m) {
         if (m.dead) return;
         m.dead = true;
-        playSound('explosion');
+        playSound('cluster');
         const explosionRadius = 80;
         const chainRadius = 90;
         const microExplosionCount = 5;
@@ -1120,7 +1135,7 @@
             if(detonate) { mine.dead = true; explodeMine(mine); }
         });
     }
-   
+    
     function stepFlameParticles(dt) {
         for (let i = store.flameParticles.length - 1; i >= 0; i--) {
             const p = store.flameParticles[i];
@@ -1456,11 +1471,11 @@
             store.activeEffects.push(createEffect("grenadeExplosion", x, y, radius));
         }
     }
-   
+    
     function levelUp() {
         announce(`LEVEL UP! ⚡ CHOOSE YOUR AUGMENTATION!`);
         pauseGame();
-       
+        
         store.player.isInvincible = true;
         const speedBoost = store.player.speed * 0.75;
         const fireRateBoost = store.player.fireRate * 0.5;
@@ -1507,12 +1522,12 @@
             resumeGame();
         })); panel.classList.remove('hide');
     }
-   
+    
     function handleGameOver() {
         if (store.isGameOver) return; store.isGameOver = true; bgm.pause(); addScore(store.world.score);
         announce('◢ NEXUS BREACH - PILOT LOST ◣'); q('finalScore').textContent = store.world.score; q('gameOverPanel').classList.remove('hide');
     }
-   
+    
     function resetGame() {
         store.player = JSON.parse(JSON.stringify(player_initial_state));
     
@@ -1707,7 +1722,7 @@
         updateHUD();
 
     }
-   
+    
     function takeDamage(dmg) {
         if (store.player.isInvincible || playerIsInvulnerable()) return;
         if (store.boss && store.boss.isInvincible) return;
@@ -1736,7 +1751,7 @@
             showShopWithHighlight();
         }
     }
-   
+    
     function escapeHtml(s) { s = String(s ?? ''); return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
     function announce(text) { const el = q('announce'); el.textContent = text; el.classList.remove('hide'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('hide'), 2500); }
     function updateHUD() { const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0; const healthText = `HP: ${Math.round(t.hp)} / ${t.hpMax}`; const shieldText = t.shieldMax > 0 ? `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}` : ""; q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } }
@@ -1921,7 +1936,7 @@
         ctx.strokeStyle = "#555";
         ctx.lineWidth = 2;
         ctx.stroke();
-       
+        
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(0, 0, m.r * 0.4 * pulse, 0, 2 * Math.PI);
@@ -1941,9 +1956,9 @@
             const segments = 12;
             const length = a * 1.8;
             const amplitude = a * 0.5; // Controls side-to-side curve
-           
+            
             ctx.beginPath();
-           
+            
             // Generate points for one side of the snake
             const points1 = [];
             for (let i = 0; i <= segments; i++) {
@@ -1997,7 +2012,7 @@
             ctx.globalAlpha=.6+.4*Math.sin(5*c);ctx.strokeStyle=n;ctx.fillStyle=n+"99";ctx.moveTo(0,-.8*a);ctx.quadraticCurveTo(a,-.5*a,.8*a,.8*a);ctx.quadraticCurveTo(0,.5*a,-.8*a,.8*a);ctx.quadraticCurveTo(-a,-.5*a,0,-.8*a);ctx.closePath();ctx.fill();ctx.stroke();for(let e=-1;e<=1;e++)ctx.beginPath(),ctx.moveTo(e*.4*a,.6*a),ctx.quadraticCurveTo(e*.5*a,a,e*.3*a+2*Math.sin(4*c+e),1.2*a),ctx.stroke();break;
         case "mech": // Refactored to Mech Gorilla
             ctx.strokeStyle = n; ctx.fillStyle = n + "99"; ctx.lineWidth = 2;
-           
+            
             // Head
             ctx.beginPath();
             ctx.rect(-a * 0.3, -a * 1.4, a * 0.6, a * 0.4);
@@ -2026,7 +2041,7 @@
             // Right Arm
             ctx.rect(a * 1.0, -a * 0.9, a * 0.6, a * 1.8);
             ctx.fill(); ctx.stroke();
-           
+            
             // Fists
             ctx.fillStyle = n + "cc";
             ctx.beginPath();
@@ -2124,7 +2139,7 @@
                     const progress = 1 - this.life;
                     const currentX = this.origin.x + (this.target.x - this.origin.x) * progress;
                     const currentY = this.origin.y + (this.target.y - this.origin.y) * progress;
-   
+    
                     ctx.save();
                     if(progress > 0.5) {
                         const shockwaveProgress = (progress - 0.5) / 0.5;
@@ -2193,7 +2208,7 @@
                     if (damageThisFrame) {
                         this.damagePulseT = 1;
                     }
-                   
+                    
                     const pullStrength = 300;
                     const damageRadiusSq = (this.maxRadius * 0.7)**2;
 
@@ -2210,7 +2225,7 @@
                                 e.x += (dx / dist) * pullStrength * resistance * dt;
                                 e.y += (dy / dist) * pullStrength * resistance * dt;
                             }
-                           
+                            
                             if (damageThisFrame && distSq < damageRadiusSq) {
                                 e.hp -= e.hpMax * (0.25 * store.player.dmgMult) ;
                             }
@@ -2222,25 +2237,25 @@
                           const dy = this.y - b.y;
                           const distSq = dx*dx + dy*dy;
                           if(distSq < this.radius**2) {
-                               const dist = Math.sqrt(distSq);
-                               if (dist > 50) {
-                                   b.x += (dx/dist) * pullStrength * 0.5 * dt;
-                                   b.y += (dy/dist) * pullStrength * 0.5 * dt;
-                               }
-                               if (damageThisFrame && distSq < damageRadiusSq) {
-                                   const damageToDeal = b.hpMax * (0.10 * store.player.dmgMult);
-                                   const cap = b.hpMax * 0.5;
-                                   let actualDamage = damageToDeal;
-                                   if (this.totalDamageDealtToBoss + actualDamage > cap) {
-                                       actualDamage = cap - this.totalDamageDealtToBoss;
-                                   }
-                                   if (actualDamage > 0) {
-                                       b.hp -= actualDamage;
-                                       this.totalDamageDealtToBoss += actualDamage;
-                                   }
-                               }
-                            }
-                       }
+                              const dist = Math.sqrt(distSq);
+                              if (dist > 50) {
+                                 b.x += (dx/dist) * pullStrength * 0.5 * dt;
+                                 b.y += (dy/dist) * pullStrength * 0.5 * dt;
+                              }
+                              if (damageThisFrame && distSq < damageRadiusSq) {
+                                  const damageToDeal = b.hpMax * (0.10 * store.player.dmgMult);
+                                  const cap = b.hpMax * 0.5;
+                                  let actualDamage = damageToDeal;
+                                  if (this.totalDamageDealtToBoss + actualDamage > cap) {
+                                      actualDamage = cap - this.totalDamageDealtToBoss;
+                                  }
+                                  if (actualDamage > 0) {
+                                      b.hp -= actualDamage;
+                                      this.totalDamageDealtToBoss += actualDamage;
+                                  }
+                              }
+                           }
+                      }
                 };
                 effect.draw = function() {
                     ctx.save();
@@ -2256,7 +2271,7 @@
                         const angle = Math.atan2(star.y, star.x) + pullFactor * 3;
                         const sx = Math.cos(angle) * currentDist;
                         const sy = Math.sin(angle) * currentDist;
-                       
+                        
                         if (currentDist < this.radius) {
                             ctx.globalAlpha = lifeRatio * (currentDist / this.radius);
                             ctx.beginPath();
@@ -2275,7 +2290,7 @@
                         ctx.arc(0, 0, (this.radius / 5) * (i + 1), rotation, rotation + Math.PI * 1.5);
                         ctx.stroke();
                     }
-                   
+                    
                     // Pulsating matter at the core
                     const corePulse = 3 + Math.sin(time / 100) * 2;
                     const coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, corePulse * 2);
@@ -2288,7 +2303,7 @@
                     ctx.beginPath();
                     ctx.arc(0, 0, corePulse * 2, 0, Math.PI * 2);
                     ctx.fill();
-                   
+                    
                     ctx.restore();
                 };
                 break;
@@ -2371,7 +2386,7 @@
         }
         return effect
     }
-   
+    
     function deployMineWall() {
         const p = store.player;
         for (let i = 0; i < 4; i++) {
@@ -2389,7 +2404,7 @@
     function explodeMine(mine) {
         playSound('explosion');
         const p = store.player;
-       
+        
         const numBullets = 18;
         for (let i = 0; i < numBullets; i++) {
             const angle = (i / numBullets) * 2 * Math.PI;
@@ -2468,7 +2483,7 @@
         }
 
         const shopItems = shopItemOrder.map(key => currentItems.find(item => item.key === key));
-       
+        
         let content = "";
         for (const u of shopItems) {
             const key = u.key;
@@ -2575,7 +2590,7 @@
         const isTuxedo = side === -1 || side === -2;
         // Default color logic
         let color = isTuxedo ? { main: '#222222', accent: '#FFFFFF' } : { main: '#F0E68C', accent: '#BDB76B' };
-       
+        
         // New properties for upgraded hounds
         let isUpgraded = false;
         let eyeType = 'normal';
@@ -2662,7 +2677,7 @@
             ctx.beginPath();
             ctx.arc(r * 0.4, -r * 0.2, r * 0.25, 0, 2 * Math.PI);
             ctx.fill();
-           
+            
             ctx.fillStyle = "#000";
             ctx.beginPath();
             ctx.arc(-r * 0.35, -r * 0.15, r * 0.1, 0, 2 * Math.PI);
@@ -2670,7 +2685,7 @@
             ctx.beginPath();
             ctx.arc(r * 0.45, -r * 0.15, r * 0.1, 0, 2 * Math.PI);
             ctx.fill();
-           
+            
             ctx.fillStyle = isTuxedo ? main : accent;
             ctx.beginPath();
             ctx.ellipse(0, r * 0.3, r * 0.5, r * 0.4, 0, 0, 2 * Math.PI);
@@ -2723,7 +2738,7 @@
             ctx.lineTo(-radius * 0.4, -radius * 1.2);
             ctx.lineTo(-radius * 0.2, -radius * 0.8);
             ctx.fill();
-           
+            
             ctx.beginPath();
             ctx.moveTo(radius * 0.6, -radius * 0.7);
             ctx.lineTo(radius * 0.4, -radius * 1.2);
@@ -2743,44 +2758,44 @@
 
             // Draw crazy eyes based on type
             ctx.fillStyle = 'white';
-           
+            
             if (eyeType === 'dilated') {
                 // Left eye - super dilated
                 ctx.beginPath();
                 ctx.ellipse(-radius * 0.35, -radius * 0.1, radius * 0.28, radius * 0.35, 0, 0, Math.PI * 2);
                 ctx.fill();
-               
+                
                 // Right eye - different size for crazy look
                 ctx.beginPath();
                 ctx.ellipse(radius * 0.35, -radius * 0.15, radius * 0.25, radius * 0.32, 0, 0, Math.PI * 2);
                 ctx.fill();
-               
+                
                 // Pupils - tiny and off-center
                 ctx.fillStyle = 'black';
                 ctx.beginPath();
                 ctx.arc(-radius * 0.3 + Math.sin(time * 0.001) * radius * 0.05,
-                      -radius * 0.05, radius * 0.08, 0, Math.PI * 2);
+                        -radius * 0.05, radius * 0.08, 0, Math.PI * 2);
                 ctx.fill();
-               
+                
                 ctx.beginPath();
                 ctx.arc(radius * 0.4,
-                      -radius * 0.2 + Math.cos(time * 0.001) * radius * 0.05,
-                      radius * 0.06, 0, Math.PI * 2);
+                        -radius * 0.2 + Math.cos(time * 0.001) * radius * 0.05,
+                        radius * 0.06, 0, Math.PI * 2);
                 ctx.fill();
             } else { // 'swirly'
                 // Swirly hypnotized eyes
                 ctx.beginPath();
                 ctx.arc(-radius * 0.35, -radius * 0.1, radius * 0.25, 0, Math.PI * 2);
                 ctx.fill();
-               
+                
                 ctx.beginPath();
                 ctx.arc(radius * 0.35, -radius * 0.1, radius * 0.25, 0, Math.PI * 2);
                 ctx.fill();
-               
+                
                 // Draw swirls in eyes
                 ctx.strokeStyle = 'black';
                 ctx.lineWidth = radius * 0.04;
-               
+                
                 // Left eye swirl
                 ctx.beginPath();
                 for(let t = 0; t < Math.PI * 4; t += 0.1) {
@@ -2791,7 +2806,7 @@
                     else ctx.lineTo(sx, sy);
                 }
                 ctx.stroke();
-               
+                
                 // Right eye swirl
                 ctx.beginPath();
                 for(let t = 0; t < Math.PI * 4; t += 0.1) {
@@ -2803,24 +2818,24 @@
                 }
                 ctx.stroke();
             }
-           
+            
             // Draw vampire fangs
             ctx.fillStyle = 'white';
-           
+            
             // Left fang
             ctx.beginPath();
             ctx.moveTo(-radius * 0.25, radius * 0.2);
             ctx.lineTo(-radius * 0.2, radius * 0.5);
             ctx.lineTo(-radius * 0.15, radius * 0.2);
             ctx.fill();
-           
+            
             // Right fang
             ctx.beginPath();
             ctx.moveTo(radius * 0.25, radius * 0.2);
             ctx.lineTo(radius * 0.2, radius * 0.5);
             ctx.lineTo(radius * 0.15, radius * 0.2);
             ctx.fill();
-           
+            
             // Small middle teeth
             for(let i = -1; i <= 1; i++) {
                 if(i === 0) continue;
@@ -2830,12 +2845,12 @@
                 ctx.lineTo(i * radius * 0.08 - radius * 0.02, radius * 0.35);
                 ctx.fill();
             }
-           
+            
             // Draw mouth/expression
             ctx.strokeStyle = expression === 'silly' ? '#000' : '#333';
             ctx.lineWidth = radius * 0.03;
             ctx.beginPath();
-           
+            
             if (expression === 'silly') {
                 // Wavy silly mouth
                 ctx.moveTo(-radius * 0.3, radius * 0.15);
@@ -2962,7 +2977,7 @@
             store.activeEffects.push(createEffect("shieldBreak", p.x, p.y));
         }
     }
-   
+    
     // --- NEW: Stormcaller Ability ---
     function fireChainLightning() {
         const p = store.player;
@@ -3018,7 +3033,7 @@
             });
         }
     }
-   
+    
     // --- VOID STEP ABILITY ---
     const VOIDSTEP = {
         cooldownMs: 2500, // Reduced for more frequent use
@@ -3054,13 +3069,13 @@ function tryVoidStep(player, target, now = performance.now()){
         const dy = ny - start.y;
         const dist = Math.sqrt(dx*dx + dy*dy);
         const damage = 150 * player.dmgMult;
-       
+        
         store.enemies.forEach(e => {
             if (e.dead) return;
             const dot = (((e.x - start.x) * dx) + ((e.y - start.y) * dy)) / (dist * dist);
             const closestX = start.x + dot * dx;
             const closestY = start.y + dot * dy;
-           
+            
             const onSegment = dot > 0 && dot < 1;
             if (onSegment) {
                  const distToLine = Math.sqrt((e.x - closestX)**2 + (e.y - closestY)**2);
@@ -3080,7 +3095,7 @@ function tryVoidStep(player, target, now = performance.now()){
     spawnBlinkFlash(nx, ny);
     return true;
 }
-   
+    
     function updateVoidStepSystems(enemies){
         for (const r of rifts) if (!r.dead) {
         if(performance.now() - r.birth >= r.life) r.dead = true;
@@ -3125,9 +3140,9 @@ function tryVoidStep(player, target, now = performance.now()){
             ctx.restore();
         });
     }
-   
+    
     function playerIsInvulnerable(){ return performance.now() < invulUntil; }
-   
+    
     function screenFlash(count, duration, color) {
         for (let i = 0; i < count; i++) {
             setTimeout(() => {
@@ -3141,7 +3156,7 @@ function tryVoidStep(player, target, now = performance.now()){
     function isAnyPanelOpen() {
         return PANELS.some(id => !q(id).classList.contains('hide'));
     }
-   
+    
     function pauseGame() {
         if (!store.isPaused) {
             store.isPaused = true;
@@ -3157,9 +3172,10 @@ function tryVoidStep(player, target, now = performance.now()){
             q('pauseBtn').textContent = 'PAUSE';
         }
     }
-   
+    
     // --- EVENT LISTENERS & INITIALIZATION ---
     function showPilotSelect() {
+        playSound('epicHorn');
         pauseGame();
         const panel = q('pilotPanel');
         panel.classList.remove('hide');
@@ -3192,7 +3208,7 @@ function tryVoidStep(player, target, now = performance.now()){
                 break;
         }
     }
-   
+    
     const SUBCLASSES = {
         rocketman: [
             { id: 'railgunner', name: 'Railgunner', desc: 'Missiles pierce through multiple enemies.', icon: 'rail.png' },
@@ -3219,9 +3235,9 @@ function tryVoidStep(player, target, now = performance.now()){
             resumeGame();
             return;
         }
-       
+        
         grid.innerHTML = choices.map(s => `<div class="skill-card" data-subclass="${s.id}"><div class="skill-icon"><img src="${s.icon}" class="pilot-icon"></div><div><div class="skill-title">${s.name}</div><div class="skill-desc">${s.desc}</div></div></div>`).join('');
-       
+        
         grid.querySelectorAll('.skill-card').forEach(card => {
             card.addEventListener('click', () => {
                 const subclassId = card.dataset.subclass;
@@ -3244,7 +3260,10 @@ function tryVoidStep(player, target, now = performance.now()){
             case 'juggernaut': /* Handled in charge logic */ break;
             case 'marauder': p.beefMaxCharges = 2; p.beefCharges = 2; break;
             case 'phasestriker': p.blinkDamage = true; break;
-            case 'stormcaller': p.hasChainLightning = true; break;
+            case 'stormcaller':
+                p.hasChainLightning = true;
+                playSound('thunder');
+                break;
         }
 
         // --- ADDED CODE FOR SUBCLASS CHALLENGE ---
@@ -3266,11 +3285,11 @@ function tryVoidStep(player, target, now = performance.now()){
             }
         }
     }
-   
+    
     q("restartBtn").addEventListener("click", resetGame);
-   
+    
     q("saveName").addEventListener("click",()=>{const t=(q("nameInput").value||"").slice(0,16).trim();if(t){store.name=t;q("namePanel").classList.add("hide");if(store.player.pilotGenome === null) { initWave(); resumeGame(); } else { resumeGame(); }}});
-   
+    
     const closeShopLogic = () => { q("shopPanel").classList.add('hide'); resumeGame(); const highlighted = document.querySelector('.shop-item.highlight'); if (highlighted) highlighted.classList.remove('highlight'); };
     q("closeShop").addEventListener("click", closeShopLogic);
     q("closeShopTopBtn").addEventListener("click", closeShopLogic);
@@ -3285,7 +3304,7 @@ function tryVoidStep(player, target, now = performance.now()){
 
     const closeScoresLogic = () => { q('scorePanel').classList.add('hide'); resumeGame(); };
     q("closeScores").addEventListener("click", closeScoresLogic);
-   
+    
     q("menuBtn").addEventListener("click",()=>{
         if (q('scorePanel').classList.contains('hide')) {
             pauseGame();
@@ -3296,13 +3315,13 @@ function tryVoidStep(player, target, now = performance.now()){
     });
 
     q("fsEnterBtn").addEventListener('click',()=>{const r=document.documentElement;if(!document.fullscreenElement){if(r.requestFullscreen)r.requestFullscreen();else if(r.webkitRequestFullscreen)r.webkitRequestFullscreen();else if(r.msRequestFullscreen)r.msRequestFullscreen()}else{if(document.exitFullscreen)document.exitFullscreen()}});
-   
+    
     q('pauseBtn').addEventListener('click',()=>{
         if(store.isGameOver || isAnyPanelOpen()) return;
         store.isPaused = !store.isPaused;
         q('pauseBtn').textContent = store.isPaused ? 'RESUME' : 'PAUSE';
     });
-   
+    
     q('grenadeBtnUI').addEventListener('click',useGrenade);
 
     q('storyBtn').addEventListener('click', (e) => {
@@ -3319,7 +3338,7 @@ function tryVoidStep(player, target, now = performance.now()){
             resumeGame();
         }
     });
-   
+    
     q("nameInput").addEventListener("keydown",(e)=>{if(e.key==="Enter"){const t=(q("nameInput").value||"").slice(0,16).trim();if(t){store.name=t;q("namePanel").classList.add("hide");if(store.player.pilotGenome === null) { initWave(); resumeGame(); } else { resumeGame(); }}}});
 
     q("namePanel").addEventListener("click", (e) => {
@@ -3327,7 +3346,7 @@ function tryVoidStep(player, target, now = performance.now()){
             q('nameInput').blur();
         }
     });
-   
+    
     let cheatCodeBuffer = "";
     let cheatTapCount = 0;
     let lastCheatTap = 0;
@@ -3400,7 +3419,7 @@ function tryVoidStep(player, target, now = performance.now()){
         announce('CHEAT: SKIPPING TO SUBCLASS SELECT');
         showSubclassSelect();
     }
-   
+    
     function activatePowerCheat() {
         store.cheatsUsed = true;
         announce('CHEAT: POWER UP!');
@@ -3505,7 +3524,7 @@ function tryVoidStep(player, target, now = performance.now()){
             // Intentionally not using alert as it's disabled. Error is logged.
         }
     }
-   
+    
 })();
 </script>
 </body>
