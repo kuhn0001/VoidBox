@@ -858,10 +858,10 @@
             p.x = clamp(p.x, 20, W - 20); p.y = clamp(p.y, 20, H - 20);
         }
         if (p.pilotGenome === 'beef') {
-            // Regeneration logic: If charges are not full, and cooldown is running, tick it down.
-            if (p.beefCharges < p.beefMaxCharges && p.beefChargeCooldown > 0) {
-                p.beefChargeCooldown -= dt;
-                // If cooldown finishes, add a charge and restart the cooldown if more charges are needed.
+            if (p.beefCharges < p.beefMaxCharges) {
+                if (p.beefChargeCooldown > 0) {
+                    p.beefChargeCooldown -= dt;
+                }
                 if (p.beefChargeCooldown <= 0) {
                     p.beefCharges++;
                     if (p.beefCharges < p.beefMaxCharges) {
@@ -869,7 +869,6 @@
                     }
                 }
             }
-            // Activation logic
             if (p.beefChargeState === 'ready' && p.beefCharges > 0) {
                 const chargeRadius = 120; let closestEnemy = null; let closestDistSq = chargeRadius * chargeRadius;
                 const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
@@ -879,7 +878,6 @@
                     if (distSq < closestDistSq) { closestDistSq = distSq; closestEnemy = e; }
                 });
                 if (closestEnemy) {
-                    // Start cooldown timer only when the first charge is used
                     if (p.beefCharges === p.beefMaxCharges) {
                         p.beefChargeCooldown = 8;
                     }
@@ -1164,13 +1162,11 @@
 
 
     function stepWorld(dt) {
-        // --- 1. UPDATE CORE ENTITIES ---
         stepPlayer(dt);
         if (store.boss) {
             stepBoss(dt);
         }
 
-        // --- 2. UPDATE PROJECTILES & PICKUPS ---
         stepPowerups(dt);
         stepHounds(dt);
         stepMissiles(dt);
@@ -1180,13 +1176,11 @@
         stepLightning(dt);
         updateVoidStepSystems(store.enemies);
 
-        // --- 3. UPDATE ACTIVE EFFECTS & COOLDOWNS ---
         store.activeEffects.forEach(e => { if (e.step) e.step(dt); });
         if (store.world.powerupCooldown > 0) {
             store.world.powerupCooldown -= dt * (1 + (store.player.luckBoost * 2));
         }
 
-        // --- 4. HANDLE ENEMY BULLET LOGIC & COLLISIONS ---
         const dmgScale = Math.pow(1.065, store.world.wave - 1);
         store.eBullets.forEach(b => {
             b.x += b.vx * dt;
@@ -1209,7 +1203,6 @@
             }
         });
 
-        // --- 5. HANDLE ENEMY & PLAYER BULLET LOGIC & COLLISIONS ---
         if (store.boss && store.boss.mines) {
             store.boss.mines.forEach(mine => {
                 mine.fuse -= dt;
@@ -3159,21 +3152,37 @@ function tryVoidStep(player, target, now = performance.now()){
         pauseGame();
         const panel = q('pilotPanel');
         panel.classList.remove('hide');
-        panel.querySelectorAll('.skill-card').forEach(card => {
-            card.addEventListener('click', () => {
-                const genome = card.dataset.genome;
-                store.player.pilotGenome = genome;
-                panel.classList.add('hide');
-                applyGenomeBonus(genome);
-                resumeGame();
-            }, { once: true });
+        const cards = panel.querySelectorAll('.skill-card');
+        
+        const clickHandler = (e) => {
+            const card = e.currentTarget;
+            const genome = card.dataset.genome;
+            store.player.pilotGenome = genome;
+            panel.classList.add('hide');
+            applyGenomeBonus(genome);
+            resumeGame();
+            cards.forEach(c => c.removeEventListener('click', clickHandler));
+        };
+        
+        cards.forEach(card => {
+            card.addEventListener('click', clickHandler);
         });
     }
 
     function applyGenomeBonus(genome) {
         if (!genome) return;
-        store.world.bossesAtPilotSelection = store.world.bosses;
+
+        // Reset all potential subclass stats to their defaults
         const p = store.player;
+        p.subclass = null;
+        p.beefMaxCharges = 1;
+        p.missilePierce = 0;
+        p.missileCluster = false;
+        p.blinkDamage = false;
+        p.hasChainLightning = false;
+
+        store.world.bossesAtPilotSelection = store.world.bosses;
+        
         switch(genome) {
             case 'beef':
                 p.hpMax *= 1.2;
@@ -3388,6 +3397,12 @@ function tryVoidStep(player, target, now = performance.now()){
         showSubclassSelect();
     }
     
+    function activateClassCheat() {
+        store.cheatsUsed = true;
+        announce('CHEAT: SKIPPING TO CLASS SELECT');
+        showPilotSelect();
+    }
+    
     function activatePowerCheat() {
         store.cheatsUsed = true;
         announce('CHEAT: POWER UP!');
@@ -3432,6 +3447,9 @@ function tryVoidStep(player, target, now = performance.now()){
                 cheatCodeBuffer = "";
             } else if (cheatCodeBuffer.endsWith('spec')) {
                 activateSubclassCheat();
+                cheatCodeBuffer = "";
+            } else if (cheatCodeBuffer.endsWith('class')) {
+                activateClassCheat();
                 cheatCodeBuffer = "";
             }
         } else {
