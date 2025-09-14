@@ -1169,6 +1169,7 @@
 
         stepPowerups(dt);
         stepHounds(dt);
+        updateGibs(dt);
         stepMissiles(dt);
         stepLasers(dt);
         stepMines(dt);
@@ -1340,6 +1341,7 @@
                         if (e === store.boss) {
                             handleBossDefeat();
                         } else {
+                            spawnGibs(e.x, e.y, e.color);
                             store.world.score += e.score;
                             store.world.shards += e.shards;
                             store.world.xp += e.xp;
@@ -1576,133 +1578,133 @@
     const starsA = Array.from({ length: starCountA }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5, pulse: Math.random() * 10 }));
     const starsB = Array.from({ length: starCountB }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 2, pulse: Math.random() * 10 }));
 
-    function render(dt) {
-        ctx.fillStyle = '#050008'; ctx.fillRect(0, 0, W, H);
-        const time = performance.now() / 1000;
-        ctx.globalAlpha = 0.8; for (const s of starsA) { s.y += 30 * dt; if (s.y > H) s.y -= H; ctx.fillStyle = `rgba(255,0,255,${0.5 + 0.5 * Math.sin(time * 2 + s.pulse)})`; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 2 * Math.PI); ctx.fill(); }
-        ctx.globalAlpha = 0.6; for (const s of starsB) { s.y += 60 * dt; if (s.y > H) s.y -= H; ctx.fillStyle = `rgba(204,0,255,${0.4 + 0.6 * Math.sin(time * 1.5 + s.pulse)})`; ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(0.1, s.r * (0.4 + 0.6 * Math.sin(time * 1.5 + s.pulse))), 0, 2 * Math.PI); ctx.fill(); }
-        ctx.globalAlpha = 1;
+function render(dt) {
+    ctx.fillStyle = '#050008'; ctx.fillRect(0, 0, W, H);
+    const time = performance.now() / 1000;
+    ctx.globalAlpha = 0.8; for (const s of starsA) { s.y += 30 * dt; if (s.y > H) s.y -= H; ctx.fillStyle = `rgba(255,0,255,${0.5 + 0.5 * Math.sin(time * 2 + s.pulse)})`; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 2 * Math.PI); ctx.fill(); }
+    ctx.globalAlpha = 0.6; for (const s of starsB) { s.y += 60 * dt; if (s.y > H) s.y -= H; ctx.fillStyle = `rgba(204,0,255,${0.4 + 0.6 * Math.sin(time * 1.5 + s.pulse)})`; ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(0.1, s.r * (0.4 + 0.6 * Math.sin(time * 1.5 + s.pulse))), 0, 2 * Math.PI); ctx.fill(); }
+    ctx.globalAlpha = 1;
 
-        const closeBullets = [];
-        const farBullets = [];
-        const proximityThreshold = 110;
-        const playerPos = store.player;
+    const closeBullets = [];
+    const farBullets = [];
+    const proximityThreshold = 110;
+    const playerPos = store.player;
 
-        store.eBullets.forEach(b => {
-            const distSq = (b.x - playerPos.x)**2 + (b.y - playerPos.y)**2; 
-            if (distSq < proximityThreshold**2) {
-                closeBullets.push({ bullet: b, dist: Math.sqrt(distSq) });
-            } else {
-                farBullets.push(b);
-            }
-        });
+    store.eBullets.forEach(b => {
+        const distSq = (b.x - playerPos.x)**2 + (b.y - playerPos.y)**2; 
+        if (distSq < proximityThreshold**2) {
+            closeBullets.push({ bullet: b, dist: Math.sqrt(distSq) });
+        } else {
+            farBullets.push(b);
+        }
+    });
+    
+    store.powerups.forEach(p => drawPowerup(p));
+    store.missiles.forEach(m => drawMissile(m));
+    store.lightningBolts.forEach(l => drawLightningBolt(l));
+    store.flameParticles.forEach(p => p.draw());
+
+    farBullets.forEach(b => {
+        ctx.fillStyle = b.col;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    
+    store.bullets.forEach(b => {
+        ctx.save();
+        ctx.translate(b.x, b.y);
+        ctx.fillStyle = b.col;
+        ctx.beginPath();
         
-        store.powerups.forEach(p => drawPowerup(p));
-        store.missiles.forEach(m => drawMissile(m));
-        store.lightningBolts.forEach(l => drawLightningBolt(l));
-        store.flameParticles.forEach(p => p.draw());
+        const r = b.r * 1.5;
 
-        farBullets.forEach(b => {
-            ctx.fillStyle = b.col;
+        if (b.isLavaChunk) {
             ctx.beginPath();
-            ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-            ctx.fill();
-        });
-        
-        store.bullets.forEach(b => {
-            ctx.save();
-            ctx.translate(b.x, b.y);
-            ctx.fillStyle = b.col;
-            ctx.beginPath();
-            
-            const r = b.r * 1.5;
-
-            if (b.isLavaChunk) {
-                ctx.beginPath();
-                ctx.moveTo(0, -r); ctx.lineTo(r, r * 0.2); ctx.lineTo(r * 0.5, r); ctx.lineTo(-r * 0.5, r); ctx.lineTo(-r, r * 0.2);
-                ctx.closePath();
-                ctx.fill();
-                b.particles.forEach(p => {
-                    const t = p.life / p.maxLife;
-                    const particleR = p.r * t;
-                    ctx.fillStyle = `rgba(255, ${100 + Math.random()*50}, 0, ${0.7 * t})`;
-                    ctx.beginPath();
-                    ctx.arc(p.x, p.y, particleR, 0, 2 * Math.PI);
-                    ctx.fill();
-                });
-            } else if (b.isFlame) {
-                ctx.fillStyle = `rgba(255, 150, 50, ${0.3 * (b.life / 50)})`;
-                ctx.beginPath();
-                ctx.arc(0, 0, b.r * 0.5, 0, 2 * Math.PI);
-                ctx.fill();
-                b.particles.forEach(p => {
-                    const t = p.life / p.maxLife;
-                    const r_particle = p.r * t;
-                    const g = Math.floor(255 * (0.4 + t * 0.6));
-                    const b_val = Math.floor(100 * t);
-                    ctx.fillStyle = `rgba(${g}, ${b_val}, 0, ${0.8 * t})`;
-                    ctx.beginPath();
-                    ctx.arc(p.x, p.y, r_particle, 0, 2 * Math.PI);
-                    ctx.fill();
-                });
-            } else if (b.isSwirl || b.explosive) {
-                ctx.arc(0, 0, b.r, 0, 2 * Math.PI);
-            } else if (b.isIceman) {
-                ctx.moveTo(0, r); ctx.lineTo(r * 0.8, -r * 0.8); ctx.lineTo(-r * 0.8, -r * 0.8);
-            } else {
-                ctx.moveTo(0, -r); ctx.lineTo(r * 0.8, r * 0.8); ctx.lineTo(-r * 0.8, r * 0.8);
-            }
-
+            ctx.moveTo(0, -r); ctx.lineTo(r, r * 0.2); ctx.lineTo(r * 0.5, r); ctx.lineTo(-r * 0.5, r); ctx.lineTo(-r, r * 0.2);
             ctx.closePath();
             ctx.fill();
-            ctx.restore();
-        });
+            b.particles.forEach(p => {
+                const t = p.life / p.maxLife;
+                const particleR = p.r * t;
+                ctx.fillStyle = `rgba(255, ${100 + Math.random()*50}, 0, ${0.7 * t})`;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, particleR, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+        } else if (b.isFlame) {
+            ctx.fillStyle = `rgba(255, 150, 50, ${0.3 * (b.life / 50)})`;
+            ctx.beginPath();
+            ctx.arc(0, 0, b.r * 0.5, 0, 2 * Math.PI);
+            ctx.fill();
+            b.particles.forEach(p => {
+                const t = p.life / p.maxLife;
+                const r_particle = p.r * t;
+                const g = Math.floor(255 * (0.4 + t * 0.6));
+                const b_val = Math.floor(100 * t);
+                ctx.fillStyle = `rgba(${g}, ${b_val}, 0, ${0.8 * t})`;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, r_particle, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+        } else if (b.isSwirl || b.explosive) {
+            ctx.arc(0, 0, b.r, 0, 2 * Math.PI);
+        } else if (b.isIceman) {
+            ctx.moveTo(0, r); ctx.lineTo(r * 0.8, -r * 0.8); ctx.lineTo(-r * 0.8, -r * 0.8);
+        } else {
+            ctx.moveTo(0, -r); ctx.lineTo(r * 0.8, r * 0.8); ctx.lineTo(-r * 0.8, r * 0.8);
+        }
 
-        store.lasers.forEach(l => drawLaser(l));
-        store.mines.forEach(m => drawMine(m));
-        if (store.boss && store.boss.mines) store.boss.mines.forEach(mine => { ctx.save(); ctx.translate(mine.x, mine.y); ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fillStyle = `rgba(255, 128, 128, ${0.7 + 0.3 * Math.sin(performance.now() / 200)})`; ctx.fill(); ctx.restore(); });
-        store.enemies.forEach(e => drawEnemy(e));
-        if (store.boss) drawBoss(store.boss);
-        store.drones.forEach(d => drawDrone(d));
-        store.hounds.forEach(h => drawHound(h));
-        if (store.iceman) drawIceman(store.iceman);
-        drawShip(store.player.x, store.player.y, store.player);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+    });
+
+    store.lasers.forEach(l => drawLaser(l));
+    store.mines.forEach(m => drawMine(m));
+    if (store.boss && store.boss.mines) store.boss.mines.forEach(mine => { ctx.save(); ctx.translate(mine.x, mine.y); ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fillStyle = `rgba(255, 128, 128, ${0.7 + 0.3 * Math.sin(performance.now() / 200)})`; ctx.fill(); ctx.restore(); });
+    store.enemies.forEach(e => drawEnemy(e));
+    drawGibs(ctx); // <-- ADD THIS LINE TO DRAW THE GIBS
+    if (store.boss) drawBoss(store.boss);
+    store.drones.forEach(d => drawDrone(d));
+    store.hounds.forEach(h => drawHound(h));
+    if (store.iceman) drawIceman(store.iceman);
+    drawShip(store.player.x, store.player.y, store.player);
+    
+    closeBullets.forEach(item => {
+        const b = item.bullet;
+        const dist = item.dist;
         
-        closeBullets.forEach(item => {
-            const b = item.bullet;
-            const dist = item.dist;
-            
-            const proxFactor = 1.0 - (dist / proximityThreshold);
+        const proxFactor = 1.0 - (dist / proximityThreshold);
 
-            ctx.save();
-            ctx.globalCompositeOperation = 'lighter';
-            ctx.globalAlpha = proxFactor; 
-            const glowRadius = b.r * 2;
-            const gradient = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, glowRadius);
-            gradient.addColorStop(0.3, b.col);
-            gradient.addColorStop(1, b.col + '00');
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(b.x, b.y, glowRadius, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = proxFactor; 
+        const glowRadius = b.r * 2;
+        const gradient = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, glowRadius);
+        gradient.addColorStop(0.3, b.col);
+        gradient.addColorStop(1, b.col + '00');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, glowRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
 
-            ctx.fillStyle = b.col;
-            ctx.beginPath();
-            ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-            ctx.fill();
+        ctx.fillStyle = b.col;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+        ctx.fill();
 
-            ctx.fillStyle = `rgba(255, 255, 255, ${proxFactor * 0.8})`;
-            ctx.beginPath();
-            ctx.arc(b.x, b.y, b.r * 0.5, 0, Math.PI * 2);
-            ctx.fill();
-        });
-        
-        store.activeEffects.forEach(e => e.draw && e.draw());
-        renderVoidStepSystems(ctx);
-        updateHUD();
-
-    }
+        ctx.fillStyle = `rgba(255, 255, 255, ${proxFactor * 0.8})`;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.r * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    
+    store.activeEffects.forEach(e => e.draw && e.draw());
+    renderVoidStepSystems(ctx);
+    updateHUD();
+}
     
     function takeDamage(dmg) {
         if (store.player.isInvincible || playerIsInvulnerable()) return;
@@ -2221,7 +2223,9 @@
                     const damageRadiusSq = (this.maxRadius * 0.7)**2;
 
                     store.enemies.forEach(e => {
-                        if (e.dead) return;
+                        if (e.dead) {
+                            return; 
+                        }
                         const dx = this.x - e.x;
                         const dy = this.y - e.y;
                         const distSq = dx * dx + dy * dy;
@@ -3166,6 +3170,79 @@ function tryVoidStep(player, target, now = performance.now()){
         
         cards.forEach(card => {
             card.addEventListener('click', clickHandler);
+        });
+    }
+
+    // --- GIBBING EFFECT ---
+
+    // Initialize the gibs array in your game's store
+    store.gibs = [];
+
+    /**
+     * Spawns a cluster of gib particles at a specific location.
+     * Call this function when an enemy dies.
+     * @param {number} x - The x-coordinate of the enemy.
+     * @param {number} y - The y-coordinate of the enemy.
+     * @param {string} color - The base color of the enemy.
+     * @param {number} [amount=15] - The number of gibs to create.
+     */
+    function spawnGibs(x, y, color, amount = 15) {
+        for (let i = 0; i < amount; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 50 + Math.random() * 150;
+            const size = 2 + Math.random() * 4;
+            const life = 0.5 + Math.random() * 0.5;
+
+            store.gibs.push({
+                x, y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                r: size,
+                life,
+                maxLife: life,
+                color,
+                gravity: 300, // Pulls gibs downward
+            });
+        }
+    }
+
+    /**
+     * Updates the position and lifetime of all active gibs.
+     * This should be called once per frame from your main game loop.
+     * @param {number} dt - Delta time, the time since the last frame.
+     */
+    function updateGibs(dt) {
+        for (let i = store.gibs.length - 1; i >= 0; i--) {
+            const gib = store.gibs[i];
+            
+            // Apply physics
+            gib.vy += gib.gravity * dt;
+            gib.x += gib.vx * dt;
+            gib.y += gib.vy * dt;
+            gib.life -= dt;
+
+            // Remove gibs that have expired
+            if (gib.life <= 0) {
+                store.gibs.splice(i, 1);
+            }
+        }
+    }
+
+    /**
+     * Draws all active gibs to the canvas.
+     * This is called from the main render() function.
+     * @param {object} ctx - The 2D rendering context of the canvas.
+     */
+    function drawGibs(ctx) {
+        store.gibs.forEach(gib => {
+            const alpha = gib.life / gib.maxLife; // Fade out effect
+            
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, alpha);
+            ctx.fillStyle = gib.color;
+            ctx.beginPath();
+            ctx.fillRect(gib.x - gib.r / 2, gib.y - gib.r / 2, gib.r, gib.r);
+            ctx.restore();
         });
     }
 
