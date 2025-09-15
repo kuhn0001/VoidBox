@@ -677,6 +677,8 @@ class FlameParticle {
         hasChainLightning: false, chainLightningCooldown: 0,
         subclass: null, missilePierce: 0, missileCluster: false, blinkDamage: false,
         enhancedClusters: false, enhancedPierce: false, hasStormcaller: false, hasPhasestriker: false,
+        // Void caller enhanced options
+        hasDoubleStorm: false, hasHybridVoid: false, hasImpactPhase: false,
         clusterSoundCounter: 0
     };
     
@@ -986,7 +988,7 @@ class FlameParticle {
                 }
             }
         } else if (p.pilotGenome === 'wizard') {
-            if (p.hasChainLightning) {
+            if (p.hasChainLightning || p.hasHybridVoid) {
                 p.chainLightningCooldown -= dt;
                 if (p.chainLightningCooldown <= 0) { fireChainLightning(); p.chainLightningCooldown = 1.5; }
             }
@@ -1284,6 +1286,7 @@ class FlameParticle {
         stepFlameParticles(dt);
         stepLightning(dt);
         updateVoidStepSystems(store.enemies);
+        updateImpactSystem();
 
         store.activeEffects.forEach(e => { if (e.step) e.step(dt); });
         if (store.world.powerupCooldown > 0) {
@@ -1858,6 +1861,7 @@ function render(dt) {
     
     store.activeEffects.forEach(e => e.draw && e.draw());
     renderVoidStepSystems(ctx);
+    renderImpactSystem(ctx);
     updateHUD();
 }
     
@@ -3144,6 +3148,22 @@ function render(dt) {
     
     function fireChainLightning() {
         const p = store.player;
+        
+        if (p.hasDoubleStorm) {
+            // Fire two chain lightning bolts
+            fireChainLightningBolt();
+            setTimeout(() => fireChainLightningBolt(), 100); // Slight delay for visual effect
+        } else if (p.hasHybridVoid) {
+            // Fire single lightning bolt (reduced power for hybrid)
+            fireChainLightningBolt(0.7); // 70% damage for hybrid mode
+        } else {
+            // Standard single chain lightning
+            fireChainLightningBolt();
+        }
+    }
+    
+    function fireChainLightningBolt(damageMultiplier = 1.0) {
+        const p = store.player;
         const allEnemies = store.boss ? [...store.enemies.filter(e => !e.dead), store.boss] : store.enemies.filter(e => !e.dead);
         if (allEnemies.length === 0) return;
 
@@ -3160,7 +3180,7 @@ function render(dt) {
         if (!currentTarget) return;
 
         const maxJumps = 6;
-        let currentDamage = 95 * p.dmgMult;
+        let currentDamage = 95 * p.dmgMult * damageMultiplier;
         const targetsHit = new Set();
         const chainPoints = [{ x: p.x, y: p.y - 20 }];
 
@@ -3254,9 +3274,113 @@ function tryVoidStep(player, target, now = performance.now()){
     invulUntil = now + VOIDSTEP.iframeMs;
     lastVoidStep = now;
 
+    // Impact shockwave for earthquake enhancement
+    if (player.hasImpactPhase) {
+        createImpactShockwave(nx, ny, player.dmgMult);
+    }
+
     spawnBlinkFlash(nx, ny);
     return true;
 }
+    
+    // Impact shockwave system for earthquake enhancement
+    const impactRipples = [];
+    
+    function createImpactShockwave(x, y, dmgMult) {
+        const shockDamage = 200 * dmgMult;  // High impact damage
+        const maxRadius = 120;  // Large earthquake radius
+        
+        // Create expanding ripple effect
+        impactRipples.push({
+            x: x, y: y,
+            radius: 0,
+            maxRadius: maxRadius,
+            life: 0.8,
+            maxLife: 0.8,
+            birth: performance.now(),
+            dead: false
+        });
+        
+        // Damage all enemies in impact radius
+        store.enemies.forEach(e => {
+            if (e.dead) return;
+            const dist = Math.sqrt((e.x - x)**2 + (e.y - y)**2);
+            if (dist <= maxRadius) {
+                const damageFalloff = 1.0 - (dist / maxRadius) * 0.3; // 30% falloff at edge
+                e.hp -= shockDamage * damageFalloff;
+                
+                // Knockback effect
+                if (dist > 0) {
+                    const knockbackForce = 200;
+                    const knockbackX = (e.x - x) / dist * knockbackForce;
+                    const knockbackY = (e.y - y) / dist * knockbackForce;
+                    e.knockback = { x: knockbackX, y: knockbackY, duration: 0.3, timer: 0.3 };
+                }
+            }
+        });
+        
+        // Damage boss if in range
+        if (store.boss && !store.boss.dead) {
+            const dist = Math.sqrt((store.boss.x - x)**2 + (store.boss.y - y)**2);
+            if (dist <= maxRadius) {
+                const damageFalloff = 1.0 - (dist / maxRadius) * 0.3;
+                store.boss.hp -= (shockDamage * damageFalloff * 0.4); // Reduced boss damage
+            }
+        }
+        
+        playSound('thunder'); // Play earthquake sound
+    }
+    
+    function updateImpactSystem() {
+        const now = performance.now();
+        for (const ripple of impactRipples) {
+            if (ripple.dead) continue;
+            
+            const age = (now - ripple.birth) / 1000; // Convert to seconds
+            ripple.radius = (age / ripple.maxLife) * ripple.maxRadius;
+            
+            if (age >= ripple.maxLife) {
+                ripple.dead = true;
+            }
+        }
+        
+        // Remove dead ripples
+        for (let i = impactRipples.length - 1; i >= 0; i--) {
+            if (impactRipples[i].dead) {
+                impactRipples.splice(i, 1);
+            }
+        }
+    }
+    
+    function renderImpactSystem(ctx) {
+        for (const ripple of impactRipples) {
+            if (ripple.dead) continue;
+            
+            const now = performance.now();
+            const age = (now - ripple.birth) / 1000;
+            const progress = age / ripple.maxLife;
+            const alpha = 1.0 - progress; // Fade out over time
+            
+            ctx.save();
+            ctx.globalAlpha = alpha * 0.6;
+            ctx.strokeStyle = `rgba(255, 255, 0, ${alpha})`;  // Yellow earthquake ripples
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(ripple.x, ripple.y, ripple.radius, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            // Inner ripple for more impact
+            if (progress < 0.7) {
+                ctx.globalAlpha = alpha * 0.4;
+                ctx.strokeStyle = `rgba(255, 200, 0, ${alpha})`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(ripple.x, ripple.y, ripple.radius * 0.6, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+    }
     
     function updateVoidStepSystems(enemies){
         for (const r of rifts) if (!r.dead) {
@@ -3566,11 +3690,12 @@ function tryVoidStep(player, target, now = performance.now()){
             } else if (!p.hasPhasestriker) {
                 choices = [{ id: 'phasestriker', name: 'PHASESTRIKER', desc: 'Void step damages all enemies you pass through.', icon: 'phase.png' }];
             } else {
-                // They have both - double current powers
-                const opts = [];
-                if (p.hasStormcaller) opts.push({ id: 'enhanced_storm', name: 'MEGA STORM', desc: 'Chain lightning hits more targets with increased damage.', icon: 'storm.png' });
-                if (p.hasPhasestriker) opts.push({ id: 'enhanced_phase', name: 'VOID MASTERY', desc: 'Void step deals massive damage and has shorter cooldown.', icon: 'phase.png' });
-                choices = opts;
+                // They have both - offer three enhanced void caller options
+                choices = [
+                    { id: 'double_storm', name: 'TWIN LIGHTNING', desc: 'Chain lightning fires twin devastating bolts.', icon: 'storm.png' },
+                    { id: 'hybrid_void', name: 'VOID STORM', desc: 'Voidstep damages enemies + unlocks single lightning bolt.', icon: 'phase.png' },
+                    { id: 'impact_phase', name: 'EARTHQUAKE', desc: 'Voidstep creates a massive impact shockwave at destination.', icon: 'void.png' }
+                ];
             }
         } else if (genome === 'beef') {
             // Handle beef subclasses similarly
@@ -3649,6 +3774,20 @@ function tryVoidStep(player, target, now = performance.now()){
                 p.hasChainLightning = true;
                 announce('STORMCALLER ACTIVATED!');
                 playSound('thunder');
+                break;
+            case 'double_storm':
+                p.hasDoubleStorm = true;
+                announce('TWIN LIGHTNING ACTIVATED!');
+                break;
+            case 'hybrid_void':
+                p.hasHybridVoid = true; 
+                p.blinkDamage = true;  // Enable voidstep damage
+                announce('VOID STORM ACTIVATED!');
+                break;
+            case 'impact_phase':
+                p.hasImpactPhase = true;
+                p.blinkDamage = true;  // Ensure voidstep does damage
+                announce('EARTHQUAKE ACTIVATED!');
                 break;
             case 'enhanced_storm':
                 announce('MEGA STORM ACTIVATED!');
@@ -3753,7 +3892,8 @@ function tryVoidStep(player, target, now = performance.now()){
         'dmgMult', 'multishot', 'rearMultishot', 'piercing', 'explosive', 
         'flamethrowerLevel', 'missileVolley', 'critChance', 'critDamage', 
         'hasLauncher', 'hasHounds', 'hasLazarusBeam', 'hasVoidBeam', 
-        'hasChainLightning', 'hasIceman', 'blinkDamage', 'missilePierce', 'missileCluster'
+        'hasChainLightning', 'hasIceman', 'blinkDamage', 'missilePierce', 'missileCluster',
+        'hasDoubleStorm', 'hasHybridVoid', 'hasImpactPhase'
     ];
     
     store.savedPlayerState = {};
