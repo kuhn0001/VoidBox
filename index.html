@@ -486,72 +486,162 @@
 
 
     // --- NEW FLAME PARTICLE CLASS ---
-    class FlameParticle {
-        constructor(x, y, attachedEnemy = null) {
-            this.x = x + (Math.random() - 0.5) * 8;
-            this.y = y;
-            this.vx = (Math.random() - 0.5) * 20;
-            this.vy = -Math.random() * 80 - 40;
-            this.maxLife = 10;
-            this.life = this.maxLife * (0.7 + Math.random() * 0.3);
-            this.size = Math.random() * 12 + 6;
-            this.heat = Math.random();
-            this.wobble = Math.random() * Math.PI * 2;
-            this.wobbleSpeed = Math.random() * 2 + 1;
-            this.attachedEnemy = attachedEnemy;
-            this.damage = 0.1; // Damage per frame
-        }
-
-        update(dt) {
-            this.life -= dt;
-            if (this.life <= 0) return false;
-            this.y += this.vy * dt;
-            this.x += this.vx * dt;
-            this.vy -= 100 * dt;
-            this.wobble += this.wobbleSpeed * dt;
-            this.x += Math.sin(this.wobble) * 15 * dt;
-            this.size *= 1 + (0.1 * dt);
-            return true;
-        }
-
-        draw() {
-            if (this.life <= 0) return;
-            ctx.save();
-            ctx.globalCompositeOperation = 'lighter';
-            const lifeRatio = this.life / this.maxLife;
-            const layers = [
-                { size: this.size * 2.5, alpha: lifeRatio * 0.15 },
-                { size: this.size * 1.5, alpha: lifeRatio * 0.3 },
-                { size: this.size, alpha: lifeRatio * 0.8 }
-            ];
-            layers.forEach(layer => {
-                ctx.globalAlpha = layer.alpha;
-                const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, layer.size);
-                if (this.heat > 0.6) {
-                    gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');      // white core
-                    gradient.addColorStop(0.2, 'rgba(180, 120, 255, 0.8)');  // lavender
-                    gradient.addColorStop(0.5, 'rgba(120, 80, 255, 0.5)');   // blue-violet
-                    gradient.addColorStop(0.8, 'rgba(255, 80, 200, 0.3)');   // pink
-                    gradient.addColorStop(1, 'rgba(100, 0, 255, 0)');        // purple edge
-                } else if (this.heat > 0.3) {
-                    gradient.addColorStop(0, 'rgba(255, 200, 255, 1)');      // pinkish white
-                    gradient.addColorStop(0.3, 'rgba(200, 120, 255, 0.7)');  // lavender
-                    gradient.addColorStop(0.6, 'rgba(120, 80, 255, 0.4)');   // blue-violet
-                    gradient.addColorStop(1, 'rgba(80, 0, 120, 0)');         // deep purple
-                } else {
-                    gradient.addColorStop(0, 'rgba(200, 120, 255, 1)');      // lavender
-                    gradient.addColorStop(0.4, 'rgba(120, 80, 255, 0.6)');   // blue-violet
-                    gradient.addColorStop(0.7, 'rgba(255, 80, 200, 0.3)');   // pink
-                    gradient.addColorStop(1, 'rgba(80, 0, 120, 0)');         // deep purple
-                }
-                ctx.fillStyle = gradient;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, layer.size, 0, Math.PI * 2);
-                ctx.fill();
-            });
-            ctx.restore();
-        }
+class FlameParticle {
+    constructor(x, y, attachedEnemy = null) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 40; // Less horizontal spread
+        this.vy = -20 - Math.random() * 30; // Slower upward drift
+        this.life = 6 + Math.random() * 4; // 3-5 seconds
+        this.maxLife = this.life;
+        this.size = 8 + Math.random() * 8; // Smaller, more varied sizes
+        this.attachedEnemy = attachedEnemy;
+        this.damage = 0.45;
+        this.wobble = Math.random() * Math.PI * 2;
+        this.wobbleSpeed = 0.5 + Math.random() * 1;
+        this.heat = 0.8 + Math.random() * 0.2; // Start hot
+        this.flickerOffset = Math.random() * 1000;
+        this.baseSize = this.size;
+        this.gravity = 15; // Slight downward pull for realistic behavior
+        this.isDying = false;
     }
+
+    update(dt) {
+        this.life -= dt;
+        if (this.life <= 0) return false;
+
+        // Physics
+        this.vy += this.gravity * dt; // Gravity pulls down
+        this.vy -= 25 * dt; // But heat pushes up (less than before)
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+
+        // Air resistance
+        this.vx *= 0.98;
+        this.vy *= 0.98;
+
+        // Wobble for flame-like movement
+        this.wobble += this.wobbleSpeed * dt;
+        this.x += Math.sin(this.wobble) * 8 * dt;
+
+        // Heat dissipates over time
+        const lifeRatio = this.life / this.maxLife;
+        this.heat = Math.max(0.1, lifeRatio * 0.9);
+
+        // Size changes - grows then shrinks
+        if (lifeRatio > 0.7) {
+            this.size = this.baseSize * (1 + (1 - lifeRatio) * 2); // Grow when young
+        } else {
+            this.size = this.baseSize * lifeRatio; // Shrink when dying
+        }
+
+        // Mark as dying when nearly expired
+        if (lifeRatio < 0.3) {
+            this.isDying = true;
+        }
+
+        return true;
+    }
+
+    draw() {
+        if (this.life <= 0) return;
+        
+        if (!Number.isFinite(this.x) || !Number.isFinite(this.y) || !Number.isFinite(this.size) || this.size <= 0) {
+            return;
+        }
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        
+        const lifeRatio = this.life / this.maxLife;
+        const time = performance.now() + this.flickerOffset;
+        const flicker = 0.8 + 0.2 * Math.sin(time * 0.01);
+        
+        // Create multiple flame layers for depth
+        const layers = [
+            { 
+                size: this.size * 2.2, 
+                alpha: lifeRatio * 0.1 * flicker,
+                offset: { x: 0, y: 0 }
+            },
+            { 
+                size: this.size * 1.6, 
+                alpha: lifeRatio * 0.25 * flicker,
+                offset: { x: Math.sin(time * 0.008) * 2, y: Math.cos(time * 0.012) * 1 }
+            },
+            { 
+                size: this.size * 1.0, 
+                alpha: lifeRatio * 0.6 * flicker,
+                offset: { x: Math.sin(time * 0.015) * 1, y: 0 }
+            },
+            { 
+                size: this.size * 0.5, 
+                alpha: lifeRatio * 0.8,
+                offset: { x: 0, y: 0 }
+            }
+        ];
+
+        layers.forEach((layer, index) => {
+            if (layer.alpha <= 0) return;
+            
+            ctx.globalAlpha = layer.alpha;
+            
+            const centerX = this.x + layer.offset.x;
+            const centerY = this.y + layer.offset.y;
+            
+            // Create napalm-like gradient
+            const gradient = ctx.createRadialGradient(
+                centerX, centerY, 0, 
+                centerX, centerY, layer.size
+            );
+
+            // Napalm color progression: hot white core -> pink -> purple -> blue edges
+            if (index === 3) { // Hottest core
+                gradient.addColorStop(0, `rgba(255, 255, 255, ${this.heat})`);
+                gradient.addColorStop(0.2, `rgba(255, 100, 180, ${this.heat * 0.9})`);
+                gradient.addColorStop(0.5, `rgba(200, 50, 255, ${this.heat * 0.7})`);
+                gradient.addColorStop(1, `rgba(100, 30, 200, 0)`);
+            } else if (index === 2) { // Hot middle
+                gradient.addColorStop(0, `rgba(255, 150, 200, ${this.heat * 0.8})`);
+                gradient.addColorStop(0.3, `rgba(220, 100, 255, ${this.heat * 0.7})`);
+                gradient.addColorStop(0.7, `rgba(150, 80, 255, ${this.heat * 0.5})`);
+                gradient.addColorStop(1, `rgba(80, 50, 180, 0)`);
+            } else if (index === 1) { // Cooler outer
+                gradient.addColorStop(0, `rgba(200, 120, 255, ${this.heat * 0.6})`);
+                gradient.addColorStop(0.4, `rgba(150, 100, 255, ${this.heat * 0.4})`);
+                gradient.addColorStop(0.8, `rgba(100, 80, 200, ${this.heat * 0.3})`);
+                gradient.addColorStop(1, `rgba(60, 40, 120, 0)`);
+            } else { // Outermost smoke-like layer
+                gradient.addColorStop(0, `rgba(120, 80, 200, ${this.heat * 0.3})`);
+                gradient.addColorStop(0.5, `rgba(80, 60, 150, ${this.heat * 0.2})`);
+                gradient.addColorStop(1, `rgba(40, 30, 80, 0)`);
+            }
+
+            ctx.fillStyle = gradient;
+            
+            // Draw flame shape (more organic than perfect circle)
+            ctx.beginPath();
+            const points = 8;
+            for (let i = 0; i <= points; i++) {
+                const angle = (i / points) * Math.PI * 2;
+                const radiusVariation = 0.7 + 0.3 * Math.sin(angle * 3 + time * 0.01);
+                const radius = layer.size * radiusVariation;
+                const px = centerX + Math.cos(angle) * radius;
+                const py = centerY + Math.sin(angle) * radius;
+                
+                if (i === 0) {
+                    ctx.moveTo(px, py);
+                } else {
+                    ctx.lineTo(px, py);
+                }
+            }
+            ctx.closePath();
+            ctx.fill();
+        });
+
+        ctx.restore();
+    }
+}
 
 
     cvs.addEventListener('mousemove', (e) => { const p = pointFromEvent(e); mouse.x = p.x; mouse.y = p.y; });
@@ -1177,6 +1267,7 @@
                     p.x = p.attachedEnemy.x;
                     p.y = p.attachedEnemy.y;
                     p.attachedEnemy.hp -= p.damage;
+                    p.attachedEnemy.slowTimer = 2.0;
                 }
             }
             if (!p.update(dt)) {
@@ -1247,6 +1338,39 @@
             store.boss.mines = store.boss.mines.filter(m => !m.dead);
         }
 
+
+        // Flame particle collision with enemies
+        store.flameParticles.forEach(flame => {
+            store.enemies.forEach(enemy => {
+                if (enemy.dead) return;
+                
+                const dx = flame.x - enemy.x;
+                const dy = flame.y - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const collisionRadius = flame.size + enemy.r;
+                
+                if (distance < collisionRadius) {
+                    enemy.stunTimer = Math.max(enemy.stunTimer || 0, 0.5);
+                    enemy.hp -= flame.damage;
+                    enemy.isBurning = true;
+                    setTimeout(() => { if (enemy) enemy.isBurning = false; }, 100);
+                }
+            });
+            
+            if (store.boss && !store.boss.dead) {
+                const dx = flame.x - store.boss.x;
+                const dy = flame.y - store.boss.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const collisionRadius = flame.size + store.boss.r;
+                
+                if (distance < collisionRadius) {
+                    store.boss.stunTimer = Math.max(store.boss.stunTimer || 0, 0.3);
+                    store.boss.hp -= flame.damage * 0.5;
+                    store.boss.isBurning = true;
+                    setTimeout(() => { if (store.boss) store.boss.isBurning = false; }, 100);
+                }
+            }
+        });
         store.enemies.forEach(e => {
             if (e.knockback) {
                 e.x += e.knockback.vx * dt;
@@ -1630,7 +1754,7 @@ function render(dt) {
     store.powerups.forEach(p => drawPowerup(p));
     store.missiles.forEach(m => drawMissile(m));
     store.lightningBolts.forEach(l => drawLightningBolt(l));
-    store.flameParticles.forEach(p => p.draw());
+
 
     farBullets.forEach(b => {
         ctx.fillStyle = b.col;
@@ -1694,6 +1818,7 @@ function render(dt) {
     store.enemies.forEach(e => drawEnemy(e));
     drawGibs(ctx); // <-- ADD THIS LINE TO DRAW THE GIBS
     if (store.boss) drawBoss(store.boss);
+    store.flameParticles.forEach(p => p.draw());
     store.drones.forEach(d => drawDrone(d));
     store.hounds.forEach(h => drawHound(h));
     if (store.iceman) drawIceman(store.iceman);
@@ -1901,16 +2026,221 @@ function render(dt) {
         ctx.moveTo(startX, startY);
         ctx.lineTo(laser.x, laser.y);
         ctx.stroke();
+        
+        ctx.lineWidth = 1.5 * t;
+        ctx.strokeStyle = `rgba(200, 220, 255, ${t})`;
+        ctx.shadowBlur = 10 * t;
+        ctx.stroke();
 
         ctx.restore();
     }
-    function drawBoss(t) { ctx.save();ctx.translate(t.x,t.y); if(t.isEnraged) ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 50); ctx.fillStyle="rgba(0,0,0,0.7)";ctx.fillRect(-60,-t.r-20,120,8);
-        const healthBarColor = t.name === 'EVIL BABYMOON' ? '#ffd700' : t.color;
+// Helper: safely add alpha to a hex color (falls back if not hex)
+    function addAlpha(color, alpha) {
+        const a = Math.max(0, Math.min(1, alpha));
+        if (typeof color === 'string' && color.startsWith('#')) {
+            let hex = color.slice(1);
+            if (hex.length === 3) hex = hex.split('').map(ch => ch + ch).join('');
+            if (hex.length >= 6) {
+            const r = parseInt(hex.slice(0, 2), 16);
+            const g = parseInt(hex.slice(2, 4), 16);
+            const b = parseInt(hex.slice(4, 6), 16);
+            return `rgba(${r},${g},${b},${a})`;
+            }
+        }
+        // If it's not hex, return as-is (the caller can tweak globalAlpha if needed)
+        return color;
+        }
+
+    function drawBoss(t) {
+        ctx.save();
+        ctx.translate(t.x, t.y);
+
+        // Enraged pulsing alpha
+        if (t.isEnraged) {
+            ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 50);
+        }
+
+        // Health bar
+        const hpRatio = Math.max(0, Math.min(1, ((t.hp || 0) / (t.hpMax || 1))));
+        ctx.fillStyle = "rgba(0,0,0,0.7)";
+        ctx.fillRect(-60, -t.r - 20, 120, 8);
+
+        const healthBarColor = t.name === 'EVIL BABYMOON' ? '#ffd700' : (t.color || '#ff4444');
         ctx.fillStyle = healthBarColor;
-        ctx.fillRect(-60,-t.r-20,120*(t.hp/t.hpMax),8);ctx.strokeStyle="#fff";ctx.lineWidth=1;ctx.strokeRect(-60,-t.r-20,120,8);if(t.behavior==="malignus"){const time=performance.now()/1e3;ctx.fillStyle=t.color;ctx.beginPath();const pulse=t.r*(.3+.05*Math.sin(4*time));ctx.arc(0,0,pulse,0,2*Math.PI);ctx.fill();ctx.fillStyle="white";ctx.beginPath();ctx.arc(0,0,.4*pulse,0,2*Math.PI);ctx.fill();const numShards=5;for(let i=0;i<numShards;i++){ctx.save();const angle=time*(.5+.1*i)+i*2*Math.PI/numShards,dist=.8*t.r;ctx.rotate(angle);ctx.translate(dist,0);ctx.rotate(2*time);ctx.fillStyle=t.color+"aa";ctx.strokeStyle="#FFFFFF";ctx.lineWidth=2;ctx.beginPath();const shardSize=.3*t.r;ctx.moveTo(0,-shardSize);ctx.lineTo(shardSize/2,shardSize);ctx.lineTo(-shardSize/2,shardSize);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore()}}else if(t.behavior==="hex"){ctx.translate(0,30);const bodyW_top=t.r*1.5,bodyW_bottom=t.r*2.5,bodyH=t.r*1.5;ctx.fillStyle="#66aaff";ctx.strokeStyle="#5599e5";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-bodyW_top/2,-bodyH/2);ctx.lineTo(bodyW_top/2,-bodyH/2);ctx.lineTo(bodyW_bottom/2,bodyH/2);ctx.lineTo(-bodyW_bottom/2,bodyH/2);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#e03434";ctx.strokeStyle="#c02d2d";const crownH=t.r*0.8,crownW=bodyW_top*0.9;ctx.beginPath();ctx.moveTo(-crownW/2,-bodyH/2);ctx.lineTo(-crownW/2+crownW/4,-bodyH/2-crownH);ctx.lineTo(0,-bodyH/2-crownH/2);ctx.lineTo(crownW/2-crownW/4,-bodyH/2-crownH);ctx.lineTo(crownW/2,-bodyH/2);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#000";ctx.fillRect(-t.r*0.6,-t.r*0.3,t.r*0.4,t.r*0.15);ctx.fillRect(t.r*0.2,-t.r*0.3,t.r*0.4,t.r*0.15);ctx.fillRect(-t.r*0.4,0,t.r*0.8,t.r*0.1);ctx.strokeStyle="#ffd700";ctx.lineWidth=8;ctx.beginPath();ctx.arc(0,0,t.r*1.1,0.5,Math.PI-0.5);ctx.stroke();ctx.fillStyle="#ffd700";ctx.strokeStyle="#daa520";ctx.lineWidth=3;const medR=t.r*0.5;ctx.beginPath();ctx.moveTo(0,t.r*1.1+medR);for(let i=1;i<=8;i++){const angle=i*(2*Math.PI/8);ctx.lineTo(medR*Math.sin(angle),t.r*1.1+medR*Math.cos(angle))}ctx.closePath();ctx.fill();ctx.stroke()}else if(t.behavior==="construct"){const phaseColor=t.phase===1?t.color:"#ff4500";ctx.fillStyle=phaseColor+"aa";ctx.strokeStyle=phaseColor;ctx.lineWidth=3;if(t.phase===2){ctx.shadowColor=phaseColor;ctx.shadowBlur=25}const bodyW=t.r*1.2,bodyH=t.r*1.5,headH=t.r*0.7;ctx.beginPath();ctx.moveTo(-bodyW*.5,bodyH*.5);ctx.lineTo(-bodyW*.6,bodyH*.2);ctx.lineTo(-bodyW*.4,-bodyH*.6);ctx.lineTo(0,-bodyH*.5);ctx.lineTo(bodyW*.4,-bodyH*.6);ctx.lineTo(bodyW*.6,bodyH*.2);ctx.lineTo(bodyW*.5,bodyH*.5);ctx.closePath();ctx.fill();ctx.stroke();const shoulderY=-bodyH*.3,shoulderX=bodyW*.4;const armW=.4*t.r,armH=.9*t.r;ctx.beginPath();ctx.moveTo(-shoulderX,shoulderY);ctx.lineTo(-shoulderX-armW*.5,shoulderY+armH*.2);ctx.lineTo(-shoulderX,shoulderY+armH);ctx.lineTo(-shoulderX+armW*.5,shoulderY+armH*.8);ctx.closePath();ctx.fill();ctx.stroke();ctx.beginPath();ctx.moveTo(shoulderX,shoulderY);ctx.lineTo(shoulderX+armW*.5,shoulderY+armH*.2);ctx.lineTo(shoulderX,shoulderY+armH);ctx.lineTo(shoulderX-armW*.5,shoulderY+armH*.8);ctx.closePath();ctx.fill();ctx.stroke();const eyeR=t.r*.2+2*Math.sin(performance.now()/200);const eyeGrad=ctx.createRadialGradient(0,-headH*.1,0,0,-headH*.1,eyeR);eyeGrad.addColorStop(0,"#ffffff");eyeGrad.addColorStop(.3,phaseColor);eyeGrad.addColorStop(1,"#ff4500");ctx.fillStyle=eyeGrad;ctx.shadowColor="white";ctx.shadowBlur=15;ctx.beginPath();ctx.arc(0,-headH*.1,eyeR,0,2*Math.PI);ctx.fill();
+        ctx.fillRect(-60, -t.r - 20, 120 * hpRatio, 8);
+
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-60, -t.r - 20, 120, 8);
+
+        // Boss visuals by behavior
+        if (t.behavior === "malignus") {
+            const time = performance.now() / 1000;
+
+            // Pulsing center
+            const pulse = t.r * (0.3 + 0.05 * Math.sin(4 * time));
+            ctx.fillStyle = t.color || '#ff55aa';
+            ctx.beginPath();
+            ctx.arc(0, 0, pulse, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Inner core
+            ctx.fillStyle = "white";
+            ctx.beginPath();
+            ctx.arc(0, 0, 0.4 * pulse, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Spinning shards
+            const numShards = 5;
+            for (let i = 0; i < numShards; i++) {
+                ctx.save();
+                const angle = time * (0.5 + 0.1 * i) + i * (2 * Math.PI / numShards);
+                const dist = 0.8 * t.r;
+                ctx.rotate(angle);
+                ctx.translate(dist, 0);
+                ctx.rotate(2 * time);
+
+                ctx.fillStyle = addAlpha(t.color || '#ff55aa', 0.67);
+                ctx.strokeStyle = "#FFFFFF";
+                ctx.lineWidth = 2;
+
+                const shardSize = 0.3 * t.r;
+                ctx.beginPath();
+                ctx.moveTo(0, -shardSize);
+                ctx.lineTo(shardSize / 2, shardSize);
+                ctx.lineTo(-shardSize / 2, shardSize);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.restore();
+            }
+
+            } else if (t.behavior === "hex") {
+                ctx.translate(0, 30);
+
+                // Body
+                const bodyW_top = t.r * 1.5;
+                const bodyW_bottom = t.r * 2.5;
+                const bodyH = t.r * 1.5;
+
+                ctx.fillStyle = "#66aaff";
+                ctx.strokeStyle = "#5599e5";
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(-bodyW_top / 2, -bodyH / 2);
+                ctx.lineTo(bodyW_top / 2, -bodyH / 2);
+                ctx.lineTo(bodyW_bottom / 2, bodyH / 2);
+                ctx.lineTo(-bodyW_bottom / 2, bodyH / 2);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // Crown
+                ctx.fillStyle = "#e03434";
+                ctx.strokeStyle = "#c02d2d";
+                const crownH = t.r * 0.8, crownW = bodyW_top * 0.9;
+                ctx.beginPath();
+                ctx.moveTo(-crownW / 2, -bodyH / 2);
+                ctx.lineTo(-crownW / 2 + crownW / 4, -bodyH / 2 - crownH);
+                ctx.lineTo(0, -bodyH / 2 - crownH / 2);
+                ctx.lineTo(crownW / 2 - crownW / 4, -bodyH / 2 - crownH);
+                ctx.lineTo(crownW / 2, -bodyH / 2);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // Face
+                ctx.fillStyle = "#000";
+                ctx.fillRect(-t.r * 0.6, -t.r * 0.3, t.r * 0.4, t.r * 0.15);
+                ctx.fillRect(t.r * 0.2, -t.r * 0.3, t.r * 0.4, t.r * 0.15);
+                ctx.fillRect(-t.r * 0.4, 0, t.r * 0.8, t.r * 0.1);
+
+                // Halo arc
+                ctx.strokeStyle = "#ffd700";
+                ctx.lineWidth = 8;
+                ctx.beginPath();
+                ctx.arc(0, 0, t.r * 1.1, 0.5, Math.PI - 0.5);
+                ctx.stroke();
+
+                // Medal/star below
+                ctx.fillStyle = "#ffd700";
+                ctx.strokeStyle = "#daa520";
+                ctx.lineWidth = 3;
+                const medR = t.r * 0.5;
+                ctx.beginPath();
+                ctx.moveTo(0, t.r * 1.1 + medR);
+                for (let i = 1; i <= 8; i++) {
+                    const angle = i * (2 * Math.PI / 8);
+                    ctx.lineTo(medR * Math.sin(angle), t.r * 1.1 + medR * Math.cos(angle));
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+            } else if (t.behavior === "construct") {
+            const phaseColor = t.phase === 1 ? (t.color || "#ff4500") : "#ff4500";
+
+            ctx.fillStyle = addAlpha(phaseColor, 0.67);
+            ctx.strokeStyle = phaseColor;
+            ctx.lineWidth = 3;
+
+            if (t.phase === 2) {
+                ctx.shadowColor = phaseColor;
+                ctx.shadowBlur = 25;
+            }
+
+            const bodyW = t.r * 1.2, bodyH = t.r * 1.5, headH = t.r * 0.7;
+
+                // Torso
+            ctx.beginPath();
+            ctx.moveTo(-bodyW * 0.5, bodyH * 0.5);
+            ctx.lineTo(-bodyW * 0.6, bodyH * 0.2);
+            ctx.lineTo(-bodyW * 0.4, -bodyH * 0.6);
+            ctx.lineTo(0, -bodyH * 0.5);
+            ctx.lineTo(bodyW * 0.4, -bodyH * 0.6);
+            ctx.lineTo(bodyW * 0.6, bodyH * 0.2);
+            ctx.lineTo(bodyW * 0.5, bodyH * 0.5);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+                // Arms
+            const shoulderY = -bodyH * 0.3, shoulderX = bodyW * 0.4;
+            const armW = 0.4 * t.r, armH = 0.9 * t.r;
+
+            ctx.beginPath();
+            ctx.moveTo(-shoulderX, shoulderY);
+            ctx.lineTo(-shoulderX - armW * 0.5, shoulderY + armH * 0.2);
+            ctx.lineTo(-shoulderX, shoulderY + armH);
+            ctx.lineTo(-shoulderX + armW * 0.5, shoulderY + armH * 0.8);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(shoulderX, shoulderY);
+            ctx.lineTo(shoulderX + armW * 0.5, shoulderY + armH * 0.2);
+            ctx.lineTo(shoulderX, shoulderY + armH);
+            ctx.lineTo(shoulderX - armW * 0.5, shoulderY + armH * 0.8);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+                // Eye (fixed: fillStyle was incorrectly set to a numeric radius before)
+            const eyeR = Math.max(1, t.r * 0.2 + 2 * Math.sin(performance.now() / 200));
+            ctx.fillStyle = "#ffffff";
+            ctx.strokeStyle = phaseColor;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, -headH * 0.1, eyeR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        }
+
         ctx.restore();
     }
-}
+
     function drawShip(t, e, player) {
         let mainColor = '#b266ff', accentColor1 = '#7a49cc', accentColor2 = '#4d2a80',
             wingStrokeColor = '#c49cff', engineColor = '#cc99ff';
@@ -3590,6 +3920,7 @@ function tryVoidStep(player, target, now = performance.now()){
             const p = pointFromEvent(e);
             tryVoidStep(store.player, p);
         }
+    });
     function frame(now) {
         const dt = Math.min((now - store.last) / 1000, 0.07);
         store.last = now;
@@ -3615,7 +3946,7 @@ function tryVoidStep(player, target, now = performance.now()){
         }
     }
     
-});
+
 })();
 </script>
 </body>
