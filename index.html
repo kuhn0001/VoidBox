@@ -492,8 +492,10 @@ class FlameParticle {
         this.y = y;
         this.vx = (Math.random() - 0.5) * 40; // Less horizontal spread
         this.vy = -20 - Math.random() * 30; // Slower upward drift
-        this.life = 6 + Math.random() * 4; // 3-5 seconds
+        this.life = 8.4 + Math.random() * 5.6; // 40% longer: 8.4-14 seconds (was 6-10)
         this.maxLife = this.life;
+        this.visualLife = this.life * 1.5; // Visual effect lasts 50% longer than mechanics
+        this.maxVisualLife = this.visualLife;
         this.size = 8 + Math.random() * 8; // Smaller, more varied sizes
         this.attachedEnemy = attachedEnemy;
         this.damage = 0.45;
@@ -508,138 +510,107 @@ class FlameParticle {
 
     update(dt) {
         this.life -= dt;
-        if (this.life <= 0) return false;
+        this.visualLife -= dt;
+        if (this.visualLife <= 0) return false; // Remove particle when visual effect ends
 
-        // Physics
-        this.vy += this.gravity * dt; // Gravity pulls down
-        this.vy -= 25 * dt; // But heat pushes up (less than before)
-        this.x += this.vx * dt;
-        this.y += this.vy * dt;
+        // Physics - only apply when mechanically active
+        if (this.life > 0) {
+            this.vy += this.gravity * dt;
+            this.vy -= 25 * dt;
+            this.x += this.vx * dt;
+            this.y += this.vy * dt;
 
-        // Air resistance
-        this.vx *= 0.98;
-        this.vy *= 0.98;
+            // Air resistance
+            this.vx *= 0.98;
+            this.vy *= 0.98;
 
-        // Wobble for flame-like movement
-        this.wobble += this.wobbleSpeed * dt;
-        this.x += Math.sin(this.wobble) * 8 * dt;
+            // Wobble
+            this.wobble += this.wobbleSpeed * dt;
+            this.x += Math.sin(this.wobble) * 8 * dt;
+        }
 
-        // Heat dissipates over time
-        const lifeRatio = this.life / this.maxLife;
-        this.heat = Math.max(0.1, lifeRatio * 0.9);
+        // Heat and void effect - based on VISUAL life for slower fade
+        const visualLifeRatio = this.visualLife / this.maxVisualLife;
+        this.heat = Math.max(0.2, visualLifeRatio * 0.8); // Minimum heat to avoid pure transparency
 
-        // Size changes - grows then shrinks
-        if (lifeRatio > 0.7) {
-            this.size = this.baseSize * (1 + (1 - lifeRatio) * 2); // Grow when young
+        // Size changes - based on visual life for slower shrinking
+        if (visualLifeRatio > 0.7) {
+            this.size = this.baseSize * (1 + (1 - visualLifeRatio) * 2); // Grow when young
         } else {
-            this.size = this.baseSize * lifeRatio; // Shrink when dying
+            this.size = Math.max(this.baseSize * 0.5, this.baseSize * visualLifeRatio); // Don't shrink below 50% of base
         }
 
-        // Mark as dying when nearly expired
-        if (lifeRatio < 0.3) {
-            this.isDying = true;
-        }
-
+        this.isDying = visualLifeRatio < 0.3;
         return true;
     }
 
     draw() {
-        if (this.life <= 0) return;
-        
-        if (!Number.isFinite(this.x) || !Number.isFinite(this.y) || !Number.isFinite(this.size) || this.size <= 0) {
-            return;
-        }
+        if (this.visualLife <= 0 || this.size <= 0) return;
+        if (!Number.isFinite(this.x) || !Number.isFinite(this.y)) return;
 
+        const alpha = this.heat;
+        const time = performance.now() * 0.01 + this.flickerOffset;
+        
+        // Enable additive blending for smooth organic look
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         
-        const lifeRatio = this.life / this.maxLife;
-        const time = performance.now() + this.flickerOffset;
-        const flicker = 0.8 + 0.2 * Math.sin(time * 0.01);
-        
-        // Create multiple flame layers for depth
-        const layers = [
-            { 
-                size: this.size * 2.2, 
-                alpha: lifeRatio * 0.1 * flicker,
-                offset: { x: 0, y: 0 }
-            },
-            { 
-                size: this.size * 1.6, 
-                alpha: lifeRatio * 0.25 * flicker,
-                offset: { x: Math.sin(time * 0.008) * 2, y: Math.cos(time * 0.012) * 1 }
-            },
-            { 
-                size: this.size * 1.0, 
-                alpha: lifeRatio * 0.6 * flicker,
-                offset: { x: Math.sin(time * 0.015) * 1, y: 0 }
-            },
-            { 
-                size: this.size * 0.5, 
-                alpha: lifeRatio * 0.8,
-                offset: { x: 0, y: 0 }
-            }
-        ];
-
-        layers.forEach((layer, index) => {
-            if (layer.alpha <= 0) return;
-            
-            ctx.globalAlpha = layer.alpha;
-            
-            const centerX = this.x + layer.offset.x;
-            const centerY = this.y + layer.offset.y;
-            
-            // Create napalm-like gradient
-            const gradient = ctx.createRadialGradient(
-                centerX, centerY, 0, 
-                centerX, centerY, layer.size
-            );
-
-            // Napalm color progression: hot white core -> pink -> purple -> blue edges
-            if (index === 3) { // Hottest core
-                gradient.addColorStop(0, `rgba(255, 255, 255, ${this.heat})`);
-                gradient.addColorStop(0.2, `rgba(255, 100, 180, ${this.heat * 0.9})`);
-                gradient.addColorStop(0.5, `rgba(200, 50, 255, ${this.heat * 0.7})`);
-                gradient.addColorStop(1, `rgba(100, 30, 200, 0)`);
-            } else if (index === 2) { // Hot middle
-                gradient.addColorStop(0, `rgba(255, 150, 200, ${this.heat * 0.8})`);
-                gradient.addColorStop(0.3, `rgba(220, 100, 255, ${this.heat * 0.7})`);
-                gradient.addColorStop(0.7, `rgba(150, 80, 255, ${this.heat * 0.5})`);
-                gradient.addColorStop(1, `rgba(80, 50, 180, 0)`);
-            } else if (index === 1) { // Cooler outer
-                gradient.addColorStop(0, `rgba(200, 120, 255, ${this.heat * 0.6})`);
-                gradient.addColorStop(0.4, `rgba(150, 100, 255, ${this.heat * 0.4})`);
-                gradient.addColorStop(0.8, `rgba(100, 80, 200, ${this.heat * 0.3})`);
-                gradient.addColorStop(1, `rgba(60, 40, 120, 0)`);
-            } else { // Outermost smoke-like layer
-                gradient.addColorStop(0, `rgba(120, 80, 200, ${this.heat * 0.3})`);
-                gradient.addColorStop(0.5, `rgba(80, 60, 150, ${this.heat * 0.2})`);
-                gradient.addColorStop(1, `rgba(40, 30, 80, 0)`);
-            }
-
-            ctx.fillStyle = gradient;
-            
-            // Draw flame shape (more organic than perfect circle)
+        // Rising crackle particles - mini circles that rise up like flame tongues
+        ctx.fillStyle = `rgba(100, 50, 140, ${alpha * 0.4})`;
+        for (let i = 0; i < 4; i++) {
+            const crackleHeight = -this.size * (1 + i * 0.5) * (1 + Math.sin(time + i) * 0.3);
+            const crackleX = this.x + (Math.sin(time * 2 + i) * this.size * 0.3);
+            const crackleY = this.y + crackleHeight;
+            const crackleSize = this.size * (0.3 - i * 0.05);
             ctx.beginPath();
-            const points = 8;
-            for (let i = 0; i <= points; i++) {
-                const angle = (i / points) * Math.PI * 2;
-                const radiusVariation = 0.7 + 0.3 * Math.sin(angle * 3 + time * 0.01);
-                const radius = layer.size * radiusVariation;
-                const px = centerX + Math.cos(angle) * radius;
-                const py = centerY + Math.sin(angle) * radius;
-                
-                if (i === 0) {
-                    ctx.moveTo(px, py);
-                } else {
-                    ctx.lineTo(px, py);
-                }
-            }
-            ctx.closePath();
+            ctx.arc(crackleX, crackleY, crackleSize, 0, 6.283185);
             ctx.fill();
-        });
-
-        ctx.restore();
+        }
+        
+        // Sparkle mist around the flame
+        ctx.fillStyle = `rgba(80, 40, 120, ${alpha * 0.2})`;
+        for (let i = 0; i < 6; i++) {
+            const angle = (i / 6) * 6.283185 + this.wobble;
+            const distance = this.size * (1.8 + Math.sin(this.wobble * 2) * 0.3);
+            const sparkleX = this.x + Math.cos(angle) * distance;
+            const sparkleY = this.y + Math.sin(angle) * distance;
+            ctx.fillRect(sparkleX - 0.5, sparkleY - 0.5, 1, 1);
+        }
+        
+        // Base flame with smooth blending - outer base
+        ctx.fillStyle = `rgba(40, 20, 70, ${alpha * 0.15})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * 1.5, 0, 6.283185);
+        ctx.fill();
+        
+        // Layered center circles with additive blending for smooth gradients
+        ctx.fillStyle = `rgba(70, 30, 100, ${alpha * 0.25})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * 0.9, 0, 6.283185);
+        ctx.fill();
+        
+        ctx.fillStyle = `rgba(90, 40, 120, ${alpha * 0.35})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * 0.6, 0, 6.283185);
+        ctx.fill();
+        
+        ctx.fillStyle = `rgba(110, 50, 140, ${alpha * 0.45})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * 0.4, 0, 6.283185);
+        ctx.fill();
+        
+        ctx.fillStyle = `rgba(130, 60, 160, ${alpha * 0.55})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * 0.25, 0, 6.283185);
+        ctx.fill();
+        
+        // Bright core with maximum blending effect
+        ctx.fillStyle = `rgba(150, 80, 180, ${alpha * 0.7})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * 0.1, 0, 6.283185);
+        ctx.fill();
+        
+        ctx.restore(); // Reset blending mode
     }
 }
 
@@ -1000,7 +971,7 @@ class FlameParticle {
             if (p.flameWallActiveT > 0) p.flameWallActiveT -= dt;
             if (p.flameWallCooldown <= 0) { p.flameWallActiveT = 0.5; p.flameWallCooldown = 10; }
             if (p.flameWallActiveT > 0) {
-                for (let i = 0; i < 5; i++) {
+                for (let i = 0; i < 4; i++) {
                     let attachedEnemy = null;
                     let closestDistSq = Infinity;
                     store.enemies.forEach(enemy => {
@@ -1339,17 +1310,21 @@ class FlameParticle {
         }
 
 
-        // Flame particle collision with enemies
+        // OPTIMIZED Flame particle collision - avoid expensive sqrt calls
         store.flameParticles.forEach(flame => {
+            // Only check collisions while the flame is mechanically active
+            if (flame.life <= 0) return;
+            
             store.enemies.forEach(enemy => {
                 if (enemy.dead) return;
                 
                 const dx = flame.x - enemy.x;
                 const dy = flame.y - enemy.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                const collisionRadius = flame.size + enemy.r;
+                const distSq = dx * dx + dy * dy; // Skip sqrt - use squared distance
+                const collisionRadius = Math.max(5, flame.size + enemy.r - 50);
+                const collisionRadiusSq = collisionRadius * collisionRadius;
                 
-                if (distance < collisionRadius) {
+                if (distSq < collisionRadiusSq) {
                     enemy.stunTimer = Math.max(enemy.stunTimer || 0, 0.5);
                     enemy.hp -= flame.damage;
                     enemy.isBurning = true;
@@ -1360,10 +1335,11 @@ class FlameParticle {
             if (store.boss && !store.boss.dead) {
                 const dx = flame.x - store.boss.x;
                 const dy = flame.y - store.boss.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                const collisionRadius = flame.size + store.boss.r;
+                const distSq = dx * dx + dy * dy;
+                const collisionRadius = Math.max(10, flame.size + store.boss.r - 50);
+                const collisionRadiusSq = collisionRadius * collisionRadius;
                 
-                if (distance < collisionRadius) {
+                if (distSq < collisionRadiusSq) {
                     store.boss.stunTimer = Math.max(store.boss.stunTimer || 0, 0.3);
                     store.boss.hp -= flame.damage * 0.5;
                     store.boss.isBurning = true;
