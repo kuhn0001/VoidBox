@@ -549,65 +549,27 @@ class FlameParticle {
         if (!Number.isFinite(this.x) || !Number.isFinite(this.y)) return;
 
         const alpha = this.heat;
-        const time = performance.now() * 0.01 + this.flickerOffset;
         
-        // Enable additive blending for smooth organic look
+        // Simple flame with just 3 circles - no crackling, no sparkles
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         
-        // Rising crackle particles - mini circles that rise up like flame tongues
-        ctx.fillStyle = `rgba(100, 50, 140, ${alpha * 0.4})`;
-        for (let i = 0; i < 4; i++) {
-            const crackleHeight = -this.size * (1 + i * 0.5) * (1 + Math.sin(time + i) * 0.3);
-            const crackleX = this.x + (Math.sin(time * 2 + i) * this.size * 0.3);
-            const crackleY = this.y + crackleHeight;
-            const crackleSize = this.size * (0.3 - i * 0.05);
-            ctx.beginPath();
-            ctx.arc(crackleX, crackleY, crackleSize, 0, 6.283185);
-            ctx.fill();
-        }
-        
-        // Sparkle mist around the flame
-        ctx.fillStyle = `rgba(80, 40, 120, ${alpha * 0.2})`;
-        for (let i = 0; i < 6; i++) {
-            const angle = (i / 6) * 6.283185 + this.wobble;
-            const distance = this.size * (1.8 + Math.sin(this.wobble * 2) * 0.3);
-            const sparkleX = this.x + Math.cos(angle) * distance;
-            const sparkleY = this.y + Math.sin(angle) * distance;
-            ctx.fillRect(sparkleX - 0.5, sparkleY - 0.5, 1, 1);
-        }
-        
-        // Base flame with smooth blending - outer base
-        ctx.fillStyle = `rgba(40, 20, 70, ${alpha * 0.15})`;
+        // Outer glow - simple and clean
+        ctx.fillStyle = `rgba(60, 30, 100, ${alpha * 0.2})`;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size * 1.5, 0, 6.283185);
+        ctx.arc(this.x, this.y, this.size * 1.2, 0, 6.283185);
         ctx.fill();
         
-        // Layered center circles with additive blending for smooth gradients
-        ctx.fillStyle = `rgba(70, 30, 100, ${alpha * 0.25})`;
+        // Middle flame
+        ctx.fillStyle = `rgba(100, 50, 150, ${alpha * 0.4})`;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size * 0.9, 0, 6.283185);
+        ctx.arc(this.x, this.y, this.size * 0.7, 0, 6.283185);
         ctx.fill();
         
-        ctx.fillStyle = `rgba(90, 40, 120, ${alpha * 0.35})`;
+        // Core flame
+        ctx.fillStyle = `rgba(140, 70, 190, ${alpha * 0.6})`;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size * 0.6, 0, 6.283185);
-        ctx.fill();
-        
-        ctx.fillStyle = `rgba(110, 50, 140, ${alpha * 0.45})`;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size * 0.4, 0, 6.283185);
-        ctx.fill();
-        
-        ctx.fillStyle = `rgba(130, 60, 160, ${alpha * 0.55})`;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size * 0.25, 0, 6.283185);
-        ctx.fill();
-        
-        // Bright core with maximum blending effect
-        ctx.fillStyle = `rgba(150, 80, 180, ${alpha * 0.7})`;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size * 0.1, 0, 6.283185);
+        ctx.arc(this.x, this.y, this.size * 0.3, 0, 6.283185);
         ctx.fill();
         
         ctx.restore(); // Reset blending mode
