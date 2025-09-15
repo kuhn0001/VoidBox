@@ -29,13 +29,30 @@
             opacity: 0 !important;
         }
 
-        /* Hide ALL possible close buttons */
+        .close-btn {
+            position: absolute;
+            top: 8px;
+            right: 15px;
+            background: transparent;
+            border: none;
+            color: var(--accent);
+            font-size: 20px;
+            font-family: 'Orbitron', 'Audiowide', ui-sans-serif;
+            font-weight: bold;
+            line-height: 1;
+            cursor: pointer;
+            opacity: 0.7;
+            transition: opacity 0.2s, transform 0.2s;
+            padding: 4px;
+        }
+        .close-btn:hover {
+            opacity: 1;
+            transform: scale(1.1);
+        }
+
+        /* Hide only the specific problematic close buttons */
         #closeScores,
-        #closeShop,
-        button[class*="close"],
-        button[id*="close"],
-        .close-btn,
-        .close-button {
+        #closeShop {
             display: none !important;
             visibility: hidden !important;
             opacity: 0 !important;
@@ -429,6 +446,7 @@
                         <div id="skillsGrid" class="grid"></div>
                     </div>
                     <div id="shopPanel" class="panel hide">
+                        <button type="button" class="close-btn" id="closeShopTopBtn">×</button>
                         <h2 style="font-family:'Orbitron';color:var(--accent)'>⚡ MECH FORGE ⚡</h2>
                         <p style="color:#ffddff">Available Shards: <span id="shopShards">0</span></p>
                         <div id="shopGrid" class="grid"></div>
@@ -656,8 +674,9 @@ class FlameParticle {
         flameWallActiveT: 0,
         beefChargeState: 'ready', beefChargeCooldown: 0, beefChargeOrigin: null, beefChargeTarget: null, beefChargeT: 0, beefCharges: 1, beefMaxCharges: 1,
         hasChainLightning: false, chainLightningCooldown: 0,
-        subclass: null, missilePierce: 0, missileCluster: false, blinkDamage: false,
-        enhancedClusters: false, enhancedPierce: false, hasStormcaller: false, hasPhasestriker: false
+        subclass: null, missilePierce: 0, missileCluster: false, blinkDamage: false
+        // COMMENTED OUT: Spec2 properties - disabled for stability
+        // enhancedClusters: false, enhancedPierce: false, hasStormcaller: false, hasPhasestriker: false
     };
     
     const store = {
@@ -1534,13 +1553,8 @@ class FlameParticle {
             store.player.pilotGenome = 'pending';
             setTimeout(showPilotSelect, 1000);
         }
-        // New spec system: after 4th and 6th boss, then every 2 bosses after that
-        if (store.player.pilotGenome && store.player.subclass) {
-            const bossCount = store.world.bosses + 1; // +1 because we increment bosses after this check
-            if (bossCount === 4 || bossCount === 6 || (bossCount > 6 && (bossCount - 6) % 2 === 0)) {
-                setTimeout(() => showSpecSelect(bossCount >= 6), 1500); // Second spec is additive
-            }
-        } else if (store.world.bossesAtPilotSelection !== null && (store.world.bosses - store.world.bossesAtPilotSelection) === 2 && !store.player.subclass) {
+        // SPEC SYSTEM DISABLED FOR STABILITY
+        if (store.world.bossesAtPilotSelection !== null && (store.world.bosses - store.world.bossesAtPilotSelection) === 2 && !store.player.subclass) {
             setTimeout(showSubclassSelect, 1500);
         }
         store.world.score += 2000; store.world.shards += 25; store.world.xp += 100; store.world.bosses++;
@@ -1575,7 +1589,8 @@ class FlameParticle {
             store.world.enemyDensityBonus *= 1.10;
             setTimeout(() => announce("ENEMY SWARMS INTENSIFYING!"), 1000);
         }
-        }
+    }
+
     function explode(x, y, isBoss = false, isSmall = false) {
         playSound('explosion');
         if (isBoss) for (let i = 0; i < 5; i++) setTimeout(() => spawnPowerup(x, y), i * 300);
@@ -3468,148 +3483,16 @@ function tryVoidStep(player, target, now = performance.now()){
         store.world.enemyHealthBonus *= 1.10;
 }
 
+    // DISABLED: showSpecSelect function for stability
     function showSpecSelect(isAdditive = false) {
-        pauseGame();
-        const panel = q('subclassPanel'); // Reuse the subclass panel
-        const grid = q('subclassGrid');
-        const p = store.player;
-        const genome = p.pilotGenome;
-        
-        let choices = [];
-        
-        if (genome === 'rocketman') {
-            if (p.subclass === 'demolitionist') {
-                if (isAdditive && p.enhancedClusters) {
-                    // If they already have enhanced clusters, double current power
-                    choices = [{ id: 'double_clusters', name: 'MEGA CLUSTERS', desc: 'Double cluster explosion damage and chain radius.', icon: 'demo.png' }];
-                } else if (isAdditive && p.missilePierce > 0) {
-                    // If they have railgunner abilities, give them enhanced clusters
-                    choices = [{ id: 'enhanced_clusters', name: 'ENHANCED CLUSTERS', desc: 'Restore full cluster explosion radius (80).', icon: 'demo.png' }];
-                } else {
-                    // First spec or missing railgunner - offer both
-                    const opts = [
-                        { id: 'enhanced_clusters', name: 'ENHANCED CLUSTERS', desc: 'Restore full cluster explosion radius (80).', icon: 'demo.png' },
-                        { id: 'railgunner_pierce', name: 'PIERCING MISSILES', desc: 'Missiles pierce through 3 enemies.', icon: 'rail.png' }
-                    ];
-                    choices = isAdditive ? opts : opts.filter(o => o.id === 'enhanced_clusters');
-                }
-            } else if (p.subclass === 'railgunner') {
-                if (isAdditive && p.enhancedPierce) {
-                    choices = [{ id: 'mega_pierce', name: 'ULTRA PIERCE', desc: 'Missiles pierce through 6 enemies with increased damage.', icon: 'rail.png' }];
-                } else if (isAdditive && p.enhancedClusters) {
-                    choices = [{ id: 'enhanced_pierce', name: 'ENHANCED PIERCE', desc: 'Pierce through 2 additional enemies.', icon: 'rail.png' }];
-                } else {
-                    const opts = [
-                        { id: 'enhanced_pierce', name: 'ENHANCED PIERCE', desc: 'Pierce through 2 additional enemies.', icon: 'rail.png' },
-                        { id: 'cluster_missiles', name: 'CLUSTER MISSILES', desc: 'Missiles explode into smaller cluster bombs.', icon: 'demo.png' }
-                    ];
-                    choices = isAdditive ? opts : opts.filter(o => o.id === 'enhanced_pierce');
-                }
-            }
-        } else if (genome === 'wizard') {
-            // Voidmancer only gets the power they don't have
-            if (!p.hasStormcaller && !p.hasPhasestriker) {
-                // First spec - let them choose
-                choices = [
-                    { id: 'phasestriker', name: 'PHASESTRIKER', desc: 'Void step damages all enemies you pass through.', icon: 'phase.png' },
-                    { id: 'stormcaller', name: 'STORMCALLER', desc: 'Unlocks chain lightning cannon.', icon: 'storm.png' }
-                ];
-            } else if (!p.hasStormcaller) {
-                choices = [{ id: 'stormcaller', name: 'STORMCALLER', desc: 'Unlocks chain lightning cannon.', icon: 'storm.png' }];
-            } else if (!p.hasPhasestriker) {
-                choices = [{ id: 'phasestriker', name: 'PHASESTRIKER', desc: 'Void step damages all enemies you pass through.', icon: 'phase.png' }];
-            } else {
-                // They have both - double current powers
-                const opts = [];
-                if (p.hasStormcaller) opts.push({ id: 'enhanced_storm', name: 'MEGA STORM', desc: 'Chain lightning hits more targets with increased damage.', icon: 'storm.png' });
-                if (p.hasPhasestriker) opts.push({ id: 'enhanced_phase', name: 'VOID MASTERY', desc: 'Void step deals massive damage and has shorter cooldown.', icon: 'phase.png' });
-                choices = opts;
-            }
-        } else if (genome === 'beef') {
-            // Handle beef subclasses similarly
-            if (p.subclass === 'juggernaut') {
-                choices = [{ id: 'enhanced_juggernaut', name: 'MEGA JUGGERNAUT', desc: 'Massive charge radius and knockback increase.', icon: 'jug2.png' }];
-            } else if (p.subclass === 'marauder') {
-                choices = [{ id: 'enhanced_marauder', name: 'SHIELD MASTER', desc: 'Charge restores even more shields and grants temporary invulnerability.', icon: 'marauder.png' }];
-            }
-        }
-        
-        if (!choices.length) {
-            resumeGame();
-            return;
-        }
-        
-        const title = isAdditive ? 'ENHANCED SPECIALIZATION' : 'CHOOSE SPECIALIZATION';
-        document.querySelector('#subclassPanel h2').textContent = title;
-        
-        grid.innerHTML = choices.map(s => `<div class="skill-card" data-spec="${s.id}"><div class="skill-icon"><img src="${s.icon}" class="pilot-icon"></div><div><div class="skill-title">${s.name}</div><div class="skill-desc">${s.desc}</div></div></div>`).join('');
-        
-        grid.querySelectorAll('.skill-card').forEach(card => {
-            card.addEventListener('click', () => {
-                const specId = card.dataset.spec;
-                applySpecBonus(specId);
-                panel.classList.add('hide');
-                resumeGame();
-                document.querySelector('#subclassPanel h2').textContent = 'CHOOSE SPECIALIZATION'; // Reset title
-            }, { once: true });
-        });
-
-        panel.classList.remove('hide');
+        announce("ENHANCED SPEC SYSTEM DISABLED FOR STABILITY");
+        return;
     }
 
+    // DISABLED: applySpecBonus function for stability  
     function applySpecBonus(specId) {
-        const p = store.player;
-        
-        switch(specId) {
-            case 'enhanced_clusters':
-                p.enhancedClusters = true;
-                announce('ENHANCED CLUSTERS ACTIVATED!');
-                break;
-            case 'double_clusters':
-                // Implement double cluster damage
-                announce('MEGA CLUSTERS ACTIVATED!');
-                break;
-            case 'railgunner_pierce':
-                p.missilePierce = 3;
-                announce('PIERCING MISSILES ACTIVATED!');
-                break;
-            case 'enhanced_pierce':
-                p.enhancedPierce = true;
-                p.missilePierce = Math.max(p.missilePierce, 4); // Ensure at least 4 pierce
-                announce('ENHANCED PIERCE ACTIVATED!');
-                break;
-            case 'mega_pierce':
-                p.missilePierce = 6;
-                announce('ULTRA PIERCE ACTIVATED!');
-                break;
-            case 'cluster_missiles':
-                p.missileCluster = true;
-                announce('CLUSTER MISSILES ACTIVATED!');
-                break;
-            case 'phasestriker':
-                p.hasPhasestriker = true;
-                p.blinkDamage = true;
-                announce('PHASESTRIKER ACTIVATED!');
-                break;
-            case 'stormcaller':
-                p.hasStormcaller = true;
-                p.hasChainLightning = true;
-                announce('STORMCALLER ACTIVATED!');
-                playSound('thunder');
-                break;
-            case 'enhanced_storm':
-                announce('MEGA STORM ACTIVATED!');
-                break;
-            case 'enhanced_phase':
-                announce('VOID MASTERY ACTIVATED!');
-                break;
-            case 'enhanced_juggernaut':
-                announce('MEGA JUGGERNAUT ACTIVATED!');
-                break;
-            case 'enhanced_marauder':
-                announce('SHIELD MASTER ACTIVATED!');
-                break;
-        }
+        announce("SPEC BONUS SYSTEM DISABLED FOR STABILITY");
+        return;
     }
 
 
@@ -3632,7 +3515,7 @@ function tryVoidStep(player, target, now = performance.now()){
     q("saveName").addEventListener("click",()=>{const t=(q("nameInput").value||"").slice(0,16).trim();if(t){store.name=t;q("namePanel").classList.add("hide");if(store.player.pilotGenome === null) { initWave(); resumeGame(); } else { resumeGame(); }}});
     
     const closeShopLogic = () => { q("shopPanel").classList.add('hide'); resumeGame(); const highlighted = document.querySelector('.shop-item.highlight'); if (highlighted) highlighted.classList.remove('highlight'); };
-    // q("closeShop").addEventListener("click", closeShopLogic); // Button hidden via CSS
+    q("closeShopTopBtn").addEventListener("click", closeShopLogic);
 
     q("shopBtn").addEventListener("click", () => {
         if (q('shopPanel').classList.contains('hide')) {
@@ -3769,19 +3652,15 @@ function tryVoidStep(player, target, now = performance.now()){
         cheatCodeBuffer = "";
     }
 
+    // DISABLED: Spec2 functions for stability  
     function activateSpec2Cheat() {
-        if (!store.player.pilotGenome) {
-            announce("CHEAT FAILED: Choose a Pilot first.");
-            return;
-        }
-        if (!store.player.subclass) {
-            announce("CHEAT FAILED: Choose a Subclass first.");
-            return;
-        }
-        
-        store.cheatsUsed = true;
-        announce('CHEAT: JUMPING TO SUB2');
-        showSpecSelect(true); // true = additive/second spec
+        announce("SPEC2 SYSTEM DISABLED FOR STABILITY");
+        return;
+    }
+
+    function activateTestSpec2Cheat() {
+        announce("TEST2 SYSTEM DISABLED FOR STABILITY"); 
+        return;
     }
 
     q('diagBox').children[0].addEventListener('click', () => {
@@ -3821,6 +3700,9 @@ function tryVoidStep(player, target, now = performance.now()){
                 cheatCodeBuffer = "";
             } else if (cheatCodeBuffer.endsWith('sub2')) {
                 activateSpec2Cheat();
+                cheatCodeBuffer = "";
+            } else if (cheatCodeBuffer.endsWith('test2')) {
+                activateTestSpec2Cheat();
                 cheatCodeBuffer = "";
             } else if (cheatCodeBuffer.endsWith('class')) {
                 activateClassCheat();
