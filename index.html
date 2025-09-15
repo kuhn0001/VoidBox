@@ -51,8 +51,7 @@
         }
 
         /* Hide only the specific problematic close buttons */
-        #closeScores,
-        #closeShop {
+        #closeScores {
             display: none !important;
             visibility: hidden !important;
             opacity: 0 !important;
@@ -194,6 +193,17 @@
             color:#ffddff;
             margin-bottom: 8px;
             min-height: 44px;
+        }
+        .ability-hint {
+            font-size: 10px;
+            color: #9988cc;
+            font-style: italic;
+            text-align: center;
+            background: rgba(153, 136, 204, 0.1);
+            padding: 4px 8px;
+            border-radius: 12px;
+            margin-top: 6px;
+            border: 1px solid rgba(153, 136, 204, 0.3);
         }
         .skill-bonuses {
             font-size: 10px;
@@ -397,7 +407,7 @@
                             <div class="skill-card" data-genome="rocketman">
                                 <div class="skill-icon"><img src="rockyboy.png" class="pilot-icon" alt="ROCKETMAN"></div>
                                 <div class="skill-title">ROCKETMAN</div>
-                                <div class="skill-desc">A master of area denial, leaving a trail of fire in his wake.</div>
+                                <div class="skill-desc">A master of explosive ordnance who commands devastating missile strikes.</div>
                                 <div class="skill-bonuses">
                                     + Special Ability<br>
                                     &nbsp;
@@ -406,7 +416,8 @@
                             <div class="skill-card" data-genome="wizard">
                                 <div class="skill-icon"><img src="goggles.png" class="pilot-icon" alt="VOIDMANCER"></div>
                                 <div class="skill-title">VOIDMANCER</div>
-                                <div class="skill-desc">An ethereal pilot who can blink through the void itself. [right click or double tap to use ability]</div>
+                                <div class="skill-desc">An ethereal pilot who can blink through the void itself.</div>
+                                <div class="ability-hint">Right-click or double-tap to teleport</div>
                                 <div class="skill-bonuses">
                                     + Special Ability<br>
                                     &nbsp;
@@ -3563,6 +3574,7 @@ function tryVoidStep(player, target, now = performance.now()){
         p.missileCluster = false;
         p.blinkDamage = false;
         p.hasChainLightning = false;
+        console.log('GENOME RESET: Reset blinkDamage=false, hasChainLightning=false');
 
         store.world.bossesAtPilotSelection = store.world.bosses;
         
@@ -3581,8 +3593,8 @@ function tryVoidStep(player, target, now = performance.now()){
     
     const SUBCLASSES = {
         rocketman: [
-            { id: 'railgunner', name: 'Railgunner', desc: 'Missiles pierce through multiple enemies.', icon: 'rail.png' },
-            { id: 'demolitionist', name: 'Demolitionist', desc: 'Missiles explode into smaller cluster bombs on impact.', icon: 'demo.png' }
+            { id: 'railgunner', name: 'Railgunner', desc: 'Missiles pierce through multiple enemies with devastating precision.', icon: 'rail.png' },
+            { id: 'demolitionist', name: 'Demolitionist', desc: 'Missiles explode into deadly cluster bombs on impact.', icon: 'demo.png' }
         ],
         beef: [
             { id: 'juggernaut', name: 'juggernaut', desc: 'Charge ability creates a damaging explosion on impact.', icon: 'jug2.png' },
@@ -3654,11 +3666,11 @@ function tryVoidStep(player, target, now = performance.now()){
                     choices = [{ id: 'double_clusters', name: 'MEGA CLUSTERS', desc: 'Cluster explosions are twice as large and deal massive damage.', icon: 'demo.png' }];
                 } else if (isAdditive && p.missilePierce > 0) {
                     // If they have railgunner abilities, give them enhanced clusters
-                    choices = [{ id: 'enhanced_clusters', name: 'ENHANCED CLUSTERS', desc: 'Restore cluster explosions to full devastating radius.', icon: 'demo.png' }];
+                    choices = [{ id: 'enhanced_clusters', name: 'ENHANCED CLUSTERS', desc: 'Cluster explosions have massive radius and deal devastating damage.', icon: 'demo.png' }];
                 } else {
                     // First spec or missing railgunner - offer both
                     const opts = [
-                        { id: 'enhanced_clusters', name: 'ENHANCED CLUSTERS', desc: 'Restore cluster explosions to full devastating radius.', icon: 'demo.png' },
+                        { id: 'enhanced_clusters', name: 'ENHANCED CLUSTERS', desc: 'Cluster explosions have massive radius and deal devastating damage.', icon: 'demo.png' },
                         { id: 'railgunner_pierce', name: 'PIERCING MISSILES', desc: 'Missiles pierce through 3 enemies with devastating force.', icon: 'rail.png' },
                         { id: 'compact_clusters_pierce', name: 'COMPACT PIERCING', desc: 'Smaller clusters but missiles pierce through 2 enemies.', icon: 'rail.png' }
                     ];
@@ -3668,10 +3680,10 @@ function tryVoidStep(player, target, now = performance.now()){
                 if (isAdditive && p.enhancedPierce) {
                     choices = [{ id: 'mega_pierce', name: 'ULTRA PIERCE', desc: 'Missiles pierce through 6 enemies with increased damage.', icon: 'rail.png' }];
                 } else if (isAdditive && p.enhancedClusters) {
-                    choices = [{ id: 'enhanced_pierce', name: 'ENHANCED PIERCE', desc: 'Pierce through 2 additional enemies.', icon: 'rail.png' }];
+                    choices = [{ id: 'enhanced_pierce', name: 'ENHANCED PIERCE', desc: 'Missiles pierce through enemies with incredible force.', icon: 'rail.png' }];
                 } else {
                     const opts = [
-                        { id: 'enhanced_pierce', name: 'ENHANCED PIERCE', desc: 'Pierce through 2 additional enemies.', icon: 'rail.png' },
+                        { id: 'enhanced_pierce', name: 'ENHANCED PIERCE', desc: 'Missiles pierce through enemies with incredible force.', icon: 'rail.png' },
                         { id: 'cluster_missiles', name: 'CLUSTER MISSILES', desc: 'Missiles explode into smaller cluster bombs.', icon: 'demo.png' }
                     ];
                     choices = isAdditive ? opts : opts.filter(o => o.id === 'enhanced_pierce');
@@ -3767,11 +3779,13 @@ function tryVoidStep(player, target, now = performance.now()){
             case 'phasestriker':
                 p.hasPhasestriker = true;
                 p.blinkDamage = true;
+                console.log('PHASESTRIKER: Set blinkDamage=true, hasPhasestriker=true');
                 announce('PHASESTRIKER ACTIVATED!');
                 break;
             case 'stormcaller':
                 p.hasStormcaller = true;
                 p.hasChainLightning = true;
+                console.log('STORMCALLER: Set hasChainLightning=true, hasStormcaller=true');
                 announce('STORMCALLER ACTIVATED!');
                 playSound('thunder');
                 break;
@@ -3825,6 +3839,7 @@ function tryVoidStep(player, target, now = performance.now()){
     
     const closeShopLogic = () => { q("shopPanel").classList.add('hide'); resumeGame(); const highlighted = document.querySelector('.shop-item.highlight'); if (highlighted) highlighted.classList.remove('highlight'); };
     q("closeShopTopBtn").addEventListener("click", closeShopLogic);
+    q("closeShop").addEventListener("click", closeShopLogic);
 
     q("shopBtn").addEventListener("click", () => {
         if (q('shopPanel').classList.contains('hide')) {
@@ -3979,12 +3994,25 @@ function tryVoidStep(player, target, now = performance.now()){
     }
 
     function activateTestSpec2Cheat() {
-        // Force minimum requirements for testing
-        if (!store.player.pilotGenome) {
-            store.player.pilotGenome = 'rocketman'; // Default to rocketman for testing
+        const p = store.player;
+        
+        // If no pilot selected, default to wizard for void caller testing
+        if (!p.pilotGenome) {
+            p.pilotGenome = 'wizard';
         }
-        if (!store.player.subclass) {
-            store.player.subclass = 'demolitionist'; // Default to demolitionist for testing
+        
+        // Set up appropriate prerequisites based on pilot type
+        if (p.pilotGenome === 'wizard') {
+            // For wizard, ensure they have both base specs to test enhanced options
+            p.hasStormcaller = true;
+            p.hasChainLightning = true;
+            p.hasPhasestriker = true;
+            p.blinkDamage = true;
+        } else if (p.pilotGenome === 'rocketman') {
+            // For rocketman, set up demolitionist if no subclass
+            if (!p.subclass) {
+                p.subclass = 'demolitionist';
+            }
         }
         
         // Simulate having defeated 6 bosses to trigger additive spec
