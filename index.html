@@ -3480,8 +3480,8 @@ function render(dt) {
         const skillPointsSpent = store.player.skillPointsSpent || 0;
         const reachedMaxPoints = skillPointsSpent >= 4;
         
-        // Enable if: 2nd boss defeated AND (beef, rocketman, or wizard pilot) AND has skill points AND tree not fully capped AND not reached 4 points spent
-        const shouldEnable = bossCount >= 2 && hasSkillTreeAccess && hasSkillPoints && !isTreeCapped && !reachedMaxPoints;
+        // Enable if: 2nd boss defeated AND (beef, rocketman, or wizard pilot) AND (has skill points OR not reached 4 points spent)
+        const shouldEnable = bossCount >= 2 && hasSkillTreeAccess && (hasSkillPoints || !reachedMaxPoints);
         
         if (shouldEnable) {
             skillTreeBtn.disabled = false;
@@ -4432,10 +4432,9 @@ function tryVoidStep(player, target, now = performance.now()){
         const grid = q('subclassGrid');
         const skillTree = q('skillTree');
 
-        // Check if skill tree is fully capped or if 4 skill points have been spent before showing
-        const skillPointsSpent = store.player.skillPointsSpent || 0;
-        if (isSkillTreeFullyCapped() || skillPointsSpent >= 4) {
-            console.log(`Skill tree modal not shown - ${isSkillTreeFullyCapped() ? 'fully capped' : '4 skill points spent'} (${skillPointsSpent}/4)`);
+        // Check if skill tree is fully capped before showing
+        if (isSkillTreeFullyCapped()) {
+            console.log('Skill tree is fully capped - not showing modal');
             resumeGame();
             return;
         }
@@ -4665,34 +4664,7 @@ function tryVoidStep(player, target, now = performance.now()){
         const p = store.player;
         const iconButtons = document.querySelectorAll('.skill-icon-button');
         
-        // Safety check: if no skill points remain and skill tree is open, close it
-        if (p.skillPoints <= 0 && !q('subclassPanel').classList.contains('hide') && q('subclassPanel').classList.contains('skill-tree-active')) {
-            setTimeout(() => {
-                console.log('Auto-closing skill tree from updateSkillTreeUI - no points remaining');
-                closeSkillTree();
-            }, 100);
-            return;
-        }
-        
-        // If tree is fully capped, also close it
-        if (isSkillTreeFullyCapped() && !q('subclassPanel').classList.contains('hide') && q('subclassPanel').classList.contains('skill-tree-active')) {
-            setTimeout(() => {
-                console.log('Auto-closing skill tree from updateSkillTreeUI - tree fully capped');
-                closeSkillTree();
-            }, 100);
-            return;
-        }
-        
-        // If 4 skill points have been spent, also close it
-        const skillPointsSpent = p.skillPointsSpent || 0;
-        if (skillPointsSpent >= 4 && !q('subclassPanel').classList.contains('hide') && q('subclassPanel').classList.contains('skill-tree-active')) {
-            setTimeout(() => {
-                console.log(`Auto-closing skill tree from updateSkillTreeUI - 4 skill points spent (${skillPointsSpent}/4)`);
-                closeSkillTree();
-            }, 100);
-            return;
-        }
-        
+        // Update button states first, regardless of whether tree will close
         iconButtons.forEach(button => {
             const skill = button.dataset.skill;
             const tier = parseInt(button.dataset.tier);
@@ -4712,6 +4684,34 @@ function tryVoidStep(player, target, now = performance.now()){
                 button.classList.add('locked');
             }
         });
+        
+        // Safety check: if no skill points remain and skill tree is open, close it
+        if (p.skillPoints <= 0 && !q('subclassPanel').classList.contains('hide') && q('subclassPanel').classList.contains('skill-tree-active')) {
+            setTimeout(() => {
+                console.log('Auto-closing skill tree from updateSkillTreeUI - no points remaining');
+                closeSkillTree();
+            }, 100);
+            return;
+        }
+        
+        // If tree is fully capped, also close it
+        if (isSkillTreeFullyCapped() && !q('subclassPanel').classList.contains('hide') && q('subclassPanel').classList.contains('skill-tree-active')) {
+            setTimeout(() => {
+                console.log('Auto-closing skill tree from updateSkillTreeUI - tree fully capped');
+                closeSkillTree();
+            }, 100);
+            return;
+        }
+        
+        // If 4 skill points have been spent, don't auto-close (allow viewing)
+        // const skillPointsSpent = p.skillPointsSpent || 0;
+        // if (skillPointsSpent >= 4 && !q('subclassPanel').classList.contains('hide') && q('subclassPanel').classList.contains('skill-tree-active')) {
+        //     setTimeout(() => {
+        //         console.log(`Auto-closing skill tree from updateSkillTreeUI - 4 skill points spent (${skillPointsSpent}/4)`);
+        //         closeSkillTree();
+        //     }, 100);
+        //     return;
+        // }
     }
     
     function canLearnSkill(skill, tier, parent) {
@@ -4877,6 +4877,7 @@ function tryVoidStep(player, target, now = performance.now()){
                     closeSkillTree();
                 }, 1500);
             }
+            // Note: No longer auto-closing when 4 skill points are spent - allow viewing
         } catch (error) {
             console.error('Error in learnSkill:', error);
         } finally {
