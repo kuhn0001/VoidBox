@@ -2464,14 +2464,68 @@ function render(dt) {
             store.fpsLastTime = now;
         }
     }
-    function updateLeaderboard(top10) { const fallbackData = [{ name: "ACE PILOT", score: 50000, waves: 10 },{ name: "VOID RUNNER", score: 35000, waves: 8 },{ name: "STAR HUNTER", score: 25000, waves: 6 },{ name: "NOVA STRIKER", score: 18000, waves: 5 },{ name: "COSMIC GUARD", score: 12000, waves: 4 }]; const data = top10 && top10.length > 0 ? top10 : fallbackData; q("hsList").innerHTML = data.map(s => `<li>${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves ?? "?"})</li>`).join(""); q("hsListPopup").innerHTML = data.map((s, i) => `<li>#${i + 1} ${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves ?? "?"})</li>`).join(""); }
-    async function refreshScoreList() { try { const res = await fetch(`${API_BASE}/leaderboard`, { cache: "no-store", timeout: 5000 }); if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`); const data = await res.json(); updateLeaderboard(data); } catch (err) { console.warn("Failed to fetch leaderboard, using offline data:", err.message); updateLeaderboard(null); } }
+    function updateLeaderboard(leaderboardData) { 
+        const fallbackData = [
+            { name: "ACE PILOT", score: 50000, waves: 10 },
+            { name: "VOID RUNNER", score: 35000, waves: 8 },
+            { name: "STAR HUNTER", score: 25000, waves: 6 },
+            { name: "NOVA STRIKER", score: 18000, waves: 5 },
+            { name: "COSMIC GUARD", score: 12000, waves: 4 }
+        ]; 
+        
+        // Handle both old format (array) and new format (object with entries)
+        let data;
+        if (leaderboardData && leaderboardData.entries) {
+            data = leaderboardData.entries;
+        } else if (leaderboardData && Array.isArray(leaderboardData)) {
+            data = leaderboardData;
+        } else {
+            data = fallbackData;
+        }
+        
+        q("hsList").innerHTML = data.map(s => `<li>${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves ?? "?"})</li>`).join(""); 
+        q("hsListPopup").innerHTML = data.map((s, i) => `<li>#${i + 1} ${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves ?? "?"})</li>`).join(""); 
+    }
+    
+    async function refreshScoreList() { 
+        try { 
+            const res = await fetch(`${API_BASE}/leaderboard`, { cache: "no-store", timeout: 5000 }); 
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`); 
+            const data = await res.json(); 
+            // data.entries contains up to 50 players
+            // Implement smooth scrolling through the list
+            updateLeaderboard(data); 
+        } catch (err) { 
+            console.warn("Failed to fetch leaderboard, using offline data:", err.message); 
+            updateLeaderboard(null); 
+        } 
+    }
     async function addScore(score) {
         if (store.cheatsUsed) {
             announce("Score not submitted: Cheats used");
             return;
         }
-        const name = (store.name || "ROGUE").slice(0, 16); try { const nonceRes = await fetch(`${API_BASE}/session`, { method: "POST", timeout: 5000 }); if (!nonceRes.ok) throw new Error(`Session failed: ${nonceRes.status}`); const { nonce } = await nonceRes.json(); const body = { name, score: Math.floor(score) || 0, waves: store.world.wave | 0, kills: store.world.kills | 0, bosses: store.world.bosses | 0, ms: Math.max(1e4, Math.floor(performance.now() - store._startTs)), nonce }; const res = await fetch(`${API_BASE}/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), timeout: 5000 }); if (!res.ok) throw new Error(`Submit failed: ${res.status}`); const data = await res.json(); if (data.ok) { updateLeaderboard(data.top10); } else { console.warn("Score rejected:", data.err); announce(`Score rejected: ${data.err}`); refreshScoreList(); } } catch (err) { console.warn("Score submission failed, game continues offline:", err.message); } }
+        const name = (store.name || "ROGUE").slice(0, 16); 
+        try { 
+            const nonceRes = await fetch(`${API_BASE}/session`, { method: "POST", timeout: 5000 }); 
+            if (!nonceRes.ok) throw new Error(`Session failed: ${nonceRes.status}`); 
+            const { nonce } = await nonceRes.json(); 
+            const body = { name, score: Math.floor(score) || 0, waves: store.world.wave | 0, kills: store.world.kills | 0, bosses: store.world.bosses | 0, ms: Math.max(1e4, Math.floor(performance.now() - store._startTs)), nonce }; 
+            const res = await fetch(`${API_BASE}/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), timeout: 5000 }); 
+            if (!res.ok) throw new Error(`Submit failed: ${res.status}`); 
+            const data = await res.json(); 
+            if (data.ok) { 
+                // Handle new server response format - use top50 instead of top10
+                updateLeaderboard(data.top50 || data.top10); 
+            } else { 
+                console.warn("Score rejected:", data.err); 
+                announce(`Score rejected: ${data.err}`); 
+                refreshScoreList(); 
+            } 
+        } catch (err) { 
+            console.warn("Score submission failed, game continues offline:", err.message); 
+        } 
+    }
     function fireBullet(x, y, vx, vy, props = {}) { const p = store.player; store.bullets.push({ x, y, vx, vy, r: p.explosive ? 5 : 3, col: p.explosive ? "#ED2F32" : "#b266ff", dmg: 20 * p.dmgMult, pierce: p.piercing, explosive: p.explosive, ...props }); }
     function firePlayer() {
         const p = store.player;
@@ -4386,21 +4440,19 @@ function tryVoidStep(player, target, now = performance.now()){
         // Generate dynamic skill tree based on pilot type
         generateDynamicSkillTree();
         
+        // Set up close button handler AFTER generating the tree
+        const closeBtn = q('skillTreeCloseBtn');
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                closeSkillTree();
+            };
+        }
+        
         // Update UI to reflect learned skills
         updateSkillTreeUI();
         
         // Set up click handlers for skill buttons
         setupSkillTreeHandlers();
-        
-        // Set up close button handler
-        const closeBtn = q('skillTreeCloseBtn');
-        if (closeBtn) {
-            closeBtn.onclick = () => {
-                panel.classList.add('hide');
-                panel.classList.remove('skill-tree-active');
-                resumeGame();
-            };
-        }
         
         // If no skill points are available, don't show the tree
         if (store.player.skillPoints <= 0) {
@@ -4593,6 +4645,15 @@ function tryVoidStep(player, target, now = performance.now()){
         const p = store.player;
         const iconButtons = document.querySelectorAll('.skill-icon-button');
         
+        // Safety check: if no skill points remain and skill tree is open, close it
+        if (p.skillPoints <= 0 && !q('subclassPanel').classList.contains('hide') && q('subclassPanel').classList.contains('skill-tree-active')) {
+            setTimeout(() => {
+                console.log('Auto-closing skill tree from updateSkillTreeUI - no points remaining');
+                closeSkillTree();
+            }, 100);
+            return;
+        }
+        
         iconButtons.forEach(button => {
             const skill = button.dataset.skill;
             const tier = parseInt(button.dataset.tier);
@@ -4765,10 +4826,8 @@ function tryVoidStep(player, target, now = performance.now()){
             // Close skill tree after spending the point or if no more points
             if (p.skillPoints <= 0) {
                 setTimeout(() => {
-                    console.log('Closing skill tree and resuming game');
-                    q('subclassPanel').classList.add('hide');
-                    q('subclassPanel').classList.remove('skill-tree-active');
-                    resumeGame();
+                    console.log('Auto-closing skill tree - no points remaining');
+                    closeSkillTree();
                 }, 1500);
             }
         } catch (error) {
@@ -4776,6 +4835,13 @@ function tryVoidStep(player, target, now = performance.now()){
         } finally {
             isLearningSkill = false;
         }
+    }
+    
+    function closeSkillTree() {
+        const panel = q('subclassPanel');
+        panel.classList.add('hide');
+        panel.classList.remove('skill-tree-active');
+        resumeGame();
     }
     
     function applySkillBonus(skill) {
@@ -5321,6 +5387,13 @@ function tryVoidStep(player, target, now = performance.now()){
         }
 
         if (key === ' ') { e.preventDefault(); useGrenade() }
+        if (key === 'escape') { 
+            e.preventDefault(); 
+            // Close skill tree if it's open
+            if (!q('subclassPanel').classList.contains('hide') && q('subclassPanel').classList.contains('skill-tree-active')) {
+                closeSkillTree();
+            }
+        }
     });
 
     let lastTapTime = 0;
