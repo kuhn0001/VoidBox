@@ -670,7 +670,7 @@
                         </div>
                     </div>
                     <div id="scorePanel" class="panel hide">
-                        <h2 style="font-family:'Orbitron';color:var(--accent);margin-top:0'>🏆 Aces of the Void 🏆</h2>
+                        <h2 style="font-family:'Orbitron';color:var(--accent);margin-top:0;">🏆 Aces of the Void 🏆</h2>
                         <div style="max-height:60vh;overflow-y:auto">
                             <ol id="hsListPopup" style="line-height:1.6;color:#ffddff"></ol>
                         </div>
@@ -679,7 +679,7 @@
                         </div>
                     </div>
                     <div id="levelPanel" class="panel hide">
-                        <h2 style="font-family:'Orbitron';color:var(--accent)'>⚡ AUGMENTATION PROTOCOL ⚡</h2>
+                        <h2 style="font-family:'Orbitron';color:var(--accent);">⚡ AUGMENTATION PROTOCOL ⚡</h2>
                         <p style="color:#ffddff">Select your neural enhancement:</p>
                         <div id="skillsGrid" class="grid"></div>
                     </div>
@@ -1870,17 +1870,17 @@ class FlameParticle {
             // 1st boss defeated - show pilot class selection
             store.player.pilotGenome = 'pending';
             setTimeout(showPilotSelect, 1000);
-        } else if (bossCount >= 2 && store.player.pilotGenome === 'beef' && store.player.pilotGenome !== 'pending') {
-            // 2nd+ boss defeated - show skill tree for beef pilot only
+        } else if (bossCount >= 2 && (store.player.pilotGenome === 'beef' || store.player.pilotGenome === 'rocketman') && store.player.pilotGenome !== 'pending') {
+            // 2nd+ boss defeated - show skill tree for beef and rocketman pilots
             if (!store.player.skillTreeProgress) {
                 store.player.skillTreeProgress = { bossesDefeated: 0, tier1Choice: null, tier2Choice: null };
             }
             store.player.skillTreeProgress.bossesDefeated = bossCount;
             store.player.skillPoints = (store.player.skillPoints || 0) + 1;
-            console.log(`${bossCount}${bossCount === 2 ? 'nd' : bossCount === 3 ? 'rd' : 'th'} boss defeated - showing skill tree with`, store.player.skillPoints, 'points');
+            console.log(`${bossCount}${bossCount === 2 ? 'nd' : bossCount === 3 ? 'rd' : 'th'} boss defeated - showing skill tree for ${store.player.pilotGenome} with`, store.player.skillPoints, 'points');
             setTimeout(showSkillTreeModal, 1500);
-        } else if (bossCount === 2 && store.player.pilotGenome && store.player.pilotGenome !== 'pending' && store.player.pilotGenome !== 'beef') {
-            // 2nd boss defeated - show subclass selection for non-beef pilots
+        } else if (bossCount === 2 && store.player.pilotGenome && store.player.pilotGenome !== 'pending' && store.player.pilotGenome === 'wizard') {
+            // 2nd boss defeated - show subclass selection for wizard pilots only
             console.log('2nd boss defeated - showing subclass selection for', store.player.pilotGenome);
             setTimeout(showSubclassSelect, 1500);
         }
@@ -2395,7 +2395,7 @@ function render(dt) {
                 wingStrokeColor = '#ffeeaa'; engineColor = '#ffffcc';
                 break;
             case 'railgunner':
-                mainColor = '#s9933ff'; accentColor1 = '#6600cc'; accentColor2 = '#440088';
+                mainColor = '#9933ff'; accentColor1 = '#6600cc'; accentColor2 = '#440088';
                 wingStrokeColor = '#cc99ff'; engineColor = '#e6ccff';
                 break;
             case 'phasestriker':
@@ -3090,11 +3090,11 @@ function render(dt) {
         // Update skill tree button state
         const skillTreeBtn = q('skillTreeBtn');
         const bossCount = (store.world.bosses || 0) + 1;
-        const isBeefPilot = store.player.pilotGenome === 'beef';
+        const hasSkillTreeAccess = store.player.pilotGenome === 'beef' || store.player.pilotGenome === 'rocketman';
         const hasSkillPoints = (store.player.skillPoints || 0) > 0;
         
-        // Enable if: 2nd boss defeated AND is beef pilot AND has skill points
-        const shouldEnable = bossCount >= 2 && isBeefPilot && hasSkillPoints;
+        // Enable if: 2nd boss defeated AND (beef or rocketman pilot) AND has skill points
+        const shouldEnable = bossCount >= 2 && hasSkillTreeAccess && hasSkillPoints;
         
         if (shouldEnable) {
             skillTreeBtn.disabled = false;
@@ -3975,6 +3975,9 @@ function tryVoidStep(player, target, now = performance.now()){
         panel.classList.add('skill-tree-active'); // Expand panel for skill tree
         panel.classList.remove('hide');
 
+        // Generate dynamic skill tree based on pilot type
+        generateDynamicSkillTree();
+        
         // Initialize the skill tree
         initializeSkillTree();
         
@@ -3985,12 +3988,118 @@ function tryVoidStep(player, target, now = performance.now()){
             return;
         }
     }
+
+    function generateDynamicSkillTree() {
+        const skillTreeElement = q('skillTree');
+        const pilotType = store.player.pilotGenome;
+        
+        if (pilotType === 'beef') {
+            // Keep existing beef skill tree
+            skillTreeElement.innerHTML = `
+                <div class="skill-tree-title">BEEF SPECIALIZATION TREE</div>
+                <div class="skill-grid">
+                    <div class="skill-row">
+                        <div class="skill-track">
+                            <div class="track-title">MARAUDER</div>
+                            <div class="skill-icon-button available" data-skill="marauder" data-tier="1">
+                                <img src="marauder.png" alt="Marauder" class="skill-icon-image">
+                                <div class="skill-info-overlay">
+                                    <div class="skill-overlay-title">MARAUDER</div>
+                                    <div class="skill-overlay-desc">Rapid assault specialist with multiple charges for sustained combat dominance</div>
+                                </div>
+                            </div>
+                            <div class="skill-icon-button locked" data-skill="marauder_enhanced" data-tier="2" data-parent="marauder">
+                                <img src="marauder.png" alt="Triple Charge" class="skill-icon-image enhanced">
+                                <div class="skill-info-overlay">
+                                    <div class="skill-overlay-title">TRIPLE CHARGE</div>
+                                    <div class="skill-overlay-desc">MASTERY: Enhanced marauder with three devastating charges</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="skill-track">
+                            <div class="track-title">JUGGERNAUT</div>
+                            <div class="skill-icon-button available" data-skill="juggernaut" data-tier="1">
+                                <img src="jug.png" alt="Juggernaut" class="skill-icon-image">
+                                <div class="skill-info-overlay">
+                                    <div class="skill-overlay-title">JUGGERNAUT</div>
+                                    <div class="skill-overlay-desc">Heavy assault specialist with devastating explosive impact attacks</div>
+                                </div>
+                            </div>
+                            <div class="skill-icon-button locked" data-skill="juggernaut_enhanced" data-tier="2" data-parent="juggernaut">
+                                <img src="jug.png" alt="Big Bang" class="skill-icon-image enhanced">
+                                <div class="skill-info-overlay">
+                                    <div class="skill-overlay-title">BIG BANG</div>
+                                    <div class="skill-overlay-desc">MASTERY: Enhanced juggernaut with massive explosion radius</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="skill-description" id="skillDescription">
+                    Choose your specialization path: Marauder for sustained assault, Juggernaut for devastating impact. Select both for the ultimate combo!
+                </div>`;
+        } else if (pilotType === 'rocketman') {
+            // Create rocketman skill tree
+            skillTreeElement.innerHTML = `
+                <div class="skill-tree-title">ROCKETMAN SPECIALIZATION TREE</div>
+                <div class="skill-grid">
+                    <div class="skill-row">
+                        <div class="skill-track">
+                            <div class="track-title">RAILGUNNER</div>
+                            <div class="skill-icon-button available" data-skill="railgunner" data-tier="1">
+                                <img src="rail.png" alt="Railgunner" class="skill-icon-image">
+                                <div class="skill-info-overlay">
+                                    <div class="skill-overlay-title">RAILGUNNER</div>
+                                    <div class="skill-overlay-desc">Precision missile specialist with devastating piercing capabilities</div>
+                                </div>
+                            </div>
+                            <div class="skill-icon-button locked" data-skill="railgunner_enhanced" data-tier="2" data-parent="railgunner">
+                                <img src="rail.png" alt="Super Pierce" class="skill-icon-image enhanced">
+                                <div class="skill-info-overlay">
+                                    <div class="skill-overlay-title">SUPER PIERCE</div>
+                                    <div class="skill-overlay-desc">MASTERY: Enhanced railgunner with maximum piercing power</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="skill-track">
+                            <div class="track-title">DEMOLITIONIST</div>
+                            <div class="skill-icon-button available" data-skill="demolitionist" data-tier="1">
+                                <img src="demo.png" alt="Demolitionist" class="skill-icon-image">
+                                <div class="skill-info-overlay">
+                                    <div class="skill-overlay-title">DEMOLITIONIST</div>
+                                    <div class="skill-overlay-desc">Explosive missile specialist with devastating cluster bombs</div>
+                                </div>
+                            </div>
+                            <div class="skill-icon-button locked" data-skill="demolitionist_enhanced" data-tier="2" data-parent="demolitionist">
+                                <img src="demo.png" alt="Mega Clusters" class="skill-icon-image enhanced">
+                                <div class="skill-info-overlay">
+                                    <div class="skill-overlay-title">MEGA CLUSTERS</div>
+                                    <div class="skill-overlay-desc">MASTERY: Enhanced demolitionist with massive cluster explosions</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="skill-description" id="skillDescription">
+                    Choose your specialization path: Railgunner for piercing precision, Demolitionist for explosive devastation. Select both for the ultimate combo!
+                </div>`;
+        }
+    }
     
     function initializeSkillTree() {
         const p = store.player;
+        const pilotType = p.pilotGenome;
         
         // Initialize skill tree properties if needed
-        if (!p.skillTree) p.skillTree = {};
+        if (!p.skillTree) {
+            if (pilotType === 'beef') {
+                p.skillTree = { juggernaut: false, marauder: false, juggernaut_enhanced: false, marauder_enhanced: false };
+            } else if (pilotType === 'rocketman') {
+                p.skillTree = { railgunner: false, demolitionist: false, railgunner_enhanced: false, demolitionist_enhanced: false };
+            } else {
+                p.skillTree = {};
+            }
+        }
         if (!p.skillTreeProgress) p.skillTreeProgress = { bossesDefeated: 0, tier1Choice: null, tier2Choice: null };
         if (!p.skillPoints) p.skillPoints = 0;
         
@@ -4001,8 +4110,10 @@ function tryVoidStep(player, target, now = performance.now()){
     }
     
     function updateSkillTreeUI() {
+        console.log('updateSkillTreeUI called');
         const p = store.player;
         const iconButtons = document.querySelectorAll('.skill-icon-button');
+        console.log('Found', iconButtons.length, 'skill icon buttons');
         
         iconButtons.forEach(button => {
             const skill = button.dataset.skill;
@@ -4027,6 +4138,7 @@ function tryVoidStep(player, target, now = performance.now()){
     
     function canLearnSkill(skill, tier, parent) {
         const p = store.player;
+        const pilotType = p.pilotGenome;
         
         if (p.skillPoints <= 0) return false;
         
@@ -4036,8 +4148,12 @@ function tryVoidStep(player, target, now = performance.now()){
         
         if (tier === 2) {
             if (parent === 'both') {
-                // Requires both tier 1 skills
-                return p.skillTree.juggernaut && p.skillTree.marauder;
+                // Requires both tier 1 skills based on pilot type
+                if (pilotType === 'beef') {
+                    return p.skillTree.juggernaut && p.skillTree.marauder;
+                } else if (pilotType === 'rocketman') {
+                    return p.skillTree.railgunner && p.skillTree.demolitionist;
+                }
             } else {
                 // Requires specific parent skill
                 return p.skillTree[parent];
@@ -4051,16 +4167,31 @@ function tryVoidStep(player, target, now = performance.now()){
         const iconButtons = document.querySelectorAll('.skill-icon-button');
         const description = q('skillDescription');
         
+        // Remove any existing handlers first to prevent duplicates
+        iconButtons.forEach(button => {
+            button.replaceWith(button.cloneNode(true));
+        });
+        
+        // Re-query after cloning to get fresh elements
+        const freshButtons = document.querySelectorAll('.skill-icon-button');
+        
         // Updated skill descriptions for icon button system
         const skillDescriptions = {
+            // Beef skills
             juggernaut: "Heavy assault specialist with explosive charge impacts and superior defensive capabilities.",
             marauder: "Rapid assault specialist with multiple charge capacity for sustained offensive operations.",
             juggernaut_enhanced: "MASTERY: Enhanced juggernaut with devastating explosion radius and catastrophic damage output.", 
-            marauder_enhanced: "MASTERY: Elite marauder with triple charge capacity for relentless battlefield dominance."
+            marauder_enhanced: "MASTERY: Elite marauder with triple charge capacity for relentless battlefield dominance.",
+            
+            // Rocketman skills
+            railgunner: "Precision missile specialist with devastating piercing capabilities that cut through multiple enemies.",
+            demolitionist: "Explosive missile specialist with cluster bombs that devastate large areas on impact.",
+            railgunner_enhanced: "MASTERY: Enhanced railgunner with maximum piercing power and superior accuracy.",
+            demolitionist_enhanced: "MASTERY: Elite demolitionist with massive cluster explosions and enhanced area damage."
         };
         
         // Add hover effects to icon buttons
-        iconButtons.forEach(button => {
+        freshButtons.forEach(button => {
             const skill = button.dataset.skill;
             
             button.addEventListener('mouseenter', () => {
@@ -4068,54 +4199,93 @@ function tryVoidStep(player, target, now = performance.now()){
             });
             
             button.addEventListener('mouseleave', () => {
-                description.textContent = "Choose your specialization path: Marauder for sustained assault, Juggernaut for devastating impact. Select both for the ultimate combo!";
+                const pilotType = store.player.pilotGenome;
+                if (pilotType === 'beef') {
+                    description.textContent = "Choose your specialization path: Marauder for sustained assault, Juggernaut for devastating impact. Select both for the ultimate combo!";
+                } else if (pilotType === 'rocketman') {
+                    description.textContent = "Choose your specialization path: Railgunner for piercing precision, Demolitionist for explosive devastation. Select both for the ultimate combo!";
+                }
             });
         });
         
         // Click handlers - icon buttons are directly clickable
-        iconButtons.forEach(button => {
+        freshButtons.forEach(button => {
             button.addEventListener('click', () => {
+                console.log('Button clicked:', button.dataset.skill, 'Classes:', button.className);
                 if (button.classList.contains('available')) {
                     const skill = button.dataset.skill;
+                    console.log('About to learn skill:', skill);
                     learnSkill(skill);
                 }
             });
         });
     }
     
+    let isLearningSkill = false;
+    
     function learnSkill(skill) {
-        const p = store.player;
-        const skillButton = document.querySelector(`[data-skill="${skill}"]`);
-        const tier = parseInt(skillButton.dataset.tier);
-        
-        if (!canLearnSkill(skill, tier, skillButton.dataset.parent)) return;
-        
-        if (!p.skillTree) p.skillTree = {};
-        p.skillTree[skill] = true;
-        p.skillPoints--; // Spend the skill point
-        
-        // Apply the skill effects
-        applySkillBonus(skill);
-        
-        // Check for combo when both base skills are learned
-        if (tier === 1 && p.skillTree.marauder && p.skillTree.juggernaut) {
-            p.beefDoubleCharge = true;
-            announce('DOUBLE CHARGE COMBO ACTIVATED!');
+        if (isLearningSkill) {
+            console.log('Already learning a skill, ignoring duplicate call');
+            return;
         }
         
-        updateSkillTreeUI();
+        isLearningSkill = true;
+        console.log('Learning skill:', skill);
         
-        // Close skill tree after spending the point or if no more points
-        if (p.skillPoints <= 0) {
-            setTimeout(() => {
-                q('subclassPanel').classList.add('hide');
-                q('subclassPanel').classList.remove('skill-tree-active');
-                resumeGame();
-            }, 1500);
+        try {
+            const p = store.player;
+            const skillButton = document.querySelector(`[data-skill="${skill}"]`);
+            const tier = parseInt(skillButton.dataset.tier);
+            
+            console.log('Skill tier:', tier, 'Can learn:', canLearnSkill(skill, tier, skillButton.dataset.parent));
+            if (!canLearnSkill(skill, tier, skillButton.dataset.parent)) {
+                isLearningSkill = false;
+                return;
+            }
+            
+            if (!p.skillTree) p.skillTree = {};
+            p.skillTree[skill] = true;
+            p.skillPoints--; // Spend the skill point
+            
+            console.log('Applying skill bonus for:', skill);
+            // Apply the skill effects
+            applySkillBonus(skill);
+            
+            console.log('Checking for combo...');
+            // Check for combo when both base skills are learned
+            const pilotType = p.pilotGenome;
+            if (tier === 1) {
+                if (pilotType === 'beef' && p.skillTree.marauder && p.skillTree.juggernaut) {
+                    p.beefDoubleCharge = true;
+                    announce('DOUBLE CHARGE COMBO ACTIVATED!');
+                } else if (pilotType === 'rocketman' && p.skillTree.railgunner && p.skillTree.demolitionist) {
+                    p.rocketmanHybrid = true;
+                    announce('HYBRID MISSILES COMBO ACTIVATED!');
+                }
+            }
+            
+            console.log('Updating UI...');
+            updateSkillTreeUI();
+            
+            console.log('Remaining skill points:', p.skillPoints);
+            // Close skill tree after spending the point or if no more points
+            if (p.skillPoints <= 0) {
+                setTimeout(() => {
+                    console.log('Closing skill tree and resuming game');
+                    q('subclassPanel').classList.add('hide');
+                    q('subclassPanel').classList.remove('skill-tree-active');
+                    resumeGame();
+                }, 1500);
+            }
+        } catch (error) {
+            console.error('Error in learnSkill:', error);
+        } finally {
+            isLearningSkill = false;
         }
     }
     
     function applySkillBonus(skill) {
+        console.log('applySkillBonus called with skill:', skill);
         const p = store.player;
         
         switch(skill) {
@@ -4143,6 +4313,28 @@ function tryVoidStep(player, target, now = performance.now()){
             case 'juggernaut_enhanced':
                 p.beefBigExplosion = true;
                 announce('BIG BANG EXPLOSION ACTIVATED!');
+                break;
+                
+            // Rocketman skills
+            case 'railgunner':
+                p.subclass = 'railgunner';
+                p.missilePierce = 2;
+                announce('RAILGUNNER ACTIVATED - Piercing Missiles!');
+                break;
+            case 'demolitionist':
+                p.subclass = 'demolitionist';
+                p.missileCluster = true;
+                announce('DEMOLITIONIST ACTIVATED - Cluster Bombs!');
+                break;
+                
+            // Rocketman Tier 2 Enhanced Skills
+            case 'railgunner_enhanced':
+                p.missilePierce = Math.max(p.missilePierce, 4);
+                announce('SUPER PIERCE ACTIVATED - Maximum Penetration!');
+                break;
+            case 'demolitionist_enhanced':
+                p.missileClusterEnhanced = true;
+                announce('MEGA CLUSTERS ACTIVATED - Devastating Explosions!');
                 break;
         }
     }
