@@ -548,6 +548,65 @@
 
         @media (max-width:820px){canvas{width:100vw;height:auto;max-height:75vh;border-radius:8px}.panel{width:min(500px,94vw)}.stage{width:98vw}#belowBoard{width:98vw}}
         
+        /* Matrix Rain Effect */
+        .matrix-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            overflow: hidden;
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        .matrix-column {
+            position: absolute;
+            top: 0;
+            width: 18px;
+            font-size: 14px;
+            font-weight: bold;
+            text-align: center;
+            pointer-events: none;
+            will-change: transform;
+        }
+
+        .matrix-char {
+            position: absolute;
+            display: block;
+            line-height: 20px;
+            width: 100%;
+            transition: none;
+            transform: translateZ(0); /* Force GPU acceleration */
+        }
+
+        /* Purple gradient classes for different brightness levels */
+        .bright {
+            color: #e6ccff;
+            text-shadow: 0 0 5px #cc99ff, 0 0 10px #cc99ff;
+        }
+
+        .medium {
+            color: #b366ff;
+            text-shadow: 0 0 3px #9933ff;
+        }
+
+        .dim {
+            color: #6600cc;
+            text-shadow: 0 0 2px #6600cc;
+        }
+
+        .faded {
+            color: #330066;
+            opacity: 0.7;
+        }
+
+        .very-faded {
+            color: #1a0033;
+            opacity: 0.4;
+        }
+        
     </style>
 </head>
 <body>
@@ -580,6 +639,7 @@
                         </div>
                     </div>
                     <div id="pilotPanel" class="panel hide">
+                        <div class="matrix-container"></div>
                         <button id="storyBtn" type="button">i</button>
                         <h2 style="font-family:'Orbitron';color:var(--accent)">Choose Genomic Upgrade</h2>
                         <div id="pilotsGrid" class="grid" style="grid-template-columns: repeat(3, 1fr);">
@@ -617,6 +677,7 @@
                         </div>
                     </div>
                      <div id="subclassPanel" class="panel hide">
+                        <div class="matrix-container"></div>
                         <h2 style="font-family:'Orbitron';color:var(--accent)">CHOOSE SPECIALIZATION</h2>
                         <div id="subclassGrid" class="grid" style="grid-template-columns: repeat(2, 1fr);">
                         </div>
@@ -667,11 +728,13 @@
                         </div>
                     </div>
                     <div id="storyPanel" class="panel hide">
+                        <div class="matrix-container"></div>
                         <p>When we first discovered the voidplane, one of the earliest notes was the similarity of the plane's inhabitant lifeforms to that of deep sea life on Earth.<br><br>
                         Mammalian life developed specialized spacecraft to venture within and colonize the resources of the primitive creatures.<br><br>
                         The hive responded and war ensued.</p>
                     </div>
                     <div id="namePanel" class="panel hide">
+                        <div class="matrix-container"></div>
                         <h2 style="font-family:'Orbitron';color:var(--accent);margin-top:0">💀 CALLSIGN 💀</h2>
                         <p style="color:#ffddff;margin-top:0">Enter your pilot callsign (max 16 chars).</p>
                         <input id="nameInput" class="input" maxlength="16" placeholder="e.g. The Coyote" />
@@ -679,6 +742,7 @@
                         </div>
                     </div>
                     <div id="scorePanel" class="panel hide">
+                        <div class="matrix-container"></div>
                         <h2 style="font-family:'Orbitron';color:var(--accent);margin-top:0;">🏆 Aces of the Void 🏆</h2>
                         <div style="max-height:60vh;overflow-y:auto">
                             <ol id="hsListPopup" style="line-height:1.6;color:#ffddff"></ol>
@@ -688,11 +752,13 @@
                         </div>
                     </div>
                     <div id="levelPanel" class="panel hide">
+                        <div class="matrix-container"></div>
                         <h2 style="font-family:'Orbitron';color:var(--accent);">⚡ AUGMENTATION PROTOCOL ⚡</h2>
                         <p style="color:#ffddff">Select your neural enhancement:</p>
                         <div id="skillsGrid" class="grid"></div>
                     </div>
                     <div id="shopPanel" class="panel hide">
+                        <div class="matrix-container"></div>
                         <button type="button" class="close-btn" id="closeShopTopBtn">×</button>
                         <h2 style="font-family:'Orbitron';color:var(--accent)">⚡ MECH FORGE ⚡</h2>
                         <button id="skillTreeBtn" class="btn skill-tree-button" type="button" style="margin:10px auto; display:block; font-size:12px; opacity:0.5; pointer-events:none;" disabled>🌳 SKILL TREE</button>
@@ -3909,6 +3975,13 @@ function tryVoidStep(player, target, now = performance.now()){
         playSound('epicHorn');
         pauseGame();
         const panel = q('pilotPanel');
+        
+        // Initialize matrix
+        const matrixContainer = panel.querySelector('.matrix-container');
+        if (matrixContainer.matrix) {
+            matrixContainer.matrix.init();
+        }
+        
         panel.classList.remove('hide');
         const cards = panel.querySelectorAll('.skill-card');
         
@@ -4050,6 +4123,12 @@ function tryVoidStep(player, target, now = performance.now()){
         const skillTree = q('skillTree');
         const genome = store.player.pilotGenome;
 
+        // Initialize matrix
+        const matrixContainer = panel.querySelector('.matrix-container');
+        if (matrixContainer.matrix) {
+            matrixContainer.matrix.init();
+        }
+
         // Show traditional card selection for all pilots (including beef)
         const choices = SUBCLASSES[genome];
         if (!choices) {
@@ -4073,6 +4152,7 @@ function tryVoidStep(player, target, now = performance.now()){
             }, { once: true });
         });
 
+        panel.querySelector('h2').style.display = 'block'; // Show h2 for subclass selection
         panel.classList.remove('hide');
     }
 
@@ -4083,11 +4163,20 @@ function tryVoidStep(player, target, now = performance.now()){
         const grid = q('subclassGrid');
         const skillTree = q('skillTree');
 
+        // Initialize matrix
+        const matrixContainer = panel.querySelector('.matrix-container');
+        if (matrixContainer.matrix) {
+            matrixContainer.matrix.init();
+        }
+
         // Hide grid, show skill tree
         grid.classList.add('hide');
         skillTree.classList.remove('hide');
         panel.classList.add('skill-tree-active'); // Expand panel for skill tree
         panel.classList.remove('hide');
+
+        // Hide the h2 since skill tree has its own title
+        panel.querySelector('h2').style.display = 'none';
 
         // Generate dynamic skill tree based on pilot type
         generateDynamicSkillTree();
@@ -4736,7 +4825,15 @@ function tryVoidStep(player, target, now = performance.now()){
     function ensureName(){
         if(!store.name){
             pauseGame();
-            q("namePanel").classList.remove("hide");
+            const panel = q("namePanel");
+            
+            // Initialize matrix
+            const matrixContainer = panel.querySelector('.matrix-container');
+            if (matrixContainer.matrix) {
+                matrixContainer.matrix.init();
+            }
+            
+            panel.classList.remove("hide");
             q("nameInput").value="";
             setTimeout(()=>q("nameInput").focus(),50)
         } else {
@@ -5035,6 +5132,189 @@ function tryVoidStep(player, target, now = performance.now()){
         }
     }
     
+
+    // Matrix Rain Effect for Menus
+    class OptimizedMatrixRain {
+        constructor(container) {
+            this.container = container;
+            this.columns = [];
+            this.isRunning = true;
+            this.speed = 50;
+            this.density = 85;
+            this.trailLength = 15;
+            this.columnWidth = 30;
+            this.charHeight = 20;
+            
+            // Character pool for reuse
+            this.characterPool = [];
+            this.activeCharacters = new Set();
+            
+            // Matrix-style character set with emphasis on 0, 1, 2
+            this.matrixChars = [
+                '0', '0', '0', '1', '1', '1', '2', '2', '2',
+                '3', '4', '5', '6', '7', '8', '9',
+                '$', '€', '¥', '£', '₹', '%', '&', '*',
+                'ア', 'イ', 'ウ', 'エ', 'オ', 'カ', 'キ',
+                'ク', 'ケ', 'コ', 'サ', 'シ', 'ス', 'セ'
+            ];
+            
+            // Performance tracking
+            this.frameCount = 0;
+            this.lastFpsTime = performance.now();
+            this.fps = 60;
+            
+            // Use RAF for smooth animation
+            this.lastAnimationTime = 0;
+            this.animationId = null;
+            
+            this.init();
+            this.animate(0);
+        }
+
+        init() {
+            // Clear container
+            this.container.innerHTML = '';
+            this.columns = [];
+            this.characterPool = [];
+            this.activeCharacters.clear();
+            
+            const screenWidth = this.container.clientWidth;
+            const screenHeight = this.container.clientHeight;
+            const numColumns = Math.floor(screenWidth / this.columnWidth);
+            
+            // Pre-create character pool (reusable elements)
+            const poolSize = numColumns * this.trailLength * 2;
+            for (let i = 0; i < poolSize; i++) {
+                const char = document.createElement('span');
+                char.className = 'matrix-char';
+                char.style.display = 'none';
+                this.container.appendChild(char);
+                this.characterPool.push(char);
+            }
+            
+            // Initialize columns
+            for (let i = 0; i < numColumns; i++) {
+                const column = {
+                    x: i * this.columnWidth,
+                    chars: [],
+                    speed: 0.5 + Math.random() * 1.5,
+                    nextSpawnTime: Math.random() * 1000
+                };
+                this.columns.push(column);
+            }
+        }
+
+        getCharFromPool() {
+            // Reuse character from pool
+            for (let char of this.characterPool) {
+                if (!this.activeCharacters.has(char)) {
+                    this.activeCharacters.add(char);
+                    char.style.display = 'block';
+                    return char;
+                }
+            }
+            return null; // Pool exhausted
+        }
+
+        returnCharToPool(char) {
+            char.style.display = 'none';
+            this.activeCharacters.delete(char);
+        }
+
+        getRandomChar() {
+            return this.matrixChars[Math.floor(Math.random() * this.matrixChars.length)];
+        }
+
+        updateColumn(column, deltaTime, currentTime) {
+            const screenHeight = this.container.clientHeight;
+            const speedMultiplier = this.speed / 50;
+            
+            // Check if should spawn new character
+            if (currentTime > column.nextSpawnTime) {
+                if (Math.random() * 100 < this.density) {
+                    const char = this.getCharFromPool();
+                    if (char && column.chars.length < this.trailLength) {
+                        char.textContent = this.getRandomChar();
+                        char.style.left = column.x + 'px';
+                        char.style.top = '0px';
+                        char.className = 'matrix-char bright';
+                        
+                        column.chars.push({
+                            element: char,
+                            y: 0,
+                            changeTime: currentTime + Math.random() * 500
+                        });
+                    }
+                }
+                column.nextSpawnTime = currentTime + (100 / this.density) * 50;
+            }
+            
+            // Update existing characters
+            for (let i = column.chars.length - 1; i >= 0; i--) {
+                const char = column.chars[i];
+                
+                // Move character down
+                char.y += column.speed * speedMultiplier * deltaTime * 0.05;
+                
+                // Remove if off screen
+                if (char.y > screenHeight) {
+                    this.returnCharToPool(char.element);
+                    column.chars.splice(i, 1);
+                    continue;
+                }
+                
+                // Update position using transform (GPU accelerated)
+                char.element.style.transform = `translateY(${char.y}px)`;
+                
+                // Change character occasionally
+                if (currentTime > char.changeTime) {
+                    char.element.textContent = this.getRandomChar();
+                    char.changeTime = currentTime + 200 + Math.random() * 800;
+                }
+                
+                // Update brightness based on position in trail
+                const progress = char.y / screenHeight;
+                const trailPosition = i / column.chars.length;
+                
+                if (i === column.chars.length - 1 && progress < 0.1) {
+                    char.element.className = 'matrix-char bright';
+                } else if (progress < 0.3 && trailPosition > 0.6) {
+                    char.element.className = 'matrix-char medium';
+                } else if (progress < 0.5) {
+                    char.element.className = 'matrix-char dim';
+                } else if (progress < 0.8) {
+                    char.element.className = 'matrix-char faded';
+                } else {
+                    char.element.className = 'matrix-char very-faded';
+                }
+            }
+        }
+
+        animate(currentTime) {
+            if (!this.isRunning) {
+                this.animationId = requestAnimationFrame(time => this.animate(time));
+                return;
+            }
+            
+            const deltaTime = currentTime - this.lastAnimationTime;
+            this.lastAnimationTime = currentTime;
+            
+            // Update all columns
+            for (let column of this.columns) {
+                this.updateColumn(column, deltaTime, currentTime);
+            }
+            
+            this.animationId = requestAnimationFrame(time => this.animate(time));
+        }
+    }
+
+    // Initialize matrix effects for all panels
+    document.addEventListener('DOMContentLoaded', () => {
+        const matrixContainers = document.querySelectorAll('.matrix-container');
+        matrixContainers.forEach(container => {
+            new OptimizedMatrixRain(container);
+        });
+    });
 
 })();
 </script>
