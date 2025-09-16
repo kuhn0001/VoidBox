@@ -1870,19 +1870,19 @@ class FlameParticle {
             // 1st boss defeated - show pilot class selection
             store.player.pilotGenome = 'pending';
             setTimeout(showPilotSelect, 1000);
-        } else if (bossCount === 2 && store.player.pilotGenome && store.player.pilotGenome !== 'pending' && !store.player.subclass) {
-            // 2nd boss defeated - show subclass selection
-            console.log('2nd boss defeated - showing subclass selection for', store.player.pilotGenome);
-            setTimeout(showSubclassSelect, 1500);
-        } else if (bossCount >= 3 && store.player.pilotGenome === 'beef' && store.player.subclass) {
-            // 3rd+ boss defeated - show skill tree for beef pilot only
+        } else if (bossCount >= 2 && store.player.pilotGenome === 'beef' && store.player.pilotGenome !== 'pending') {
+            // 2nd+ boss defeated - show skill tree for beef pilot only
             if (!store.player.skillTreeProgress) {
                 store.player.skillTreeProgress = { bossesDefeated: 0, tier1Choice: null, tier2Choice: null };
             }
             store.player.skillTreeProgress.bossesDefeated = bossCount;
             store.player.skillPoints = (store.player.skillPoints || 0) + 1;
-            console.log('3rd+ boss defeated - showing skill tree with', store.player.skillPoints, 'points');
+            console.log(`${bossCount}${bossCount === 2 ? 'nd' : bossCount === 3 ? 'rd' : 'th'} boss defeated - showing skill tree with`, store.player.skillPoints, 'points');
             setTimeout(showSkillTreeModal, 1500);
+        } else if (bossCount === 2 && store.player.pilotGenome && store.player.pilotGenome !== 'pending' && store.player.pilotGenome !== 'beef') {
+            // 2nd boss defeated - show subclass selection for non-beef pilots
+            console.log('2nd boss defeated - showing subclass selection for', store.player.pilotGenome);
+            setTimeout(showSubclassSelect, 1500);
         }
         
         // Enhanced spec system: after 4th and 6th boss, then every 2 bosses after that  
@@ -3090,12 +3090,11 @@ function render(dt) {
         // Update skill tree button state
         const skillTreeBtn = q('skillTreeBtn');
         const bossCount = (store.world.bosses || 0) + 1;
-        const hasSubclass = store.player.subclass;
         const isBeefPilot = store.player.pilotGenome === 'beef';
         const hasSkillPoints = (store.player.skillPoints || 0) > 0;
         
-        // Enable if: 2nd boss defeated AND is beef pilot AND has subclass AND (3rd boss defeated OR has skill points)
-        const shouldEnable = bossCount >= 3 && isBeefPilot && hasSubclass && (bossCount >= 3 || hasSkillPoints);
+        // Enable if: 2nd boss defeated AND is beef pilot AND has skill points
+        const shouldEnable = bossCount >= 2 && isBeefPilot && hasSkillPoints;
         
         if (shouldEnable) {
             skillTreeBtn.disabled = false;
