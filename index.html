@@ -1293,7 +1293,18 @@ class FlameParticle {
                         if (e.dead) return;
                         const dx = e.x - closestEnemy.x; const dy = e.y - closestEnemy.y; const distSq = dx * dx + dy * dy;
                         if (distSq < impactRadius * impactRadius) {
-                            e.hp -= baseDamage * p.dmgMult; e.stunTimer = 2.5;
+                            const chargeDmg = baseDamage * p.dmgMult;
+                            e.hp -= chargeDmg; 
+                            e.stunTimer = 2.5;
+                            
+                            // Apply vampirism healing for charge damage
+                            if (store.player.vampirism > 0) {
+                                let healAmount = chargeDmg * store.player.vampirism;
+                                healAmount = Math.max(healAmount, 1); // Minimum 1 HP
+                                healAmount = Math.min(healAmount, 8); // Cap at 8 HP for charge
+                                store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                            }
+                            
                             const knockbackForce = 250; const angle = Math.atan2(e.y - p.y, e.x - p.x);
                             e.knockback = { vx: Math.cos(angle) * knockbackForce, vy: Math.sin(angle) * knockbackForce, duration: 0.3 };
                         }
@@ -1322,8 +1333,17 @@ class FlameParticle {
                                         // Use smaller radius for combo double charge
                                         const comboRadius = 60; 
                                         if (distSq < comboRadius * comboRadius) {
-                                            e.hp -= baseDamage * p.dmgMult * 0.7; // Reduced damage for second hit
+                                            const secondChargeDmg = baseDamage * p.dmgMult * 0.7; // Reduced damage for second hit
+                                            e.hp -= secondChargeDmg;
                                             e.stunTimer = Math.max(e.stunTimer, 1.5);
+                                            
+                                            // Apply vampirism healing for second charge damage
+                                            if (store.player.vampirism > 0) {
+                                                let healAmount = secondChargeDmg * store.player.vampirism;
+                                                healAmount = Math.max(healAmount, 1); // Minimum 1 HP
+                                                healAmount = Math.min(healAmount, 6); // Cap at 6 HP for second charge
+                                                store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                                            }
                                         }
                                     });
                                 }, 400); // Second impact timing
@@ -1514,6 +1534,14 @@ class FlameParticle {
                 if (distSq < explosionRadius**2) {
                     e.hp -= aoeDmg;
                     e.hp = Math.max(1, e.hp);
+                    
+                    // Apply vampirism healing for cluster damage
+                    if (store.player.vampirism > 0) {
+                        let healAmount = aoeDmg * store.player.vampirism;
+                        healAmount = Math.max(healAmount, 0.5); // Minimum 0.5 HP for AoE
+                        healAmount = Math.min(healAmount, 2); // Cap at 2 HP for AoE
+                        store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                    }
                 }
             }
         });
@@ -1584,6 +1612,15 @@ class FlameParticle {
                             if (Math.random() < 0.05) { spawnPowerup(e.x, e.y); }
                         }
                         e.hp -= dmg;
+                        
+                        // Apply vampirism healing for missile damage
+                        if (store.player.vampirism > 0) {
+                            let healAmount = dmg * store.player.vampirism;
+                            healAmount = Math.max(healAmount, 1); // Minimum 1 HP
+                            healAmount = Math.min(healAmount, 5); // Cap at 5 HP
+                            store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                        }
+                        
                         explode(m.x, m.y, false, true);
                         if ((store.player.subclass === 'railgunner' || store.player.missilePierce > 0) && m.pierce > 0) {
                             m.pierce--;
@@ -1635,9 +1672,33 @@ class FlameParticle {
                 laser.hitEnemies.clear();
             }
             store.enemies.forEach(e => {
-                if (!e.dead && !laser.hitEnemies.has(e) && collide(laser, e)) { e.hp -= 1000 * store.player.dmgMult; laser.hitEnemies.add(e); }
+                if (!e.dead && !laser.hitEnemies.has(e) && collide(laser, e)) { 
+                    const laserDmg = 1000 * store.player.dmgMult;
+                    e.hp -= laserDmg; 
+                    laser.hitEnemies.add(e); 
+                    
+                    // Apply vampirism healing for laser damage
+                    if (store.player.vampirism > 0) {
+                        let healAmount = laserDmg * store.player.vampirism;
+                        healAmount = Math.max(healAmount, 2); // Minimum 2 HP for laser
+                        healAmount = Math.min(healAmount, 10); // Cap at 10 HP for laser
+                        store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                    }
+                }
             });
-            if (store.boss && !laser.hitEnemies.has(store.boss) && collide(laser, store.boss)) { store.boss.hp -= 500 * store.player.dmgMult; laser.hitEnemies.add(store.boss); }
+            if (store.boss && !laser.hitEnemies.has(store.boss) && collide(laser, store.boss)) { 
+                const bossLaserDmg = 500 * store.player.dmgMult;
+                store.boss.hp -= bossLaserDmg; 
+                laser.hitEnemies.add(store.boss); 
+                
+                // Apply vampirism healing for laser damage on boss
+                if (store.player.vampirism > 0) {
+                    let healAmount = bossLaserDmg * store.player.vampirism;
+                    healAmount = Math.max(healAmount, 2); // Minimum 2 HP for laser
+                    healAmount = Math.min(healAmount, 10); // Cap at 10 HP for laser
+                    store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                }
+            }
         });
     }
 
@@ -1664,6 +1725,15 @@ class FlameParticle {
                     p.x = p.attachedEnemy.x;
                     p.y = p.attachedEnemy.y;
                     p.attachedEnemy.hp -= p.damage;
+                    
+                    // Apply vampirism healing for attached flame damage
+                    if (store.player.vampirism > 0) {
+                        let healAmount = p.damage * store.player.vampirism;
+                        healAmount = Math.max(healAmount, 0.2); // Minimum 0.2 HP
+                        healAmount = Math.min(healAmount, 1); // Cap at 1 HP
+                        store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                    }
+                    
                     p.attachedEnemy.slowTimer = 2.0;
                 }
             }
@@ -1754,6 +1824,15 @@ class FlameParticle {
                 if (distSq < collisionRadiusSq) {
                     enemy.stunTimer = Math.max(enemy.stunTimer || 0, 0.5);
                     enemy.hp -= flame.damage;
+                    
+                    // Apply vampirism healing for flamethrower damage
+                    if (store.player.vampirism > 0) {
+                        let healAmount = flame.damage * store.player.vampirism;
+                        healAmount = Math.max(healAmount, 0.3); // Minimum 0.3 HP for flame
+                        healAmount = Math.min(healAmount, 2); // Cap at 2 HP for flame
+                        store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                    }
+                    
                     enemy.isBurning = true;
                     setTimeout(() => { if (enemy) enemy.isBurning = false; }, 100);
                 }
@@ -1768,7 +1847,17 @@ class FlameParticle {
                 
                 if (distSq < collisionRadiusSq) {
                     store.boss.stunTimer = Math.max(store.boss.stunTimer || 0, 0.3);
-                    store.boss.hp -= flame.damage * 0.5;
+                    const bossFlameDmg = flame.damage * 0.5;
+                    store.boss.hp -= bossFlameDmg;
+                    
+                    // Apply vampirism healing for flamethrower damage on boss
+                    if (store.player.vampirism > 0) {
+                        let healAmount = bossFlameDmg * store.player.vampirism;
+                        healAmount = Math.max(healAmount, 0.3); // Minimum 0.3 HP for flame
+                        healAmount = Math.min(healAmount, 2); // Cap at 2 HP for flame
+                        store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                    }
+                    
                     store.boss.isBurning = true;
                     setTimeout(() => { if (store.boss) store.boss.isBurning = false; }, 100);
                 }
@@ -1890,6 +1979,16 @@ class FlameParticle {
                     
                     if (e === store.boss) playSound('hit');
                     e.hp -= dmg;
+                    
+                    // Apply vampirism healing on damage dealt (not just kills)
+                    if (store.player.vampirism > 0) {
+                        let healAmount = dmg * store.player.vampirism;
+                        // Ensure minimum healing of 1 HP per shot if vampirism is active
+                        healAmount = Math.max(healAmount, 1);
+                        // Cap healing to prevent overpowered early game
+                        healAmount = Math.min(healAmount, 5);
+                        store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                    }
 
                     if (e.hp <= 0) {
                         e.dead = true;
@@ -1902,7 +2001,6 @@ class FlameParticle {
                             store.world.xp += e.xp;
                             store.world.kills++;
                             spawnPowerup(e.x, e.y);
-                            if (store.player.vampirism > 0) store.player.hp = Math.min(store.player.hpMax, store.player.hp + dmg * store.player.vampirism);
                             explode(e.x, e.y);
                         }
                     }
@@ -2052,6 +2150,14 @@ class FlameParticle {
                     if (distSq < radius**2) {
                         e.hp -= dmg;
                         store.world.totalDamage += dmg;
+                        
+                        // Apply vampirism healing for explosion damage
+                        if (store.player.vampirism > 0) {
+                            let healAmount = dmg * store.player.vampirism;
+                            healAmount = Math.max(healAmount, 0.5); // Minimum 0.5 HP
+                            healAmount = Math.min(healAmount, 2); // Cap at 2 HP
+                            store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                        }
                     }
                 }
             });
@@ -2889,6 +2995,14 @@ function render(dt) {
                                 const damage = e.hpMax * (0.25 * store.player.dmgMult);
                                 e.hp -= damage;
                                 store.world.totalDamage += damage;
+                                
+                                // Apply vampirism healing for blink damage
+                                if (store.player.vampirism > 0) {
+                                    let healAmount = damage * store.player.vampirism;
+                                    healAmount = Math.max(healAmount, 1); // Minimum 1 HP
+                                    healAmount = Math.min(healAmount, 5); // Cap at 5 HP
+                                    store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                                }
                             }
                         }
                     });
@@ -2914,6 +3028,14 @@ function render(dt) {
                                         b.hp -= actualDamage;
                                         this.totalDamageDealtToBoss += actualDamage;
                                         store.world.totalDamage += actualDamage;
+                                        
+                                        // Apply vampirism healing for blink damage on boss
+                                        if (store.player.vampirism > 0) {
+                                            let healAmount = actualDamage * store.player.vampirism;
+                                            healAmount = Math.max(healAmount, 1); // Minimum 1 HP
+                                            healAmount = Math.min(healAmount, 5); // Cap at 5 HP
+                                            store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                                        }
                                     }
                                }
                            }
@@ -3366,7 +3488,7 @@ function render(dt) {
             expression
         };
     }
-    function stepHounds(dt) { if (!store.player.hasHounds) return; store.hounds.forEach(h => { if (!h.target || h.target.dead || h.target.hp <= 0) { let closest = null, closestDist = Infinity; const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies; potentialTargets.forEach(e => { if (e.dead || e.hp <= 0) return; const dist = (h.x - e.x)**2 + (h.y - e.y)**2; if (dist < closestDist) { closestDist = dist; closestEnemy = e; } }); h.target = closestEnemy; } if (h.target) { const tx = h.target.x, ty = h.target.y; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); const speed = 350; if (dist > 30) { h.x += (dx / dist) * speed * dt; h.y += (dy / dist) * speed * dt; } else { h.attackT -= dt; if (h.attackT <= 0) { h.attackT = 0.25; let dmg = 8 * store.player.dmgMult; if (h.target === store.boss) dmg *= 0.3; if (!h.target.dead && h.target.hp > 0) { h.target.hp -= dmg; if (h.target.hp <= 0) { h.killCount++; if (h.killCount > 0 && h.killCount % 12 === 0) { playSound('dogs'); } } } } } } else { const tx = store.player.x + h.side * 50, ty = store.player.y + 20; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); if (dist > 5) { h.x += dx * 5 * dt; h.y += dy * 5 * dt; } } }); }
+    function stepHounds(dt) { if (!store.player.hasHounds) return; store.hounds.forEach(h => { if (!h.target || h.target.dead || h.target.hp <= 0) { let closest = null, closestDist = Infinity; const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies; potentialTargets.forEach(e => { if (e.dead || e.hp <= 0) return; const dist = (h.x - e.x)**2 + (h.y - e.y)**2; if (dist < closestDist) { closestDist = dist; closestEnemy = e; } }); h.target = closestEnemy; } if (h.target) { const tx = h.target.x, ty = h.target.y; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); const speed = 350; if (dist > 30) { h.x += (dx / dist) * speed * dt; h.y += (dy / dist) * speed * dt; } else { h.attackT -= dt; if (h.attackT <= 0) { h.attackT = 0.25; let dmg = 8 * store.player.dmgMult; if (h.target === store.boss) dmg *= 0.3; if (!h.target.dead && h.target.hp > 0) { h.target.hp -= dmg; if (store.player.vampirism > 0) { let healAmount = dmg * store.player.vampirism; healAmount = Math.max(healAmount, 0.5); healAmount = Math.min(healAmount, 2); store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount); } if (h.target.hp <= 0) { h.killCount++; if (h.killCount > 0 && h.killCount % 12 === 0) { playSound('dogs'); } } } } } } else { const tx = store.player.x + h.side * 50, ty = store.player.y + 20; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); if (dist > 5) { h.x += dx * 5 * dt; h.y += dy * 5 * dt; } } }); }
     function drawHound(h) {
         ctx.save();
         ctx.translate(h.x, h.y);
@@ -3743,6 +3865,14 @@ function render(dt) {
             if (currentTarget === store.boss) dmg *= 0.3;
             currentTarget.hp -= dmg;
             store.world.totalDamage += dmg;
+            
+            // Apply vampirism healing for chain lightning damage
+            if (store.player.vampirism > 0) {
+                let healAmount = dmg * store.player.vampirism;
+                healAmount = Math.max(healAmount, 0.5); // Minimum 0.5 HP for lightning
+                healAmount = Math.min(healAmount, 3); // Cap at 3 HP for lightning
+                store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+            }
 
             let nextTarget = null;
             let nextDistSq = Infinity;
@@ -3821,6 +3951,14 @@ function tryVoidStep(player, target, now = performance.now()){
                  if (distToLine < e.r + 10) {
                      e.hp -= damage;
                      store.world.totalDamage += damage;
+                     
+                     // Apply vampirism healing for void step damage
+                     if (store.player.vampirism > 0) {
+                         let healAmount = damage * store.player.vampirism;
+                         healAmount = Math.max(healAmount, 1); // Minimum 1 HP
+                         healAmount = Math.min(healAmount, 6); // Cap at 6 HP
+                         store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                     }
                  }
             }
         });
