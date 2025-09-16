@@ -1872,15 +1872,14 @@ class FlameParticle {
         
         // NEW PROGRESSION SYSTEM:
         // 1st boss = pilot class selection
-        // 2nd boss = subclass selection  
-        // 3rd boss = skill tree (for beef pilot only)
+        // 2nd+ boss = skill tree for all pilots
         
         if (bossCount === 1 && !store.player.pilotGenome) {
             // 1st boss defeated - show pilot class selection
             store.player.pilotGenome = 'pending';
             setTimeout(showPilotSelect, 1000);
-        } else if (bossCount >= 2 && (store.player.pilotGenome === 'beef' || store.player.pilotGenome === 'rocketman' || store.player.pilotGenome === 'wizard') && store.player.pilotGenome !== 'pending') {
-            // 2nd+ boss defeated - show skill tree for beef, rocketman, and wizard pilots
+        } else if (bossCount >= 2 && store.player.pilotGenome && store.player.pilotGenome !== 'pending') {
+            // 2nd+ boss defeated - show skill tree for all pilots
             if (!store.player.skillTreeProgress) {
                 store.player.skillTreeProgress = { bossesDefeated: 0, tier1Choice: null, tier2Choice: null };
             }
@@ -2200,14 +2199,18 @@ function render(dt) {
         if (a < dmg) playSound('hit');
         p.shield -= a;
         dmg -= a;
-        p.hp = Math.max(0, p.hp - dmg);
-
-        if (p.hp > 0 && p.hp < p.hpMax * 0.25 && p.nanoSaves > 0) {
+        
+        // Check for nano save BEFORE applying damage
+        const hpAfterDamage = p.hp - dmg;
+        if (hpAfterDamage <= 0 && hpAfterDamage > -p.hpMax * 0.75 && p.nanoSaves > 0) {
             p.nanoSaves--;
             p.hp = Math.min(p.hpMax, p.hp + p.hpMax * 0.25);
             store.activeEffects.push(createEffect("nanoHeal"));
             announce('NANO SAVE ACTIVATED!');
+            return; // Don't apply the lethal damage
         }
+        
+        p.hp = Math.max(0, hpAfterDamage);
 
         if (p.hp < p.hpMax / 2 && !store.world.lowHealthTutorialShown) {
             store.world.lowHealthTutorialShown = true;
@@ -2222,7 +2225,7 @@ function render(dt) {
         // Update DPS counter
         const timeElapsed = (performance.now() - store.world.damageStartTime) / 1000; // seconds
         const dps = timeElapsed > 0 ? (store.world.totalDamage / timeElapsed) : 0;
-        q('dps').textContent = dps.toFixed(1);
+        q('dps').textContent = dps.toFixed(8);
         
         // Update FPS counter
         if (!store.fpsLastTime) {
@@ -2922,6 +2925,53 @@ function render(dt) {
                     ctx.restore();
                 };
                 break;
+            case "timeRippleExplosion":
+                effect.maxLife = 0.8;
+                effect.radius = 0;
+                effect.maxRadius = 80;
+                effect.step = function(dt) {
+                    this.life -= dt / this.maxLife;
+                    this.radius = this.maxRadius * (1 - this.life);
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    
+                    // Create time ripple effect with concentric circles
+                    for (let i = 0; i < 3; i++) {
+                        const rippleRadius = this.radius * (0.3 + i * 0.3);
+                        const alpha = this.life * (1 - i * 0.2);
+                        
+                        // Outer ripple ring
+                        ctx.strokeStyle = `rgba(100, 200, 255, ${alpha})`;
+                        ctx.lineWidth = 3 - i;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, rippleRadius, 0, 2 * Math.PI);
+                        ctx.stroke();
+                        
+                        // Inner glow
+                        ctx.fillStyle = `rgba(150, 220, 255, ${alpha * 0.3})`;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, rippleRadius * 0.8, 0, 2 * Math.PI);
+                        ctx.fill();
+                    }
+                    
+                    // Central time distortion effect
+                    const centerAlpha = this.life * 0.6;
+                    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, this.radius * 0.5);
+                    grad.addColorStop(0, `rgba(200, 240, 255, ${centerAlpha})`);
+                    grad.addColorStop(0.7, `rgba(100, 200, 255, ${centerAlpha * 0.5})`);
+                    grad.addColorStop(1, `rgba(50, 150, 255, 0)`);
+                    
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius * 0.5, 0, 2 * Math.PI);
+                    ctx.fill();
+                    
+                    ctx.restore();
+                };
+                break;
         }
         return effect
     }
@@ -3124,7 +3174,7 @@ function render(dt) {
         // Update skill tree button state
         const skillTreeBtn = q('skillTreeBtn');
         const bossCount = (store.world.bosses || 0) + 1;
-        const hasSkillTreeAccess = store.player.pilotGenome === 'beef' || store.player.pilotGenome === 'rocketman' || store.player.pilotGenome === 'wizard';
+        const hasSkillTreeAccess = store.player.pilotGenome && store.player.pilotGenome !== 'pending';
         const hasSkillPoints = (store.player.skillPoints || 0) > 0;
         
         // Enable if: 2nd boss defeated AND (beef, rocketman, or wizard pilot) AND has skill points
@@ -3619,7 +3669,12 @@ function tryVoidStep(player, target, now = performance.now()){
         const dx = nx - start.x;
         const dy = ny - start.y;
         const dist = Math.sqrt(dx*dx + dy*dy);
-        const damage = 150 * player.dmgMult;
+        let damage = 150 * player.dmgMult;
+        
+        // Enhanced damage for phasestriker mastery
+        if (player.blinkDamageEnhanced) {
+            damage = 200 * player.dmgMult;
+        }
         
         store.enemies.forEach(e => {
             if (e.dead) return;
@@ -3643,6 +3698,25 @@ function tryVoidStep(player, target, now = performance.now()){
     player.x = nx; player.y = ny;
     invulUntil = now + VOIDSTEP.iframeMs;
     lastVoidStep = now;
+
+    // Phasestriker mastery: Time ripple explosion at destination
+    if (player.blinkDamageEnhanced) {
+        // Create time ripple explosion effect
+        store.activeEffects.push(createEffect("timeRippleExplosion", nx, ny));
+        
+        // Damage enemies in explosion radius
+        const explosionRadius = 80;
+        const explosionDamage = 120 * player.dmgMult;
+        const targets = store.boss ? [store.boss, ...store.enemies] : store.enemies;
+        targets.forEach(e => {
+            if (e.dead) return;
+            const distSq = (e.x - nx)**2 + (e.y - ny)**2;
+            if (distSq < explosionRadius**2) {
+                e.hp -= explosionDamage;
+                store.world.totalDamage += explosionDamage;
+            }
+        });
+    }
 
     // Impact shockwave for earthquake enhancement
     if (player.hasImpactPhase) {
@@ -4171,6 +4245,13 @@ function tryVoidStep(player, target, now = performance.now()){
                 <div class="skill-description" id="skillDescription">
                     Choose your specialization path: Phase Striker for void teleportation, Stormcaller for chain lightning. Select both for the ultimate combo!
                 </div>`;
+        } else {
+            // Fallback for unknown pilot types
+            skillTreeElement.innerHTML = `
+                <div class="skill-tree-title">UNKNOWN PILOT TYPE</div>
+                <div class="skill-description" id="skillDescription">
+                    Skill tree not available for this pilot type.
+                </div>`;
         }
     }
     
@@ -4187,6 +4268,7 @@ function tryVoidStep(player, target, now = performance.now()){
             } else if (pilotType === 'wizard') {
                 p.skillTree = { phasestriker: false, stormcaller: false, phasestriker_enhanced: false, stormcaller_enhanced: false };
             } else {
+                // Fallback for unknown pilot types
                 p.skillTree = {};
             }
         }
@@ -4227,6 +4309,9 @@ function tryVoidStep(player, target, now = performance.now()){
     function canLearnSkill(skill, tier, parent) {
         const p = store.player;
         const pilotType = p.pilotGenome;
+        
+        // Can't learn a skill that's already learned
+        if (p.skillTree && p.skillTree[skill]) return false;
         
         if (p.skillPoints <= 0) return false;
         
