@@ -387,14 +387,19 @@
             color: #ffddff;
             font-size: 12px;
         }
-        .skill-bonuses {
+        .ability-hint {
             font-size: 10px;
-            color: var(--accent);
-            line-height: 1.4;
-            margin-top: auto;
-            padding-top: 8px;
-            border-top: 1px solid var(--edge);
-            width: 100%;
+            color: #87CEEB;
+            text-align: center;
+            margin-top: 6px;
+            font-style: italic;
+            text-shadow: 0 0 4px rgba(135, 206, 235, 0.5);
+        }
+        .ability-icon {
+            font-size: 12px;
+            margin: 0 2px;
+            display: inline-block;
+            animation: pulse-glow 2s infinite;
         }
 
         #storyBtn {
@@ -561,8 +566,9 @@
                 </div>
                 <canvas id="game" width="960" height="540"></canvas>
                 <div id="diagBox">
-                    <div class="chip">v3.7.5</div>
+                    <div class="chip">v3.8.0</div>
                     <div class="chip">FPS <span id="fps">—</span></div>
+                    <div class="chip">DPS <span id="dps">—</span></div>
                 </div>
                 
                 <div id="ui">
@@ -599,7 +605,10 @@
                                 <div class="skill-icon"><img src="goggles.png" class="pilot-icon" alt="VOIDMANCER"></div>
                                 <div class="skill-title">VOIDMANCER</div>
                                 <div class="skill-desc">An ethereal pilot who can blink through the void itself.</div>
-                                <div class="ability-hint">Right-click or double-tap to teleport</div>
+                                <div class="ability-hint">
+                                    <span class="ability-icon">🖱️</span> Right-click or 
+                                    <span class="ability-icon">👆👆</span> double-tap to teleport
+                                </div>
                                 <div class="skill-bonuses">
                                     + Special Ability<br>
                                     &nbsp;
@@ -1870,8 +1879,8 @@ class FlameParticle {
             // 1st boss defeated - show pilot class selection
             store.player.pilotGenome = 'pending';
             setTimeout(showPilotSelect, 1000);
-        } else if (bossCount >= 2 && (store.player.pilotGenome === 'beef' || store.player.pilotGenome === 'rocketman') && store.player.pilotGenome !== 'pending') {
-            // 2nd+ boss defeated - show skill tree for beef and rocketman pilots
+        } else if (bossCount >= 2 && (store.player.pilotGenome === 'beef' || store.player.pilotGenome === 'rocketman' || store.player.pilotGenome === 'wizard') && store.player.pilotGenome !== 'pending') {
+            // 2nd+ boss defeated - show skill tree for beef, rocketman, and wizard pilots
             if (!store.player.skillTreeProgress) {
                 store.player.skillTreeProgress = { bossesDefeated: 0, tier1Choice: null, tier2Choice: null };
             }
@@ -1879,10 +1888,6 @@ class FlameParticle {
             store.player.skillPoints = (store.player.skillPoints || 0) + 1;
             console.log(`${bossCount}${bossCount === 2 ? 'nd' : bossCount === 3 ? 'rd' : 'th'} boss defeated - showing skill tree for ${store.player.pilotGenome} with`, store.player.skillPoints, 'points');
             setTimeout(showSkillTreeModal, 1500);
-        } else if (bossCount === 2 && store.player.pilotGenome && store.player.pilotGenome !== 'pending' && store.player.pilotGenome === 'wizard') {
-            // 2nd boss defeated - show subclass selection for wizard pilots only
-            console.log('2nd boss defeated - showing subclass selection for', store.player.pilotGenome);
-            setTimeout(showSubclassSelect, 1500);
         }
         
         // Enhanced spec system: after 4th and 6th boss, then every 2 bosses after that  
@@ -1938,6 +1943,7 @@ class FlameParticle {
                     const distSq = (e.x - x)**2 + (e.y - y)**2;
                     if (distSq < radius**2) {
                         e.hp -= dmg;
+                        store.world.totalDamage += dmg;
                     }
                 }
             });
@@ -2003,6 +2009,9 @@ class FlameParticle {
     
     function resetGame() {
         store.player = JSON.parse(JSON.stringify(player_initial_state));
+        
+        // Ensure dmgMult is initialized
+        if (!store.player.dmgMult) store.player.dmgMult = 1;
     
         store.world = { 
             wave: 1, 
@@ -2023,7 +2032,9 @@ class FlameParticle {
             xpMultiplier: 1.0, 
             collarStacks: 0, 
             consecutiveFastKills: 0, 
-            fastKillBonus: 0 
+            fastKillBonus: 0,
+            totalDamage: 0,
+            damageStartTime: performance.now()
         };
         
         store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = [];
@@ -2206,7 +2217,27 @@ function render(dt) {
     
     function escapeHtml(s) { s = String(s ?? ''); return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
     function announce(text) { const el = q('announce'); el.textContent = text; el.classList.remove('hide'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('hide'), 2500); }
-    function updateHUD() { const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0; const healthText = `HP: ${Math.round(t.hp)} / ${t.hpMax}`; const shieldText = t.shieldMax > 0 ? `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}` : ""; q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } }
+    function updateHUD() { const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0; const healthText = `HP: ${Math.round(t.hp)} / ${t.hpMax}`; const shieldText = t.shieldMax > 0 ? `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}` : ""; q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } 
+        
+        // Update DPS counter
+        const timeElapsed = (performance.now() - store.world.damageStartTime) / 1000; // seconds
+        const dps = timeElapsed > 0 ? (store.world.totalDamage / timeElapsed) : 0;
+        q('dps').textContent = dps.toFixed(1);
+        
+        // Update FPS counter
+        if (!store.fpsLastTime) {
+            store.fpsLastTime = performance.now();
+            store.fpsFrameCount = 0;
+        }
+        store.fpsFrameCount++;
+        const now = performance.now();
+        if (now - store.fpsLastTime >= 1000) {
+            const fps = Math.round((store.fpsFrameCount * 1000) / (now - store.fpsLastTime));
+            q('fps').textContent = fps;
+            store.fpsFrameCount = 0;
+            store.fpsLastTime = now;
+        }
+    }
     function updateLeaderboard(top10) { const fallbackData = [{ name: "ACE PILOT", score: 50000, waves: 10 },{ name: "VOID RUNNER", score: 35000, waves: 8 },{ name: "STAR HUNTER", score: 25000, waves: 6 },{ name: "NOVA STRIKER", score: 18000, waves: 5 },{ name: "COSMIC GUARD", score: 12000, waves: 4 }]; const data = top10 && top10.length > 0 ? top10 : fallbackData; q("hsList").innerHTML = data.map(s => `<li>${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves ?? "?"})</li>`).join(""); q("hsListPopup").innerHTML = data.map((s, i) => `<li>#${i + 1} ${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves ?? "?"})</li>`).join(""); }
     async function refreshScoreList() { try { const res = await fetch(`${API_BASE}/leaderboard`, { cache: "no-store", timeout: 5000 }); if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`); const data = await res.json(); updateLeaderboard(data); } catch (err) { console.warn("Failed to fetch leaderboard, using offline data:", err.message); updateLeaderboard(null); } }
     async function addScore(score) {
@@ -2735,7 +2766,9 @@ function render(dt) {
                             }
                             
                             if (damageThisFrame && distSq < damageRadiusSq) {
-                                e.hp -= e.hpMax * (0.25 * store.player.dmgMult) ;
+                                const damage = e.hpMax * (0.25 * store.player.dmgMult);
+                                e.hp -= damage;
+                                store.world.totalDamage += damage;
                             }
                         }
                     });
@@ -2760,6 +2793,7 @@ function render(dt) {
                                     if (actualDamage > 0) {
                                         b.hp -= actualDamage;
                                         this.totalDamageDealtToBoss += actualDamage;
+                                        store.world.totalDamage += actualDamage;
                                     }
                                }
                            }
@@ -3090,10 +3124,10 @@ function render(dt) {
         // Update skill tree button state
         const skillTreeBtn = q('skillTreeBtn');
         const bossCount = (store.world.bosses || 0) + 1;
-        const hasSkillTreeAccess = store.player.pilotGenome === 'beef' || store.player.pilotGenome === 'rocketman';
+        const hasSkillTreeAccess = store.player.pilotGenome === 'beef' || store.player.pilotGenome === 'rocketman' || store.player.pilotGenome === 'wizard';
         const hasSkillPoints = (store.player.skillPoints || 0) > 0;
         
-        // Enable if: 2nd boss defeated AND (beef or rocketman pilot) AND has skill points
+        // Enable if: 2nd boss defeated AND (beef, rocketman, or wizard pilot) AND has skill points
         const shouldEnable = bossCount >= 2 && hasSkillTreeAccess && hasSkillPoints;
         
         if (shouldEnable) {
@@ -3525,6 +3559,7 @@ function render(dt) {
             let dmg = currentDamage;
             if (currentTarget === store.boss) dmg *= 0.3;
             currentTarget.hp -= dmg;
+            store.world.totalDamage += dmg;
 
             let nextTarget = null;
             let nextDistSq = Infinity;
@@ -3597,6 +3632,7 @@ function tryVoidStep(player, target, now = performance.now()){
                  const distToLine = Math.sqrt((e.x - closestX)**2 + (e.y - closestY)**2);
                  if (distToLine < e.r + 10) {
                      e.hp -= damage;
+                     store.world.totalDamage += damage;
                  }
             }
         });
@@ -3641,7 +3677,9 @@ function tryVoidStep(player, target, now = performance.now()){
             const dist = Math.sqrt((e.x - x)**2 + (e.y - y)**2);
             if (dist <= maxRadius) {
                 const damageFalloff = 1.0 - (dist / maxRadius) * 0.3; // 30% falloff at edge
-                e.hp -= shockDamage * damageFalloff;
+                const actualDamage = shockDamage * damageFalloff;
+                e.hp -= actualDamage;
+                store.world.totalDamage += actualDamage;
                 
                 // Knockback effect
                 if (dist > 0) {
@@ -3658,7 +3696,9 @@ function tryVoidStep(player, target, now = performance.now()){
             const dist = Math.sqrt((store.boss.x - x)**2 + (store.boss.y - y)**2);
             if (dist <= maxRadius) {
                 const damageFalloff = 1.0 - (dist / maxRadius) * 0.3;
-                store.boss.hp -= (shockDamage * damageFalloff * 0.4); // Reduced boss damage
+                const bossDamage = shockDamage * damageFalloff * 0.4;
+                store.boss.hp -= bossDamage; // Reduced boss damage
+                store.world.totalDamage += bossDamage;
             }
         }
         
@@ -3978,8 +4018,11 @@ function tryVoidStep(player, target, now = performance.now()){
         // Generate dynamic skill tree based on pilot type
         generateDynamicSkillTree();
         
-        // Initialize the skill tree
-        initializeSkillTree();
+        // Update UI to reflect learned skills
+        updateSkillTreeUI();
+        
+        // Set up click handlers for skill buttons
+        setupSkillTreeHandlers();
         
         // If no skill points are available, don't show the tree
         if (store.player.skillPoints <= 0) {
@@ -4083,6 +4126,51 @@ function tryVoidStep(player, target, now = performance.now()){
                 <div class="skill-description" id="skillDescription">
                     Choose your specialization path: Railgunner for piercing precision, Demolitionist for explosive devastation. Select both for the ultimate combo!
                 </div>`;
+        } else if (pilotType === 'wizard') {
+            // Create wizard skill tree
+            skillTreeElement.innerHTML = `
+                <div class="skill-tree-title">VOIDMANCER SPECIALIZATION TREE</div>
+                <div class="skill-grid">
+                    <div class="skill-row">
+                        <div class="skill-track">
+                            <div class="track-title">PHASE STRIKER</div>
+                            <div class="skill-icon-button available" data-skill="phasestriker" data-tier="1">
+                                <img src="phase.png" alt="Phase Striker" class="skill-icon-image">
+                                <div class="skill-info-overlay">
+                                    <div class="skill-overlay-title">PHASE STRIKER</div>
+                                    <div class="skill-overlay-desc">Void manipulation specialist with damaging blink teleportation</div>
+                                </div>
+                            </div>
+                            <div class="skill-icon-button locked" data-skill="phasestriker_enhanced" data-tier="2" data-parent="phasestriker">
+                                <img src="phase.png" alt="Void Blink" class="skill-icon-image enhanced">
+                                <div class="skill-info-overlay">
+                                    <div class="skill-overlay-title">VOID BLINK</div>
+                                    <div class="skill-overlay-desc">MASTERY: Enhanced phase striker with devastating void blink damage</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="skill-track">
+                            <div class="track-title">STORMCALLER</div>
+                            <div class="skill-icon-button available" data-skill="stormcaller" data-tier="1">
+                                <img src="storm.png" alt="Stormcaller" class="skill-icon-image">
+                                <div class="skill-info-overlay">
+                                    <div class="skill-overlay-title">STORMCALLER</div>
+                                    <div class="skill-overlay-desc">Lightning manipulation specialist with chain lightning weaponry</div>
+                                </div>
+                            </div>
+                            <div class="skill-icon-button locked" data-skill="stormcaller_enhanced" data-tier="2" data-parent="stormcaller">
+                                <img src="storm.png" alt="Chain Storm" class="skill-icon-image enhanced">
+                                <div class="skill-info-overlay">
+                                    <div class="skill-overlay-title">CHAIN STORM</div>
+                                    <div class="skill-overlay-desc">MASTERY: Enhanced stormcaller with maximum chain lightning power</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="skill-description" id="skillDescription">
+                    Choose your specialization path: Phase Striker for void teleportation, Stormcaller for chain lightning. Select both for the ultimate combo!
+                </div>`;
         }
     }
     
@@ -4096,6 +4184,8 @@ function tryVoidStep(player, target, now = performance.now()){
                 p.skillTree = { juggernaut: false, marauder: false, juggernaut_enhanced: false, marauder_enhanced: false };
             } else if (pilotType === 'rocketman') {
                 p.skillTree = { railgunner: false, demolitionist: false, railgunner_enhanced: false, demolitionist_enhanced: false };
+            } else if (pilotType === 'wizard') {
+                p.skillTree = { phasestriker: false, stormcaller: false, phasestriker_enhanced: false, stormcaller_enhanced: false };
             } else {
                 p.skillTree = {};
             }
@@ -4110,10 +4200,8 @@ function tryVoidStep(player, target, now = performance.now()){
     }
     
     function updateSkillTreeUI() {
-        console.log('updateSkillTreeUI called');
         const p = store.player;
         const iconButtons = document.querySelectorAll('.skill-icon-button');
-        console.log('Found', iconButtons.length, 'skill icon buttons');
         
         iconButtons.forEach(button => {
             const skill = button.dataset.skill;
@@ -4153,6 +4241,8 @@ function tryVoidStep(player, target, now = performance.now()){
                     return p.skillTree.juggernaut && p.skillTree.marauder;
                 } else if (pilotType === 'rocketman') {
                     return p.skillTree.railgunner && p.skillTree.demolitionist;
+                } else if (pilotType === 'wizard') {
+                    return p.skillTree.phasestriker && p.skillTree.stormcaller;
                 }
             } else {
                 // Requires specific parent skill
@@ -4187,7 +4277,13 @@ function tryVoidStep(player, target, now = performance.now()){
             railgunner: "Precision missile specialist with devastating piercing capabilities that cut through multiple enemies.",
             demolitionist: "Explosive missile specialist with cluster bombs that devastate large areas on impact.",
             railgunner_enhanced: "MASTERY: Enhanced railgunner with maximum piercing power and superior accuracy.",
-            demolitionist_enhanced: "MASTERY: Elite demolitionist with massive cluster explosions and enhanced area damage."
+            demolitionist_enhanced: "MASTERY: Elite demolitionist with massive cluster explosions and enhanced area damage.",
+            
+            // Wizard skills
+            phasestriker: "Void manipulation specialist with damaging blink teleportation that harms enemies you pass through.",
+            stormcaller: "Lightning manipulation specialist with chain lightning weaponry that arcs between targets.",
+            phasestriker_enhanced: "MASTERY: Enhanced phase striker with devastating void blink damage and increased range.",
+            stormcaller_enhanced: "MASTERY: Elite stormcaller with maximum chain lightning power and enhanced conductivity."
         };
         
         // Add hover effects to icon buttons
@@ -4204,6 +4300,8 @@ function tryVoidStep(player, target, now = performance.now()){
                     description.textContent = "Choose your specialization path: Marauder for sustained assault, Juggernaut for devastating impact. Select both for the ultimate combo!";
                 } else if (pilotType === 'rocketman') {
                     description.textContent = "Choose your specialization path: Railgunner for piercing precision, Demolitionist for explosive devastation. Select both for the ultimate combo!";
+                } else if (pilotType === 'wizard') {
+                    description.textContent = "Choose your specialization path: Phase Striker for void teleportation, Stormcaller for chain lightning. Select both for the ultimate combo!";
                 }
             });
         });
@@ -4261,6 +4359,9 @@ function tryVoidStep(player, target, now = performance.now()){
                 } else if (pilotType === 'rocketman' && p.skillTree.railgunner && p.skillTree.demolitionist) {
                     p.rocketmanHybrid = true;
                     announce('HYBRID MISSILES COMBO ACTIVATED!');
+                } else if (pilotType === 'wizard' && p.skillTree.phasestriker && p.skillTree.stormcaller) {
+                    p.wizardHybrid = true;
+                    announce('VOID STORM COMBO ACTIVATED!');
                 }
             }
             
@@ -4335,6 +4436,28 @@ function tryVoidStep(player, target, now = performance.now()){
             case 'demolitionist_enhanced':
                 p.missileClusterEnhanced = true;
                 announce('MEGA CLUSTERS ACTIVATED - Devastating Explosions!');
+                break;
+                
+            // Wizard skills
+            case 'phasestriker':
+                p.subclass = 'phasestriker';
+                p.blinkDamage = true;
+                announce('PHASE STRIKER ACTIVATED - Damaging Blink!');
+                break;
+            case 'stormcaller':
+                p.subclass = 'stormcaller';
+                p.hasChainLightning = true;
+                announce('STORMCALLER ACTIVATED - Chain Lightning!');
+                break;
+                
+            // Wizard Tier 2 Enhanced Skills
+            case 'phasestriker_enhanced':
+                p.blinkDamageEnhanced = true;
+                announce('VOID BLINK ACTIVATED - Maximum Void Damage!');
+                break;
+            case 'stormcaller_enhanced':
+                p.chainLightningEnhanced = true;
+                announce('CHAIN STORM ACTIVATED - Maximum Lightning Power!');
                 break;
         }
     }
