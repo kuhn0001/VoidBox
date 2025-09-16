@@ -120,6 +120,11 @@
             box-shadow:0 0 40px rgba(178,102,255,.3);
             z-index:100;
         }
+        
+        /* Expanded panel for skill tree */
+        #subclassPanel.skill-tree-active {
+            width: min(950px, 95vw);
+        }
         #namePanel {
             top: 50%;
             transform: translate(-50%, -50%);
@@ -198,88 +203,155 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 20px;
-            padding: 20px;
-            max-width: 500px;
+            gap: 30px;
+            padding: 30px;
+            max-width: 900px;
             margin: 0 auto;
         }
         .skill-grid {
             display: flex;
             flex-direction: column;
-            gap: 30px;
+            gap: 25px;
         }
         .skill-row {
             display: flex;
             justify-content: center;
-            gap: 80px;
+            gap: 60px;
         }
-        .skill-node {
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            border: 3px solid #666;
-            background: #1a1a2e;
+        .skill-card-node-pair {
             display: flex;
-            flex-direction: column;
             align-items: center;
+            gap: 15px;
+        }
+        .skill-row {
+            display: flex;
             justify-content: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            position: relative;
-        }
-        .skill-node-icon {
-            width: 40px;
-            height: 40px;
-            object-fit: contain;
-            margin-bottom: 2px;
-        }
-        .skill-node-icon.enhanced {
-            filter: brightness(1.5) drop-shadow(0 0 5px gold) saturate(1.3);
-        }
-        .skill-node-icon.small {
-            width: 20px;
-            height: 20px;
-        }
-        .skill-combo-node {
-            width: 120px;
-            height: 80px;
-            border-radius: 20px;
-            border: 3px solid #666;
-            background: #1a1a2e;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            margin: 0 auto;
-            margin-top: 20px;
-        }
-        .combo-icons {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            margin-bottom: 2px;
-        }
-        .combo-plus {
-            color: #888;
-            font-size: 12px;
-            font-weight: bold;
-        }
-        .skill-node-name {
-            font-size: 9px;
-            color: #ccc;
-            text-align: center;
-            font-weight: bold;
-            line-height: 1.1;
-        }
-        .skill-description-preview {
-            font-size: 7px;
-            color: #888;
-            text-align: center;
-            position: absolute;
-            bottom: -15px;
+            gap: 40px;
             width: 100%;
+        }
+        
+        /* SKILL TREE - Portrait-oriented Icon Button System */
+        .skill-track {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+        .track-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #FFD700;
+            text-align: center;
+            margin-bottom: 10px;
+            text-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+        }
+        .skill-icon-button {
+            position: relative;
+            width: 180px;
+            height: 200px;
+            cursor: pointer;
+            border-radius: 16px;
+            overflow: hidden;
+            transition: all 0.4s ease;
+            border: 3px solid transparent;
+        }
+        .skill-icon-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: all 0.4s ease;
+        }
+        .skill-icon-image.enhanced {
+            filter: brightness(1.3) saturate(1.2) drop-shadow(0 0 12px rgba(255,215,0,0.8));
+        }
+        .skill-info-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.8) 30%, rgba(0,0,0,0.95) 100%);
+            padding: 15px 12px 12px;
+            transform: translateY(70%);
+            transition: all 0.4s ease;
+        }
+        .skill-overlay-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #FFD700;
+            margin-bottom: 6px;
+            text-align: center;
+        }
+        .skill-overlay-desc {
+            font-size: 10px;
+            color: #cccccc;
+            line-height: 1.3;
+            text-align: center;
+        }
+        
+        /* SKILL ICON BUTTON STATES */
+        .skill-icon-button.available {
+            border-color: #4CAF50;
+            box-shadow: 0 0 20px rgba(76, 175, 80, 0.4);
+        }
+        .skill-icon-button.available:hover {
+            border-color: #66BB6A;
+            box-shadow: 0 0 30px rgba(76, 175, 80, 0.6);
+            transform: translateY(-5px) scale(1.05);
+        }
+        .skill-icon-button.available:hover .skill-info-overlay {
+            transform: translateY(0%);
+        }
+        .skill-icon-button.available:hover .skill-icon-image {
+            filter: brightness(1.2) saturate(1.1);
+        }
+        
+        .skill-icon-button.active {
+            border-color: #FFD700;
+            background: linear-gradient(135deg, rgba(255,215,0,0.1) 0%, rgba(255,215,0,0.2) 100%);
+            box-shadow: 0 0 25px rgba(255, 215, 0, 0.8), inset 0 0 20px rgba(255,255,255,0.1);
+            animation: activeIconGlow 3s ease-in-out infinite;
+        }
+        .skill-icon-button.active .skill-icon-image {
+            filter: brightness(1.4) saturate(1.3) drop-shadow(0 0 15px rgba(255,215,0,0.9));
+        }
+        .skill-icon-button.active .skill-info-overlay {
+            transform: translateY(0%);
+            background: linear-gradient(180deg, transparent 0%, rgba(255,215,0,0.1) 30%, rgba(0,0,0,0.9) 100%);
+        }
+        
+        .skill-icon-button.locked {
+            border-color: #333;
+            opacity: 0.4;
+            cursor: not-allowed;
+            filter: grayscale(0.7);
+        }
+        .skill-icon-button.locked:hover {
+            transform: none;
+            box-shadow: none;
+        }
+        
+        /* BEAUTIFUL GLOW ANIMATIONS */
+        @keyframes activeIconGlow {
+            0% { box-shadow: 0 0 25px rgba(255, 215, 0, 0.8), inset 0 0 20px rgba(255,255,255,0.1); }
+            50% { box-shadow: 0 0 35px rgba(255, 215, 0, 1.0), inset 0 0 25px rgba(255,255,255,0.2), 0 0 50px rgba(135,206,235,0.3); }
+            100% { box-shadow: 0 0 25px rgba(255, 215, 0, 0.8), inset 0 0 20px rgba(255,255,255,0.1); }
+        }
+        
+        /* Old skill node classes for compatibility */
+        
+        /* Beautiful Marble/Lightning Animations */
+        @keyframes marbleSwirl {
+            0% { background: linear-gradient(135deg, #f8f8ff 0%, #e6e6fa 30%, #dcdcdc 60%, #f5f5dc 100%); }
+            25% { background: linear-gradient(225deg, #e6e6fa 0%, #f5f5dc 30%, #f8f8ff 60%, #dcdcdc 100%); }
+            50% { background: linear-gradient(315deg, #dcdcdc 0%, #f8f8ff 30%, #f5f5dc 60%, #e6e6fa 100%); }
+            75% { background: linear-gradient(45deg, #f5f5dc 0%, #dcdcdc 30%, #e6e6fa 60%, #f8f8ff 100%); }
+            100% { background: linear-gradient(135deg, #f8f8ff 0%, #e6e6fa 30%, #dcdcdc 60%, #f5f5dc 100%); }
+        }
+        
+        @keyframes lightningPulse {
+            0% { box-shadow: 0 0 10px rgba(255,215,0,0.5), inset 0 0 8px rgba(255,255,255,0.4); }
+            50% { box-shadow: 0 0 15px rgba(255,215,0,0.8), inset 0 0 12px rgba(255,255,255,0.6), 0 0 25px rgba(135,206,235,0.4); }
+            100% { box-shadow: 0 0 10px rgba(255,215,0,0.5), inset 0 0 8px rgba(255,255,255,0.4); }
         }
         .skill-node.available {
             border-color: #4CAF50;
@@ -544,42 +616,44 @@
                             <div class="skill-grid">
                                 <!-- Tier 1: Base subclass choices -->
                                 <div class="skill-row">
-                                    <div class="skill-node available" data-skill="marauder" data-tier="1">
-                                        <img class="skill-node-icon" src="marauder.png" alt="Marauder">
-                                        <div class="skill-node-name">MARAUDER</div>
-                                        <div class="skill-description-preview">More charges</div>
+                                    <div class="skill-track">
+                                        <div class="track-title">MARAUDER</div>
+                                        <div class="skill-icon-button available" data-skill="marauder" data-tier="1">
+                                            <img src="marauder.png" alt="Marauder" class="skill-icon-image">
+                                            <div class="skill-info-overlay">
+                                                <div class="skill-overlay-title">MARAUDER</div>
+                                                <div class="skill-overlay-desc">Rapid assault specialist with multiple charges for sustained combat dominance</div>
+                                            </div>
+                                        </div>
+                                        <div class="skill-icon-button locked" data-skill="marauder_enhanced" data-tier="2" data-parent="marauder">
+                                            <img src="marauder.png" alt="Triple Charge" class="skill-icon-image enhanced">
+                                            <div class="skill-info-overlay">
+                                                <div class="skill-overlay-title">TRIPLE CHARGE</div>
+                                                <div class="skill-overlay-desc">MASTERY: Enhanced marauder with three devastating charges</div>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div class="skill-node available" data-skill="juggernaut" data-tier="1">
-                                        <img class="skill-node-icon" src="jug.png" alt="Juggernaut">
-                                        <div class="skill-node-name">JUGGERNAUT</div>
-                                        <div class="skill-description-preview">Larger impact</div>
+                                    <div class="skill-track">
+                                        <div class="track-title">JUGGERNAUT</div>
+                                        <div class="skill-icon-button available" data-skill="juggernaut" data-tier="1">
+                                            <img src="jug.png" alt="Juggernaut" class="skill-icon-image">
+                                            <div class="skill-info-overlay">
+                                                <div class="skill-overlay-title">JUGGERNAUT</div>
+                                                <div class="skill-overlay-desc">Heavy assault specialist with devastating explosive impact attacks</div>
+                                            </div>
+                                        </div>
+                                        <div class="skill-icon-button locked" data-skill="juggernaut_enhanced" data-tier="2" data-parent="juggernaut">
+                                            <img src="jug.png" alt="Big Bang" class="skill-icon-image enhanced">
+                                            <div class="skill-info-overlay">
+                                                <div class="skill-overlay-title">BIG BANG</div>
+                                                <div class="skill-overlay-desc">MASTERY: Enhanced juggernaut with massive explosion radius</div>
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                                <!-- Tier 2: Enhanced versions or combo -->
-                                <div class="skill-row">
-                                    <div class="skill-node locked" data-skill="marauder_enhanced" data-tier="2" data-parent="marauder">
-                                        <img class="skill-node-icon enhanced" src="marauder.png" alt="Marauder Enhanced">
-                                        <div class="skill-node-name">TRIPLE CHARGE</div>
-                                        <div class="skill-description-preview">3 charges total</div>
-                                    </div>
-                                    <div class="skill-node locked" data-skill="juggernaut_enhanced" data-tier="2" data-parent="juggernaut">
-                                        <img class="skill-node-icon enhanced" src="jug.png" alt="Juggernaut Enhanced">
-                                        <div class="skill-node-name">BIG BANG</div>
-                                        <div class="skill-description-preview">Massive explosion</div>
-                                    </div>
-                                </div>
-                                <div class="skill-combo-node locked" data-skill="combo_charge" data-tier="2" data-parent="both">
-                                    <div class="combo-icons">
-                                        <img class="skill-node-icon small" src="marauder.png" alt="Marauder">
-                                        <span class="combo-plus">+</span>
-                                        <img class="skill-node-icon small" src="jug.png" alt="Juggernaut">
-                                    </div>
-                                    <div class="skill-node-name">DOUBLE CHARGE</div>
-                                    <div class="skill-description-preview">Two-hit combo</div>
                                 </div>
                             </div>
                             <div class="skill-description" id="skillDescription">
-                                Choose your specialization path: Marauder for more charges, Juggernaut for bigger impact, or combine both for a devastating combo
+                                Choose your specialization path: Marauder for sustained assault, Juggernaut for devastating impact. Select both for the ultimate combo!
                             </div>
                         </div>
                     </div>
@@ -1782,19 +1856,39 @@ class FlameParticle {
 
     function handleBossDefeat() {
         const fightDuration = (performance.now() - store.world.bossSpawnTime) / 1000;
-        if (store.boss.name === 'TRAP KING' && store.player.pilotGenome === null) {
+        
+        // Track boss defeats for progression
+        const bossCount = store.world.bosses + 1; // +1 because we increment bosses after this check
+        
+        // NEW PROGRESSION SYSTEM:
+        // 1st boss = pilot class selection
+        // 2nd boss = subclass selection  
+        // 3rd boss = skill tree (for beef pilot only)
+        
+        if (bossCount === 1 && !store.player.pilotGenome) {
+            // 1st boss defeated - show pilot class selection
             store.player.pilotGenome = 'pending';
             setTimeout(showPilotSelect, 1000);
+        } else if (bossCount === 2 && store.player.pilotGenome && store.player.pilotGenome !== 'pending' && !store.player.subclass) {
+            // 2nd boss defeated - show subclass selection
+            console.log('2nd boss defeated - showing subclass selection for', store.player.pilotGenome);
+            setTimeout(showSubclassSelect, 1500);
+        } else if (bossCount >= 3 && store.player.pilotGenome === 'beef' && store.player.subclass) {
+            // 3rd+ boss defeated - show skill tree for beef pilot only
+            if (!store.player.skillTreeProgress) {
+                store.player.skillTreeProgress = { bossesDefeated: 0, tier1Choice: null, tier2Choice: null };
+            }
+            store.player.skillTreeProgress.bossesDefeated = bossCount;
+            setTimeout(showSubclassSelect, 1500);
         }
-        // Enhanced spec system: after 4th and 6th boss, then every 2 bosses after that
-        if (store.player.pilotGenome && store.player.subclass) {
-            const bossCount = store.world.bosses + 1; // +1 because we increment bosses after this check
+        
+        // Enhanced spec system: after 4th and 6th boss, then every 2 bosses after that  
+        if (store.player.pilotGenome && store.player.subclass && bossCount >= 4) {
             if (bossCount === 4 || bossCount === 6 || (bossCount > 6 && (bossCount - 6) % 2 === 0)) {
                 setTimeout(() => showSpecSelect(bossCount >= 6), 1500); // Second spec is additive
             }
-        } else if (store.world.bossesAtPilotSelection !== null && (store.world.bosses - store.world.bossesAtPilotSelection) === 2 && !store.player.subclass) {
-            setTimeout(showSubclassSelect, 1500);
         }
+        
         store.world.score += 2000; store.world.shards += 25; store.world.xp += 100; store.world.bosses++;
         const bossX = store.boss.x;
         const bossY = store.boss.y;
@@ -1938,7 +2032,8 @@ class FlameParticle {
         store.cheatInvincibilityCooldown = 0;
         store.cheatDogHealCooldown = 0;
         shopItemOrder = [];
-        q('gameOverPanel').classList.add('hide'); q('shopPanel').classList.add('hide'); q('levelPanel').classList.add('hide'); q('subclassPanel').classList.add('hide');
+        q('gameOverPanel').classList.add('hide'); q('shopPanel').classList.add('hide'); q('levelPanel').classList.add('hide'); 
+        q('subclassPanel').classList.add('hide'); q('subclassPanel').classList.remove('skill-tree-active');
         ensureName();
     }
 
@@ -3814,33 +3909,28 @@ function tryVoidStep(player, target, now = performance.now()){
         const skillTree = q('skillTree');
         const genome = store.player.pilotGenome;
 
-        if (genome === 'beef') {
-            // Show skill tree for beef
-            grid.classList.add('hide');
-            skillTree.classList.remove('hide');
-            initializeSkillTree();
-        } else {
-            // Show traditional card selection for other pilots
-            const choices = SUBCLASSES[genome];
-            if (!choices) {
-                resumeGame();
-                return;
-            }
-            
-            skillTree.classList.add('hide');
-            grid.classList.remove('hide');
-            grid.innerHTML = choices.map(s => `<div class="skill-card" data-subclass="${s.id}"><div class="skill-icon"><img src="${s.icon}" class="pilot-icon"></div><div><div class="skill-title">${s.name}</div><div class="skill-desc">${s.desc}</div></div></div>`).join('');
-            
-            grid.querySelectorAll('.skill-card').forEach(card => {
-                card.addEventListener('click', () => {
-                    const subclassId = card.dataset.subclass;
-                    store.player.subclass = subclassId;
-                    applySubclassBonus(subclassId);
-                    panel.classList.add('hide');
-                    resumeGame();
-                }, { once: true });
-            });
+        // Show traditional card selection for all pilots (including beef)
+        const choices = SUBCLASSES[genome];
+        if (!choices) {
+            resumeGame();
+            return;
         }
+        
+        skillTree.classList.add('hide');
+        grid.classList.remove('hide');
+        panel.classList.remove('skill-tree-active'); // Ensure normal panel size for subclass selection
+        
+        grid.innerHTML = choices.map(s => `<div class="skill-card" data-subclass="${s.id}"><div class="skill-icon"><img src="${s.icon}" class="pilot-icon"></div><div><div class="skill-title">${s.name}</div><div class="skill-desc">${s.desc}</div></div></div>`).join('');
+        
+        grid.querySelectorAll('.skill-card').forEach(card => {
+            card.addEventListener('click', () => {
+                const subclassId = card.dataset.subclass;
+                store.player.subclass = subclassId;
+                applySubclassBonus(subclassId);
+                panel.classList.add('hide');
+                resumeGame();
+            }, { once: true });
+        });
 
         panel.classList.remove('hide');
     }
@@ -3850,17 +3940,25 @@ function tryVoidStep(player, target, now = performance.now()){
         
         // Initialize skill tree properties if needed
         if (!p.skillTree) p.skillTree = {};
-        if (!p.skillTreeProgress) p.skillTreeProgress = { tier1Choice: null, tier2Choice: null };
+        if (!p.skillTreeProgress) p.skillTreeProgress = { bossesDefeated: 0, tier1Choice: null, tier2Choice: null };
         
-        // Determine skill points based on progress
-        if (!p.skillTreeProgress.tier1Choice) {
-            // First time - give first skill point
+        // Award exactly 1 skill point for skill tree progression (3rd+ boss defeats)
+        const bossesDefeated = p.skillTreeProgress.bossesDefeated || 0;
+        
+        // Skill tree progression starts from 3rd boss defeat
+        if (bossesDefeated === 3 && !p.skillTree.marauder && !p.skillTree.juggernaut) {
+            // 3rd boss defeated - can choose first tier 1 skill
             p.skillPoints = 1;
-        } else if (!p.skillTreeProgress.tier2Choice) {
-            // Second time - give second skill point (after boss defeats)
+        } else if (bossesDefeated === 4 && (p.skillTree.marauder || p.skillTree.juggernaut) && 
+                   !(p.skillTree.marauder && p.skillTree.juggernaut)) {
+            // 4th boss defeated - can choose second tier 1 skill if only have one
+            p.skillPoints = 1;
+        } else if (bossesDefeated >= 5 && p.skillTree.marauder && p.skillTree.juggernaut && 
+                   !p.skillTree.marauder_enhanced && !p.skillTree.juggernaut_enhanced) {
+            // 5th+ boss defeated - can choose a mastery skill
             p.skillPoints = 1;
         } else {
-            // Already completed skill tree
+            // No skill points available
             p.skillPoints = 0;
         }
         
@@ -3870,31 +3968,25 @@ function tryVoidStep(player, target, now = performance.now()){
     
     function updateSkillTreeUI() {
         const p = store.player;
-        const nodes = document.querySelectorAll('.skill-node, .skill-combo-node');
+        const iconButtons = document.querySelectorAll('.skill-icon-button');
         
-        nodes.forEach(node => {
-            const skill = node.dataset.skill;
-            const tier = parseInt(node.dataset.tier);
-            const parent = node.dataset.parent;
+        iconButtons.forEach(button => {
+            const skill = button.dataset.skill;
+            const tier = parseInt(button.dataset.tier);
+            const parent = button.dataset.parent;
             
             // Remove all state classes
-            node.classList.remove('available', 'active', 'locked');
-            
-            // Handle icon enhancement for tier 2 enhanced skills
-            const icon = node.querySelector('.skill-node-icon');
-            if (icon && skill.includes('_enhanced')) {
-                icon.classList.add('enhanced');
-            }
+            button.classList.remove('available', 'active', 'locked');
             
             if (p.skillTree && p.skillTree[skill]) {
-                // Skill is learned
-                node.classList.add('active');
+                // Skill is learned - show active glow effect
+                button.classList.add('active');
             } else if (canLearnSkill(skill, tier, parent)) {
-                // Skill can be learned
-                node.classList.add('available');
+                // Skill can be learned - show available state
+                button.classList.add('available');
             } else {
-                // Skill is locked
-                node.classList.add('locked');
+                // Skill is locked - show dim state
+                button.classList.add('locked');
             }
         });
     }
@@ -3905,31 +3997,7 @@ function tryVoidStep(player, target, now = performance.now()){
         if (p.skillPoints <= 0) return false;
         
         if (tier === 1) {
-            // First tier: can learn if no tier 1 skill is chosen yet
-            return !p.skillTreeProgress.tier1Choice;
-        } else if (tier === 2) {
-            // Second tier: need a tier 1 choice and another skill point
-            if (!p.skillTreeProgress.tier1Choice || p.skillPoints < 2) return false;
-            
-            if (parent === 'both') {
-                // Combo skill: need to have learned the opposite of tier 1 choice
-                return p.skillTreeProgress.tier1Choice && !p.skillTreeProgress.tier2Choice;
-            } else {
-                // Enhanced skill: can only learn if tier 1 choice matches parent
-                return p.skillTreeProgress.tier1Choice === parent && !p.skillTreeProgress.tier2Choice;
-            }
-        }
-        
-        return false;
-    }
-    
-    function canLearnSkill(skill, tier, parent) {
-        const p = store.player;
-        
-        if (p.skillPoints <= 0) return false;
-        
-        if (tier === 1) {
-            return true; // First tier is always available
+            return true; // First tier is always available with skill points
         }
         
         if (tier === 2) {
@@ -3945,46 +4013,36 @@ function tryVoidStep(player, target, now = performance.now()){
         return false;
     }
     
-    function updateSkillConnections() {
-        const connections = document.querySelectorAll('.skill-connection');
-        connections.forEach(conn => {
-            conn.classList.remove('active');
-            // Add active class if any connected skills are learned
-            const p = store.player;
-            if (p.skillTree.juggernaut || p.skillTree.marauder) {
-                conn.classList.add('active');
-            }
-        });
-    }
-    
     function setupSkillTreeHandlers() {
-        const nodes = document.querySelectorAll('.skill-node, .skill-combo-node');
+        const iconButtons = document.querySelectorAll('.skill-icon-button');
         const description = q('skillDescription');
         
-        // Updated skill descriptions for 2x2 system
+        // Updated skill descriptions for icon button system
         const skillDescriptions = {
-            juggernaut: "Explosive impact charge with larger radius. Gain extra charge capacity.",
-            marauder: "Rapid multi-charge capability. Gain extra charge capacity.",
-            juggernaut_enhanced: "MASTERY: Devastating explosions with massive damage radius.",
-            marauder_enhanced: "MASTERY: Triple charge capacity for sustained assault.", 
-            combo_charge: "COMBO: Double-hit charges with precision strikes."
+            juggernaut: "Heavy assault specialist with explosive charge impacts and superior defensive capabilities.",
+            marauder: "Rapid assault specialist with multiple charge capacity for sustained offensive operations.",
+            juggernaut_enhanced: "MASTERY: Enhanced juggernaut with devastating explosion radius and catastrophic damage output.", 
+            marauder_enhanced: "MASTERY: Elite marauder with triple charge capacity for relentless battlefield dominance."
         };
         
-        nodes.forEach(node => {
-            const skill = node.dataset.skill;
+        // Add hover effects to icon buttons
+        iconButtons.forEach(button => {
+            const skill = button.dataset.skill;
             
-            // Hover descriptions
-            node.addEventListener('mouseenter', () => {
-                description.textContent = skillDescriptions[skill] || "Skill specialization path";
+            button.addEventListener('mouseenter', () => {
+                description.textContent = skillDescriptions[skill] || "Specialization path available";
             });
             
-            node.addEventListener('mouseleave', () => {
-                description.textContent = "Choose your specialization path: Marauder for more charges, Juggernaut for bigger impact, or combine both for a devastating combo";
+            button.addEventListener('mouseleave', () => {
+                description.textContent = "Choose your specialization path: Marauder for sustained assault, Juggernaut for devastating impact. Select both for the ultimate combo!";
             });
-            
-            // Click to learn skill
-            node.addEventListener('click', () => {
-                if (node.classList.contains('available')) {
+        });
+        
+        // Click handlers - icon buttons are directly clickable
+        iconButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                if (button.classList.contains('available')) {
+                    const skill = button.dataset.skill;
                     learnSkill(skill);
                 }
             });
@@ -3993,34 +4051,31 @@ function tryVoidStep(player, target, now = performance.now()){
     
     function learnSkill(skill) {
         const p = store.player;
-        const skillNode = document.querySelector(`[data-skill="${skill}"]`);
-        const tier = parseInt(skillNode.dataset.tier);
+        const skillButton = document.querySelector(`[data-skill="${skill}"]`);
+        const tier = parseInt(skillButton.dataset.tier);
         
-        if (!canLearnSkill(skill, tier, skillNode.dataset.parent)) return;
+        if (!canLearnSkill(skill, tier, skillButton.dataset.parent)) return;
         
         if (!p.skillTree) p.skillTree = {};
         p.skillTree[skill] = true;
+        p.skillPoints--; // Spend the skill point
         
-        if (tier === 1) {
-            p.skillTreeProgress.tier1Choice = skill;
-            p.skillPoints--; // Use first point
-            
-            // Give player second skill point after 2 boss defeats
-            if (store.world.level >= 3) { // Assuming level 3+ means 2+ bosses defeated
-                p.skillPoints = Math.max(p.skillPoints, 1);
-            }
-        } else if (tier === 2) {
-            p.skillTreeProgress.tier2Choice = skill;
-            p.skillPoints--; // Use second point
+        // Apply the skill effects
+        applySkillBonus(skill);
+        
+        // Check for combo when both base skills are learned
+        if (tier === 1 && p.skillTree.marauder && p.skillTree.juggernaut) {
+            p.beefDoubleCharge = true;
+            announce('DOUBLE CHARGE COMBO ACTIVATED!');
         }
         
-        applySkillBonus(skill);
         updateSkillTreeUI();
         
-        // Check if we should close the skill tree
-        if (p.skillPoints <= 0 || (tier === 2)) {
+        // Close skill tree after spending the point or if no more points
+        if (p.skillPoints <= 0) {
             setTimeout(() => {
                 q('subclassPanel').classList.add('hide');
+                q('subclassPanel').classList.remove('skill-tree-active');
                 resumeGame();
             }, 1500);
         }
@@ -4054,12 +4109,6 @@ function tryVoidStep(player, target, now = performance.now()){
             case 'juggernaut_enhanced':
                 p.beefBigExplosion = true;
                 announce('BIG BANG EXPLOSION ACTIVATED!');
-                break;
-                
-            // Combo Skill
-            case 'combo_charge':
-                p.beefDoubleCharge = true;
-                announce('DOUBLE CHARGE COMBO ACTIVATED!');
                 break;
         }
     }
