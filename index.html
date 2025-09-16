@@ -2087,13 +2087,19 @@ class FlameParticle {
             setTimeout(showPilotSelect, 1000);
         } else if (bossCount >= 2 && store.player.pilotGenome && store.player.pilotGenome !== 'pending') {
             // 2nd+ boss defeated - show skill tree for all pilots
-            if (!store.player.skillTreeProgress) {
-                store.player.skillTreeProgress = { bossesDefeated: 0, tier1Choice: null, tier2Choice: null };
+            
+            // Don't award points or show tree if already fully capped
+            if (isSkillTreeFullyCapped()) {
+                console.log('Skill tree is fully capped - no more points or tree display');
+            } else {
+                if (!store.player.skillTreeProgress) {
+                    store.player.skillTreeProgress = { bossesDefeated: 0, tier1Choice: null, tier2Choice: null };
+                }
+                store.player.skillTreeProgress.bossesDefeated = bossCount;
+                store.player.skillPoints = (store.player.skillPoints || 0) + 1;
+                console.log(`${bossCount}${bossCount === 2 ? 'nd' : bossCount === 3 ? 'rd' : 'th'} boss defeated - showing skill tree for ${store.player.pilotGenome} with`, store.player.skillPoints, 'points');
+                setTimeout(showSkillTreeModal, 1500);
             }
-            store.player.skillTreeProgress.bossesDefeated = bossCount;
-            store.player.skillPoints = (store.player.skillPoints || 0) + 1;
-            console.log(`${bossCount}${bossCount === 2 ? 'nd' : bossCount === 3 ? 'rd' : 'th'} boss defeated - showing skill tree for ${store.player.pilotGenome} with`, store.player.skillPoints, 'points');
-            setTimeout(showSkillTreeModal, 1500);
         }
         
         // Enhanced spec system: after 4th and 6th boss, then every 2 bosses after that  
@@ -3469,9 +3475,10 @@ function render(dt) {
         const bossCount = (store.world.bosses || 0) + 1;
         const hasSkillTreeAccess = store.player.pilotGenome && store.player.pilotGenome !== 'pending';
         const hasSkillPoints = (store.player.skillPoints || 0) > 0;
+        const isTreeCapped = isSkillTreeFullyCapped();
         
-        // Enable if: 2nd boss defeated AND (beef, rocketman, or wizard pilot) AND has skill points
-        const shouldEnable = bossCount >= 2 && hasSkillTreeAccess && hasSkillPoints;
+        // Enable if: 2nd boss defeated AND (beef, rocketman, or wizard pilot) AND has skill points AND tree not fully capped
+        const shouldEnable = bossCount >= 2 && hasSkillTreeAccess && hasSkillPoints && !isTreeCapped;
         
         if (shouldEnable) {
             skillTreeBtn.disabled = false;
@@ -4422,6 +4429,13 @@ function tryVoidStep(player, target, now = performance.now()){
         const grid = q('subclassGrid');
         const skillTree = q('skillTree');
 
+        // Check if skill tree is fully capped before showing
+        if (isSkillTreeFullyCapped()) {
+            console.log('Skill tree is fully capped - not showing modal');
+            resumeGame();
+            return;
+        }
+
         // Initialize matrix
         const matrixContainer = panel.querySelector('.matrix-container');
         if (matrixContainer.matrix) {
@@ -4654,6 +4668,15 @@ function tryVoidStep(player, target, now = performance.now()){
             return;
         }
         
+        // If tree is fully capped, also close it
+        if (isSkillTreeFullyCapped() && !q('subclassPanel').classList.contains('hide') && q('subclassPanel').classList.contains('skill-tree-active')) {
+            setTimeout(() => {
+                console.log('Auto-closing skill tree from updateSkillTreeUI - tree fully capped');
+                closeSkillTree();
+            }, 100);
+            return;
+        }
+        
         iconButtons.forEach(button => {
             const skill = button.dataset.skill;
             const tier = parseInt(button.dataset.tier);
@@ -4823,8 +4846,15 @@ function tryVoidStep(player, target, now = performance.now()){
             updateSkillTreeUI();
             
             console.log('Remaining skill points:', p.skillPoints);
-            // Close skill tree after spending the point or if no more points
-            if (p.skillPoints <= 0) {
+            
+            // Check if tree is now fully capped
+            if (isSkillTreeFullyCapped()) {
+                setTimeout(() => {
+                    console.log('Skill tree is now fully capped - closing tree');
+                    closeSkillTree();
+                }, 1500);
+            } else if (p.skillPoints <= 0) {
+                // Close skill tree if no more points remaining
                 setTimeout(() => {
                     console.log('Auto-closing skill tree - no points remaining');
                     closeSkillTree();
@@ -4842,6 +4872,29 @@ function tryVoidStep(player, target, now = performance.now()){
         panel.classList.add('hide');
         panel.classList.remove('skill-tree-active');
         resumeGame();
+    }
+    
+    function isSkillTreeFullyCapped() {
+        const p = store.player;
+        const pilotType = p.pilotGenome;
+        
+        if (!p.skillTree) return false;
+        
+        // Define all possible skills for each pilot type
+        const allSkills = {
+            'beef': ['marauder', 'juggernaut', 'marauder_enhanced', 'juggernaut_enhanced'],
+            'rocketman': ['railgunner', 'demolitionist', 'railgunner_enhanced', 'demolitionist_enhanced'],
+            'wizard': ['phasestriker', 'stormcaller', 'phasestriker_enhanced', 'stormcaller_enhanced']
+        };
+        
+        const skillsForPilot = allSkills[pilotType];
+        if (!skillsForPilot) return false;
+        
+        // Check if all skills are learned - debug output
+        const allLearned = skillsForPilot.every(skill => p.skillTree[skill] === true);
+        console.log(`Skill tree cap check for ${pilotType}: ${allLearned ? 'CAPPED' : 'NOT CAPPED'}`, skillsForPilot.map(s => `${s}:${p.skillTree[s] || false}`));
+        
+        return allLearned;
     }
     
     function applySkillBonus(skill) {
