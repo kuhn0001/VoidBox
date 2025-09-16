@@ -682,6 +682,7 @@
                         <div id="subclassGrid" class="grid" style="grid-template-columns: repeat(2, 1fr);">
                         </div>
                         <div id="skillTree" class="skill-tree hide">
+                            <button class="close-btn" id="skillTreeCloseBtn" type="button">✕</button>
                             <div class="skill-tree-title">BEEF SPECIALIZATION TREE</div>
                             <div class="skill-grid">
                                 <!-- Tier 1: Base subclass choices -->
@@ -959,7 +960,7 @@ class FlameParticle {
             lastExplosionSoundTime = now;
         }
         if (name === 'cluster') {
-            if (now - lastClusterSoundTime < 60) return;
+            if (now - lastClusterSoundTime < 150) return; // Increased from 60ms to 150ms
             lastClusterSoundTime = now;
         }
         if (name === 'hit') {
@@ -1382,29 +1383,58 @@ class FlameParticle {
                 if (closest) {
                     const isRocketman = p.pilotGenome === 'rocketman';
                     const missileDmg = isRocketman ? (95 * p.dmgMult * 0.7) : (95 * p.dmgMult);
-                    const missileProps = { r: 4, target: closest, speed: 400, life: 0, dmg: missileDmg, hits: 0 };
+                    const missileProps = { r: 4, target: closest, speed: 400, life: 0, dmg: missileDmg, hits: 0, travelDistance: 0 };
 
-                    if (p.subclass === 'demolitionist') {
+                    // Check for hybrid rocketman (has both cluster and piercing abilities)
+                    const hasClusterAbility = p.subclass === 'demolitionist' || p.missileCluster || p.rocketmanHybrid;
+                    const hasPiercingAbility = p.subclass === 'railgunner' || p.missilePierce > 0 || p.rocketmanHybrid;
+                    
+                    if (hasClusterAbility) {
+                        // Count cluster volleys for sound management
+                        store.player.clusterSoundCounter++;
+                        const shouldPlaySound = store.player.clusterSoundCounter >= 5;
+                        if (shouldPlaySound) {
+                            store.player.clusterSoundCounter = 0;
+                        }
+                        
                         const spreadAngle = 10; const initialSpeed = 300;
                         for (let i = 0; i < p.missileVolley; i++) {
                             const angleOffset = (i - (p.missileVolley - 1) / 2) * spreadAngle * (Math.PI / 180);
-                            store.missiles.push({ ...missileProps, x: p.x, y: p.y, vx: Math.sin(angleOffset) * initialSpeed, vy: -Math.cos(angleOffset) * initialSpeed, turnRate: 4, pierce: 0, cluster: true });
+                            // Only the first missile in the volley plays sound (and only every 5th volley)
+                            const playSound = shouldPlaySound && i === 0;
+                            // For hybrid, missiles have both cluster and piercing abilities
+                            const pierce = hasPiercingAbility ? (p.missilePierce || 2) : 0;
+                            store.missiles.push({ ...missileProps, x: p.x, y: p.y, startX: p.x, startY: p.y, vx: Math.sin(angleOffset) * initialSpeed, vy: -Math.cos(angleOffset) * initialSpeed, turnRate: 4, pierce: pierce, cluster: true, playSound: playSound });
                         }
                         if (p.hasIceman && store.iceman) {
                              for (let i = 0; i < p.missileVolley; i++) {
                                 const angleOffset = (i - (p.missileVolley - 1) / 2) * spreadAngle * (Math.PI / 180);
-                                store.missiles.push({ ...missileProps, x: store.iceman.x, y: store.iceman.y, vx: Math.sin(angleOffset) * initialSpeed, vy: -Math.cos(angleOffset) * initialSpeed, dmg: missileDmg * 0.35, isIceman: true, turnRate: 4, pierce: 0, cluster: true });
+                                const pierce = hasPiercingAbility ? (p.missilePierce || 2) : 0;
+                                store.missiles.push({ ...missileProps, x: store.iceman.x, y: store.iceman.y, startX: store.iceman.x, startY: store.iceman.y, vx: Math.sin(angleOffset) * initialSpeed, vy: -Math.cos(angleOffset) * initialSpeed, dmg: missileDmg * 0.35, isIceman: true, turnRate: 4, pierce: pierce, cluster: true, playSound: false });
                             }
                         }
-                    } else {
+                    } else if (hasPiercingAbility) {
+                        // Pure railgunner without clusters
                         for (let i = 0; i < p.missileVolley; i++) {
                             const offsetX = (i - (p.missileVolley - 1) / 2) * 15;
-                            store.missiles.push({ ...missileProps, x: p.x + offsetX, y: p.y, vx: 0, vy: -300, turnRate: 5, pierce: p.missilePierce, cluster: p.missileCluster });
+                            store.missiles.push({ ...missileProps, x: p.x + offsetX, y: p.y, startX: p.x + offsetX, startY: p.y, vx: 0, vy: -300, turnRate: 5, pierce: p.missilePierce, cluster: false, playSound: false });
                         }
                         if (p.hasIceman && store.iceman) {
                             for (let i = 0; i < p.missileVolley; i++) {
                                 const offsetX = (i - (p.missileVolley - 1) / 2) * 15;
-                                store.missiles.push({ ...missileProps, x: store.iceman.x + offsetX, y: store.iceman.y, vx: 0, vy: -300, dmg: missileDmg * 0.35, isIceman: true, turnRate: 5, pierce: p.missilePierce, cluster: p.missileCluster });
+                                store.missiles.push({ ...missileProps, x: store.iceman.x + offsetX, y: store.iceman.y, startX: store.iceman.x + offsetX, startY: store.iceman.y, vx: 0, vy: -300, dmg: missileDmg * 0.35, isIceman: true, turnRate: 5, pierce: p.missilePierce, cluster: false, playSound: false });
+                            }
+                        }
+                    } else {
+                        // Basic missiles with no special abilities
+                        for (let i = 0; i < p.missileVolley; i++) {
+                            const offsetX = (i - (p.missileVolley - 1) / 2) * 15;
+                            store.missiles.push({ ...missileProps, x: p.x + offsetX, y: p.y, startX: p.x + offsetX, startY: p.y, vx: 0, vy: -300, turnRate: 5, pierce: 0, cluster: false, playSound: false });
+                        }
+                        if (p.hasIceman && store.iceman) {
+                            for (let i = 0; i < p.missileVolley; i++) {
+                                const offsetX = (i - (p.missileVolley - 1) / 2) * 15;
+                                store.missiles.push({ ...missileProps, x: store.iceman.x + offsetX, y: store.iceman.y, startX: store.iceman.x + offsetX, startY: store.iceman.y, vx: 0, vy: -300, dmg: missileDmg * 0.35, isIceman: true, turnRate: 5, pierce: 0, cluster: false, playSound: false });
                             }
                         }
                     }
@@ -1460,11 +1490,9 @@ class FlameParticle {
         if (m.dead) return;
         m.dead = true;
         
-        // Only play cluster sound every 3rd rocket volley
-        store.player.clusterSoundCounter++;
-        if (store.player.clusterSoundCounter >= 3) {
+        // Play cluster sound if this missile is marked for sound
+        if (m.playSound) {
             playSound('cluster');
-            store.player.clusterSoundCounter = 0;
         }
         
         const baseRadius = 40; // Halved from 80
@@ -1491,9 +1519,15 @@ class FlameParticle {
         });
         store.missiles.forEach(other_m => {
             if (other_m !== m && !other_m.dead && other_m.cluster) {
-                const distSq = (other_m.x - m.x)**2 + (other_m.y - m.y)**2;
-                if (distSq < chainRadius**2) {
-                    other_m.chainDetonate = true;
+                // Only chain detonate if the other missile has traveled at least 80 pixels
+                const minTravelDistance = 80;
+                const hasMinTravel = (other_m.travelDistance || 0) >= minTravelDistance;
+                
+                if (hasMinTravel) {
+                    const distSq = (other_m.x - m.x)**2 + (other_m.y - m.y)**2;
+                    if (distSq < chainRadius**2) {
+                        other_m.chainDetonate = true;
+                    }
                 }
             }
         });
@@ -1515,7 +1549,16 @@ class FlameParticle {
             }
             const currentSpeed = Math.sqrt(m.vx * m.vx + m.vy * m.vy);
             if (currentSpeed > 0) { m.vx = (m.vx / currentSpeed) * m.speed; m.vy = (m.vy / currentSpeed) * m.speed; }
+            
+            // Track movement distance before updating position
+            const prevX = m.x, prevY = m.y;
             m.x += m.vx * dt; m.y += m.vy * dt;
+            
+            // Update travel distance if we have start position
+            if (m.startX !== undefined && m.startY !== undefined) {
+                m.travelDistance = Math.sqrt((m.x - m.startX)**2 + (m.y - m.startY)**2);
+            }
+            
             if (m.x < -20 || m.x > W + 20 || m.y < -20 || m.y > H + 20) m.dead = true;
             const targets = store.boss ? [...store.enemies, store.boss] : store.enemies;
             if (m.cluster) {
@@ -3259,8 +3302,18 @@ function render(dt) {
             skillTreeBtn.style.opacity = '1';
             skillTreeBtn.style.pointerEvents = 'auto';
             skillTreeBtn.onclick = () => {
-                q('shopPanel').classList.add('hide');
-                showSkillTreeModal();
+                const subclassPanel = q('subclassPanel');
+                // Check if skill tree is already open
+                if (subclassPanel.classList.contains('skill-tree-active') && !subclassPanel.classList.contains('hide')) {
+                    // Close the skill tree
+                    subclassPanel.classList.add('hide');
+                    subclassPanel.classList.remove('skill-tree-active');
+                    resumeGame();
+                } else {
+                    // Open the skill tree
+                    q('shopPanel').classList.add('hide');
+                    showSkillTreeModal();
+                }
             };
         } else {
             skillTreeBtn.disabled = true;
@@ -4201,6 +4254,16 @@ function tryVoidStep(player, target, now = performance.now()){
         // Set up click handlers for skill buttons
         setupSkillTreeHandlers();
         
+        // Set up close button handler
+        const closeBtn = q('skillTreeCloseBtn');
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                panel.classList.add('hide');
+                panel.classList.remove('skill-tree-active');
+                resumeGame();
+            };
+        }
+        
         // If no skill points are available, don't show the tree
         if (store.player.skillPoints <= 0) {
             panel.classList.add('hide');
@@ -4216,6 +4279,7 @@ function tryVoidStep(player, target, now = performance.now()){
         if (pilotType === 'beef') {
             // Keep existing beef skill tree
             skillTreeElement.innerHTML = `
+                <button class="close-btn" id="skillTreeCloseBtn" type="button">✕</button>
                 <div class="skill-tree-title">BEEF SPECIALIZATION TREE</div>
                 <div class="skill-grid">
                     <div class="skill-row">
@@ -4261,6 +4325,7 @@ function tryVoidStep(player, target, now = performance.now()){
         } else if (pilotType === 'rocketman') {
             // Create rocketman skill tree
             skillTreeElement.innerHTML = `
+                <button class="close-btn" id="skillTreeCloseBtn" type="button">✕</button>
                 <div class="skill-tree-title">ROCKETMAN SPECIALIZATION TREE</div>
                 <div class="skill-grid">
                     <div class="skill-row">
@@ -4306,6 +4371,7 @@ function tryVoidStep(player, target, now = performance.now()){
         } else if (pilotType === 'wizard') {
             // Create wizard skill tree
             skillTreeElement.innerHTML = `
+                <button class="close-btn" id="skillTreeCloseBtn" type="button">✕</button>
                 <div class="skill-tree-title">VOIDMANCER SPECIALIZATION TREE</div>
                 <div class="skill-grid">
                     <div class="skill-row">
@@ -4351,6 +4417,7 @@ function tryVoidStep(player, target, now = performance.now()){
         } else {
             // Fallback for unknown pilot types
             skillTreeElement.innerHTML = `
+                <button class="close-btn" id="skillTreeCloseBtn" type="button">✕</button>
                 <div class="skill-tree-title">UNKNOWN PILOT TYPE</div>
                 <div class="skill-description" id="skillDescription">
                     Skill tree not available for this pilot type.
@@ -4606,22 +4673,32 @@ function tryVoidStep(player, target, now = performance.now()){
                 
             // Rocketman skills
             case 'railgunner':
-                p.subclass = 'railgunner';
+                // Don't overwrite existing subclass if they already have demolitionist
+                if (p.subclass !== 'demolitionist') {
+                    p.subclass = 'railgunner';
+                }
                 p.missilePierce = 2;
                 announce('RAILGUNNER ACTIVATED - Piercing Missiles!');
                 break;
             case 'demolitionist':
-                p.subclass = 'demolitionist';
+                // Don't overwrite existing subclass if they already have railgunner
+                if (p.subclass !== 'railgunner') {
+                    p.subclass = 'demolitionist';
+                }
                 p.missileCluster = true;
                 announce('DEMOLITIONIST ACTIVATED - Cluster Bombs!');
                 break;
                 
             // Rocketman Tier 2 Enhanced Skills
             case 'railgunner_enhanced':
+                // Enhanced railgunner should preserve existing abilities
+                if (!p.missilePierce) p.missilePierce = 2; // Give basic piercing if they don't have it
                 p.missilePierce = Math.max(p.missilePierce, 4);
                 announce('SUPER PIERCE ACTIVATED - Maximum Penetration!');
                 break;
             case 'demolitionist_enhanced':
+                // Enhanced demolitionist should preserve existing abilities
+                if (!p.missileCluster) p.missileCluster = true; // Give basic clusters if they don't have them
                 p.missileClusterEnhanced = true;
                 announce('MEGA CLUSTERS ACTIVATED - Devastating Explosions!');
                 break;
