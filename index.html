@@ -685,7 +685,8 @@
                     </div>
                     <div id="shopPanel" class="panel hide">
                         <button type="button" class="close-btn" id="closeShopTopBtn">×</button>
-                        <h2 style="font-family:'Orbitron';color:var(--accent)'>⚡ MECH FORGE ⚡</h2>
+                        <h2 style="font-family:'Orbitron';color:var(--accent)">⚡ MECH FORGE ⚡</h2>
+                        <button id="skillTreeBtn" class="btn skill-tree-button" type="button" style="margin:10px auto; display:block; font-size:12px; opacity:0.5; pointer-events:none;" disabled>🌳 SKILL TREE</button>
                         <p style="color:#ffddff">Available Shards: <span id="shopShards">0</span></p>
                         <div id="shopGrid" class="grid"></div>
                         <div class="row" style="justify-content:center;margin-top:10px">
@@ -1879,7 +1880,9 @@ class FlameParticle {
                 store.player.skillTreeProgress = { bossesDefeated: 0, tier1Choice: null, tier2Choice: null };
             }
             store.player.skillTreeProgress.bossesDefeated = bossCount;
-            setTimeout(showSubclassSelect, 1500);
+            store.player.skillPoints = (store.player.skillPoints || 0) + 1;
+            console.log('3rd+ boss defeated - showing skill tree with', store.player.skillPoints, 'points');
+            setTimeout(showSkillTreeModal, 1500);
         }
         
         // Enhanced spec system: after 4th and 6th boss, then every 2 bosses after that  
@@ -3083,6 +3086,31 @@ function render(dt) {
                 }
             })
         });
+
+        // Update skill tree button state
+        const skillTreeBtn = q('skillTreeBtn');
+        const bossCount = (store.world.bosses || 0) + 1;
+        const hasSubclass = store.player.subclass;
+        const isBeefPilot = store.player.pilotGenome === 'beef';
+        const hasSkillPoints = (store.player.skillPoints || 0) > 0;
+        
+        // Enable if: 2nd boss defeated AND is beef pilot AND has subclass AND (3rd boss defeated OR has skill points)
+        const shouldEnable = bossCount >= 3 && isBeefPilot && hasSubclass && (bossCount >= 3 || hasSkillPoints);
+        
+        if (shouldEnable) {
+            skillTreeBtn.disabled = false;
+            skillTreeBtn.style.opacity = '1';
+            skillTreeBtn.style.pointerEvents = 'auto';
+            skillTreeBtn.onclick = () => {
+                q('shopPanel').classList.add('hide');
+                showSkillTreeModal();
+            };
+        } else {
+            skillTreeBtn.disabled = true;
+            skillTreeBtn.style.opacity = '0.5';
+            skillTreeBtn.style.pointerEvents = 'none';
+        }
+
         panel.classList.remove("hide")
     }
 
@@ -3934,6 +3962,30 @@ function tryVoidStep(player, target, now = performance.now()){
 
         panel.classList.remove('hide');
     }
+
+    function showSkillTreeModal() {
+        playSound('epicHorn');
+        pauseGame();
+        const panel = q('subclassPanel');
+        const grid = q('subclassGrid');
+        const skillTree = q('skillTree');
+
+        // Hide grid, show skill tree
+        grid.classList.add('hide');
+        skillTree.classList.remove('hide');
+        panel.classList.add('skill-tree-active'); // Expand panel for skill tree
+        panel.classList.remove('hide');
+
+        // Initialize the skill tree
+        initializeSkillTree();
+        
+        // If no skill points are available, don't show the tree
+        if (store.player.skillPoints <= 0) {
+            panel.classList.add('hide');
+            resumeGame();
+            return;
+        }
+    }
     
     function initializeSkillTree() {
         const p = store.player;
@@ -3941,27 +3993,10 @@ function tryVoidStep(player, target, now = performance.now()){
         // Initialize skill tree properties if needed
         if (!p.skillTree) p.skillTree = {};
         if (!p.skillTreeProgress) p.skillTreeProgress = { bossesDefeated: 0, tier1Choice: null, tier2Choice: null };
+        if (!p.skillPoints) p.skillPoints = 0;
         
-        // Award exactly 1 skill point for skill tree progression (3rd+ boss defeats)
-        const bossesDefeated = p.skillTreeProgress.bossesDefeated || 0;
-        
-        // Skill tree progression starts from 3rd boss defeat
-        if (bossesDefeated === 3 && !p.skillTree.marauder && !p.skillTree.juggernaut) {
-            // 3rd boss defeated - can choose first tier 1 skill
-            p.skillPoints = 1;
-        } else if (bossesDefeated === 4 && (p.skillTree.marauder || p.skillTree.juggernaut) && 
-                   !(p.skillTree.marauder && p.skillTree.juggernaut)) {
-            // 4th boss defeated - can choose second tier 1 skill if only have one
-            p.skillPoints = 1;
-        } else if (bossesDefeated >= 5 && p.skillTree.marauder && p.skillTree.juggernaut && 
-                   !p.skillTree.marauder_enhanced && !p.skillTree.juggernaut_enhanced) {
-            // 5th+ boss defeated - can choose a mastery skill
-            p.skillPoints = 1;
-        } else {
-            // No skill points available
-            p.skillPoints = 0;
-        }
-        
+        // Don't award skill points here - they're awarded in handleBossDefeat
+        // Just update the UI with whatever points we have
         updateSkillTreeUI();
         setupSkillTreeHandlers();
     }
