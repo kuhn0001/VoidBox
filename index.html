@@ -627,7 +627,6 @@
                 <div id="diagBox">
                     <div class="chip">v3.8.0</div>
                     <div class="chip">FPS <span id="fps">—</span></div>
-                    <div class="chip">DPS <span id="dps">—</span></div>
                 </div>
                 
                 <div id="ui">
@@ -1570,15 +1569,20 @@ class FlameParticle {
         }
 
         // Check mech oil/fuel puddle collisions
-        if (store.mechPuddles) {
+        if (store.mechPuddles && store.mechPuddles.length > 0) {
             store.mechPuddles.forEach(puddle => {
+                // Calculate current radius with shrinking effect
+                const lifePercent = Math.max(0, puddle.life) / puddle.maxLife; // Ensure life is never negative
+                const currentRadius = puddle.r * Math.max(0.3, lifePercent);
+                
                 const dx = p.x - puddle.x;
                 const dy = p.y - puddle.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
                 
-                if (dist < puddle.r + p.r) {
+                if (dist < currentRadius + p.r) {
                     // Player is in hazardous puddle - apply damage and burning effect
                     if (!p.lastMechPuddleDamageTime || performance.now() - p.lastMechPuddleDamageTime > 400) {
+                        console.log('Player in mech puddle! Taking', puddle.damage, 'damage');
                         takeDamage(puddle.damage);
                         p.lastMechPuddleDamageTime = performance.now();
                         
@@ -2005,6 +2009,16 @@ class FlameParticle {
         stepFlameParticles(dt);
         stepLightning(dt);
         stepEmpNovas(dt);
+        
+        // Update mech oil/fuel puddles
+        for (let i = store.mechPuddles.length - 1; i >= 0; i--) {
+            const puddle = store.mechPuddles[i];
+            puddle.life -= dt;
+            if (puddle.life <= 0) {
+                store.mechPuddles.splice(i, 1);
+            }
+        }
+        
         updateVoidStepSystems(store.enemies);
         updateImpactSystem();
 
@@ -2036,18 +2050,26 @@ class FlameParticle {
                 b.dead = true;
             }
             
-            // Check if mech volley hits ground - create hazardous oil/fuel puddle
-            if (b.isMechVolley && b.y > H - 30) {
-                console.log('Mech volley hit ground at:', b.x, b.y, 'creating puddle');
+            // Check if mech volley hits ground or reaches target area - create puddle
+            if (b.isMechVolley && (b.y >= b.targetY - 10 || b.y > H - 30)) {
+                // Use intended target location for puddle placement
+                const puddleX = b.targetX;
+                const puddleY = b.targetY;
+                
+                console.log('Mech volley landed! Creating puddle at target:', puddleX, puddleY);
                 store.mechPuddles.push({
-                    x: b.x,
-                    y: b.y, // Use actual projectile position, not fixed ground level
-                    r: 25 + Math.random() * 15, // Larger than poison puddles
-                    life: 3.0, // Fixed 3-second lifespan
+                    x: puddleX,
+                    y: puddleY,
+                    r: 10, // Much smaller puddles (half of 20)
+                    maxR: 10, // Store original size for shrinking effect
+                    life: 1.5, // Reduced to 1.5 seconds
+                    maxLife: 1.5, // Store original life for shrinking calculation
                     damage: (b.dmg || 18) * 0.4, // 40% of original damage per tick
                     sourceId: b.sourceId, // Track which mech created this puddle
                     created: performance.now(),
-                    pulseOffset: Math.random() * Math.PI * 2 // For animation
+                    pulseOffset: Math.random() * Math.PI * 2, // For animation
+                    hp: 15, // Make puddles killable with small HP
+                    hpMax: 15 // Store max HP
                 });
                 b.dead = true;
             }
@@ -2204,18 +2226,43 @@ class FlameParticle {
                     case 'phantom': { store.eBullets.push({x:e.x,y:e.y,vx:0,vy:180,r:3,col:e.color,dmg:8*dmgScale}); e.fireT=e.fireCooldown; break; }
                     case 'mech': {
                         e.attackPhase = (e.attackPhase || 0) + 1;
-                        if (e.attackPhase % 2 === 1) {
+                        // Changed from 50/50 to 85% lob attacks, 15% shoulder cannons for more frequent lobs
+                        if (e.attackPhase % 7 === 1) {
+                            // Shoulder cannon attack (less frequent now)
                             const shoulderLeftX = e.x - e.r * 1.2, shoulderRightX = e.x + e.r * 1.2, shoulderY = e.y - e.r;
                             const angleLeft = Math.atan2(store.player.y - shoulderY, store.player.x - shoulderLeftX);
                             store.eBullets.push({ x: shoulderLeftX, y: shoulderY, vx: Math.cos(angleLeft) * 160, vy: Math.sin(angleLeft) * 160, r: 4, col: e.color, dmg: 12 * dmgScale });
                             const angleRight = Math.atan2(store.player.y - shoulderY, store.player.x - shoulderRightX);
                             store.eBullets.push({ x: shoulderRightX, y: shoulderY, vx: Math.cos(angleRight) * 160, vy: Math.sin(angleRight) * 160, r: 4, col: e.color, dmg: 12 * dmgScale });
                         } else {
-                            const dx = store.player.x - e.x, dist = Math.sqrt(dx*dx + (store.player.y - e.y)**2), timeToTarget = Math.max(0.5, dist / 250);
-                            const vx = dx / timeToTarget, gravity = 350, vy = (store.player.y - e.y - 0.5 * gravity * timeToTarget * timeToTarget) / timeToTarget;
-                            store.eBullets.push({ x: e.x, y: e.y, vx: vx, vy: vy, r: 6, col: '#ff6347', dmg: 18 * dmgScale, gravity: gravity, isMechVolley: true, sourceId: e.id });
+                            // Lob attack with randomized target location (more frequent now)
+                            // Limit target area to stay on screen with reasonable arc
+                            const randomOffsetX = (Math.random() - 0.5) * 300; // Reduced spread to 300 pixels
+                            const targetX = Math.max(80, Math.min(W - 80, store.player.x + randomOffsetX)); // Keep well within bounds
+                            
+                            // Limit Y coordinate to prevent extreme arcs
+                            const minY = Math.max(H * 0.5, e.y + 100); // Don't go too high above the mech
+                            const maxY = H - 80;   // Stop well above bottom
+                            const targetY = minY + Math.random() * (maxY - minY);
+                            
+                            const dx = targetX - e.x;
+                            const dy = targetY - e.y;
+                            const dist = Math.sqrt(dx*dx + dy*dy);
+                            
+                            // Much slower projectile for visibility and reasonable arc
+                            const timeToTarget = Math.max(1.5, dist / 120); // Slower speed = 120 instead of 180
+                            const gravity = 250; // Reduced gravity for gentler arc
+                            const vx = dx / timeToTarget;
+                            const vy = (dy - 0.5 * gravity * timeToTarget * timeToTarget) / timeToTarget;
+                            
+                            store.eBullets.push({ 
+                                x: e.x, y: e.y, vx: vx, vy: vy, r: 6, 
+                                col: '#40e0d0', dmg: 18 * dmgScale, // Turquoise projectile color to match mech
+                                gravity: gravity, isMechVolley: true, sourceId: e.id,
+                                targetX: targetX, targetY: targetY // Store intended target location
+                            });
                         }
-                        e.fireT = 1.5; break; // Reduced from 2 to make volleys more frequent
+                        e.fireT = 0.8; break; // Much more frequent attacks - reduced from 1.2 to 0.8
                     }
                     case 'angler': { const a = Math.atan2(store.player.y - e.y, store.player.x - e.x); store.eBullets.push({x:e.x,y:e.y,vx:Math.cos(a)*120,vy:Math.sin(a)*120,r:4,col:e.color,dmg:15*dmgScale, life: 5}); e.fireT = 2.5; break; }
                     case 'manta': { for(let i=-1; i<=1; i++) { const angle = (90 + i * 30) * Math.PI/180; store.eBullets.push({x:e.x, y:e.y, vx:Math.cos(angle)*150, vy:Math.sin(angle)*150, r:3, col:e.color, dmg:12*dmgScale}); } e.fireT = 2.8; break; }
@@ -2304,6 +2351,61 @@ class FlameParticle {
 
                     if (b.explosive) explode(b.x, b.y, false, true);
                     if (!b.pierce) b.dead = true;
+                }
+            }
+            
+            // Check bullet collision with mech puddles (make puddles killable)
+            if (!b.dead && store.mechPuddles) {
+                for (let i = store.mechPuddles.length - 1; i >= 0; i--) {
+                    const puddle = store.mechPuddles[i];
+                    const dx = b.x - puddle.x;
+                    const dy = b.y - puddle.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist < puddle.r + (b.r || 2)) {
+                        // Puddle hit by bullet - take damage
+                        puddle.hp -= (b.dmg || 20);
+                        
+                        if (puddle.hp <= 0) {
+                            // Puddle destroyed - award rewards
+                            store.world.shards += 1;
+                            store.world.xp += 1;
+                            
+                            // Small explosion effect
+                            for (let j = 0; j < 5; j++) {
+                                store.flameParticles.push({
+                                    x: puddle.x + (Math.random() - 0.5) * 20,
+                                    y: puddle.y + (Math.random() - 0.5) * 20,
+                                    vx: (Math.random() - 0.5) * 100,
+                                    vy: -Math.random() * 100,
+                                    life: 0.3 + Math.random() * 0.3,
+                                    maxLife: 0.3 + Math.random() * 0.3,
+                                    r: 2 + Math.random() * 3,
+                                    update: function(dt) {
+                                        this.life -= dt;
+                                        this.x += this.vx * dt;
+                                        this.y += this.vy * dt;
+                                        this.vy += 200 * dt; // gravity
+                                        return this.life > 0;
+                                    },
+                                    draw: function() {
+                                        if (!ctx) return;
+                                        const alpha = this.life / this.maxLife;
+                                        ctx.fillStyle = `rgba(0, 255, 255, ${alpha})`;
+                                        ctx.beginPath();
+                                        ctx.arc(this.x, this.y, this.r * alpha, 0, Math.PI * 2);
+                                        ctx.fill();
+                                    }
+                                });
+                            }
+                            
+                            console.log('Puddle destroyed by bullet! +1 shard, +1 xp');
+                            store.mechPuddles.splice(i, 1);
+                        }
+                        
+                        if (!b.pierce) b.dead = true;
+                        break;
+                    }
                 }
             }
         });
@@ -2731,7 +2833,7 @@ function render(dt) {
         });
     }
     
-    // Draw mech oil/fuel puddles
+    // Draw mech oil/fuel puddles with aqua color scheme
     if (store.mechPuddles) {
         store.mechPuddles.forEach(puddle => {
             const time = performance.now() / 1000;
@@ -2739,52 +2841,56 @@ function render(dt) {
             ctx.save();
             ctx.translate(puddle.x, puddle.y);
             
-            // Create flickering fire/oil effect
+            // Create flickering aqua energy effect
             const flicker = 0.8 + Math.sin(time * 6) * 0.2;
             const pulseOffset = Math.sin(time * 4 + puddle.x * 0.02) * 1.5;
             
-            // Create hazardous glow effect (orange/red for burning fuel)
-            const glowRadius = puddle.r * 1.4;
-            const glowAlpha = 0.4 * (puddle.life / 3.0) * flicker;
+            // Calculate shrinking effect as puddle disappears
+            const lifePercent = Math.max(0, puddle.life) / puddle.maxLife; // Ensure life is never negative
+            const currentRadius = puddle.r * Math.max(0.3, lifePercent); // Shrink to 30% min size
+            
+            // Create aqua hazardous glow effect (matching mech color scheme)
+            const glowRadius = currentRadius * 1.4;
+            const glowAlpha = 0.4 * lifePercent * flicker;
             const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, glowRadius);
-            gradient.addColorStop(0, `rgba(255, 140, 0, ${glowAlpha})`);
-            gradient.addColorStop(0.6, `rgba(255, 69, 0, ${glowAlpha * 0.7})`);
-            gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+            gradient.addColorStop(0, `rgba(0, 255, 255, ${glowAlpha})`); // Bright cyan
+            gradient.addColorStop(0.6, `rgba(32, 178, 170, ${glowAlpha * 0.7})`); // Light sea green
+            gradient.addColorStop(1, 'rgba(0, 139, 139, 0)'); // Dark cyan fade
             
             ctx.fillStyle = gradient;
             ctx.beginPath();
             ctx.arc(0, pulseOffset, glowRadius, 0, Math.PI * 2);
             ctx.fill();
             
-            // Draw the puddle base (dark oil/fuel)
-            const puddleAlpha = Math.max(0.6, puddle.life / 3.0);
-            ctx.fillStyle = `rgba(40, 25, 15, ${puddleAlpha})`;
+            // Draw the puddle base (dark aqua/teal liquid) with shrinking
+            const puddleAlpha = Math.max(0.6, lifePercent);
+            ctx.fillStyle = `rgba(14, 75, 92, ${puddleAlpha})`; // Dark aqua blue base
             ctx.beginPath();
-            ctx.arc(0, pulseOffset, puddle.r, 0, Math.PI * 2);
+            ctx.arc(0, pulseOffset, currentRadius, 0, Math.PI * 2);
             ctx.fill();
             
-            // Add burning surface effects
-            ctx.strokeStyle = `rgba(255, 140, 0, ${puddleAlpha * 0.9})`;
+            // Add aqua energy surface effects with shrinking
+            ctx.strokeStyle = `rgba(64, 224, 208, ${puddleAlpha * 0.9})`; // Turquoise ripples
             ctx.lineWidth = 1.5;
             ctx.beginPath();
             for (let i = 0; i < 2; i++) {
-                const fireRadius = puddle.r * (0.4 + i * 0.3) + Math.sin(time * 3 + i * 2) * 2;
-                const fireAlpha = puddleAlpha * (0.7 - i * 0.3) * flicker;
-                ctx.globalAlpha = fireAlpha;
-                ctx.arc(0, pulseOffset, fireRadius, 0, Math.PI * 2);
+                const energyRadius = currentRadius * (0.4 + i * 0.3) + Math.sin(time * 3 + i * 2) * 2;
+                const energyAlpha = puddleAlpha * (0.7 - i * 0.3) * flicker;
+                ctx.globalAlpha = energyAlpha;
+                ctx.arc(0, pulseOffset, energyRadius, 0, Math.PI * 2);
             }
             ctx.stroke();
             ctx.globalAlpha = 1;
             
-            // Add occasional sparks/embers
-            if (Math.random() < 0.15) {
-                const sparkX = (Math.random() - 0.5) * puddle.r * 0.8;
-                const sparkY = (Math.random() - 0.5) * puddle.r * 0.8 + pulseOffset;
-                const sparkSize = 1 + Math.random() * 2;
+            // Add occasional aqua energy bubbles (only if puddle is large enough)
+            if (currentRadius > 5 && Math.random() < 0.15) {
+                const bubbleX = (Math.random() - 0.5) * currentRadius * 0.8;
+                const bubbleY = (Math.random() - 0.5) * currentRadius * 0.8 + pulseOffset;
+                const bubbleSize = 1 + Math.random() * 2;
                 
-                ctx.fillStyle = `rgba(255, 200, 100, ${0.8 + Math.random() * 0.2})`;
+                ctx.fillStyle = `rgba(0, 255, 255, ${0.8 + Math.random() * 0.2})`; // Bright cyan bubbles
                 ctx.beginPath();
-                ctx.arc(sparkX, sparkY, sparkSize, 0, Math.PI * 2);
+                ctx.arc(bubbleX, bubbleY, bubbleSize, 0, Math.PI * 2);
                 ctx.fill();
             }
             
@@ -2795,7 +2901,7 @@ function render(dt) {
     store.enemies.forEach(e => drawEnemy(e));
     drawGibs(ctx); // <-- ADD THIS LINE TO DRAW THE GIBS
     if (store.boss && store.boss.visible !== false) drawBoss(store.boss);
-    store.flameParticles.forEach(p => p.draw());
+    store.flameParticles.forEach(p => { if (p.draw) p.draw(); });
     store.drones.forEach(d => drawDrone(d));
     store.hounds.forEach(h => drawHound(h));
     if (store.iceman) drawIceman(store.iceman);
@@ -3022,11 +3128,6 @@ function render(dt) {
     function escapeHtml(s) { s = String(s ?? ''); return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
     function announce(text) { const el = q('announce'); el.textContent = text; el.classList.remove('hide'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('hide'), 2500); }
     function updateHUD() { const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0; const healthText = `HP: ${Math.round(t.hp)} / ${t.hpMax}`; const shieldText = t.shieldMax > 0 ? `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}` : ""; q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } 
-        
-        // Update DPS counter
-        const timeElapsed = (performance.now() - store.world.damageStartTime) / 1000; // seconds
-        const dps = timeElapsed > 0 ? (store.world.totalDamage / timeElapsed) : 0;
-        q('dps').textContent = dps.toFixed(8);
         
         // Update FPS counter
         if (!store.fpsLastTime) {
@@ -3867,15 +3968,6 @@ function render(dt) {
             puddle.life -= dt;
             if (puddle.life <= 0) {
                 store.poisonPuddles.splice(i, 1);
-            }
-        }
-
-        // Update mech oil/fuel puddles
-        for (let i = store.mechPuddles.length - 1; i >= 0; i--) {
-            const puddle = store.mechPuddles[i];
-            puddle.life -= dt;
-            if (puddle.life <= 0) {
-                store.mechPuddles.splice(i, 1);
             }
         }
     }
