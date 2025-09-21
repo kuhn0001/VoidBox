@@ -1069,7 +1069,34 @@ class FlameParticle {
         'crit_chance': { name: "SHINOBI REFLEXES", icon: '🥷', baseCost: 20, increment: 12, maxLevel: 10, category: 'attack', effect: () => { store.player.critChance *= 1.5; store.player.critDamage *= 1.5; }, desc: level => `+50% Crit Chance & Dmg (Lvl ${level + 1})` },
         'speed': { name: "SPEED", icon: '🚀', baseCost: 30, scale: 1.6, maxLevel: 8, category: 'utility', effect: () => store.player.speed *= 1.10, desc: level => `+10% Speed (Lvl ${level + 1})` },
         'grenade': { name: "NOVA GRENADE", icon: '💥💣💥', cost: 35, isPremium: true, max: 3, category: 'attack', apply: () => { if (store.player.grenades < 3) { store.player.grenades++; return true; } return false; }, desc: () => `Buy 1 (Max 3)` },
-        'max_shield': { name: "MAX SHIELD", icon: '🛡️', baseCost: 40, scale: 1.8, maxLevel: 5, category: 'health', effect: () => { store.player.shieldMax += 25; store.player.shield += 25; }, desc: level => `+25 Max Shield (Lvl ${level + 1})` },
+        'max_shield': { 
+            name: "MAX SHIELD", 
+            icon: '🛡️', 
+            baseCost: 40, 
+            scale: 1.8, 
+            maxLevel: 20, // Increased max level
+            category: 'health', 
+            effect: (level) => { 
+                const p = store.player;
+                if (level < 5) {
+                    // First 5 levels: +25 flat shield
+                    p.shieldMax += 25; 
+                    p.shield += 25;
+                } else {
+                    // Levels 6+: +25% of current max shield
+                    const increase = Math.floor(p.shieldMax * 0.25);
+                    p.shieldMax += increase;
+                    p.shield += increase;
+                }
+            }, 
+            desc: level => {
+                if (level < 5) {
+                    return `+25 Max Shield (Lvl ${level + 1})`;
+                } else {
+                    return `+25% Max Shield (Lvl ${level + 1})`;
+                }
+            }
+        },
         'mine_wall': { name: "MINE WALL", icon: '💣', cost: 40, isPremium: true, max: 2, category: 'attack', apply: () => { const activeWalls = store.mines.filter(m => m.isWallMine).length > 0; if(!activeWalls) { deployMineWall(); return true; } return false; }, desc: () => `Deploy a wall of mines.` },
         'rear_guard': { name: 'AFT FLANKSHIELD', icon: '🛡️✨', baseCost: 65, scale: 2, maxLevel: 2, category: 'utility', effect: (level) => { if (level === 0) store.player.hasRearGuard = true; else store.player.rearGuardCooldown = 6; }, desc: level => level === 0 ? `Blocks one enemy volley from behind every 8s.` : `Reduce cooldown to 6s.` },
         'launcher': {
@@ -2721,7 +2748,7 @@ function render(dt) {
                 b.isInvincible = true;
                 b.visible = false; // Hide the boss
                 
-                playSound('shao_kahn'); // Skull laugh
+                playSound('shao_kahn'); // Skull laugh when disappearing
                 announce('THE SKULL KING VANISHES INTO THE VOID!');
                 
                 // Reset safe zone position and changes
@@ -2736,9 +2763,16 @@ function render(dt) {
                 if (b.safeZoneChanges < b.maxSafeZoneChanges) {
                     const changeInterval = 4; // Change every 4 seconds
                     if (disappearTime > (b.safeZoneChanges + 1) * changeInterval) {
-                        // Move safe zone to random location
-                        b.safeZoneY = H * 0.2 + Math.random() * H * 0.6;
+                        // Store old safe zone position for transition
+                        b.oldSafeZoneY = b.safeZoneY;
+                        
+                        // Move safe zone to new random location (ensure it's not too close to edges)
+                        const minY = H * 0.25;
+                        const maxY = H * 0.75;
+                        b.safeZoneY = minY + Math.random() * (maxY - minY);
+                        
                         b.safeZoneChanges++;
+                        playSound('shao_kahn'); // Laugh when safe zone changes
                         announce(`SAFE ZONE RELOCATED!`);
                     }
                 }
@@ -2750,31 +2784,47 @@ function render(dt) {
                 if (b.trainBulletTimer <= 0) {
                     b.trainBulletTimer = 0.08; // Very frequent spawning
                     
-                    const safeZoneHeight = 40; // Height of safe zone
-                    const bulletSpeed = 300;
+                    const safeZoneHeight = 80; // Bigger safe zone (was 40)
+                    const bulletSpeed = 280; // Slightly slower for easier dodging
+                    const bulletSpacing = 30; // More spacing between bullets
                     
-                    // Top train (moving right)
-                    if (b.safeZoneY - safeZoneHeight/2 > 30) {
-                        for (let y = 0; y < b.safeZoneY - safeZoneHeight/2; y += 25) {
+                    // Create transition corridor when safe zone is changing
+                    const isTransitioning = b.safeZoneChanges > 0 && b.oldSafeZoneY !== undefined;
+                    let corridorTop = 0, corridorBottom = H;
+                    
+                    if (isTransitioning) {
+                        // Create a diagonal safe corridor from old to new position
+                        const transitionProgress = (disappearTime % 4) / 4; // Progress through current 4-second cycle
+                        if (transitionProgress < 0.7) { // Give 2.8 seconds for transition
+                            corridorTop = Math.min(b.oldSafeZoneY - safeZoneHeight/2, b.safeZoneY - safeZoneHeight/2);
+                            corridorBottom = Math.max(b.oldSafeZoneY + safeZoneHeight/2, b.safeZoneY + safeZoneHeight/2);
+                        }
+                    }
+                    
+                    // Top train (moving right) - avoid safe zone and transition corridor
+                    const topBoundary = isTransitioning ? corridorTop : b.safeZoneY - safeZoneHeight/2;
+                    if (topBoundary > 30) {
+                        for (let y = 0; y < topBoundary; y += bulletSpacing) {
                             store.eBullets.push({
-                                x: 0, y: y,
+                                x: -10, y: y,
                                 vx: bulletSpeed, vy: 0,
                                 r: 6, col: '#FF0000',
                                 dmg: 25 * dmgScale,
-                                life: W / bulletSpeed + 1
+                                life: (W + 20) / bulletSpeed + 1
                             });
                         }
                     }
                     
-                    // Bottom train (moving left)
-                    if (b.safeZoneY + safeZoneHeight/2 < H - 30) {
-                        for (let y = b.safeZoneY + safeZoneHeight/2; y < H; y += 25) {
+                    // Bottom train (moving left) - avoid safe zone and transition corridor  
+                    const bottomBoundary = isTransitioning ? corridorBottom : b.safeZoneY + safeZoneHeight/2;
+                    if (bottomBoundary < H - 30) {
+                        for (let y = bottomBoundary; y < H; y += bulletSpacing) {
                             store.eBullets.push({
-                                x: W, y: y,
+                                x: W + 10, y: y,
                                 vx: -bulletSpeed, vy: 0,
                                 r: 6, col: '#FF0000',
                                 dmg: 25 * dmgScale,
-                                life: W / bulletSpeed + 1
+                                life: (W + 20) / bulletSpeed + 1
                             });
                         }
                     }
@@ -3033,88 +3083,153 @@ function render(dt) {
     function drawSkullHorns(ctx, skullWidth, skullHeight) {
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-        
-        const hornGradient = ctx.createLinearGradient(0, -100, 0, 50);
-        hornGradient.addColorStop(0, '#3b120a'); 
-        hornGradient.addColorStop(0.5, '#8e2311');
-        hornGradient.addColorStop(0.8, '#c73a1f');
-        hornGradient.addColorStop(1, '#e54d24'); 
 
-        ctx.fillStyle = hornGradient;
-        ctx.strokeStyle = '#1a0a05';
-        ctx.lineWidth = 6;
+        // Calculate swipe animation for attacking
+        let swipeAngle = 0;
+        if (store.boss && store.boss.isLaughing) {
+            const elapsedTime = performance.now() - store.boss.laughStartTime;
+            const duration = 1000;
+            if (elapsedTime < duration) {
+                const progress = elapsedTime / duration;
+                swipeAngle = Math.sin(progress * Math.PI) * -0.3;
+            }
+        }
 
         const drawHornScythe = (isFlipped) => {
             const side = isFlipped ? -1 : 1;
             ctx.save();
+            
+            // Black Handle with gradient
+            const handleGradient = ctx.createLinearGradient(0, -200, 0, 100);
+            handleGradient.addColorStop(0, '#111111');
+            handleGradient.addColorStop(0.5, '#333333');
+            handleGradient.addColorStop(1, '#222222');
+
+            ctx.fillStyle = handleGradient;
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 8; // Scaled down for game
+
+            // Long curved handle
             ctx.beginPath();
-            ctx.moveTo(side * skullWidth * 0.35, -skullHeight * 0.4); 
-            const handleEndX = side * 225;
-            const handleEndY = -skullHeight * 0.35;
+            ctx.moveTo(side * skullWidth * 0.35, -skullHeight * 0.4);
+            const handleEndX = side * 200; // Scaled down handle length
+            const handleEndY = -skullHeight * 0.20;
             ctx.bezierCurveTo(
-                side * 100, -skullHeight * 0.8, 
-                side * 175, -skullHeight * 0.2, 
+                side * 110, -skullHeight * 0.9,
+                side * 175, -skullHeight * 0.1,
                 handleEndX, handleEndY
             );
-            const bladeTipX = side * 150; 
-            const bladeTipY = 75;        
-            ctx.quadraticCurveTo(
-                side * 250, 25, 
-                bladeTipX, bladeTipY           
-            );
-            ctx.quadraticCurveTo(
-                side * 200, 40, 
-                handleEndX - side * 15, handleEndY + 20   
-            );
             ctx.bezierCurveTo(
-                side * 180, -skullHeight * 0.05,
-                side * 105, -skullHeight * 0.45,
-                side * skullWidth * 0.25, -skullHeight * 0.2 
+                side * 180, 0,
+                side * 115, -skullHeight * 0.55,
+                side * skullWidth * 0.25, -skullHeight * 0.2
             );
             ctx.closePath();
             ctx.fill();
             ctx.stroke();
+            
+            // Metal wraps on handle
+            ctx.fillStyle = '#4a4a4a';
+            ctx.strokeStyle = '#1a1a1a';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(handleEndX - side * 5, handleEndY, 7, 10, side * 0.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.ellipse(handleEndX - side * 17, handleEndY - 2, 6, 9, side * 0.1, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Scythe blade (animated)
+            ctx.translate(handleEndX, handleEndY);
+            const baseRotation = Math.PI / 4;
+            ctx.rotate(side * baseRotation + side * swipeAngle);
+
+            // Bone blade gradient
+            const bladeGradient = ctx.createLinearGradient(side * 25, 0, side * 75, 150);
+            bladeGradient.addColorStop(0, '#ffffff');
+            bladeGradient.addColorStop(0.5, '#e3dac9');
+            bladeGradient.addColorStop(1, '#c1b8a8');
+            ctx.fillStyle = bladeGradient;
+            ctx.strokeStyle = '#8c8273';
+            ctx.lineWidth = 2;
+
+            // Curved scythe blade
+            ctx.beginPath();
+            const tipX = side * 75; // Scaled down
+            const tipY = 110; // Scaled down
+            ctx.moveTo(0, -7);
+            ctx.bezierCurveTo(side * 90, 40, side * 100, 100, tipX, tipY);
+            ctx.bezierCurveTo(side * 65, 80, side * 20, 35, 0, 7);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            
+            // Add texture to blade
+            ctx.save();
+            ctx.clip();
+            ctx.strokeStyle = 'rgba(80, 70, 60, 0.2)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 15; i++) {
+                ctx.beginPath();
+                const startX = side * (Math.random() * 125);
+                const startY = -7 + Math.random() * 150;
+                const length = 10 + Math.random() * 15;
+                const angle = Math.random() * Math.PI * 2;
+                ctx.moveTo(startX, startY);
+                ctx.lineTo(startX + Math.cos(angle) * length, startY + Math.sin(angle) * length);
+                ctx.stroke();
+            }
+            ctx.restore();
+            
             ctx.restore();
         };
 
-        drawHornScythe(false); // Right horn
-        drawHornScythe(true);  // Left horn
+        drawHornScythe(false);
+        drawHornScythe(true);
     }
 
     function drawSkullMain(ctx, skullWidth, skullHeight) {
         const gradient = ctx.createRadialGradient(
-            0, -25, skullWidth * 0.1, 
-            0, 0, skullWidth * 1.2       
+            0, -25, skullWidth * 0.1,
+            0, 0, skullWidth * 0.6
         );
-        gradient.addColorStop(0, '#ff8c66'); 
+        gradient.addColorStop(0, '#ff8c66');
         gradient.addColorStop(0.5, '#e54d24');
-        gradient.addColorStop(1, '#661a00'); 
+        gradient.addColorStop(1, '#661a00');
 
         ctx.fillStyle = gradient;
-        ctx.strokeStyle = '#1a0a05'; 
+        ctx.strokeStyle = '#1a0a05';
         ctx.lineWidth = 4;
         ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
         ctx.shadowBlur = 10;
-        ctx.shadowOffsetX = 3;
-        ctx.shadowOffsetY = 5;
 
         ctx.beginPath();
         ctx.moveTo(0, -skullHeight * 0.55);
         ctx.quadraticCurveTo(-skullWidth * 0.5, -skullHeight * 0.5, -skullWidth * 0.5, -skullHeight * 0.2);
-        ctx.bezierCurveTo(-skullWidth * 0.6, 0, -skullWidth * 0.4, skullHeight * 0.5, 0, skullHeight * 0.5);
-        ctx.bezierCurveTo(skullWidth * 0.4, skullHeight * 0.5, skullWidth * 0.6, 0, skullWidth * 0.5, -skullHeight * 0.2);
+        
+        // Enhanced jaw structure
+        ctx.bezierCurveTo(
+            -skullWidth * 0.55, skullHeight * 0.3,
+            -skullWidth * 0.2, skullHeight * 0.5,
+            0, skullHeight * 0.5
+        );
+        ctx.bezierCurveTo(
+            skullWidth * 0.2, skullHeight * 0.5,
+            skullWidth * 0.55, skullHeight * 0.3,
+            skullWidth * 0.5, -skullHeight * 0.2
+        );
+        
         ctx.quadraticCurveTo(skullWidth * 0.5, -skullHeight * 0.5, 0, -skullHeight * 0.55);
         ctx.closePath();
-
         ctx.fill();
         ctx.stroke();
-
         ctx.shadowColor = 'transparent';
-        ctx.shadowBlur = 0;
     }
 
     function drawSkullFace(ctx, skullWidth, skullHeight, mouthOpenness) {
-        // Eyes
+        // Enhanced eyes with layered effect
         const drawMirrorEye = (offsetX, isFlipped) => {
             ctx.save();
             ctx.translate(offsetX, -5);
@@ -3122,11 +3237,11 @@ function render(dt) {
             
             const eyePath = new Path2D();
             eyePath.moveTo(-15, -10);
-            eyePath.lineTo(15, -15); 
-            eyePath.lineTo(12, 14);  
-            eyePath.lineTo(-12, 12); 
+            eyePath.lineTo(15, -15);
+            eyePath.lineTo(12, 14);
+            eyePath.lineTo(-12, 12);
             eyePath.closePath();
-
+            
             for (let i = 0; i < 6; i++) {
                 ctx.fillStyle = (i % 2 === 0 || i === 5) ? '#1a0a05' : '#ff3300';
                 ctx.fill(eyePath);
@@ -3134,99 +3249,102 @@ function render(dt) {
             }
             ctx.restore();
         };
-        drawMirrorEye(-17, true); 
+        drawMirrorEye(-17, true);
         drawMirrorEye(17, false);
         
-        // Nostrils
+        // Realistic skull nose
         ctx.save();
-        ctx.translate(0, 62); 
         ctx.fillStyle = '#020203';
         ctx.strokeStyle = 'rgba(0,0,0,0.6)';
         ctx.lineWidth = 2;
-
-        const partitionPath = new Path2D();
-        partitionPath.moveTo(0, 5);
-        partitionPath.bezierCurveTo(-4, 2, -1, -6, 0, -7); 
-        partitionPath.bezierCurveTo(1, -6, 4, 2, 0, 5); 
-        partitionPath.closePath();
-        ctx.fill(partitionPath);
-        ctx.stroke(partitionPath);
-
-        const nostrilShape = new Path2D();
-        nostrilShape.moveTo(-5, -6); 
-        nostrilShape.lineTo(-25, -4); 
-        nostrilShape.lineTo(-22, 6); 
-        nostrilShape.lineTo(-6, 5); 
-        nostrilShape.closePath();
-
-        ctx.save();
-        ctx.translate(7, 0);
-        ctx.fill(nostrilShape);
-        ctx.stroke(nostrilShape);
+        ctx.beginPath();
+        ctx.moveTo(0, 30);
+        ctx.bezierCurveTo(-7, 40, -17, 55, -10, 62);
+        ctx.quadraticCurveTo(0, 65, 10, 62);
+        ctx.bezierCurveTo(17, 55, 7, 40, 0, 30);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
         ctx.restore();
 
-        ctx.save();
-        ctx.translate(-7, 0);
-        ctx.scale(-1, 1);     
-        ctx.fill(nostrilShape);
-        ctx.stroke(nostrilShape);
-        ctx.restore();
-        
-        ctx.restore();
-
-        // Teeth
-        ctx.fillStyle = '#d9c8b3';
+        // Enhanced teeth with proper jaw alignment
         ctx.strokeStyle = 'rgba(26, 10, 5, 0.8)';
         ctx.lineWidth = 1;
 
         for (let i = -5; i <= 5; i++) {
-            if (i === 0) continue; 
-            let toothWidth = 7 - Math.abs(i) * 0.25;
-            let toothHeight = 11 - Math.abs(i) * 0.5;
-
-            const isCanine = Math.abs(i) === 4;
+            if (i === 0) continue;
+            
+            let toothWidth = 7 - Math.abs(i) * 0.5;
+            let toothHeight = 15 - Math.abs(i) * 0.75;
+            const isCanine = Math.abs(i) === 4 || Math.abs(i) === 5;
             if (isCanine) {
-                toothHeight += 7;
-                toothWidth -= 1;  
+                toothHeight += 10;
+                toothWidth -= 1;
             }
             
-            const xPos = i * 7;
-            const yPos = skullHeight * 0.45 - Math.abs(i) * 1.5 + mouthOpenness;
+            const xPos = i * 5.5; // Tighter spacing
+            const yPos = skullHeight * 0.48 - Math.abs(i) * 3 + mouthOpenness;
             
             ctx.save();
             ctx.translate(xPos, yPos);
-            ctx.rotate(i * 0.025);
-
+            
+            // Tooth shape
             ctx.beginPath();
             ctx.moveTo(-toothWidth / 2, 0);
             ctx.lineTo(toothWidth / 2, 0);
-            
-            if (isCanine) {
-                ctx.lineTo(0, toothHeight);
-            } else {
-                ctx.lineTo(toothWidth / 2 - 1, toothHeight);
-                ctx.lineTo(-toothWidth / 2 + 1, toothHeight);
-            }
+            ctx.lineTo(0, toothHeight);
             ctx.closePath();
+
+            ctx.fillStyle = '#e8d9a9';
             ctx.fill();
             ctx.stroke();
+
+            // Blood on tooth tip
+            const tipY = toothHeight;
+            ctx.fillStyle = '#8c1803';
+            ctx.beginPath();
+            ctx.ellipse(0, tipY, toothWidth / 3, 3, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#1a1a1a';
+            ctx.beginPath();
+            ctx.ellipse(0, tipY, toothWidth / 5, 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+
             ctx.restore();
         }
     }
 
     function drawSkullWeathering(ctx, skullWidth, skullHeight) {
+        // Battle damage and cracks
         ctx.strokeStyle = 'rgba(26, 10, 5, 0.6)';
         ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(0, -skullHeight * 0.5);
-        ctx.lineTo(1, -25);
-        ctx.lineTo(-1, -15);
-        ctx.lineTo(0, -10);
-        ctx.stroke();
         ctx.beginPath();
         ctx.moveTo(20, -15);
         ctx.lineTo(35, 5);
         ctx.lineTo(32, 7);
+        ctx.stroke();
+
+        // Major skull crack
+        ctx.save();
+        ctx.strokeStyle = 'rgba(26, 10, 5, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-5, -skullHeight * 0.52);
+        ctx.lineTo(7, -skullHeight * 0.3);
+        ctx.lineTo(2, -skullHeight * 0.28);
+        ctx.lineTo(17, -skullHeight * 0.05);
+        ctx.stroke();
+        ctx.restore();
+
+        // Additional weathering details
+        ctx.strokeStyle = 'rgba(26, 10, 5, 0.4)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(-25, -20);
+        ctx.lineTo(-20, -10);
+        ctx.moveTo(15, 20);
+        ctx.lineTo(25, 30);
         ctx.stroke();
     }
 
