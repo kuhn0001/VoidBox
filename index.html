@@ -1268,7 +1268,7 @@ class FlameParticle {
         const collarBonus = 1 + (store.world.collarStacks > 0 ? 0.4 + (store.world.collarStacks - 1) * 0.1 : 0);
         c.hp *= collarBonus;
         const e = { ...c, type, id: Date.now() + Math.random(), x: 20 + Math.random() * (W - 40), y: -50 - Math.random() * 250, hpMax: c.hp, phase: type === 'phantom', t: 0, fireT: (c.fireCooldown || 0), isBursting: false, burstTimer: 0, stunTimer: 0, knockback: null };
-        if (e.type === 'manta') { e.startX = e.x; e.amplitude = 150 + Math.random() * 100; e.frequency = 0.5 + Math.random() * 0.5; }
+        if (e.type === 'manta') { e.startX = e.x; e.amplitude = 150 + Math.random() * 100; e.frequency = 0.5 + Math.random() * 0.5; e.dodgeCooldown = 0; e.isDodging = false; }
         return e;
     }
 
@@ -2205,8 +2205,61 @@ class FlameParticle {
                     e.y += e.v * speedMultiplier * dt;
                 } else if (e.type === 'manta') {
                     e.t += dt;
-                    e.x = e.startX + e.amplitude * Math.sin(e.t * e.frequency);
-                    e.y += e.v * speedMultiplier * dt;
+                    
+                    // Update dodge cooldown
+                    if (e.dodgeCooldown > 0) {
+                        e.dodgeCooldown -= dt;
+                    }
+                    
+                    // Check for nearby bullets if not on cooldown
+                    if (e.dodgeCooldown <= 0 && !e.isDodging) {
+                        const dodgeRadius = 80; // Detection radius for dodge
+                        for (let bullet of store.bullets) {
+                            const dx = bullet.x - e.x;
+                            const dy = bullet.y - e.y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            
+                            if (dist < dodgeRadius) {
+                                // Trigger dodge
+                                e.isDodging = true;
+                                e.dodgeCooldown = 2; // 2 second cooldown
+                                
+                                // Reduce HP by half
+                                e.hp = Math.max(1, Math.floor(e.hp / 2));
+                                
+                                // Calculate dodge movement - 2 snake lengths back and random left/right
+                                const snakeLength = e.amplitude * 2; // Use amplitude as approximate snake length
+                                e.dodgeTargetY = e.y - snakeLength * 2; // Move back 2 snake lengths
+                                e.dodgeTargetX = e.x + (Math.random() < 0.5 ? -1 : 1) * snakeLength; // Random left/right
+                                e.dodgeStartX = e.x;
+                                e.dodgeStartY = e.y;
+                                e.dodgeTimer = 0.3; // Quick dodge duration
+                                
+                                console.log('Manta dodging! HP reduced to:', e.hp, 'Moving to:', e.dodgeTargetX, e.dodgeTargetY);
+                                break; // Only dodge for first detected bullet
+                            }
+                        }
+                    }
+                    
+                    if (e.isDodging && e.dodgeTimer > 0) {
+                        // Perform dodge movement
+                        e.dodgeTimer -= dt;
+                        const dodgeProgress = 1 - (e.dodgeTimer / 0.3); // Progress from 0 to 1
+                        
+                        // Smooth interpolation for dodge movement
+                        e.x = e.dodgeStartX + (e.dodgeTargetX - e.dodgeStartX) * dodgeProgress;
+                        e.y = e.dodgeStartY + (e.dodgeTargetY - e.dodgeStartY) * dodgeProgress;
+                        
+                        if (e.dodgeTimer <= 0) {
+                            // Dodge finished, resume normal movement
+                            e.isDodging = false;
+                            e.startX = e.x; // Update snake movement origin to new position
+                        }
+                    } else {
+                        // Normal sinusoidal snake movement
+                        e.x = e.startX + e.amplitude * Math.sin(e.t * e.frequency);
+                        e.y += e.v * speedMultiplier * dt;
+                    }
                 } else if (!e.isOrbiter) {
                     e.x += (e.vx || 0) * speedMultiplier * dt;
                     e.y += e.v * speedMultiplier * dt;
@@ -2874,7 +2927,7 @@ function render(dt) {
             ctx.lineWidth = 1.5;
             ctx.beginPath();
             for (let i = 0; i < 2; i++) {
-                const energyRadius = currentRadius * (0.4 + i * 0.3) + Math.sin(time * 3 + i * 2) * 2;
+                const energyRadius = Math.max(0.1, currentRadius * (0.4 + i * 0.3) + Math.sin(time * 3 + i * 2) * 2);
                 const energyAlpha = puddleAlpha * (0.7 - i * 0.3) * flicker;
                 ctx.globalAlpha = energyAlpha;
                 ctx.arc(0, pulseOffset, energyRadius, 0, Math.PI * 2);
