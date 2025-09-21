@@ -1217,14 +1217,22 @@ class FlameParticle {
             { name: 'DARTH VADER', baseHp: 1300, r: 55, behavior: 'sentinel', color: '#eeff1b' },
             { name: 'TRAP KING', baseHp: 1500, r: 50, behavior: 'hex', color: '#66aaff'},
             { name: 'CORE MALIGNUS', baseHp: 1800, r: 60, behavior: 'malignus', color: '#2E8B57' },
-            { name: 'SKULL SHIP', baseHp: 2200, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true },
-            { name: 'Francesca', baseHp: 2500, r: 70, behavior: 'avian', color: '#4b0082' }
+            { name: 'SKULL SHIP', baseHp: 9000, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true },
+            { name: 'Francesca', baseHp: 3200, r: 85, behavior: 'broodlord', color: '#2d5016' }
         ];
         const type = types[bossCycle];
         let hp = type.baseHp * scale * store.world.bossHealthBonus;
         const collarBonus = 1 + (store.world.collarStacks > 0 ? 0.4 + (store.world.collarStacks - 1) * 0.1 : 0);
         hp *= collarBonus;
-        return { ...type, x: W / 2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, patternPhase: 0, isEnraged: false, attackPhase: 0, phaseTimer: 0 };
+        
+        const boss = { ...type, x: W / 2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, patternPhase: 0, isEnraged: false, attackPhase: 0, phaseTimer: 0 };
+        
+        // Create Boss class instance for SKULL SHIP
+        if (boss.name === 'SKULL SHIP') {
+            boss.skullRenderer = new Boss(ctx, boss.x, boss.y, boss.color);
+        }
+        
+        return boss;
     }
 
     function spawnEnemy(type = 'drone') {
@@ -1402,6 +1410,11 @@ class FlameParticle {
                 p.chainLightningCooldown -= dt;
                 if (p.chainLightningCooldown <= 0) { fireChainLightning(); p.chainLightningCooldown = 1.5; }
             }
+            
+            // Voidmancer base laser beam system
+            if (p.hasVoidLaser) {
+                stepVoidLaser(dt);
+            }
         }
         if (p.hasIceman && store.iceman) { store.iceman.x = p.x - 50; store.iceman.y = p.y + 40; }
         p.fireT -= dt;
@@ -1510,10 +1523,59 @@ class FlameParticle {
             }
             store.cheatDogHealCooldown = 10; announce('TEST: HEAL & HOUNDS');
         }
+        
+        // Handle poison effects
+        if (p.isPoisoned && performance.now() > p.poisonEndTime) {
+            p.isPoisoned = false;
+            p.moveSpeed = 100; // Reset to base speed
+        }
+        
+        // Check poison puddle collisions
+        if (store.poisonPuddles) {
+            store.poisonPuddles.forEach(puddle => {
+                const dx = p.x - puddle.x;
+                const dy = p.y - puddle.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                
+                if (dist < puddle.r + p.r) {
+                    // Player is in poison puddle - apply damage and effects
+                    if (!p.lastPuddleDamageTime || performance.now() - p.lastPuddleDamageTime > 500) {
+                        takeDamage(puddle.damage);
+                        p.lastPuddleDamageTime = performance.now();
+                        
+                        // Apply poison debuff
+                        p.isPoisoned = true;
+                        p.poisonEndTime = performance.now() + 3000; // 3 second poison from puddle
+                        p.moveSpeed = Math.max(p.moveSpeed * 0.8, 60); // Slow player more
+                    }
+                }
+            });
+        }
     }
     function stepPowerups(dt) {
         const p = store.player;
         store.powerups.forEach(powerup => {
+            // Handle powerup movement (for Trap King falling powerups)
+            if (powerup.vx !== undefined || powerup.vy !== undefined) {
+                powerup.x += (powerup.vx || 0) * dt;
+                powerup.y += (powerup.vy || 0) * dt;
+                
+                // Handle powerup lifetime
+                if (powerup.life !== undefined) {
+                    powerup.life -= dt;
+                    if (powerup.life <= 0) {
+                        powerup.dead = true;
+                        return;
+                    }
+                }
+                
+                // Remove powerups that go off screen
+                if (powerup.x < -20 || powerup.x > W + 20 || powerup.y < -20 || powerup.y > H + 20) {
+                    powerup.dead = true;
+                    return;
+                }
+            }
+            
             if (p.magnetRadius > 0) {
                 const dx = p.x - powerup.x;
                 const dy = p.y - powerup.y;
@@ -1863,6 +1925,22 @@ class FlameParticle {
             b.y += b.vy * dt;
             if (b.gravity) { b.vy += b.gravity * dt; }
             if (b.life) { b.life -= dt; if (b.life <= 0) b.dead = true; }
+            
+            // Check if poison blob hits ground
+            if (b.type === 'poisonBlob' && b.y > H - 30) {
+                // Create poison puddle on ground impact
+                if (!store.poisonPuddles) store.poisonPuddles = [];
+                store.poisonPuddles.push({
+                    x: b.x,
+                    y: H - 20,
+                    r: 20 + Math.random() * 10,
+                    life: 12 + Math.random() * 8,
+                    damage: (b.dmg || 15) * 0.5,
+                    created: performance.now()
+                });
+                b.dead = true;
+            }
+            
             if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true;
 
             if (collide(b, store.player)) {
@@ -1873,6 +1951,25 @@ class FlameParticle {
                     b.dead = true;
                     store.activeEffects.push(createEffect("rearGuardBlock"));
                 } else {
+                    // Check if this is a poison blob for special effects
+                    if (b.type === 'poisonBlob') {
+                        // Apply poison debuff to player
+                        p.isPoisoned = true;
+                        p.poisonEndTime = performance.now() + 5000; // 5 second poison
+                        p.moveSpeed = Math.max(p.moveSpeed * 0.7, 50); // Slow player
+                        
+                        // Create poison puddle at impact location
+                        if (!store.poisonPuddles) store.poisonPuddles = [];
+                        store.poisonPuddles.push({
+                            x: b.x,
+                            y: b.y,
+                            r: 25,
+                            life: 10,
+                            damage: (b.dmg || 15) * 0.3,
+                            created: performance.now()
+                        });
+                    }
+                    
                     takeDamage(b.dmg || 10);
                     b.dead = true;
                 }
@@ -2458,6 +2555,69 @@ function render(dt) {
     store.lasers.forEach(l => drawLaser(l));
     store.mines.forEach(m => drawMine(m));
     if (store.boss && store.boss.mines) store.boss.mines.forEach(mine => { ctx.save(); ctx.translate(mine.x, mine.y); ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fillStyle = `rgba(255, 128, 128, ${0.7 + 0.3 * Math.sin(performance.now() / 200)})`; ctx.fill(); ctx.restore(); });
+    
+    // Draw poison puddles
+    if (store.poisonPuddles) {
+        store.poisonPuddles.forEach(puddle => {
+            const time = performance.now() / 1000;
+            const age = (performance.now() - puddle.created) / 1000;
+            const maxAge = puddle.life + (15 - puddle.life); // Total possible age
+            
+            ctx.save();
+            ctx.translate(puddle.x, puddle.y);
+            
+            // Animate puddle bubbling
+            const bubbleOffset = Math.sin(time * 3 + puddle.x * 0.01) * 2;
+            
+            // Create toxic glow effect
+            const glowRadius = puddle.r * 1.5;
+            const glowAlpha = 0.3 * (puddle.life / 15) + 0.2 * Math.sin(time * 4);
+            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, glowRadius);
+            gradient.addColorStop(0, `rgba(124, 252, 0, ${glowAlpha})`);
+            gradient.addColorStop(0.7, `rgba(173, 255, 47, ${glowAlpha * 0.5})`);
+            gradient.addColorStop(1, 'rgba(124, 252, 0, 0)');
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(0, bubbleOffset, glowRadius, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw the puddle itself
+            const puddleAlpha = Math.max(0.4, puddle.life / 15);
+            ctx.fillStyle = `rgba(45, 80, 22, ${puddleAlpha})`;
+            ctx.beginPath();
+            ctx.arc(0, bubbleOffset, puddle.r, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Add surface texture/ripples
+            ctx.strokeStyle = `rgba(124, 252, 0, ${puddleAlpha * 0.8})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let i = 0; i < 3; i++) {
+                const rippleRadius = puddle.r * (0.3 + i * 0.3) + Math.sin(time * 2 + i) * 3;
+                const rippleAlpha = puddleAlpha * (0.8 - i * 0.2);
+                ctx.globalAlpha = rippleAlpha;
+                ctx.arc(0, bubbleOffset, rippleRadius, 0, Math.PI * 2);
+            }
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+            
+            // Add occasional toxic bubbles
+            if (Math.random() < 0.1) {
+                const bubbleX = (Math.random() - 0.5) * puddle.r;
+                const bubbleY = (Math.random() - 0.5) * puddle.r + bubbleOffset;
+                const bubbleSize = 2 + Math.random() * 3;
+                
+                ctx.fillStyle = `rgba(124, 252, 0, ${0.6 + Math.random() * 0.4})`;
+                ctx.beginPath();
+                ctx.arc(bubbleX, bubbleY, bubbleSize, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            ctx.restore();
+        });
+    }
+    
     store.enemies.forEach(e => drawEnemy(e));
     drawGibs(ctx); // <-- ADD THIS LINE TO DRAW THE GIBS
     if (store.boss && store.boss.visible !== false) drawBoss(store.boss);
@@ -2466,6 +2626,103 @@ function render(dt) {
     store.hounds.forEach(h => drawHound(h));
     if (store.iceman) drawIceman(store.iceman);
     drawShip(store.player.x, store.player.y, store.player);
+    
+    // Draw poison effect on player
+    if (store.player.isPoisoned) {
+        const time = performance.now() / 1000;
+        const poisonAlpha = 0.3 + 0.2 * Math.sin(time * 8);
+        
+        ctx.save();
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.fillStyle = `rgba(0, 255, 0, ${poisonAlpha})`;
+        ctx.beginPath();
+        ctx.arc(store.player.x, store.player.y, store.player.r + 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        
+        // Add poison particle effect around player
+        ctx.save();
+        ctx.translate(store.player.x, store.player.y);
+        for (let i = 0; i < 6; i++) {
+            const angle = time * 2 + i * Math.PI / 3;
+            const x = Math.cos(angle) * (store.player.r + 12 + Math.sin(time * 4 + i) * 5);
+            const y = Math.sin(angle) * (store.player.r + 12 + Math.sin(time * 4 + i) * 5);
+            
+            ctx.fillStyle = `rgba(124, 252, 0, ${0.4 + 0.3 * Math.sin(time * 6 + i)})`;
+            ctx.beginPath();
+            ctx.arc(x, y, 2 + Math.sin(time * 5 + i), 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+    
+    // Draw voidmancer laser beam
+    if (store.player.hasVoidLaser && store.player.voidLaserTarget && !store.player.voidLaserTarget.dead) {
+        const p = store.player;
+        const target = p.voidLaserTarget;
+        
+        // Determine laser color based on player ship color
+        let laserColor = '#b266ff'; // Default purple
+        switch (p.subclass) {
+            case 'juggernaut':
+                laserColor = '#ff3333';
+                break;
+            case 'marauder':
+                laserColor = '#33cc33';
+                break;
+            case 'railgunner':
+                laserColor = '#ff6600';
+                break;
+            case 'demolitionist':
+                laserColor = '#ff4500';
+                break;
+            case 'phasestriker':
+                laserColor = '#9900ff';
+                break;
+            case 'stormcaller':
+                laserColor = '#00ccff';
+                break;
+        }
+        
+        const time = performance.now() / 1000;
+        const pulseAlpha = 0.6 + 0.4 * Math.sin(time * 12);
+        
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        
+        // Draw main laser beam
+        ctx.strokeStyle = laserColor;
+        ctx.globalAlpha = pulseAlpha;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y - 12);
+        ctx.lineTo(target.x, target.y);
+        ctx.stroke();
+        
+        // Draw laser glow effect
+        const gradient = ctx.createLinearGradient(p.x, p.y - 12, target.x, target.y);
+        gradient.addColorStop(0, laserColor + '80');
+        gradient.addColorStop(0.5, laserColor + 'FF');
+        gradient.addColorStop(1, laserColor + '80');
+        
+        ctx.strokeStyle = gradient;
+        ctx.globalAlpha = pulseAlpha * 0.5;
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y - 12);
+        ctx.lineTo(target.x, target.y);
+        ctx.stroke();
+        
+        // Add impact effect at target
+        ctx.fillStyle = laserColor;
+        ctx.globalAlpha = pulseAlpha;
+        ctx.beginPath();
+        ctx.arc(target.x, target.y, 4 + Math.sin(time * 8) * 2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.restore();
+    }
+    
     
     closeBullets.forEach(item => {
         const b = item.bullet;
@@ -2682,7 +2939,101 @@ function render(dt) {
     
     function stepBossOmegaSentinel(dt, b, dmgScale) { if (b.y >= 100) { b.moveT += dt; b.x += Math.sin(b.moveT * 2) * 200 * dt; b.x = clamp(b.x, 100, W - 100); } b.fireT -= dt; if (b.fireT <= 0) { if (b.patternPhase % 4 === 0) { b.fireT = 1.5; const n = 12; for (let i = 0; i < n; i++) { const a = (i * Math.PI / 6) + b.t; store.eBullets.push({ x: b.x, y: b.y, vx: 150 * Math.cos(a), vy: 150 * Math.sin(a), r: 4, col: '#4169e1', dmg: 12 * dmgScale }); } } else { b.fireT = 0.2; const a = Math.atan2(store.player.y - b.y, store.player.x - b.x); store.eBullets.push({ x: b.x, y: b.y, vx: 250 * Math.cos(a), vy: 250 * Math.sin(a), r: 5, col: '#add8e6', dmg: 18 * dmgScale }); } b.patternPhase++; } }
     function stepBossCoreMalignus(dt, b, dmgScale) { if (b.hp / b.hpMax <= 0.07 && !b.isEnraged) { b.isEnraged = true; playSound('horn'); } if (b.y >= 100) { b.moveT += dt; b.x = W / 2 + (W / 2 - 100) * Math.sin(b.moveT * 0.5); } b.fireT -= dt; if (b.fireT <= 0) { b.fireT = b.isEnraged ? 0.6 : 0.8; const n = 12, g = 3, s = Math.floor(Math.random() * (n - g)); for (let i = 0; i < n; i++) { if (i >= s && i < s + g) continue; const p = (W / (n + 1)) * (i + 1); store.eBullets.push({ x: p, y: b.y, vx: 0, vy: 180, r: 6, col: b.color, dmg: 20 * dmgScale }); } } }
-    function stepBossTheHex(dt, b, dmgScale) { if (b.y >= 100) { b.moveT += dt; b.x = W * 0.2 + (W * 0.6) * Math.abs(Math.sin(b.moveT * 0.4)); } b.fireT -= dt; if (b.hp / b.hpMax < 0.5 && !b.isEnraged) { b.isEnraged = true; playSound('trap'); } const fireRate = b.isEnraged ? 0.8 : 1.5; if (b.fireT <= 0) { b.fireT = fireRate; b.attackPhase = (b.attackPhase + 1) % 3; switch(b.attackPhase) { case 0: for (let i=0; i<20; i++) { setTimeout(() => { store.eBullets.push({ x: Math.random() * W, y: 0, vx: 0, vy: 250, r: 5, col: '#ffc83d', dmg: 15 * dmgScale }); }, i * 50); } break; case 1: for (let i = 0; i < 4; i++) { const isHorizontal = i < 2; const y = isHorizontal ? 100 + i * 150 : 0; const x = isHorizontal ? 0 : 200 + (i-2) * 250; const vx = isHorizontal ? 300 : 0; const vy = isHorizontal ? 0 : 300; store.eBullets.push({ x: x, y: y, vx: vx, vy: vy, r: 4, col: '#80ffff', dmg: 20 * dmgScale, isLaser: true, life: 2.5 }); } break; case 2: const targetX = store.player.x; const dx = targetX - b.x; const dashSpeed = 800; b.vx = Math.sign(dx) * dashSpeed; setTimeout(() => { b.vx = 0; }, 500); break; } } if(b.vx) { b.x += b.vx * dt; store.eBullets.push({ x: b.x, y: b.y, vx: 0, vy: 0, r: 8, col: '#ff8080', dmg: 25 * dmgScale, life: 1 }); } }
+    function stepBossTheHex(dt, b, dmgScale) { 
+        if (b.y >= 100) { 
+            b.moveT += dt; 
+            b.x = W * 0.2 + (W * 0.6) * Math.abs(Math.sin(b.moveT * 0.4)); 
+        } 
+        b.fireT -= dt; 
+        if (b.hp / b.hpMax < 0.5 && !b.isEnraged) { 
+            b.isEnraged = true; 
+            playSound('trap'); 
+        } 
+        const fireRate = b.isEnraged ? 0.8 : 1.5; 
+        if (b.fireT <= 0) { 
+            b.fireT = fireRate; 
+            b.attackPhase = (b.attackPhase + 1) % 3; 
+            switch(b.attackPhase) { 
+                case 0: 
+                    // Gold rain with interspersed powerups for strategic gambling
+                    for (let i = 0; i < 20; i++) { 
+                        setTimeout(() => { 
+                            // 20% chance to spawn a powerup instead of a bullet (strategic gamble)
+                            if (Math.random() < 0.2) {
+                                // Spawn yellow powerup that looks similar to gold bullets
+                                // Use valid powerup types from POWERUP_TYPES
+                                const powerupTypes = ['double', 'missile', 'drones', 'shield'];
+                                const randomType = powerupTypes[Math.floor(Math.random() * powerupTypes.length)];
+                                
+                                store.powerups.push({
+                                    x: Math.random() * W,
+                                    y: 0,
+                                    vx: 0,
+                                    vy: 250, // Same speed as bullets to blend in
+                                    r: 6, // Slightly larger to be distinguishable
+                                    type: randomType,
+                                    life: H / 250 + 2 // Ensure it lives long enough to reach bottom
+                                });
+                            } else {
+                                // Spawn normal gold bullet
+                                store.eBullets.push({ 
+                                    x: Math.random() * W, 
+                                    y: 0, 
+                                    vx: 0, 
+                                    vy: 250, 
+                                    r: 5, 
+                                    col: '#ffc83d', 
+                                    dmg: 15 * dmgScale 
+                                }); 
+                            }
+                        }, i * 50); 
+                    } 
+                    break; 
+                case 1: 
+                    for (let i = 0; i < 4; i++) { 
+                        const isHorizontal = i < 2; 
+                        const y = isHorizontal ? 100 + i * 150 : 0; 
+                        const x = isHorizontal ? 0 : 200 + (i-2) * 250; 
+                        const vx = isHorizontal ? 300 : 0; 
+                        const vy = isHorizontal ? 0 : 300; 
+                        store.eBullets.push({ 
+                            x: x, 
+                            y: y, 
+                            vx: vx, 
+                            vy: vy, 
+                            r: 4, 
+                            col: '#80ffff', 
+                            dmg: 20 * dmgScale, 
+                            isLaser: true, 
+                            life: 2.5 
+                        }); 
+                    } 
+                    break; 
+                case 2: 
+                    const targetX = store.player.x; 
+                    const dx = targetX - b.x; 
+                    const dashSpeed = 800; 
+                    b.vx = Math.sign(dx) * dashSpeed; 
+                    setTimeout(() => { 
+                        b.vx = 0; 
+                    }, 500); 
+                    break; 
+            } 
+        } 
+        if(b.vx) { 
+            b.x += b.vx * dt; 
+            store.eBullets.push({ 
+                x: b.x, 
+                y: b.y, 
+                vx: 0, 
+                vy: 0, 
+                r: 8, 
+                col: '#ff8080', 
+                dmg: 25 * dmgScale, 
+                life: 1 
+            }); 
+        } 
+    }
     function stepBossGeometron(dt, b, dmgScale) { 
         // Handle SKULL SHIP specific behavior
         if (b.name === 'SKULL SHIP') {
@@ -2694,7 +3045,7 @@ function render(dt) {
                 b.disappearStartTime = 0;
                 b.safeZoneY = H * 0.5; // Start safe zone in middle
                 b.safeZoneChanges = 0;
-                b.maxSafeZoneChanges = 2;
+                b.maxSafeZoneChanges = 3;
             }
 
             // Phase 1: Normal attacks until 50% HP
@@ -2703,12 +3054,17 @@ function render(dt) {
                 if (b.y >= 100) { 
                     b.moveT += dt; 
                     b.x = W / 2 + (W / 2 - 120) * Math.sin(b.moveT * 0.3); 
+                    // Update skull renderer position
+                    if (b.skullRenderer) {
+                        b.skullRenderer.x = b.x;
+                        b.skullRenderer.y = b.y;
+                    }
                 }
                 
                 // Normal attack pattern
                 b.fireT -= dt; 
                 if (b.fireT <= 0) { 
-                    b.attackPhase = (b.attackPhase + 1) % 3; 
+                    b.attackPhase = (b.attackPhase + 1) % 4; 
                     b.fireT = 2.5; 
                     switch(b.attackPhase) { 
                         case 0: 
@@ -2736,6 +3092,24 @@ function render(dt) {
                                 shard.color = '#8B0000';
                                 store.enemies.push(shard); 
                             } 
+                            break;
+                        case 3:
+                            // New attack phase: Bouncing skull projectiles
+                            for (let i = 0; i < 6; i++) {
+                                const angle = (i * Math.PI / 3) + (Math.random() - 0.5) * 0.3;
+                                const speed = 150 + Math.random() * 50;
+                                store.eBullets.push({ 
+                                    x: b.x, 
+                                    y: b.y, 
+                                    vx: Math.cos(angle) * speed, 
+                                    vy: Math.sin(angle) * speed, 
+                                    r: 6, 
+                                    col: '#DC143C', 
+                                    dmg: 20 * dmgScale,
+                                    bounces: 2, // Special bouncing bullets
+                                    life: 4.0
+                                }); 
+                            }
                             break; 
                     }
                 }
@@ -2748,6 +3122,16 @@ function render(dt) {
                 b.isInvincible = true;
                 b.visible = false; // Hide the boss
                 
+                // Move boss offscreen below player so it can't be shot
+                b.x = W / 2;
+                b.y = H + 200; // Move well below the screen
+                
+                // Update skull renderer position to be offscreen too
+                if (b.skullRenderer) {
+                    b.skullRenderer.x = b.x;
+                    b.skullRenderer.y = b.y;
+                }
+                
                 playSound('shao_kahn'); // Skull laugh when disappearing
                 announce('THE SKULL KING VANISHES INTO THE VOID!');
                 
@@ -2759,79 +3143,165 @@ function render(dt) {
             else if (b.disappearPhase) {
                 const disappearTime = (performance.now() - b.disappearStartTime) / 1000;
                 
-                // Change safe zone location twice during disappear phase
+                // Change bullet pattern/safe zone location during disappear phase
                 if (b.safeZoneChanges < b.maxSafeZoneChanges) {
-                    const changeInterval = 4; // Change every 4 seconds
+                    const changeInterval = 3; // Change every 3 seconds (shorter phases)
                     if (disappearTime > (b.safeZoneChanges + 1) * changeInterval) {
-                        // Store old safe zone position for transition
+                        // Store old safe zone position for reference
                         b.oldSafeZoneY = b.safeZoneY;
                         
-                        // Move safe zone to new random location (ensure it's not too close to edges)
-                        const minY = H * 0.25;
-                        const maxY = H * 0.75;
-                        b.safeZoneY = minY + Math.random() * (maxY - minY);
+                        // Set safe zone based on pattern type
+                        switch(b.safeZoneChanges) {
+                            case 0: // Preparing for horizontal pattern
+                                b.safeZoneY = H * 0.5; // Middle horizontal
+                                announce(`HORIZONTAL BARRAGE INCOMING!`);
+                                break;
+                            case 1: // Preparing for vertical pattern  
+                                b.safeZoneY = H * 0.5; // Safe zone will be vertical middle
+                                announce(`VERTICAL STORM APPROACHING!`);
+                                break;
+                            case 2: // Preparing for diagonal pattern
+                                b.safeZoneY = H * 0.3; // Corner safe zones
+                                announce(`DIAGONAL CHAOS UNLEASHED!`);
+                                break;
+                        }
                         
                         b.safeZoneChanges++;
                         playSound('shao_kahn'); // Laugh when safe zone changes
-                        announce(`SAFE ZONE RELOCATED!`);
                     }
                 }
                 
-                // Spawn train bullets continuously
+                // Spawn train bullets continuously with different patterns per subphase
                 if (!b.trainBulletTimer) b.trainBulletTimer = 0;
                 b.trainBulletTimer -= dt;
                 
                 if (b.trainBulletTimer <= 0) {
                     b.trainBulletTimer = 0.08; // Very frequent spawning
                     
-                    const safeZoneHeight = 80; // Bigger safe zone (was 40)
-                    const bulletSpeed = 280; // Slightly slower for easier dodging
-                    const bulletSpacing = 30; // More spacing between bullets
+                    const safeZoneHeight = 80;
+                    const bulletSpeed = 280;
+                    const bulletSpacing = 30;
                     
-                    // Create transition corridor when safe zone is changing
-                    const isTransitioning = b.safeZoneChanges > 0 && b.oldSafeZoneY !== undefined;
-                    let corridorTop = 0, corridorBottom = H;
+                    // Different bullet patterns for each subphase
+                    const currentSubphase = b.safeZoneChanges;
                     
-                    if (isTransitioning) {
-                        // Create a diagonal safe corridor from old to new position
-                        const transitionProgress = (disappearTime % 4) / 4; // Progress through current 4-second cycle
-                        if (transitionProgress < 0.7) { // Give 2.8 seconds for transition
-                            corridorTop = Math.min(b.oldSafeZoneY - safeZoneHeight/2, b.safeZoneY - safeZoneHeight/2);
-                            corridorBottom = Math.max(b.oldSafeZoneY + safeZoneHeight/2, b.safeZoneY + safeZoneHeight/2);
-                        }
-                    }
-                    
-                    // Top train (moving right) - avoid safe zone and transition corridor
-                    const topBoundary = isTransitioning ? corridorTop : b.safeZoneY - safeZoneHeight/2;
-                    if (topBoundary > 30) {
-                        for (let y = 0; y < topBoundary; y += bulletSpacing) {
-                            store.eBullets.push({
-                                x: -10, y: y,
-                                vx: bulletSpeed, vy: 0,
-                                r: 6, col: '#FF0000',
-                                dmg: 25 * dmgScale,
-                                life: (W + 20) / bulletSpeed + 1
-                            });
-                        }
-                    }
-                    
-                    // Bottom train (moving left) - avoid safe zone and transition corridor  
-                    const bottomBoundary = isTransitioning ? corridorBottom : b.safeZoneY + safeZoneHeight/2;
-                    if (bottomBoundary < H - 30) {
-                        for (let y = bottomBoundary; y < H; y += bulletSpacing) {
-                            store.eBullets.push({
-                                x: W + 10, y: y,
-                                vx: -bulletSpeed, vy: 0,
-                                r: 6, col: '#FF0000',
-                                dmg: 25 * dmgScale,
-                                life: (W + 20) / bulletSpeed + 1
-                            });
-                        }
+                    switch(currentSubphase) {
+                        case 0:
+                            // Phase 1: Horizontal trains (original pattern)
+                            // Safe zone in horizontal center
+                            const topBoundary1 = b.safeZoneY - safeZoneHeight/2;
+                            if (topBoundary1 > 30) {
+                                for (let y = 0; y < topBoundary1; y += bulletSpacing) {
+                                    store.eBullets.push({
+                                        x: -10, y: y,
+                                        vx: bulletSpeed, vy: 0,
+                                        r: 6, col: '#FF0000',
+                                        dmg: 25 * dmgScale,
+                                        life: (W + 20) / bulletSpeed + 1
+                                    });
+                                }
+                            }
+                            
+                            const bottomBoundary1 = b.safeZoneY + safeZoneHeight/2;
+                            if (bottomBoundary1 < H - 30) {
+                                for (let y = bottomBoundary1; y < H; y += bulletSpacing) {
+                                    store.eBullets.push({
+                                        x: W + 10, y: y,
+                                        vx: -bulletSpeed, vy: 0,
+                                        r: 6, col: '#FF0000',
+                                        dmg: 25 * dmgScale,
+                                        life: (W + 20) / bulletSpeed + 1
+                                    });
+                                }
+                            }
+                            break;
+                            
+                        case 1:
+                            // Phase 2: Vertical trains (left/right sides)
+                            // Safe zone positioned vertically in middle (around x = W/2)
+                            const safeZoneWidth = 100;
+                            const leftBoundary = (W/2) - safeZoneWidth/2;
+                            const rightBoundary = (W/2) + safeZoneWidth/2;
+                            
+                            // Left side vertical bullets (moving down)
+                            for (let x = 0; x < leftBoundary; x += bulletSpacing) {
+                                store.eBullets.push({
+                                    x: x, y: -10,
+                                    vx: 0, vy: bulletSpeed,
+                                    r: 6, col: '#FF4500',
+                                    dmg: 25 * dmgScale,
+                                    life: (H + 20) / bulletSpeed + 1
+                                });
+                            }
+                            
+                            // Right side vertical bullets (moving up)
+                            for (let x = rightBoundary; x < W; x += bulletSpacing) {
+                                store.eBullets.push({
+                                    x: x, y: H + 10,
+                                    vx: 0, vy: -bulletSpeed,
+                                    r: 6, col: '#FF4500',
+                                    dmg: 25 * dmgScale,
+                                    life: (H + 20) / bulletSpeed + 1
+                                });
+                            }
+                            break;
+                            
+                        case 2:
+                            // Phase 3: Diagonal cross pattern
+                            // Safe zone in one corner (randomized)
+                            const cornerChoice = Math.floor(Math.random() * 4);
+                            let safeCornerX, safeCornerY;
+                            
+                            switch(cornerChoice) {
+                                case 0: safeCornerX = W * 0.2; safeCornerY = H * 0.2; break; // Top-left
+                                case 1: safeCornerX = W * 0.8; safeCornerY = H * 0.2; break; // Top-right  
+                                case 2: safeCornerX = W * 0.2; safeCornerY = H * 0.8; break; // Bottom-left
+                                case 3: safeCornerX = W * 0.8; safeCornerY = H * 0.8; break; // Bottom-right
+                            }
+                            
+                            // Main diagonal (top-left to bottom-right)
+                            const diagBulletCount1 = 20;
+                            for (let i = 0; i < diagBulletCount1; i++) {
+                                const t = i / (diagBulletCount1 - 1);
+                                const startX = -50;
+                                const startY = t * H;
+                                const distance = Math.sqrt((safeCornerX - startX) ** 2 + (safeCornerY - startY) ** 2);
+                                
+                                if (distance > 80) { // Avoid safe zone
+                                    store.eBullets.push({
+                                        x: startX, y: startY,
+                                        vx: bulletSpeed * 0.7, vy: bulletSpeed * 0.3,
+                                        r: 6, col: '#8B0000',
+                                        dmg: 25 * dmgScale,
+                                        life: 6
+                                    });
+                                }
+                            }
+                            
+                            // Counter diagonal (top-right to bottom-left) 
+                            const diagBulletCount2 = 20;
+                            for (let i = 0; i < diagBulletCount2; i++) {
+                                const t = i / (diagBulletCount2 - 1);
+                                const startX = W + 50;
+                                const startY = t * H;
+                                const distance = Math.sqrt((safeCornerX - startX) ** 2 + (safeCornerY - startY) ** 2);
+                                
+                                if (distance > 80) { // Avoid safe zone
+                                    store.eBullets.push({
+                                        x: startX, y: startY,
+                                        vx: -bulletSpeed * 0.7, vy: bulletSpeed * 0.3,
+                                        r: 6, col: '#8B0000',
+                                        dmg: 25 * dmgScale,
+                                        life: 6
+                                    });
+                                }
+                            }
+                            break;
                     }
                 }
                 
-                // Return after 12 seconds
-                if (disappearTime > 12) {
+                // Return after 9 seconds (3 phases * 3 seconds each)
+                if (disappearTime > 9) {
                     b.disappearPhase = false;
                     b.visible = true;
                     b.isInvincible = false;
@@ -2841,62 +3311,91 @@ function render(dt) {
                     b.x = W / 2;
                     b.y = 100;
                     
+                    // Update skull renderer position
+                    if (b.skullRenderer) {
+                        b.skullRenderer.x = b.x;
+                        b.skullRenderer.y = b.y;
+                    }
+                    
                     playSound('shao_kahn'); // Another laugh as he returns
                     announce('THE SKULL KING RETURNS!');
                 }
             }
             // Phase 2: Normal combat after returning
             else if (b.phase === 2 && !b.disappearPhase) {
-                // More aggressive movement
+                // Calculate health percentage for final phase mechanics
+                const healthPercent = b.hp / b.hpMax;
+                const isFinalPhase = healthPercent <= 0.25; // Final phase at 25% health
+                
+                // Red coloration and faster movement in final phase
+                const moveSpeed = isFinalPhase ? 0.9 : 0.6; // Faster movement when low on health
                 if (b.y >= 100) { 
                     b.moveT += dt; 
-                    b.x = W / 2 + (W / 2 - 120) * Math.sin(b.moveT * 0.6); 
+                    b.x = W / 2 + (W / 2 - 120) * Math.sin(b.moveT * moveSpeed); 
+                    // Update skull renderer position
+                    if (b.skullRenderer) {
+                        b.skullRenderer.x = b.x;
+                        b.skullRenderer.y = b.y;
+                    }
                 }
                 
-                // More aggressive attacks
+                // Override skull ship color to red when in final phase
+                if (isFinalPhase && b.color !== '#FF0000') {
+                    b.color = '#FF0000'; // Turn red in final phase
+                }
+                
+                // More aggressive attacks, even faster in final phase
+                const fireRate = isFinalPhase ? 1.2 : 1.8; // Faster attacks in final phase
                 b.fireT -= dt; 
                 if (b.fireT <= 0) { 
                     b.attackPhase = (b.attackPhase + 1) % 4; 
-                    b.fireT = 1.8; // Faster attacks
+                    b.fireT = fireRate;
                     switch(b.attackPhase) { 
                         case 0: 
-                            // Dense spiral
-                            const n = 16; 
+                            // Dense spiral (more bullets in final phase)
+                            const n = isFinalPhase ? 20 : 16; 
                             for (let i = 0; i < n; i++) { 
                                 const a = (i * 2 * Math.PI / n) + b.t * 1.2; 
-                                store.eBullets.push({ x: b.x, y: b.y, vx: 200 * Math.cos(a), vy: 200 * Math.sin(a), r: 5, col: '#8B0000', dmg: 20 * dmgScale }); 
+                                const bulletColor = isFinalPhase ? '#FF0000' : '#8B0000';
+                                store.eBullets.push({ x: b.x, y: b.y, vx: 200 * Math.cos(a), vy: 200 * Math.sin(a), r: 5, col: bulletColor, dmg: 20 * dmgScale }); 
                             } 
                             break; 
                         case 1: 
-                            // Triple aimed shots
+                            // Triple aimed shots (more spread in final phase)
+                            const shotCount = isFinalPhase ? 9 : 7;
                             const angleToPlayer = Math.atan2(store.player.y - b.y, store.player.x - b.x); 
-                            for (let i = 0; i < 7; i++) { 
-                                const angle = angleToPlayer + (i - 3) * 0.12; 
-                                store.eBullets.push({ x: b.x, y: b.y, vx: 320 * Math.cos(angle), vy: 320 * Math.sin(angle), r: 5, col: '#FF4500', dmg: 25 * dmgScale }); 
+                            for (let i = 0; i < shotCount; i++) { 
+                                const angle = angleToPlayer + (i - Math.floor(shotCount/2)) * 0.12; 
+                                const bulletColor = isFinalPhase ? '#FF0000' : '#FF4500';
+                                store.eBullets.push({ x: b.x, y: b.y, vx: 320 * Math.cos(angle), vy: 320 * Math.sin(angle), r: 5, col: bulletColor, dmg: 25 * dmgScale }); 
                             } 
                             break; 
                         case 2: 
-                            // More shards
-                            const numShards = 3 + Math.floor(store.world.wave / 8); 
+                            // More shards (significantly more in final phase)
+                            const baseShards = 3 + Math.floor(store.world.wave / 8);
+                            const finalPhaseBonus = isFinalPhase ? Math.floor(baseShards * 0.75) : 0; // 75% more adds in final phase
+                            const numShards = baseShards + finalPhaseBonus;
                             for(let i = 0; i < numShards; i++) { 
                                 const shard = spawnEnemy('construct_shard'); 
                                 shard.x = b.x + (Math.random() - 0.5) * 150; 
                                 shard.y = b.y + 60; 
-                                shard.color = '#FF0000';
-                                shard.hp *= 1.3;
+                                shard.color = isFinalPhase ? '#FF0000' : '#FF0000';
+                                shard.hp *= isFinalPhase ? 1.5 : 1.3; // Tougher adds in final phase
                                 store.enemies.push(shard); 
                             } 
                             break; 
                         case 3: 
-                            // Cross pattern
+                            // Cross pattern (more layers in final phase)
+                            const layers = isFinalPhase ? 4 : 3;
                             for (let i = 0; i < 4; i++) {
                                 const angle = i * Math.PI / 2;
-                                for (let j = 1; j <= 3; j++) {
+                                for (let j = 1; j <= layers; j++) {
+                                    const bulletColor = isFinalPhase ? '#FF0000' : '#8B0000';
                                     store.eBullets.push({ 
                                         x: b.x, y: b.y, 
                                         vx: 180 * j * 0.7 * Math.cos(angle), 
                                         vy: 180 * j * 0.7 * Math.sin(angle), 
-                                        r: 4, col: '#8B0000', dmg: 18 * dmgScale 
+                                        r: 4, col: bulletColor, dmg: 18 * dmgScale 
                                     }); 
                                 }
                             }
@@ -2983,6 +3482,105 @@ function render(dt) {
         }
     }
     function stepBossVoidRaven(dt, b, dmgScale) { b.moveT += dt; if (!b.isDiving) { b.y = 100 + Math.sin(b.moveT * 2) * 20; b.x = W/2 + Math.cos(b.moveT * 0.5) * (W/2 - 100); } b.fireT -= dt; if (b.fireT <=0) { b.attackPhase = (b.attackPhase + 1) % 5; switch(b.attackPhase) { case 0: case 2: b.fireT = 1.2; for(let i = 0; i < 7; i++) { const angle = Math.atan2(store.player.y - b.y, store.player.x - b.x) + (i - 3) * 0.1; store.eBullets.push({ x: b.x, y: b.y, vx: Math.cos(angle) * 220, vy: Math.sin(angle) * 220, r: 4, col: '#4169e1', dmg: 18 * dmgScale }); } break; case 1: case 3: b.fireT = 2.0; const numHatchlings = 2 + Math.floor(store.world.wave / 15); for(let i = 0; i < numHatchlings; i++) { const hatchling = spawnEnemy('avian_hatchling'); hatchling.x = b.x + (Math.random() - 0.5) * 80; hatchling.y = b.y + 40; store.enemies.push(hatchling); } break; case 4: b.fireT = 4.0; b.isDiving = true; b.diveTarget = { x: store.player.x, y: store.player.y }; const dx = b.diveTarget.x - b.x; const dy = b.diveTarget.y - b.y; const dist = Math.sqrt(dx*dx + dy*dy); b.vx = (dx / dist) * 400; b.vy = (dy / dist) * 400; setTimeout(() => { b.isDiving = false; b.vx = 0; b.vy = 30; }, 1500); break; } } if (b.isDiving) { b.x += b.vx * dt; b.y += b.vy * dt; } }
+    
+    function stepBossBroodlord(dt, b, dmgScale) {
+        // Initialize poison puddles array if not exists
+        if (!store.poisonPuddles) {
+            store.poisonPuddles = [];
+        }
+        
+        // Broodlord movement - slower, more menacing
+        b.moveT += dt;
+        if (b.y >= 100) {
+            b.x = W/2 + (W/2 - 150) * Math.sin(b.moveT * 0.4);
+            b.y = 120 + Math.sin(b.moveT * 0.8) * 15;
+        }
+        
+        // Attack phases
+        b.fireT -= dt;
+        if (b.fireT <= 0) {
+            b.attackPhase = (b.attackPhase + 1) % 4;
+            
+            switch(b.attackPhase) {
+                case 0:
+                case 2:
+                    // Poison blob barrage
+                    b.fireT = 1.8;
+                    const numBlobs = 5 + Math.floor(store.world.wave / 10);
+                    for (let i = 0; i < numBlobs; i++) {
+                        const spread = Math.PI * 0.6;
+                        const baseAngle = Math.atan2(store.player.y - b.y, store.player.x - b.x);
+                        const angle = baseAngle + (Math.random() - 0.5) * spread;
+                        const speed = 180 + Math.random() * 80;
+                        
+                        store.eBullets.push({
+                            x: b.x,
+                            y: b.y,
+                            vx: Math.cos(angle) * speed,
+                            vy: Math.sin(angle) * speed,
+                            r: 8,
+                            col: '#7cfc00',
+                            dmg: 22 * dmgScale,
+                            life: 4,
+                            type: 'poisonBlob'
+                        });
+                    }
+                    break;
+                    
+                case 1:
+                    // Acid spit pattern
+                    b.fireT = 2.2;
+                    for (let i = 0; i < 8; i++) {
+                        const angle = (i * Math.PI / 4) + b.t * 0.5;
+                        store.eBullets.push({
+                            x: b.x,
+                            y: b.y,
+                            vx: Math.cos(angle) * 160,
+                            vy: Math.sin(angle) * 160,
+                            r: 6,
+                            col: '#adff2f',
+                            dmg: 20 * dmgScale,
+                            life: 3,
+                            type: 'poisonBlob'
+                        });
+                    }
+                    break;
+                    
+                case 3:
+                    // Toxic ground slam - creates multiple puddles
+                    b.fireT = 3.0;
+                    for (let i = 0; i < 6; i++) {
+                        const angle = Math.random() * Math.PI * 2;
+                        const distance = 60 + Math.random() * 100;
+                        const puddleX = b.x + Math.cos(angle) * distance;
+                        const puddleY = b.y + Math.sin(angle) * distance;
+                        
+                        // Create poison puddle directly
+                        if (puddleX > 20 && puddleX < W - 20 && puddleY > 20 && puddleY < H - 20) {
+                            store.poisonPuddles.push({
+                                x: puddleX,
+                                y: puddleY,
+                                r: 25 + Math.random() * 15,
+                                life: 15 + Math.random() * 10,
+                                damage: 15 * dmgScale,
+                                created: performance.now()
+                            });
+                        }
+                    }
+                    break;
+            }
+        }
+        
+        // Update poison puddles
+        for (let i = store.poisonPuddles.length - 1; i >= 0; i--) {
+            const puddle = store.poisonPuddles[i];
+            puddle.life -= dt;
+            if (puddle.life <= 0) {
+                store.poisonPuddles.splice(i, 1);
+            }
+        }
+    }
+    
     function stepBoss(dt) {
         const b = store.boss;
         b.t += dt;
@@ -2997,6 +3595,7 @@ function render(dt) {
             case 'hex':      stepBossTheHex(dt, b, dmgScale); break;
             case 'construct': stepBossGeometron(dt, b, dmgScale); break;
             case 'avian':    stepBossVoidRaven(dt, b, dmgScale); break;
+            case 'broodlord': stepBossBroodlord(dt, b, dmgScale); break;
         }
     }
     function drawMissile(m) {
@@ -3080,297 +3679,454 @@ function render(dt) {
         }
 
     // Skull Ship Drawing Functions
-    function drawSkullHorns(ctx, skullWidth, skullHeight) {
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
 
-        // Calculate swipe animation for attacking
-        let swipeAngle = 0;
-        if (store.boss && store.boss.isLaughing) {
-            const elapsedTime = performance.now() - store.boss.laughStartTime;
-            const duration = 1000;
-            if (elapsedTime < duration) {
-                const progress = elapsedTime / duration;
-                swipeAngle = Math.sin(progress * Math.PI) * -0.3;
+    /**
+     * @class Boss
+     * Represents the main antagonist character.
+     * This class encapsulates all logic for rendering, animating, and managing the state of the boss.
+     */
+    class Boss {
+        /**
+         * @param {CanvasRenderingContext2D} ctx The 2D rendering context for the canvas.
+         * @param {number} x The initial X position of the boss.
+         * @param {number} y The initial Y position of the boss.
+         * @param {string} skullColor The color for the skull (supports red final phase).
+         */
+        constructor(ctx, x, y, skullColor = '#e54d24') {
+            this.ctx = ctx;
+            this.x = x;
+            this.y = y;
+            this.skullColor = skullColor;
+
+            this.width = 180;
+            this.height = 280;
+
+            // Animation state
+            this.isAttacking = false;
+            this.attackStartTime = 0;
+            this.bloodDrips = [];
+        }
+
+        /**
+         * Triggers the boss's attack animation (laugh and scythe swipe).
+         * This should be called from the main game logic (e.g., on a timer or player action).
+         * @param {boolean} playAudio - Whether to play the laugh sound effect.
+         */
+        triggerAttack(playAudio = true) {
+            if (!this.isAttacking) {
+                this.isAttacking = true;
+                this.attackStartTime = Date.now();
+
+                // Play skull king laugh sound using game's sound system
+                if (playAudio && typeof playSound !== 'undefined') {
+                    playSound('shao_kahn');
+                }
+
+                // Reset the attack state after the animation duration
+                setTimeout(() => {
+                    this.isAttacking = false;
+                }, 3000);
             }
         }
 
-        const drawHornScythe = (isFlipped) => {
-            const side = isFlipped ? -1 : 1;
-            ctx.save();
+        /**
+         * Updates the boss's state. This should be called every frame in the game loop.
+         * It handles internal animations like the blood drips.
+         */
+        update() {
+            this._updateBloodDrips();
+        }
+
+        /**
+         * Renders the boss on the canvas. This should be called every frame in the game loop after `update`.
+         */
+        draw() {
+            this.ctx.save();
+            this.ctx.translate(this.x, this.y);
+            this._drawHorns();
+            this._drawHead();
+            this._drawFacialFeatures();
+            this._addWeathering(); // Scars
+            this._drawBloodDrips();
+            this.ctx.restore();
+        }
+
+        // --- Private Helper Methods ---
+
+        _drawHorns() {
+            const { ctx, width: skullWidth, height: skullHeight } = this;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            let swipeAngle = 0;
+            if (this.isAttacking) {
+                const elapsedTime = Date.now() - this.attackStartTime;
+                const duration = 1000;
+                if (elapsedTime < duration) {
+                    const progress = elapsedTime / duration;
+                    swipeAngle = Math.sin(progress * Math.PI) * -0.3;
+                }
+            }
+
+            const drawHornScythe = (isFlipped) => {
+                const side = isFlipped ? -1 : 1;
+                ctx.save();
+                
+                const handleGradient = ctx.createLinearGradient(0, -200, 0, 100);
+                handleGradient.addColorStop(0, '#111111');
+                handleGradient.addColorStop(0.5, '#333333');
+                handleGradient.addColorStop(1, '#222222');
+                ctx.fillStyle = handleGradient;
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 18;
+
+                ctx.beginPath();
+                ctx.moveTo(side * skullWidth * 0.35, -skullHeight * 0.4);
+                const handleEndX = side * 400;
+                const handleEndY = -skullHeight * 0.20;
+                ctx.bezierCurveTo(side * 220, -skullHeight * 0.9, side * 350, -skullHeight * 0.1, handleEndX, handleEndY);
+                ctx.bezierCurveTo(side * 360, 0, side * 230, -skullHeight * 0.55, side * skullWidth * 0.25, -skullHeight * 0.2);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                
+                ctx.fillStyle = '#4a4a4a';
+                ctx.strokeStyle = '#1a1a1a';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.ellipse(handleEndX - side * 10, handleEndY, 14, 20, side * 0.2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.ellipse(handleEndX - side * 35, handleEndY - 5, 12, 18, side * 0.1, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.translate(handleEndX, handleEndY);
+                const baseRotation = Math.PI / 4;
+                ctx.rotate(side * baseRotation + side * swipeAngle);
+
+                const bladeGradient = ctx.createLinearGradient(side * 50, 0, side * 150, 300);
+                bladeGradient.addColorStop(0, '#ffffff');
+                bladeGradient.addColorStop(0.5, '#e3dac9');
+                bladeGradient.addColorStop(1, '#c1b8a8');
+                ctx.fillStyle = bladeGradient;
+                ctx.strokeStyle = '#8c8273';
+                ctx.lineWidth = 4;
+
+                ctx.beginPath();
+                const tipX = side * 150;
+                const tipY = 220;
+                ctx.moveTo(0, -15);
+                ctx.bezierCurveTo(side * 180, 80, side * 200, 200, tipX, tipY);
+                ctx.bezierCurveTo(side * 130, 160, side * 40, 70, 0, 15);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                
+                ctx.save();
+                ctx.clip();
+                ctx.strokeStyle = 'rgba(80, 70, 60, 0.2)';
+                ctx.lineWidth = 1.5;
+                for (let i = 0; i < 30; i++) {
+                    ctx.beginPath();
+                    const startX = side * (Math.random() * 250);
+                    const startY = -15 + Math.random() * 300;
+                    const length = 20 + Math.random() * 30;
+                    const angle = Math.random() * Math.PI * 2;
+                    ctx.moveTo(startX, startY);
+                    ctx.lineTo(startX + Math.cos(angle) * length, startY + Math.sin(angle) * length);
+                    ctx.stroke();
+                }
+                ctx.restore();
+                
+                if (this.isAttacking && Math.random() < 0.3) {
+                    const dripSpawnPoint = { x: tipX / 2, y: tipY / 1.5 };
+                    const rotatedPoint = {
+                        x: dripSpawnPoint.x * Math.cos(side * baseRotation) - dripSpawnPoint.y * Math.sin(side * baseRotation),
+                        y: dripSpawnPoint.x * Math.sin(side * baseRotation) + dripSpawnPoint.y * Math.cos(side * baseRotation)
+                    };
+                    this._addBloodDrip(handleEndX + rotatedPoint.x, handleEndY + rotatedPoint.y);
+                }
+
+                ctx.restore();
+            };
+
+            drawHornScythe(false);
+            drawHornScythe(true);
+        }
+
+        _drawHead() {
+            const { ctx, width: skullWidth, height: skullHeight, skullColor } = this;
+            const gradient = ctx.createRadialGradient(0, -50, skullWidth * 0.1, 0, 0, skullWidth * 1.2);
             
-            // Black Handle with gradient
-            const handleGradient = ctx.createLinearGradient(0, -200, 0, 100);
-            handleGradient.addColorStop(0, '#111111');
-            handleGradient.addColorStop(0.5, '#333333');
-            handleGradient.addColorStop(1, '#222222');
+            if (skullColor === '#FF0000') {
+                // Red final phase colors
+                gradient.addColorStop(0, '#ff6666');
+                gradient.addColorStop(0.5, '#ff0000');
+                gradient.addColorStop(1, '#660000');
+            } else {
+                // Original orange colors
+                gradient.addColorStop(0, '#ff8c66');
+                gradient.addColorStop(0.5, '#e54d24');
+                gradient.addColorStop(1, '#661a00');
+            }
 
-            ctx.fillStyle = handleGradient;
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 8; // Scaled down for game
+            ctx.fillStyle = gradient;
+            ctx.strokeStyle = '#1a0a05';
+            ctx.lineWidth = 8;
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+            ctx.shadowBlur = 20;
 
-            // Long curved handle
             ctx.beginPath();
-            ctx.moveTo(side * skullWidth * 0.35, -skullHeight * 0.4);
-            const handleEndX = side * 200; // Scaled down handle length
-            const handleEndY = -skullHeight * 0.20;
-            ctx.bezierCurveTo(
-                side * 110, -skullHeight * 0.9,
-                side * 175, -skullHeight * 0.1,
-                handleEndX, handleEndY
-            );
-            ctx.bezierCurveTo(
-                side * 180, 0,
-                side * 115, -skullHeight * 0.55,
-                side * skullWidth * 0.25, -skullHeight * 0.2
-            );
+            ctx.moveTo(0, -skullHeight * 0.55);
+            ctx.bezierCurveTo(-skullWidth * 0.6, -skullHeight * 0.6, -skullWidth * 0.6, -skullHeight * 0.1, -skullWidth * 0.5, -skullHeight * 0.2);
+            ctx.bezierCurveTo(-skullWidth * 0.6, skullHeight * 0.3, -skullWidth * 0.2, skullHeight * 0.55, 0, skullHeight * 0.52);
+            ctx.bezierCurveTo(skullWidth * 0.2, skullHeight * 0.55, skullWidth * 0.6, skullHeight * 0.3, skullWidth * 0.5, -skullHeight * 0.2);
+            ctx.bezierCurveTo(skullWidth * 0.6, -skullHeight * 0.1, skullWidth * 0.6, -skullHeight * 0.6, 0, -skullHeight * 0.55);
             ctx.closePath();
             ctx.fill();
             ctx.stroke();
-            
-            // Metal wraps on handle
-            ctx.fillStyle = '#4a4a4a';
-            ctx.strokeStyle = '#1a1a1a';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.ellipse(handleEndX - side * 5, handleEndY, 7, 10, side * 0.2, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.ellipse(handleEndX - side * 17, handleEndY - 2, 6, 9, side * 0.1, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
+            ctx.shadowColor = 'transparent';
+        }
 
-            // Scythe blade (animated)
-            ctx.translate(handleEndX, handleEndY);
-            const baseRotation = Math.PI / 4;
-            ctx.rotate(side * baseRotation + side * swipeAngle);
+        _drawFacialFeatures() {
+            const { ctx, height: skullHeight } = this;
 
-            // Bone blade gradient
-            const bladeGradient = ctx.createLinearGradient(side * 25, 0, side * 75, 150);
-            bladeGradient.addColorStop(0, '#ffffff');
-            bladeGradient.addColorStop(0.5, '#e3dac9');
-            bladeGradient.addColorStop(1, '#c1b8a8');
-            ctx.fillStyle = bladeGradient;
-            ctx.strokeStyle = '#8c8273';
+            const drawMirrorEye = (offsetX, isFlipped) => {
+                ctx.save();
+                ctx.translate(offsetX, -10);
+                if (isFlipped) ctx.scale(-1, 1);
+                const eyePath = new Path2D();
+                eyePath.moveTo(-30, -20); eyePath.lineTo(30, -30); eyePath.lineTo(25, 28); eyePath.lineTo(-25, 25); eyePath.closePath();
+                for (let i = 0; i < 6; i++) {
+                    ctx.fillStyle = (i % 2 === 0 || i === 5) ? '#1a0a05' : '#ff3300';
+                    ctx.fill(eyePath);
+                    ctx.scale(0.8, 0.75);
+                }
+                ctx.restore();
+            };
+            drawMirrorEye(-35, true);
+            drawMirrorEye(35, false);
+
+            let mouthOpenness = 0;
+            if (this.isAttacking) {
+                const elapsedTime = Date.now() - this.attackStartTime;
+                mouthOpenness = Math.abs(Math.sin(elapsedTime * 0.005)) * 15;
+            }
+
+            ctx.strokeStyle = 'rgba(26, 10, 5, 0.8)';
             ctx.lineWidth = 2;
 
-            // Curved scythe blade
-            ctx.beginPath();
-            const tipX = side * 75; // Scaled down
-            const tipY = 110; // Scaled down
-            ctx.moveTo(0, -7);
-            ctx.bezierCurveTo(side * 90, 40, side * 100, 100, tipX, tipY);
-            ctx.bezierCurveTo(side * 65, 80, side * 20, 35, 0, 7);
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-            
-            // Add texture to blade
-            ctx.save();
-            ctx.clip();
-            ctx.strokeStyle = 'rgba(80, 70, 60, 0.2)';
-            ctx.lineWidth = 1;
-            for (let i = 0; i < 15; i++) {
+            for (let i = -6; i <= 6; i++) {
+                if (i === 0) continue;
+                let toothWidth = 10;
+                let toothHeight = 25 - Math.abs(i) * 1.2;
+                const isCanine = Math.abs(i) === 5 || Math.abs(i) === 6;
+                if (isCanine) {
+                    toothHeight += 18;
+                    toothWidth -= 2;
+                }
+                const xPos = i * 9;
+                let yPos = skullHeight * 0.53;
+                yPos -= Math.pow(i, 2) * 1.8;
+                yPos += mouthOpenness;
+                ctx.save();
+                ctx.translate(xPos, yPos);
                 ctx.beginPath();
-                const startX = side * (Math.random() * 125);
-                const startY = -7 + Math.random() * 150;
-                const length = 10 + Math.random() * 15;
-                const angle = Math.random() * Math.PI * 2;
-                ctx.moveTo(startX, startY);
-                ctx.lineTo(startX + Math.cos(angle) * length, startY + Math.sin(angle) * length);
+                ctx.moveTo(-toothWidth / 2, 0);
+                ctx.lineTo(toothWidth / 2, 0);
+                ctx.lineTo(0, toothHeight);
+                ctx.closePath();
+                ctx.fillStyle = '#e8d9a9';
+                ctx.fill();
                 ctx.stroke();
+                const tipY = toothHeight;
+                ctx.fillStyle = '#8c1803';
+                ctx.beginPath();
+                ctx.ellipse(0, tipY, toothWidth / 3, 6, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#1a1a1a';
+                ctx.beginPath();
+                ctx.ellipse(0, tipY, toothWidth / 5, 4, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
             }
-            ctx.restore();
-            
-            ctx.restore();
-        };
+        }
 
-        drawHornScythe(false);
-        drawHornScythe(true);
-    }
-
-    function drawSkullMain(ctx, skullWidth, skullHeight) {
-        const gradient = ctx.createRadialGradient(
-            0, -25, skullWidth * 0.1,
-            0, 0, skullWidth * 0.6
-        );
-        gradient.addColorStop(0, '#ff8c66');
-        gradient.addColorStop(0.5, '#e54d24');
-        gradient.addColorStop(1, '#661a00');
-
-        ctx.fillStyle = gradient;
-        ctx.strokeStyle = '#1a0a05';
-        ctx.lineWidth = 4;
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-        ctx.shadowBlur = 10;
-
-        ctx.beginPath();
-        ctx.moveTo(0, -skullHeight * 0.55);
-        ctx.quadraticCurveTo(-skullWidth * 0.5, -skullHeight * 0.5, -skullWidth * 0.5, -skullHeight * 0.2);
-        
-        // Enhanced jaw structure
-        ctx.bezierCurveTo(
-            -skullWidth * 0.55, skullHeight * 0.3,
-            -skullWidth * 0.2, skullHeight * 0.5,
-            0, skullHeight * 0.5
-        );
-        ctx.bezierCurveTo(
-            skullWidth * 0.2, skullHeight * 0.5,
-            skullWidth * 0.55, skullHeight * 0.3,
-            skullWidth * 0.5, -skullHeight * 0.2
-        );
-        
-        ctx.quadraticCurveTo(skullWidth * 0.5, -skullHeight * 0.5, 0, -skullHeight * 0.55);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        ctx.shadowColor = 'transparent';
-    }
-
-    function drawSkullFace(ctx, skullWidth, skullHeight, mouthOpenness) {
-        // Enhanced eyes with layered effect
-        const drawMirrorEye = (offsetX, isFlipped) => {
-            ctx.save();
-            ctx.translate(offsetX, -5);
-            if (isFlipped) ctx.scale(-1, 1);
-            
-            const eyePath = new Path2D();
-            eyePath.moveTo(-15, -10);
-            eyePath.lineTo(15, -15);
-            eyePath.lineTo(12, 14);
-            eyePath.lineTo(-12, 12);
-            eyePath.closePath();
-            
-            for (let i = 0; i < 6; i++) {
-                ctx.fillStyle = (i % 2 === 0 || i === 5) ? '#1a0a05' : '#ff3300';
-                ctx.fill(eyePath);
-                ctx.scale(0.8, 0.75);
-            }
-            ctx.restore();
-        };
-        drawMirrorEye(-17, true);
-        drawMirrorEye(17, false);
-        
-        // Realistic skull nose
-        ctx.save();
-        ctx.fillStyle = '#020203';
-        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(0, 30);
-        ctx.bezierCurveTo(-7, 40, -17, 55, -10, 62);
-        ctx.quadraticCurveTo(0, 65, 10, 62);
-        ctx.bezierCurveTo(17, 55, 7, 40, 0, 30);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
-
-        // Enhanced teeth with proper jaw alignment
-        ctx.strokeStyle = 'rgba(26, 10, 5, 0.8)';
-        ctx.lineWidth = 1;
-
-        for (let i = -5; i <= 5; i++) {
-            if (i === 0) continue;
-            
-            let toothWidth = 7 - Math.abs(i) * 0.5;
-            let toothHeight = 15 - Math.abs(i) * 0.75;
-            const isCanine = Math.abs(i) === 4 || Math.abs(i) === 5;
-            if (isCanine) {
-                toothHeight += 10;
-                toothWidth -= 1;
-            }
-            
-            const xPos = i * 5.5; // Tighter spacing
-            const yPos = skullHeight * 0.48 - Math.abs(i) * 3 + mouthOpenness;
-            
-            ctx.save();
-            ctx.translate(xPos, yPos);
-            
-            // Tooth shape
+        _addWeathering() {
+            const { ctx } = this;
+            ctx.strokeStyle = 'rgba(26, 10, 5, 0.6)';
+            ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.moveTo(-toothWidth / 2, 0);
-            ctx.lineTo(toothWidth / 2, 0);
-            ctx.lineTo(0, toothHeight);
-            ctx.closePath();
-
-            ctx.fillStyle = '#e8d9a9';
-            ctx.fill();
+            ctx.moveTo(40, -30);
+            ctx.lineTo(70, 10);
+            ctx.lineTo(65, 15);
             ctx.stroke();
+        }
 
-            // Blood on tooth tip
-            const tipY = toothHeight;
+        _addBloodDrip(x, y) {
+            if (this.bloodDrips.length > 100) return;
+            this.bloodDrips.push({
+                x: x,
+                y: y,
+                speed: 2 + Math.random() * 3,
+                size: 2 + Math.random() * 3
+            });
+        }
+
+        _updateBloodDrips() {
+            for (let i = this.bloodDrips.length - 1; i >= 0; i--) {
+                const drip = this.bloodDrips[i];
+                drip.y += drip.speed;
+                if (drip.y > this.ctx.canvas.height) {
+                    this.bloodDrips.splice(i, 1);
+                }
+            }
+        }
+
+        _drawBloodDrips() {
+            const { ctx } = this;
             ctx.fillStyle = '#8c1803';
-            ctx.beginPath();
-            ctx.ellipse(0, tipY, toothWidth / 3, 3, 0, 0, Math.PI * 2);
-            ctx.fill();
-
-            ctx.fillStyle = '#1a1a1a';
-            ctx.beginPath();
-            ctx.ellipse(0, tipY, toothWidth / 5, 2, 0, 0, Math.PI * 2);
-            ctx.fill();
-
-            ctx.restore();
+            for (const drip of this.bloodDrips) {
+                ctx.beginPath();
+                ctx.arc(drip.x, drip.y, drip.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
         }
     }
 
-    function drawSkullWeathering(ctx, skullWidth, skullHeight) {
-        // Battle damage and cracks
-        ctx.strokeStyle = 'rgba(26, 10, 5, 0.6)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(20, -15);
-        ctx.lineTo(35, 5);
-        ctx.lineTo(32, 7);
-        ctx.stroke();
-
-        // Major skull crack
-        ctx.save();
-        ctx.strokeStyle = 'rgba(26, 10, 5, 0.8)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(-5, -skullHeight * 0.52);
-        ctx.lineTo(7, -skullHeight * 0.3);
-        ctx.lineTo(2, -skullHeight * 0.28);
-        ctx.lineTo(17, -skullHeight * 0.05);
-        ctx.stroke();
-        ctx.restore();
-
-        // Additional weathering details
-        ctx.strokeStyle = 'rgba(26, 10, 5, 0.4)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(-25, -20);
-        ctx.lineTo(-20, -10);
-        ctx.moveTo(15, 20);
-        ctx.lineTo(25, 30);
-        ctx.stroke();
-    }
-
-    function drawBoss(t) {ctx.save(); ctx.translate(t.x, t.y); if (t.isEnraged) {ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 50);} const hpRatio = Math.max(0, Math.min(1, ((t.hp || 0) / (t.hpMax || 1)))); ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(-60, -t.r - 20, 120, 8); const healthBarColor = t.name === 'EVIL BABYMOON' ? '#ffd700' : (t.color || '#ff4444'); ctx.fillStyle = healthBarColor; ctx.fillRect(-60, -t.r - 20, 120 * hpRatio, 8); ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.strokeRect(-60, -t.r - 20, 120, 8); if (t.behavior === "malignus") {const time = performance.now() / 1000; ctx.fillStyle = t.color; ctx.beginPath(); ctx.arc(0, 0, t.r, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.4, 0, Math.PI * 2); ctx.fill(); const numShards = 5; for (let i = 0; i < numShards; i++) {ctx.save(); const angle = time * (0.5 + 0.1 * i) + i * (2 * Math.PI / numShards); const dist = 0.8 * t.r; ctx.rotate(angle); ctx.translate(dist, 0); ctx.rotate(2 * time); ctx.fillStyle = addAlpha(t.color, 0.67); ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2; const shardSize = 0.3 * t.r; ctx.beginPath(); ctx.moveTo(0, -shardSize); ctx.lineTo(shardSize / 2, shardSize); ctx.lineTo(-shardSize / 2, shardSize); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();}} else if (t.behavior === "hex") {ctx.translate(0, 30); const bodyW_top = t.r * 1.5; const bodyW_bottom = t.r * 2.5; const bodyH = t.r * 1.5; ctx.fillStyle = "#66aaff"; ctx.strokeStyle = "#5599e5"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_bottom / 2, bodyH / 2); ctx.lineTo(-bodyW_bottom / 2, bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#e03434"; ctx.strokeStyle = "#c02d2d"; const crownH = t.r * 0.8, crownW = bodyW_top * 0.9; ctx.beginPath(); ctx.moveTo(-crownW / 2, -bodyH / 2); ctx.lineTo(-crownW / 2 + crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(0, -bodyH / 2 - crownH / 2); ctx.lineTo(crownW / 2 - crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(crownW / 2, -bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#000"; ctx.fillRect(-t.r * 0.6, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(t.r * 0.2, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(-t.r * 0.4, 0, t.r * 0.8, t.r * 0.1); ctx.strokeStyle = "#ffd700"; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(0, 0, t.r * 1.1, 0.5, Math.PI - 0.5); ctx.stroke(); ctx.fillStyle = "#ffd700"; ctx.strokeStyle = "#daa520"; ctx.lineWidth = 3; const medR = t.r * 0.5; ctx.beginPath(); ctx.moveTo(0, t.r * 1.1 + medR); for (let i = 1; i <= 8; i++) {const angle = i * (2 * Math.PI / 8); ctx.lineTo(medR * Math.sin(angle), t.r * 1.1 + medR * Math.cos(angle));} ctx.closePath(); ctx.fill(); ctx.stroke();} else if (t.behavior === "construct") {
+    function drawBoss(t) {ctx.save(); ctx.translate(t.x, t.y); if (t.isEnraged) {ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 50);} const hpRatio = Math.max(0, Math.min(1, ((t.hp || 0) / (t.hpMax || 1)))); ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(-60, -t.r - 20, 120, 8); const healthBarColor = t.name === 'EVIL BABYMOON' ? '#ffd700' : (t.color || '#ff4444'); ctx.fillStyle = healthBarColor; ctx.fillRect(-60, -t.r - 20, 120 * hpRatio, 8); ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.strokeRect(-60, -t.r - 20, 120, 8); if (t.behavior === "malignus") {const time = performance.now() / 1000; ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.4, 0, Math.PI * 2); ctx.fill(); const numShards = 5; for (let i = 0; i < numShards; i++) {ctx.save(); const angle = time * (0.5 + 0.1 * i) + i * (2 * Math.PI / numShards); const dist = 0.8 * t.r; ctx.rotate(angle); ctx.translate(dist, 0); ctx.rotate(2 * time); ctx.fillStyle = addAlpha(t.color, 0.67); ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2; const shardSize = 0.3 * t.r; ctx.beginPath(); ctx.moveTo(0, -shardSize); ctx.lineTo(shardSize / 2, shardSize); ctx.lineTo(-shardSize / 2, shardSize); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();}} else if (t.behavior === "hex") {ctx.translate(0, 30); const bodyW_top = t.r * 1.5; const bodyW_bottom = t.r * 2.5; const bodyH = t.r * 1.5; ctx.fillStyle = "#66aaff"; ctx.strokeStyle = "#5599e5"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_bottom / 2, bodyH / 2); ctx.lineTo(-bodyW_bottom / 2, bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#e03434"; ctx.strokeStyle = "#c02d2d"; const crownH = t.r * 0.8, crownW = bodyW_top * 0.9; ctx.beginPath(); ctx.moveTo(-crownW / 2, -bodyH / 2); ctx.lineTo(-crownW / 2 + crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(0, -bodyH / 2 - crownH / 2); ctx.lineTo(crownW / 2 - crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(crownW / 2, -bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#000"; ctx.fillRect(-t.r * 0.6, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(t.r * 0.2, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(-t.r * 0.4, 0, t.r * 0.8, t.r * 0.1); ctx.strokeStyle = "#ffd700"; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(0, 0, t.r * 1.1, 0.5, Math.PI - 0.5); ctx.stroke(); ctx.fillStyle = "#ffd700"; ctx.strokeStyle = "#daa520"; ctx.lineWidth = 3; const medR = t.r * 0.5; ctx.beginPath(); ctx.moveTo(0, t.r * 1.1 + medR); for (let i = 1; i <= 8; i++) {const angle = i * (2 * Math.PI / 8); ctx.lineTo(medR * Math.sin(angle), t.r * 1.1 + medR * Math.cos(angle));} ctx.closePath(); ctx.fill(); ctx.stroke();} else if (t.behavior === "construct") {
         // Check if this is the SKULL SHIP boss
         if (t.name === 'SKULL SHIP') {
-            const skullWidth = t.r * 2; 
-            const skullHeight = t.r * 2.8; 
-            
-            // Calculate mouth openness for animation
-            let mouthOpenness = 0;
-            if (t.isLaughing) {
-                const elapsedTime = performance.now() - t.laughStartTime;
-                mouthOpenness = Math.abs(Math.sin(elapsedTime * 0.005)) * 7;
-            }
+            // Update skull renderer position and color for red final phase
+            if (t.skullRenderer) {
+                t.skullRenderer.x = 0; // Relative position since we're already translated
+                t.skullRenderer.y = 0; // Relative position since we're already translated  
+                t.skullRenderer.skullColor = t.color || '#e54d24';
+                
+                // Handle attack animation
+                if (t.isLaughing && !t.skullRenderer.isAttacking) {
+                    // Trigger attack animation with sound effect
+                    t.skullRenderer.triggerAttack(true);
+                }
+                
+                // Update and draw using Boss class
+                t.skullRenderer.update();
+                t.skullRenderer.draw();
+            } else {
+                // Fallback to original drawing if skullRenderer is missing (shouldn't happen)
+                const skullWidth = t.r * 2; 
+                const skullHeight = t.r * 2.8; 
+                
+                // Calculate mouth openness for animation
+                let mouthOpenness = 0;
+                if (t.isLaughing) {
+                    const elapsedTime = performance.now() - t.laughStartTime;
+                    mouthOpenness = Math.abs(Math.sin(elapsedTime * 0.005)) * 7;
+                }
 
-            // Draw all parts of the skull ship
-            drawSkullHorns(ctx, skullWidth, skullHeight);
-            drawSkullMain(ctx, skullWidth, skullHeight);
-            drawSkullFace(ctx, skullWidth, skullHeight, mouthOpenness);
-            drawSkullWeathering(ctx, skullWidth, skullHeight);
+                // Draw all parts of the skull ship (pass boss color for red final phase)
+                const skullColor = t.color || '#e54d24';
+                drawSkullHorns(ctx, skullWidth, skullHeight, skullColor);
+                drawSkullMain(ctx, skullWidth, skullHeight, skullColor);
+                drawSkullFace(ctx, skullWidth, skullHeight, mouthOpenness, skullColor);
+                drawSkullWeathering(ctx, skullWidth, skullHeight, skullColor);
+            }
         } else {
             // Original GEOMETRON drawing code
             const phaseColor = t.phase === 1 ? (t.color || "#ff4500") : "#ff4500"; ctx.fillStyle = addAlpha(phaseColor, 0.67); ctx.strokeStyle = phaseColor; ctx.lineWidth = 3; if (t.phase === 2) {ctx.shadowColor = phaseColor; ctx.shadowBlur = 25;} const bodyW = t.r * 1.2, bodyH = t.r * 1.5, headH = t.r * 0.7; ctx.beginPath(); ctx.moveTo(-bodyW * 0.5, bodyH * 0.5); ctx.lineTo(-bodyW * 0.6, bodyH * 0.2); ctx.lineTo(-bodyW * 0.4, -bodyH * 0.6); ctx.lineTo(0, -bodyH * 0.5); ctx.lineTo(bodyW * 0.4, -bodyH * 0.6); ctx.lineTo(bodyW * 0.6, bodyH * 0.2); ctx.lineTo(bodyW * 0.5, bodyH * 0.5); ctx.closePath(); ctx.fill(); ctx.stroke(); const shoulderY = -bodyH * 0.3, shoulderX = bodyW * 0.4; const armW = 0.4 * t.r, armH = 0.9 * t.r; ctx.beginPath(); ctx.moveTo(-shoulderX, shoulderY); ctx.lineTo(-shoulderX - armW * 0.5, shoulderY + armH * 0.2); ctx.lineTo(-shoulderX, shoulderY + armH); ctx.lineTo(-shoulderX + armW * 0.5, shoulderY + armH * 0.8); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(shoulderX + armW * 0.5, shoulderY + armH * 0.2); ctx.lineTo(shoulderX, shoulderY + armH); ctx.lineTo(shoulderX - armW * 0.5, shoulderY + armH * 0.8); ctx.closePath(); ctx.fill(); ctx.stroke(); const eyeR = Math.max(1, t.r * 0.2 + 2 * Math.sin(performance.now() / 200)); ctx.fillStyle = "#ffffff"; ctx.strokeStyle = phaseColor; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, -headH * 0.1, eyeR, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         }
-    } else if (t.behavior === "avian") {ctx.save(); ctx.rotate(-Math.PI / 2); const wingY = -t.r * 0.4; ctx.strokeStyle = "#FFFFFF"; ctx.fillStyle = t.color; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(-t.r * 0.4, wingY); ctx.quadraticCurveTo(-t.r * 0.8, wingY - t.r * 0.6, -t.r * 1.2, wingY - t.r * 0.3); ctx.quadraticCurveTo(-t.r * 0.9, wingY - t.r * 0.1, -t.r * 0.4, wingY); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(t.r * 0.4, wingY); ctx.quadraticCurveTo(t.r * 0.8, wingY - t.r * 0.6, t.r * 1.2, wingY - t.r * 0.3); ctx.quadraticCurveTo(t.r * 0.9, wingY - t.r * 0.1, t.r * 0.4, wingY); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.ellipse(0, 0, t.r * 0.6, t.r * 0.8, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); const eyeSize = t.r * 0.15; ctx.fillStyle = "#000000"; ctx.beginPath(); ctx.arc(-t.r * 0.2, -t.r * 0.2, eyeSize, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(t.r * 0.2, -t.r * 0.2, eyeSize, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = "#FF6600"; ctx.beginPath(); ctx.moveTo(0, t.r * 0.1); ctx.lineTo(-t.r * 0.15, t.r * 0.3); ctx.lineTo(t.r * 0.15, t.r * 0.3); ctx.closePath(); ctx.fill(); ctx.restore();} else {const time = performance.now() / 1000; ctx.fillStyle = '#2c2c54'; ctx.strokeStyle = '#40407a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, t.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#706fd3'; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.8, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#f0932b'; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.3, 0, Math.PI * 2); ctx.fill(); for (let i = 0; i < 6; i++) {ctx.save(); ctx.rotate(i * Math.PI / 3 + time * 0.3); ctx.translate(t.r * 0.6, 0); ctx.fillStyle = '#ff6348'; ctx.strokeStyle = '#2f3542'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.15, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();} const eyeSize = t.r * 0.12; ctx.fillStyle = '#ff3838'; ctx.beginPath(); ctx.arc(-t.r * 0.2, -t.r * 0.15, eyeSize, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(t.r * 0.2, -t.r * 0.15, eyeSize, 0, Math.PI * 2); ctx.fill(); for (let i = 0; i < 4; i++) {ctx.save(); ctx.rotate(i * Math.PI / 2 + time * -0.5); ctx.translate(t.r * 0.9, 0); ctx.fillStyle = '#3c6382'; ctx.strokeStyle = '#40407a'; ctx.lineWidth = 2; ctx.fillRect(-t.r * 0.08, -t.r * 0.06, t.r * 0.16, t.r * 0.12); ctx.strokeRect(-t.r * 0.08, -t.r * 0.06, t.r * 0.16, t.r * 0.12); ctx.restore();}} ctx.restore();}
+    } else if (t.behavior === "avian") {ctx.save(); ctx.rotate(-Math.PI / 2); const wingY = -t.r * 0.4; ctx.strokeStyle = "#FFFFFF"; ctx.fillStyle = t.color; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(-t.r * 0.4, wingY); ctx.quadraticCurveTo(-t.r * 0.8, wingY - t.r * 0.6, -t.r * 1.2, wingY - t.r * 0.3); ctx.quadraticCurveTo(-t.r * 0.9, wingY - t.r * 0.1, -t.r * 0.4, wingY); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(t.r * 0.4, wingY); ctx.quadraticCurveTo(t.r * 0.8, wingY - t.r * 0.6, t.r * 1.2, wingY - t.r * 0.3); ctx.quadraticCurveTo(t.r * 0.9, wingY - t.r * 0.1, t.r * 0.4, wingY); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.ellipse(0, 0, t.r * 0.6, t.r * 0.8, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); const eyeSize = t.r * 0.15; ctx.fillStyle = "#000000"; ctx.beginPath(); ctx.arc(-t.r * 0.2, -t.r * 0.2, eyeSize, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(t.r * 0.2, -t.r * 0.2, eyeSize, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = "#FF6600"; ctx.beginPath(); ctx.moveTo(0, t.r * 0.1); ctx.lineTo(-t.r * 0.15, t.r * 0.3); ctx.lineTo(t.r * 0.15, t.r * 0.3); ctx.closePath(); ctx.fill(); ctx.restore();} else if (t.behavior === "broodlord") {
+        // Draw menacing broodlord body - insectoid and intimidating
+        const time = performance.now() / 1000;
+        const pulseFactor = 1 + 0.1 * Math.sin(time * 3);
+        
+        // Main carapace body
+        ctx.fillStyle = t.color;
+        ctx.strokeStyle = "#8b4513";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, t.r * 1.2 * pulseFactor, t.r * 0.8, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        
+        // Segmented armor plating
+        ctx.strokeStyle = "#654321";
+        ctx.lineWidth = 2;
+        for (let i = -2; i <= 2; i++) {
+            ctx.beginPath();
+            ctx.ellipse(0, i * t.r * 0.25, t.r * 1.1 * pulseFactor, t.r * 0.15, 0, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        
+        // Menacing claws/appendages
+        ctx.strokeStyle = "#2d5016";
+        ctx.lineWidth = 4;
+        for (let side = -1; side <= 1; side += 2) {
+            for (let i = 0; i < 3; i++) {
+                ctx.save();
+                ctx.translate(side * t.r * 0.8, (i - 1) * t.r * 0.4);
+                ctx.rotate(side * (Math.PI/6 + i * Math.PI/12) + Math.sin(time * 2 + i) * 0.2);
+                
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(t.r * 0.6, 0);
+                ctx.lineTo(t.r * 0.7, -t.r * 0.1);
+                ctx.lineTo(t.r * 0.8, 0);
+                ctx.lineTo(t.r * 0.7, t.r * 0.1);
+                ctx.lineTo(t.r * 0.6, 0);
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+        
+        // Glowing compound eyes
+        const eyeGlow = 0.5 + 0.5 * Math.sin(time * 4);
+        ctx.shadowColor = "#7cfc00";
+        ctx.shadowBlur = 15 * eyeGlow;
+        ctx.fillStyle = "#7cfc00";
+        
+        for (let side = -1; side <= 1; side += 2) {
+            ctx.beginPath();
+            ctx.arc(side * t.r * 0.4, -t.r * 0.3, t.r * 0.15, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Pupil
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = "#000000";
+            ctx.beginPath();
+            ctx.arc(side * t.r * 0.4, -t.r * 0.3, t.r * 0.08, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.fillStyle = "#7cfc00";
+            ctx.shadowBlur = 15 * eyeGlow;
+        }
+        
+        // Mandibles
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#8b4513";
+        ctx.strokeStyle = "#654321";
+        ctx.lineWidth = 2;
+        
+        const mandibleOffset = Math.sin(time * 2) * 0.1;
+        for (let side = -1; side <= 1; side += 2) {
+            ctx.save();
+            ctx.translate(side * t.r * 0.2, t.r * 0.2);
+            ctx.rotate(side * (Math.PI/8 + mandibleOffset));
+            
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(t.r * 0.3, -t.r * 0.1);
+            ctx.lineTo(t.r * 0.4, 0);
+            ctx.lineTo(t.r * 0.3, t.r * 0.1);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        }
+        
+    } else {const time = performance.now() / 1000; ctx.fillStyle = '#2c2c54'; ctx.strokeStyle = '#40407a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, t.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#706fd3'; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.8, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#f0932b'; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.3, 0, Math.PI * 2); ctx.fill(); for (let i = 0; i < 6; i++) {ctx.save(); ctx.rotate(i * Math.PI / 3 + time * 0.3); ctx.translate(t.r * 0.6, 0); ctx.fillStyle = '#ff6348'; ctx.strokeStyle = '#2f3542'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.15, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();} const eyeSize = t.r * 0.12; ctx.fillStyle = '#ff3838'; ctx.beginPath(); ctx.arc(-t.r * 0.2, -t.r * 0.15, eyeSize, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(t.r * 0.2, -t.r * 0.15, eyeSize, 0, Math.PI * 2); ctx.fill(); for (let i = 0; i < 4; i++) {ctx.save(); ctx.rotate(i * Math.PI / 2 + time * -0.5); ctx.translate(t.r * 0.9, 0); ctx.fillStyle = '#3c6382'; ctx.strokeStyle = '#40407a'; ctx.lineWidth = 2; ctx.fillRect(-t.r * 0.08, -t.r * 0.06, t.r * 0.16, t.r * 0.12); ctx.strokeRect(-t.r * 0.08, -t.r * 0.06, t.r * 0.16, t.r * 0.12); ctx.restore();}} ctx.restore();}
 
     function drawShip(t, e, player) {
         let mainColor = '#b266ff', accentColor1 = '#7a49cc', accentColor2 = '#4d2a80',
@@ -4608,6 +5364,64 @@ function render(dt) {
         }
     }
     
+    function stepVoidLaser(dt) {
+        const p = store.player;
+        const maxRange = p.r * 6; // A few ship lengths as requested
+        
+        // Timer for retargeting - check for new targets every 0.1 seconds
+        p.voidLaserRetargetTimer -= dt;
+        if (p.voidLaserRetargetTimer <= 0) {
+            p.voidLaserRetargetTimer = 0.1;
+            
+            // Find closest enemy within range
+            const allEnemies = store.boss ? [...store.enemies.filter(e => !e.dead), store.boss] : store.enemies.filter(e => !e.dead);
+            let closestTarget = null;
+            let closestDistSq = maxRange * maxRange;
+            
+            allEnemies.forEach(e => {
+                const distSq = (p.x - e.x) ** 2 + (p.y - e.y) ** 2;
+                if (distSq < closestDistSq) {
+                    closestDistSq = distSq;
+                    closestTarget = e;
+                }
+            });
+            
+            p.voidLaserTarget = closestTarget;
+        }
+        
+        // Apply continuous damage if we have a target
+        if (p.voidLaserTarget && !p.voidLaserTarget.dead) {
+            // Check if target is still in range
+            const distSq = (p.x - p.voidLaserTarget.x) ** 2 + (p.y - p.voidLaserTarget.y) ** 2;
+            if (distSq <= maxRange * maxRange) {
+                // Damage timer - apply damage every 0.1 seconds for smooth continuous damage
+                p.voidLaserDamageTimer -= dt;
+                if (p.voidLaserDamageTimer <= 0) {
+                    p.voidLaserDamageTimer = 0.1;
+                    
+                    // Chain lightning does 95 * dmgMult every 1.5 seconds = 63.33 DPS
+                    // We want similar DPS but continuous, so 63.33 * 0.1 = 6.33 damage every 0.1s
+                    let damage = 6.33 * p.dmgMult;
+                    if (p.voidLaserTarget === store.boss) damage *= 0.3; // Reduced damage to boss
+                    
+                    p.voidLaserTarget.hp -= damage;
+                    store.world.totalDamage += damage;
+                    
+                    // Apply vampirism healing for laser damage
+                    if (store.player.vampirism > 0) {
+                        let healAmount = damage * store.player.vampirism;
+                        healAmount = Math.max(healAmount, 0.1); // Minimum heal
+                        healAmount = Math.min(healAmount, 0.5); // Cap heal for continuous damage
+                        store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                    }
+                }
+            } else {
+                // Target out of range
+                p.voidLaserTarget = null;
+            }
+        }
+    }
+    
     function fireChainLightning() {
         const p = store.player;
         
@@ -5081,7 +5895,11 @@ function tryVoidStep(player, target, now = performance.now()){
         p.missileCluster = false;
         p.blinkDamage = false;
         p.hasChainLightning = false;
-        console.log('GENOME RESET: Reset blinkDamage=false, hasChainLightning=false');
+        p.hasVoidLaser = false;
+        p.voidLaserTarget = null;
+        p.voidLaserDamageTimer = 0;
+        p.voidLaserRetargetTimer = 0;
+        console.log('GENOME RESET: Reset blinkDamage=false, hasChainLightning=false, hasVoidLaser=false');
 
         store.world.bossesAtPilotSelection = store.world.bosses;
         
@@ -5091,7 +5909,11 @@ function tryVoidStep(player, target, now = performance.now()){
                 p.hp = p.hpMax;
                 break;
             case 'wizard':
-                p.multishot += 4;
+                // Initialize voidmancer laser beam system instead of multishot
+                p.hasVoidLaser = true;
+                p.voidLaserTarget = null;
+                p.voidLaserDamageTimer = 0;
+                p.voidLaserRetargetTimer = 0;
                 break;
             case 'rocketman':
                 break;
