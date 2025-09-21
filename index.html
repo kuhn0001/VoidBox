@@ -989,6 +989,7 @@ class FlameParticle {
         flameWallActiveT: 0,
         beefChargeState: 'ready', beefChargeCooldown: 0, beefChargeOrigin: null, beefChargeTarget: null, beefChargeT: 0, beefCharges: 1, beefMaxCharges: 1,
         beefDoubleCharge: false, beefBigExplosion: false, // New skill tree abilities
+        beefChainTargets: [], beefChainIndex: 0, beefChainMode: false, // Chain jumping system for marauder
         hasChainLightning: false, chainLightningCooldown: 0, stormstrikerLevel: 0,
         phasestRikerLevel: 0, voidLaserRampTime: 0, voidLaserLastTarget: null,
         subclass: null, missilePierce: 0, missileCluster: false, blinkDamage: false,
@@ -1281,12 +1282,42 @@ class FlameParticle {
                 const progress = Math.min(p.beefChargeT / chargeDuration, 1);
                 p.x = p.beefChargeOrigin.x + (p.beefChargeTarget.x - p.beefChargeOrigin.x) * progress;
                 p.y = p.beefChargeOrigin.y + (p.beefChargeTarget.y - p.beefChargeOrigin.y) * progress;
-                if (progress >= 1) { p.beefChargeState = 'returning'; p.beefChargeT = 0; }
+                if (progress >= 1) { 
+                    // Check if we're in chain mode and have more targets
+                    if (p.beefChainMode && p.beefChainIndex < p.beefChainTargets.length - 1) {
+                        // Move to next chain target
+                        p.beefChainIndex++;
+                        p.beefChargeOrigin = { x: p.x, y: p.y }; // Current position becomes new origin
+                        p.beefChargeTarget = { x: p.beefChainTargets[p.beefChainIndex].x, y: p.beefChainTargets[p.beefChainIndex].y };
+                        p.beefChargeT = 0; // Reset timing for next jump
+                        console.log(`Chaining to target ${p.beefChainIndex + 1} of ${p.beefChainTargets.length}`);
+                    } else {
+                        // Chain complete - stay at final position for chain mode, or return for single charge
+                        if (p.beefChainMode) {
+                            // Chain complete - stay here and reset
+                            p.beefChargeState = 'ready'; 
+                            p.isInvincible = false;
+                            p.beefChainTargets = [];
+                            p.beefChainIndex = 0;
+                            console.log('Chain jumping complete!');
+                        } else {
+                            // Single charge - return to origin
+                            p.beefChargeState = 'returning'; 
+                            p.beefChargeT = 0; 
+                        }
+                    }
+                }
             } else if (p.beefChargeState === 'returning') {
+                // Only used for single charge mode (non-marauder)
                 const progress = Math.min(p.beefChargeT / returnDuration, 1);
                 p.x = p.beefChargeTarget.x + (p.beefChargeOrigin.x - p.beefChargeTarget.x) * progress;
                 p.y = p.beefChargeTarget.y + (p.beefChargeOrigin.y - p.beefChargeTarget.y) * progress;
-                if (progress >= 1) { p.x = p.beefChargeOrigin.x; p.y = p.beefChargeOrigin.y; p.beefChargeState = 'ready'; p.isInvincible = false; }
+                if (progress >= 1) { 
+                    p.x = p.beefChargeOrigin.x; 
+                    p.y = p.beefChargeOrigin.y; 
+                    p.beefChargeState = 'ready'; 
+                    p.isInvincible = false; 
+                }
             }
         } else {
             const vx = mouse.x - p.x, vy = mouse.y - p.y;
@@ -1318,7 +1349,65 @@ class FlameParticle {
                         p.beefChargeCooldown = 8;
                     }
                     p.beefCharges--; 
-                    p.beefChargeState = 'charging'; p.beefChargeOrigin = { x: p.x, y: p.y }; p.beefChargeTarget = { x: closestEnemy.x, y: closestEnemy.y }; p.beefChargeT = 0; p.isInvincible = true;
+                    
+                    // Set up chain jumping system for marauder
+                    if (p.beefChainMode && p.beefMaxCharges > 1) {
+                        // Find chain targets
+                        p.beefChainTargets = [{ x: p.x, y: p.y }]; // Start with player position
+                        let currentPos = { x: p.x, y: p.y };
+                        
+                        // Add targets based on max charges (marauder=2, enhanced=3)
+                        for (let i = 0; i < p.beefMaxCharges; i++) {
+                            let nextTarget = null;
+                            let nextClosestDistSq = 150 * 150; // Chain range
+                            
+                            potentialTargets.forEach(e => {
+                                if (e.dead || e.stunTimer > 0) return;
+                                // Don't target the same enemy twice in a row
+                                if (p.beefChainTargets.length > 1 && 
+                                    Math.abs(e.x - p.beefChainTargets[p.beefChainTargets.length-1].x) < 10 &&
+                                    Math.abs(e.y - p.beefChainTargets[p.beefChainTargets.length-1].y) < 10) return;
+                                    
+                                const dx = e.x - currentPos.x;
+                                const dy = e.y - currentPos.y; 
+                                const distSq = dx * dx + dy * dy;
+                                if (distSq < nextClosestDistSq) { 
+                                    nextClosestDistSq = distSq; 
+                                    nextTarget = e; 
+                                }
+                            });
+                            
+                            if (nextTarget) {
+                                p.beefChainTargets.push({ x: nextTarget.x, y: nextTarget.y });
+                                currentPos = { x: nextTarget.x, y: nextTarget.y };
+                            } else {
+                                // No more targets found, end chain
+                                break;
+                            }
+                        }
+                        
+                        // Start chaining (skip player position)
+                        p.beefChainIndex = 0;
+                        if (p.beefChainTargets.length > 1) {
+                            p.beefChargeOrigin = { x: p.x, y: p.y };
+                            p.beefChargeTarget = { x: p.beefChainTargets[1].x, y: p.beefChainTargets[1].y };
+                            p.beefChainIndex = 1;
+                        } else {
+                            // Fall back to single target
+                            p.beefChargeOrigin = { x: p.x, y: p.y };
+                            p.beefChargeTarget = { x: closestEnemy.x, y: closestEnemy.y };
+                        }
+                        
+                        console.log(`Chain setup: ${p.beefChainTargets.length} targets for ${p.beefMaxCharges} charges`);
+                    } else {
+                        // Original single charge system
+                        p.beefChargeOrigin = { x: p.x, y: p.y }; 
+                        p.beefChargeTarget = { x: closestEnemy.x, y: closestEnemy.y };
+                    }
+                    
+                    p.beefChargeState = 'charging'; 
+                    p.beefChargeT = 0; 
+                    p.isInvincible = true;
                     store.activeEffects.push(createEffect("beefCharge", p.beefChargeOrigin, p.beefChargeTarget));
                     
                     // Calculate impact radius based on skills
@@ -1920,7 +2009,7 @@ class FlameParticle {
                     laser.hitEnemies.add(e); 
                     
                     // Track damage dealt for beef shield system
-                    if (store.selectedPilot === 'beef') {
+                    if (store.player.pilotGenome === 'beef') {
                         store.player.beefShieldDamageDealt += laserDmg;
                     }
                     
@@ -1939,7 +2028,7 @@ class FlameParticle {
                 laser.hitEnemies.add(store.boss); 
                 
                 // Track damage dealt for beef shield system
-                if (store.selectedPilot === 'beef') {
+                if (store.player.pilotGenome === 'beef') {
                     store.player.beefShieldDamageDealt += bossLaserDmg;
                 }
                 
@@ -2226,7 +2315,7 @@ class FlameParticle {
                     
                     // Check for nearby bullets if not on cooldown
                     if (e.dodgeCooldown <= 0 && !e.isDodging) {
-                        const dodgeRadius = 80; // Detection radius for dodge
+                        const dodgeRadius = 120; // Detection radius for dodge (increased from 80)
                         let nearestBulletDist = Infinity;
                         
                         for (let bullet of store.bullets) {
@@ -2402,7 +2491,7 @@ class FlameParticle {
                     e.hp -= dmg;
                     
                     // Track damage dealt for beef shield system
-                    if (store.selectedPilot === 'beef') {
+                    if (store.player.pilotGenome === 'beef') {
                         store.player.beefShieldDamageDealt += dmg;
                     }
                     
@@ -2645,7 +2734,7 @@ class FlameParticle {
                         store.world.totalDamage += dmg;
                         
                         // Track damage dealt for beef shield system
-                        if (store.selectedPilot === 'beef') {
+                        if (store.player.pilotGenome === 'beef') {
                             store.player.beefShieldDamageDealt += dmg;
                         }
                         
@@ -3196,7 +3285,7 @@ function render(dt) {
         const p = store.player;
         
         // Beef shield takes damage first if pilot is beef
-        if (store.selectedPilot === 'beef' && p.beefShield > 0) {
+        if (p.pilotGenome === 'beef' && p.beefShield > 0) {
             const beefAbsorbed = Math.min(p.beefShield, dmg);
             p.beefShield -= beefAbsorbed;
             dmg -= beefAbsorbed;
@@ -3229,7 +3318,7 @@ function render(dt) {
     }
     
     function updateBeefShield() {
-        if (store.selectedPilot !== 'beef') return;
+        if (store.player.pilotGenome !== 'beef') return;
         
         const p = store.player;
         const damageDealt = p.beefShieldDamageDealt;
@@ -3262,7 +3351,7 @@ function render(dt) {
     
     function escapeHtml(s) { s = String(s ?? ''); return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
     function announce(text) { const el = q('announce'); el.textContent = text; el.classList.remove('hide'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('hide'), 2500); }
-    function updateHUD() { const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0; const healthText = `HP: ${Math.round(t.hp)} / ${t.hpMax}`; const shieldText = t.shieldMax > 0 ? `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}` : ""; const beefShieldPercent = store.selectedPilot === 'beef' && t.beefShieldMax > 0 ? Math.round(t.beefShield / t.beefShieldMax * 100) : 0; const beefShieldText = store.selectedPilot === 'beef' && t.beefShieldMax > 0 ? `BEEF SHIELD: ${Math.round(t.beefShield)} / ${t.beefShieldMax}` : ""; q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${store.selectedPilot === 'beef' && t.beefShieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${beefShieldPercent}%;background:linear-gradient(90deg,#ff8c00,#ff4500)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${beefShieldText}</div>` : ""}${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } 
+    function updateHUD() { const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0; const healthText = `HP: ${Math.round(t.hp)} / ${t.hpMax}`; const shieldText = t.shieldMax > 0 ? `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}` : ""; const beefShieldPercent = t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? Math.round(t.beefShield / t.beefShieldMax * 100) : 0; const beefShieldText = t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? `BEEF SHIELD: ${Math.round(t.beefShield)} / ${t.beefShieldMax}` : ""; q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${beefShieldPercent}%;background:linear-gradient(90deg,#ff8c00,#ff4500)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${beefShieldText}</div>` : ""}${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } 
         
         // Update FPS counter
         if (!store.fpsLastTime) {
@@ -4848,7 +4937,8 @@ function render(dt) {
         ctx.fillStyle="#ffffff";ctx.beginPath();ctx.arc(0,-8,3,0,2*Math.PI);ctx.fill();
         
         // Draw beef shield bubble if pilot is beef and shield is active
-        if (store.selectedPilot === 'beef' && player.beefShield > 0) {
+        if (player.pilotGenome === 'beef' && player.beefShield > 0) {
+            console.log('Rendering beef shield - pilot:', player.pilotGenome, 'shield:', player.beefShield, 'max:', player.beefShieldMax);
             const time = performance.now() / 1000;
             const shieldPercent = player.beefShield / player.beefShieldMax;
             const pulseIntensity = 0.7 + 0.3 * Math.sin(time * 2.5);
@@ -4856,10 +4946,10 @@ function render(dt) {
             
             // Create void power shield gradient (dark purple/black energy)
             const shieldGradient = ctx.createRadialGradient(0, 0, shieldRadius * 0.2, 0, 0, shieldRadius);
-            shieldGradient.addColorStop(0, `rgba(75, 0, 130, ${0.05 * shieldPercent})`); // Dark purple core
-            shieldGradient.addColorStop(0.4, `rgba(25, 25, 112, ${0.2 * shieldPercent * pulseIntensity})`); // Midnight blue
-            shieldGradient.addColorStop(0.7, `rgba(72, 61, 139, ${0.3 * shieldPercent})`); // Dark slate blue
-            shieldGradient.addColorStop(1, `rgba(0, 0, 0, ${0.4 * shieldPercent})`); // Black void edge
+            shieldGradient.addColorStop(0, `rgba(75, 0, 130, ${0.8 * shieldPercent})`); // Dark purple core (increased opacity)
+            shieldGradient.addColorStop(0.4, `rgba(25, 25, 112, ${0.6 * shieldPercent * pulseIntensity})`); // Midnight blue (increased)
+            shieldGradient.addColorStop(0.7, `rgba(72, 61, 139, ${0.7 * shieldPercent})`); // Dark slate blue (increased)
+            shieldGradient.addColorStop(1, `rgba(138, 43, 226, ${0.5 * shieldPercent})`); // Purple edge (was black, now purple)
             
             ctx.beginPath();
             ctx.arc(0, 0, shieldRadius, 0, 2 * Math.PI);
@@ -4867,26 +4957,27 @@ function render(dt) {
             ctx.fill();
             
             // Add void energy sparkles
-            ctx.strokeStyle = `rgba(138, 43, 226, ${0.8 * shieldPercent * pulseIntensity})`; // Blue violet sparkles
-            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = `rgba(138, 43, 226, ${0.9 * shieldPercent * pulseIntensity})`; // Blue violet sparkles (increased opacity)
+            ctx.lineWidth = 2;
             ctx.setLineDash([3, 3]);
             ctx.stroke();
             ctx.setLineDash([]); // Reset line dash
             
             // Add inner void energy core
-            if (shieldPercent > 0.3) {
+            if (shieldPercent > 0.2) {
                 const coreGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, shieldRadius * 0.3);
-                coreGradient.addColorStop(0, `rgba(147, 0, 211, ${0.3 * shieldPercent})`); // Dark violet
-                coreGradient.addColorStop(1, `rgba(75, 0, 130, ${0.1 * shieldPercent})`);
+                coreGradient.addColorStop(0, `rgba(147, 0, 211, ${0.6 * shieldPercent})`); // Dark violet (increased)
+                coreGradient.addColorStop(1, `rgba(75, 0, 130, ${0.3 * shieldPercent})`); // (increased)
                 ctx.fillStyle = coreGradient;
                 ctx.beginPath();
-                ctx.arc(0, 0, shieldRadius * 0.3 * Math.sin(time * 4), 0, 2 * Math.PI);
+                ctx.arc(0, 0, shieldRadius * 0.3 * Math.abs(Math.sin(time * 4)), 0, 2 * Math.PI);
                 ctx.fill();
             }
         }
         
         // Draw floating beef shield meter above ship
-        if (store.selectedPilot === 'beef' && player.beefShieldMax > 0) {
+        if (player.pilotGenome === 'beef' && player.beefShieldMax > 0) {
+            console.log('Rendering beef shield meter - pilot:', player.pilotGenome, 'shield:', player.beefShield, 'max:', player.beefShieldMax);
             const shieldPercent = player.beefShield / player.beefShieldMax;
             const meterY = -35; // Position above ship
             const meterWidth = 40;
@@ -7473,17 +7564,19 @@ function tryVoidStep(player, target, now = performance.now()){
                 break;
             case 'marauder':
                 p.subclass = 'marauder';
-                // Give 2 charges
+                // Give 2 charges and enable chain jumping
                 p.beefMaxCharges = Math.max(p.beefMaxCharges, 2);  
                 p.beefCharges = Math.max(p.beefCharges, 2);
-                announce('MARAUDER ACTIVATED - Extra Charge!');
+                p.beefChainMode = true; // Enable chain jumping for marauder
+                announce('MARAUDER ACTIVATED - Chain Jumping!');
                 break;
                 
             // Tier 2 Enhanced Skills
             case 'marauder_enhanced':
                 p.beefMaxCharges = 3;
                 p.beefCharges = Math.max(p.beefCharges, 3);
-                announce('TRIPLE CHARGE ACTIVATED!');
+                p.beefChainMode = true; // Enable chain jumping for enhanced marauder
+                announce('TRIPLE CHAIN ACTIVATED!');
                 break;
             case 'juggernaut_enhanced':
                 p.beefBigExplosion = true;
