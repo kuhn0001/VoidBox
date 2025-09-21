@@ -4288,36 +4288,62 @@ function render(dt) {
         ctx.shadowBlur = 0;
         
     } else if (t.behavior === "broodlord") {
-        // Draw menacing broodlord body - insectoid and intimidating
+        // Draw cyberpunk HIVE SOVEREIGN - sleek and menacing
         const time = performance.now() / 1000;
-        const pulseFactor = 1 + 0.1 * Math.sin(time * 3);
+        const pulseFactor = 1 + 0.08 * Math.sin(time * 3);
         
-        // Main carapace body
-        ctx.fillStyle = t.color;
-        ctx.strokeStyle = "#8b4513";
+        // Create sunset gradient for main body
+        const mainGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, t.r * 1.2);
+        mainGradient.addColorStop(0, '#FF6B35'); // Orange center
+        mainGradient.addColorStop(0.4, '#FF8E53'); // Orange-purple blend
+        mainGradient.addColorStop(0.7, '#8B4A9C'); // Purple
+        mainGradient.addColorStop(1, '#2D1B69'); // Deep void purple
+        
+        // Main carapace body with cyberpunk glow
+        ctx.fillStyle = mainGradient;
+        ctx.strokeStyle = '#FF6B35';
         ctx.lineWidth = 3;
+        ctx.shadowColor = '#8B4A9C';
+        ctx.shadowBlur = 20 * pulseFactor;
+        
         ctx.beginPath();
         ctx.ellipse(0, 0, t.r * 1.2 * pulseFactor, t.r * 0.8, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
         
-        // Segmented armor plating
-        ctx.strokeStyle = "#654321";
+        // Segmented armor plating with energy lines
+        ctx.strokeStyle = "#FF8E53";
         ctx.lineWidth = 2;
+        ctx.shadowBlur = 10;
+        
         for (let i = -2; i <= 2; i++) {
+            const segmentPulse = 0.9 + 0.1 * Math.sin(time * 4 + i * 0.5);
+            ctx.globalAlpha = 0.8;
             ctx.beginPath();
-            ctx.ellipse(0, i * t.r * 0.25, t.r * 1.1 * pulseFactor, t.r * 0.15, 0, 0, Math.PI * 2);
+            ctx.ellipse(0, i * t.r * 0.25, t.r * 1.1 * pulseFactor * segmentPulse, t.r * 0.15, 0, 0, Math.PI * 2);
             ctx.stroke();
         }
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = 0;
         
-        // Menacing claws/appendages
-        ctx.strokeStyle = "#2d5016";
-        ctx.lineWidth = 4;
+        // Cyberpunk energy claws/appendages
         for (let side = -1; side <= 1; side += 2) {
             for (let i = 0; i < 3; i++) {
                 ctx.save();
                 ctx.translate(side * t.r * 0.8, (i - 1) * t.r * 0.4);
-                ctx.rotate(side * (Math.PI/6 + i * Math.PI/12) + Math.sin(time * 2 + i) * 0.2);
+                ctx.rotate(side * (Math.PI/6 + i * Math.PI/12) + Math.sin(time * 2 + i) * 0.15);
+                
+                // Energy claw with gradient
+                const clawGradient = ctx.createLinearGradient(0, 0, t.r * 0.8, 0);
+                clawGradient.addColorStop(0, '#8B4A9C');
+                clawGradient.addColorStop(0.7, '#FF6B35');
+                clawGradient.addColorStop(1, '#FFFFFF');
+                
+                ctx.fillStyle = clawGradient;
+                ctx.strokeStyle = '#FF8E53';
+                ctx.lineWidth = 3;
+                ctx.shadowColor = '#FF6B35';
+                ctx.shadowBlur = 8;
                 
                 ctx.beginPath();
                 ctx.moveTo(0, 0);
@@ -4326,44 +4352,64 @@ function render(dt) {
                 ctx.lineTo(t.r * 0.8, 0);
                 ctx.lineTo(t.r * 0.7, t.r * 0.1);
                 ctx.lineTo(t.r * 0.6, 0);
+                ctx.closePath();
+                ctx.fill();
                 ctx.stroke();
+                
                 ctx.restore();
             }
         }
+        ctx.shadowBlur = 0;
         
-        // Glowing compound eyes
-        const eyeGlow = 0.5 + 0.5 * Math.sin(time * 4);
-        ctx.shadowColor = "#7cfc00";
-        ctx.shadowBlur = 15 * eyeGlow;
-        ctx.fillStyle = "#7cfc00";
+        // Cyberpunk energy eyes
+        const eyeGlow = 0.6 + 0.4 * Math.sin(time * 5);
         
         for (let side = -1; side <= 1; side += 2) {
+            // Outer eye glow
+            ctx.shadowColor = '#FF6B35';
+            ctx.shadowBlur = 20 * eyeGlow;
+            ctx.fillStyle = '#FF6B35';
+            
             ctx.beginPath();
-            ctx.arc(side * t.r * 0.4, -t.r * 0.3, t.r * 0.15, 0, Math.PI * 2);
+            ctx.arc(side * t.r * 0.4, -t.r * 0.3, t.r * 0.18 * eyeGlow, 0, Math.PI * 2);
             ctx.fill();
             
-            // Pupil
-            ctx.shadowBlur = 0;
-            ctx.fillStyle = "#000000";
+            // Main eye
+            ctx.shadowBlur = 10;
+            ctx.fillStyle = '#FFFFFF';
             ctx.beginPath();
-            ctx.arc(side * t.r * 0.4, -t.r * 0.3, t.r * 0.08, 0, Math.PI * 2);
+            ctx.arc(side * t.r * 0.4, -t.r * 0.3, t.r * 0.12, 0, Math.PI * 2);
             ctx.fill();
             
-            ctx.fillStyle = "#7cfc00";
-            ctx.shadowBlur = 15 * eyeGlow;
+            // Energy core pupil
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#8B4A9C';
+            ctx.fillStyle = '#2D1B69';
+            ctx.beginPath();
+            ctx.arc(side * t.r * 0.4, -t.r * 0.3, t.r * 0.06, 0, Math.PI * 2);
+            ctx.fill();
         }
         
-        // Mandibles
+        // Cyberpunk mandibles with energy effect
         ctx.shadowBlur = 0;
-        ctx.fillStyle = "#8b4513";
-        ctx.strokeStyle = "#654321";
-        ctx.lineWidth = 2;
+        const mandibleOffset = Math.sin(time * 3) * 0.12;
         
-        const mandibleOffset = Math.sin(time * 2) * 0.1;
         for (let side = -1; side <= 1; side += 2) {
             ctx.save();
             ctx.translate(side * t.r * 0.2, t.r * 0.2);
             ctx.rotate(side * (Math.PI/8 + mandibleOffset));
+            
+            // Mandible gradient
+            const mandibleGradient = ctx.createLinearGradient(0, 0, t.r * 0.4, 0);
+            mandibleGradient.addColorStop(0, '#2D1B69');
+            mandibleGradient.addColorStop(0.6, '#8B4A9C');
+            mandibleGradient.addColorStop(1, '#FF6B35');
+            
+            ctx.fillStyle = mandibleGradient;
+            ctx.strokeStyle = '#FF8E53';
+            ctx.lineWidth = 2;
+            ctx.shadowColor = '#8B4A9C';
+            ctx.shadowBlur = 5;
             
             ctx.beginPath();
             ctx.moveTo(0, 0);
@@ -4375,6 +4421,7 @@ function render(dt) {
             ctx.stroke();
             ctx.restore();
         }
+        ctx.shadowBlur = 0;
         
     } else {const time = performance.now() / 1000; ctx.fillStyle = '#2c2c54'; ctx.strokeStyle = '#40407a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, t.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#706fd3'; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.8, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#f0932b'; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.3, 0, Math.PI * 2); ctx.fill(); for (let i = 0; i < 6; i++) {ctx.save(); ctx.rotate(i * Math.PI / 3 + time * 0.3); ctx.translate(t.r * 0.6, 0); ctx.fillStyle = '#ff6348'; ctx.strokeStyle = '#2f3542'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.15, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();} const eyeSize = t.r * 0.12; ctx.fillStyle = '#ff3838'; ctx.beginPath(); ctx.arc(-t.r * 0.2, -t.r * 0.15, eyeSize, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(t.r * 0.2, -t.r * 0.15, eyeSize, 0, Math.PI * 2); ctx.fill(); for (let i = 0; i < 4; i++) {ctx.save(); ctx.rotate(i * Math.PI / 2 + time * -0.5); ctx.translate(t.r * 0.9, 0); ctx.fillStyle = '#3c6382'; ctx.strokeStyle = '#40407a'; ctx.lineWidth = 2; ctx.fillRect(-t.r * 0.08, -t.r * 0.06, t.r * 0.16, t.r * 0.12); ctx.strokeRect(-t.r * 0.08, -t.r * 0.06, t.r * 0.16, t.r * 0.12); ctx.restore();}} ctx.restore();}
 
@@ -5729,9 +5776,9 @@ function render(dt) {
         const p = store.player;
         
         if (p.hasDoubleStorm) {
-            // Fire two chain lightning bolts with stochastic chaining
-            fireChainLightningBolt();
-            setTimeout(() => fireChainLightningBolt(), 100); // Slight delay for visual effect
+            // Fire two chain lightning bolts simultaneously from left and right sides
+            fireChainLightningBolt(1.0, { x: p.x - 25, y: p.y - 20 }); // Left bolt
+            fireChainLightningBolt(1.0, { x: p.x + 25, y: p.y - 20 }); // Right bolt
         } else if (p.hasHybridVoid) {
             // Fire single lightning bolt (reduced power for hybrid)
             fireChainLightningBolt(0.7); // 70% damage for hybrid mode
@@ -5741,15 +5788,18 @@ function render(dt) {
         }
     }
     
-    function fireChainLightningBolt(damageMultiplier = 1.0) {
+    function fireChainLightningBolt(damageMultiplier = 1.0, startPos = null) {
         const p = store.player;
         const allEnemies = store.boss ? [...store.enemies.filter(e => !e.dead), store.boss] : store.enemies.filter(e => !e.dead);
         if (allEnemies.length === 0) return;
 
+        // Use custom start position or default to center above player
+        const startPoint = startPos || { x: p.x, y: p.y - 20 };
+
         let closestDistSq = Infinity;
         let currentTarget = null;
         allEnemies.forEach(e => {
-            const distSq = (p.x - e.x)**2 + (p.y - e.y)**2;
+            const distSq = (startPoint.x - e.x)**2 + (startPoint.y - e.y)**2;
             if (distSq < closestDistSq) {
                 closestDistSq = distSq;
                 currentTarget = e;
@@ -5762,7 +5812,7 @@ function render(dt) {
         const chainChance = 0.5; // 50% chance to chain
         let currentDamage = 95 * p.dmgMult * damageMultiplier;
         const targetsHit = new Set();
-        const chainPoints = [{ x: p.x, y: p.y - 20 }];
+        const chainPoints = [startPoint];
 
         for (let i = 0; i < maxJumps && currentTarget; i++) {
             targetsHit.add(currentTarget);
