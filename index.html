@@ -1919,6 +1919,11 @@ class FlameParticle {
                     e.hp -= laserDmg; 
                     laser.hitEnemies.add(e); 
                     
+                    // Track damage dealt for beef shield system
+                    if (store.selectedPilot === 'beef') {
+                        store.player.beefShieldDamageDealt += laserDmg;
+                    }
+                    
                     // Apply vampirism healing for laser damage
                     if (store.player.vampirism > 0) {
                         let healAmount = laserDmg * store.player.vampirism;
@@ -1932,6 +1937,11 @@ class FlameParticle {
                 const bossLaserDmg = 500 * store.player.dmgMult;
                 store.boss.hp -= bossLaserDmg; 
                 laser.hitEnemies.add(store.boss); 
+                
+                // Track damage dealt for beef shield system
+                if (store.selectedPilot === 'beef') {
+                    store.player.beefShieldDamageDealt += bossLaserDmg;
+                }
                 
                 // Apply vampirism healing for laser damage on boss
                 if (store.player.vampirism > 0) {
@@ -2009,6 +2019,9 @@ class FlameParticle {
         stepFlameParticles(dt);
         stepLightning(dt);
         stepEmpNovas(dt);
+        
+        // Update beef shield system
+        updateBeefShield();
         
         // Update mech oil/fuel puddles
         for (let i = store.mechPuddles.length - 1; i >= 0; i--) {
@@ -2214,10 +2227,14 @@ class FlameParticle {
                     // Check for nearby bullets if not on cooldown
                     if (e.dodgeCooldown <= 0 && !e.isDodging) {
                         const dodgeRadius = 80; // Detection radius for dodge
+                        let nearestBulletDist = Infinity;
+                        
                         for (let bullet of store.bullets) {
                             const dx = bullet.x - e.x;
                             const dy = bullet.y - e.y;
                             const dist = Math.sqrt(dx * dx + dy * dy);
+                            
+                            if (dist < nearestBulletDist) nearestBulletDist = dist;
                             
                             if (dist < dodgeRadius) {
                                 // Trigger dodge
@@ -2235,9 +2252,14 @@ class FlameParticle {
                                 e.dodgeStartY = e.y;
                                 e.dodgeTimer = 0.3; // Quick dodge duration
                                 
-                                console.log('Manta dodging! HP reduced to:', e.hp, 'Moving to:', e.dodgeTargetX, e.dodgeTargetY);
+                                console.log('Manta dodging! HP reduced to:', e.hp, 'Moving to:', e.dodgeTargetX, e.dodgeTargetY, 'Bullet distance:', dist);
                                 break; // Only dodge for first detected bullet
                             }
+                        }
+                        
+                        // Debug: log when manta is checking for bullets
+                        if (store.bullets.length > 0 && nearestBulletDist < 120) {
+                            console.log('Manta checking dodge - nearest bullet:', nearestBulletDist, 'bullets:', store.bullets.length, 'cooldown:', e.dodgeCooldown);
                         }
                     }
                     
@@ -2250,10 +2272,13 @@ class FlameParticle {
                         e.x = e.dodgeStartX + (e.dodgeTargetX - e.dodgeStartX) * dodgeProgress;
                         e.y = e.dodgeStartY + (e.dodgeTargetY - e.dodgeStartY) * dodgeProgress;
                         
+                        console.log('Manta dodging progress:', Math.round(dodgeProgress * 100) + '%', 'pos:', Math.round(e.x), Math.round(e.y));
+                        
                         if (e.dodgeTimer <= 0) {
                             // Dodge finished, resume normal movement
                             e.isDodging = false;
                             e.startX = e.x; // Update snake movement origin to new position
+                            console.log('Manta dodge complete! New startX:', e.startX);
                         }
                     } else {
                         // Normal sinusoidal snake movement
@@ -2375,6 +2400,11 @@ class FlameParticle {
                     
                     if (e === store.boss) playSound('hit');
                     e.hp -= dmg;
+                    
+                    // Track damage dealt for beef shield system
+                    if (store.selectedPilot === 'beef') {
+                        store.player.beefShieldDamageDealt += dmg;
+                    }
                     
                     // Apply vampirism healing on damage dealt (not just kills)
                     if (store.player.vampirism > 0) {
@@ -2542,8 +2572,12 @@ class FlameParticle {
             
             // Don't award points or show tree if already fully capped OR if 4 skill points have been spent
             const skillPointsSpent = store.player.skillPointsSpent || 0;
-            if (isSkillTreeFullyCapped() || skillPointsSpent >= 4) {
-                console.log(`Skill tree stopped - ${isSkillTreeFullyCapped() ? 'fully capped' : '4 skill points spent'} (${skillPointsSpent}/4)`);
+            const isTreeCapped = isSkillTreeFullyCapped();
+            const hasReachedSkillLimit = skillPointsSpent >= 4;
+            const hasNoSkillPoints = (store.player.skillPoints || 0) <= 0;
+            
+            if (isTreeCapped || hasReachedSkillLimit) {
+                console.log(`Skill tree blocked - ${isTreeCapped ? 'fully capped' : '4 skill points spent'} (${skillPointsSpent}/4 points spent)`);
             } else {
                 if (!store.player.skillTreeProgress) {
                     store.player.skillTreeProgress = { bossesDefeated: 0, tier1Choice: null, tier2Choice: null };
@@ -2609,6 +2643,11 @@ class FlameParticle {
                     if (distSq < radius**2) {
                         e.hp -= dmg;
                         store.world.totalDamage += dmg;
+                        
+                        // Track damage dealt for beef shield system
+                        if (store.selectedPilot === 'beef') {
+                            store.player.beefShieldDamageDealt += dmg;
+                        }
                         
                         // Apply vampirism healing for explosion damage
                         if (store.player.vampirism > 0) {
@@ -3155,6 +3194,17 @@ function render(dt) {
             return;
         }
         const p = store.player;
+        
+        // Beef shield takes damage first if pilot is beef
+        if (store.selectedPilot === 'beef' && p.beefShield > 0) {
+            const beefAbsorbed = Math.min(p.beefShield, dmg);
+            p.beefShield -= beefAbsorbed;
+            dmg -= beefAbsorbed;
+            p.beefShieldDamageTaken += beefAbsorbed;
+            console.log(`Beef shield absorbed ${beefAbsorbed} damage, remaining: ${p.beefShield}`);
+            if (dmg <= 0) return; // All damage absorbed by beef shield
+        }
+        
         const a = Math.min(p.shield, dmg);
         if (a < dmg) playSound('hit');
         p.shield -= a;
@@ -3178,9 +3228,41 @@ function render(dt) {
         }
     }
     
+    function updateBeefShield() {
+        if (store.selectedPilot !== 'beef') return;
+        
+        const p = store.player;
+        const damageDealt = p.beefShieldDamageDealt;
+        const damageTaken = p.beefShieldDamageTaken;
+        
+        // Skip if no damage events
+        if (damageDealt === 0 && damageTaken === 0) return;
+        
+        // Growth rate: 1 shield per 50 damage dealt, shrinkage rate: 1 shield per 30 damage taken
+        // Made more responsive for better gameplay feel
+        const shieldChange = (damageDealt * 0.02) - (damageTaken * 0.033);
+        
+        if (shieldChange > 0) {
+            // Shield grows
+            p.beefShield = Math.min(p.beefShieldMax, p.beefShield + shieldChange);
+        } else if (shieldChange < 0) {
+            // Shield shrinks (but not below 0)
+            p.beefShield = Math.max(0, p.beefShield + shieldChange);
+        }
+        
+        // Reset damage tracking counters
+        p.beefShieldDamageDealt = 0;
+        p.beefShieldDamageTaken = 0;
+        
+        // Only log if there was a significant change
+        if (Math.abs(shieldChange) > 0.1) {
+            console.log(`Beef shield updated: ${Math.round(p.beefShield)}/${p.beefShieldMax} (change: ${shieldChange.toFixed(2)})`);
+        }
+    }
+    
     function escapeHtml(s) { s = String(s ?? ''); return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
     function announce(text) { const el = q('announce'); el.textContent = text; el.classList.remove('hide'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('hide'), 2500); }
-    function updateHUD() { const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0; const healthText = `HP: ${Math.round(t.hp)} / ${t.hpMax}`; const shieldText = t.shieldMax > 0 ? `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}` : ""; q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } 
+    function updateHUD() { const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0; const healthText = `HP: ${Math.round(t.hp)} / ${t.hpMax}`; const shieldText = t.shieldMax > 0 ? `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}` : ""; const beefShieldPercent = store.selectedPilot === 'beef' && t.beefShieldMax > 0 ? Math.round(t.beefShield / t.beefShieldMax * 100) : 0; const beefShieldText = store.selectedPilot === 'beef' && t.beefShieldMax > 0 ? `BEEF SHIELD: ${Math.round(t.beefShield)} / ${t.beefShieldMax}` : ""; q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${store.selectedPilot === 'beef' && t.beefShieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${beefShieldPercent}%;background:linear-gradient(90deg,#ff8c00,#ff4500)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${beefShieldText}</div>` : ""}${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } 
         
         // Update FPS counter
         if (!store.fpsLastTime) {
@@ -4764,6 +4846,79 @@ function render(dt) {
         ctx.beginPath();ctx.ellipse(-5,16,3,6,0,0,2*Math.PI);ctx.ellipse(5,16,3,6,0,0,2*Math.PI);ctx.fill();
         ctx.globalAlpha=1;
         ctx.fillStyle="#ffffff";ctx.beginPath();ctx.arc(0,-8,3,0,2*Math.PI);ctx.fill();
+        
+        // Draw beef shield bubble if pilot is beef and shield is active
+        if (store.selectedPilot === 'beef' && player.beefShield > 0) {
+            const time = performance.now() / 1000;
+            const shieldPercent = player.beefShield / player.beefShieldMax;
+            const pulseIntensity = 0.7 + 0.3 * Math.sin(time * 2.5);
+            const shieldRadius = 26 + 6 * Math.sin(time * 3) * shieldPercent;
+            
+            // Create void power shield gradient (dark purple/black energy)
+            const shieldGradient = ctx.createRadialGradient(0, 0, shieldRadius * 0.2, 0, 0, shieldRadius);
+            shieldGradient.addColorStop(0, `rgba(75, 0, 130, ${0.05 * shieldPercent})`); // Dark purple core
+            shieldGradient.addColorStop(0.4, `rgba(25, 25, 112, ${0.2 * shieldPercent * pulseIntensity})`); // Midnight blue
+            shieldGradient.addColorStop(0.7, `rgba(72, 61, 139, ${0.3 * shieldPercent})`); // Dark slate blue
+            shieldGradient.addColorStop(1, `rgba(0, 0, 0, ${0.4 * shieldPercent})`); // Black void edge
+            
+            ctx.beginPath();
+            ctx.arc(0, 0, shieldRadius, 0, 2 * Math.PI);
+            ctx.fillStyle = shieldGradient;
+            ctx.fill();
+            
+            // Add void energy sparkles
+            ctx.strokeStyle = `rgba(138, 43, 226, ${0.8 * shieldPercent * pulseIntensity})`; // Blue violet sparkles
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([3, 3]);
+            ctx.stroke();
+            ctx.setLineDash([]); // Reset line dash
+            
+            // Add inner void energy core
+            if (shieldPercent > 0.3) {
+                const coreGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, shieldRadius * 0.3);
+                coreGradient.addColorStop(0, `rgba(147, 0, 211, ${0.3 * shieldPercent})`); // Dark violet
+                coreGradient.addColorStop(1, `rgba(75, 0, 130, ${0.1 * shieldPercent})`);
+                ctx.fillStyle = coreGradient;
+                ctx.beginPath();
+                ctx.arc(0, 0, shieldRadius * 0.3 * Math.sin(time * 4), 0, 2 * Math.PI);
+                ctx.fill();
+            }
+        }
+        
+        // Draw floating beef shield meter above ship
+        if (store.selectedPilot === 'beef' && player.beefShieldMax > 0) {
+            const shieldPercent = player.beefShield / player.beefShieldMax;
+            const meterY = -35; // Position above ship
+            const meterWidth = 40;
+            const meterHeight = 4;
+            
+            // Background bar
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(-meterWidth/2, meterY, meterWidth, meterHeight);
+            
+            // Shield fill bar
+            if (shieldPercent > 0) {
+                const fillGradient = ctx.createLinearGradient(-meterWidth/2, meterY, meterWidth/2, meterY);
+                fillGradient.addColorStop(0, 'rgba(75, 0, 130, 0.9)'); // Dark purple
+                fillGradient.addColorStop(0.5, 'rgba(138, 43, 226, 0.9)'); // Blue violet
+                fillGradient.addColorStop(1, 'rgba(147, 0, 211, 0.9)'); // Dark violet
+                
+                ctx.fillStyle = fillGradient;
+                ctx.fillRect(-meterWidth/2, meterY, meterWidth * shieldPercent, meterHeight);
+            }
+            
+            // Border
+            ctx.strokeStyle = 'rgba(138, 43, 226, 0.8)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(-meterWidth/2, meterY, meterWidth, meterHeight);
+            
+            // Shield text
+            ctx.fillStyle = 'rgba(138, 43, 226, 0.9)';
+            ctx.font = '8px monospace';
+            ctx.textAlign = 'center';
+            const shieldText = `${Math.round(player.beefShield)}/${Math.round(player.beefShieldMax)}`;
+            ctx.fillText(shieldText, 0, meterY - 2);
+        }
 
         if (player.hasRearGuard && player.rearGuardReady) {
             ctx.fillStyle = `rgba(100, 255, 255, ${0.4 + 0.3 * Math.sin(performance.now() / 200)})`;
@@ -6734,8 +6889,13 @@ function tryVoidStep(player, target, now = performance.now()){
         
         switch(genome) {
             case 'beef':
-                p.hpMax *= 1.2;
-                p.hp = p.hpMax;
+                // Remove HP bonus, add dynamic beef shield system
+                // Beef shield = 20% of base health (before HP bonus was applied)
+                p.beefShieldMax = p.hpMax * 0.2; // 20% of base health
+                p.beefShield = p.beefShieldMax * 0.5; // Start with 50% shield for visibility
+                p.beefShieldDamageDealt = 0; // Track damage dealt for shield charging
+                p.beefShieldDamageTaken = 0; // Track damage taken for shield depletion
+                console.log('BEEF: Initialized dynamic shield system - max:', p.beefShieldMax, 'starting:', p.beefShield);
                 break;
             case 'wizard':
                 // Initialize voidmancer laser beam system instead of multishot
@@ -6850,10 +7010,14 @@ function tryVoidStep(player, target, now = performance.now()){
         // Set up click handlers for skill buttons
         setupSkillTreeHandlers();
         
-        // If no skill points are available or 4 skill points have been spent, don't show the tree
+        // If no skill points are available or 4 skill points have been spent, or skill tree is fully capped, don't show the tree
         const skillPointsSpent = store.player.skillPointsSpent || 0;
-        if (store.player.skillPoints <= 0 || skillPointsSpent >= 4) {
-            console.log(`Not showing skill tree - ${store.player.skillPoints <= 0 ? 'no skill points available' : '4 skill points spent'} (${skillPointsSpent}/4)`);
+        const isTreeCapped = isSkillTreeFullyCapped();
+        const hasReachedSkillLimit = skillPointsSpent >= 4;
+        const hasNoSkillPoints = store.player.skillPoints <= 0;
+        
+        if (hasNoSkillPoints || hasReachedSkillLimit || isTreeCapped) {
+            console.log(`Not showing skill tree - ${hasNoSkillPoints ? 'no skill points available' : hasReachedSkillLimit ? '4 skill points spent' : 'tree fully capped'} (${skillPointsSpent}/4 points spent)`);
             panel.classList.add('hide');
             resumeGame();
             return;
