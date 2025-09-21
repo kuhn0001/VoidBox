@@ -797,6 +797,7 @@
     <audio id="audioEpicHorn" src="epichorntrimmed.m4a" preload="auto"></audio>
     <audio id="audioCluster" src="cluster.mp3" preload="auto"></audio>
     <audio id="audioThunder" src="thunder.mp3" preload="auto"></audio>
+    <audio id="audioShaoKahn" src="shao_kahn.m4a" preload="auto"></audio>
 
     <button id="fsEnterBtn" class="fixed-btn" type="button">FULLSCREEN</button>
     <div id="bottom-right-controls">
@@ -945,7 +946,8 @@ class FlameParticle {
         beefCharge: q('audioBeefCharge'),
         epicHorn: q('audioEpicHorn'),
         cluster: q('audioCluster'),
-        thunder: q('audioThunder')
+        thunder: q('audioThunder'),
+        shao_kahn: q('audioShaoKahn')
     };
     let lastExplosionSoundTime = 0;
     let lastBossHitSoundTime = 0;
@@ -991,6 +993,7 @@ class FlameParticle {
         beefChargeState: 'ready', beefChargeCooldown: 0, beefChargeOrigin: null, beefChargeTarget: null, beefChargeT: 0, beefCharges: 1, beefMaxCharges: 1,
         beefDoubleCharge: false, beefBigExplosion: false, // New skill tree abilities
         hasChainLightning: false, chainLightningCooldown: 0, stormstrikerLevel: 0,
+        phasestRikerLevel: 0, voidLaserRampTime: 0, voidLaserLastTarget: null,
         subclass: null, missilePierce: 0, missileCluster: false, blinkDamage: false,
         enhancedClusters: false, enhancedPierce: false, hasStormcaller: false, hasPhasestriker: false,
         // Void caller enhanced options
@@ -2785,10 +2788,21 @@ function render(dt) {
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         
+        // Calculate ramping size for level 2 phasestriker
+        let baseLineWidth = 3;
+        let glowLineWidth = 6;
+        
+        if (p.phasestRikerLevel >= 2) {
+            const rampMultiplier = 1 + (p.voidLaserRampTime * 0.8); // Same ramp as damage
+            const sizeMultiplier = Math.min(rampMultiplier, 3.0); // Cap at 3x size
+            baseLineWidth *= sizeMultiplier;
+            glowLineWidth *= sizeMultiplier;
+        }
+        
         // Draw main laser beam
         ctx.strokeStyle = laserColor;
         ctx.globalAlpha = pulseAlpha;
-        ctx.lineWidth = 3;
+        ctx.lineWidth = baseLineWidth;
         ctx.beginPath();
         ctx.moveTo(p.x, p.y - 12);
         ctx.lineTo(target.x, target.y);
@@ -2802,7 +2816,7 @@ function render(dt) {
         
         ctx.strokeStyle = gradient;
         ctx.globalAlpha = pulseAlpha * 0.5;
-        ctx.lineWidth = 6;
+        ctx.lineWidth = glowLineWidth;
         ctx.beginPath();
         ctx.moveTo(p.x, p.y - 12);
         ctx.lineTo(target.x, target.y);
@@ -5717,7 +5731,16 @@ function render(dt) {
     
     function stepVoidLaser(dt) {
         const p = store.player;
-        const maxRange = p.r * 12; // Doubled range from 6 to 12 ship lengths
+        
+        // Determine range based on phasestriker level
+        let maxRange;
+        if (p.phasestRikerLevel >= 1) {
+            // Level 1+: Global range - can hit anything on screen
+            maxRange = Math.max(W, H) * 2; // Unlimited range using game dimensions
+        } else {
+            // Standard voidmancer range
+            maxRange = p.r * 12;
+        }
         
         // Timer for retargeting - check for new targets every 0.1 seconds
         p.voidLaserRetargetTimer -= dt;
@@ -5737,6 +5760,12 @@ function render(dt) {
                 }
             });
             
+            // Reset ramp time if target changed
+            if (closestTarget !== p.voidLaserLastTarget) {
+                p.voidLaserRampTime = 0;
+                p.voidLaserLastTarget = closestTarget;
+            }
+            
             p.voidLaserTarget = closestTarget;
         }
         
@@ -5745,13 +5774,25 @@ function render(dt) {
             // Check if target is still in range
             const distSq = (p.x - p.voidLaserTarget.x) ** 2 + (p.y - p.voidLaserTarget.y) ** 2;
             if (distSq <= maxRange * maxRange) {
+                // Increase ramp time for level 2 phasestriker
+                if (p.phasestRikerLevel >= 2) {
+                    p.voidLaserRampTime += dt;
+                }
+                
                 // Damage timer - apply damage every 0.1 seconds for smooth continuous damage
                 p.voidLaserDamageTimer -= dt;
                 if (p.voidLaserDamageTimer <= 0) {
                     p.voidLaserDamageTimer = 0.1;
                     
-                    // Increased damage - was 6.33, now 8.5 per 0.1s (85 DPS vs original 63.33 DPS)
+                    // Base damage
                     let damage = 8.5 * p.dmgMult;
+                    
+                    // Level 2 phasestriker: Ramping damage based on time on target
+                    if (p.phasestRikerLevel >= 2) {
+                        const rampMultiplier = 1 + (p.voidLaserRampTime * 0.8); // +80% damage per second
+                        damage *= Math.min(rampMultiplier, 4.0); // Cap at 4x damage
+                    }
+                    
                     if (p.voidLaserTarget === store.boss) damage *= 0.3; // Reduced damage to boss
                     
                     p.voidLaserTarget.hp -= damage;
@@ -5768,7 +5809,14 @@ function render(dt) {
             } else {
                 // Target out of range
                 p.voidLaserTarget = null;
+                p.voidLaserRampTime = 0;
+                p.voidLaserLastTarget = null;
             }
+        } else {
+            // No target or target dead - reset ramp
+            p.voidLaserTarget = null;
+            p.voidLaserRampTime = 0;
+            p.voidLaserLastTarget = null;
         }
     }
     
@@ -6267,6 +6315,9 @@ function tryVoidStep(player, target, now = performance.now()){
         p.blinkDamage = false;
         p.hasChainLightning = false;
         p.stormstrikerLevel = 0;
+        p.phasestRikerLevel = 0;
+        p.voidLaserRampTime = 0;
+        p.voidLaserLastTarget = null;
         p.hasVoidLaser = false;
         p.voidLaserTarget = null;
         p.voidLaserDamageTimer = 0;
@@ -6302,7 +6353,7 @@ function tryVoidStep(player, target, now = performance.now()){
             { id: 'marauder', name: 'Marauder', desc: 'Gain a second charge for your special ability.', icon: 'marauder.png' }
         ],
         wizard: [
-            { id: 'phasestriker', name: 'Phase Striker', desc: 'Blink now damages all enemies you pass through.', icon: 'phase.png' },
+            { id: 'phasestriker', name: 'Phase Striker', desc: 'Laser can target enemies anywhere on screen with unlimited range.', icon: 'phase.png' },
             { id: 'stormcaller', name: 'Stormcaller', desc: 'Chain lightning that jumps between enemies with 50% chance per jump.', icon: 'storm.png' }
         ]
     };
@@ -6394,6 +6445,7 @@ function tryVoidStep(player, target, now = performance.now()){
         setupSkillTreeHandlers();
         
         // If no skill points are available or 4 skill points have been spent, don't show the tree
+        const skillPointsSpent = store.player.skillPointsSpent || 0;
         if (store.player.skillPoints <= 0 || skillPointsSpent >= 4) {
             console.log(`Not showing skill tree - ${store.player.skillPoints <= 0 ? 'no skill points available' : '4 skill points spent'} (${skillPointsSpent}/4)`);
             panel.classList.add('hide');
@@ -6515,10 +6567,10 @@ function tryVoidStep(player, target, now = performance.now()){
                                 </div>
                             </div>
                             <div class="skill-icon-button locked" data-skill="phasestriker_enhanced" data-tier="2" data-parent="phasestriker">
-                                <img src="phase.png" alt="Void Blink" class="skill-icon-image enhanced">
+                                <img src="phase.png" alt="Ramping Laser" class="skill-icon-image enhanced">
                                 <div class="skill-info-overlay">
-                                    <div class="skill-overlay-title">VOID BLINK</div>
-                                    <div class="skill-overlay-desc">MASTERY: Enhanced phase striker with devastating void blink damage</div>
+                                    <div class="skill-overlay-title">RAMPING LASER</div>
+                                    <div class="skill-overlay-desc">MASTERY: Laser grows in size and damage while fixated on the same target</div>
                                 </div>
                             </div>
                         </div>
@@ -6695,9 +6747,9 @@ function tryVoidStep(player, target, now = performance.now()){
             demolitionist_enhanced: "MASTERY: Elite demolitionist with massive cluster explosions and enhanced area damage.",
             
             // Wizard skills
-            phasestriker: "Void manipulation specialist with damaging blink teleportation that harms enemies you pass through.",
+            phasestriker: "Long-range laser specialist with unlimited targeting range across the entire battlefield.",
             stormcaller: "Lightning manipulation specialist with chain lightning weaponry that arcs between targets.",
-            phasestriker_enhanced: "MASTERY: Enhanced phase striker with devastating void blink damage and increased range.",
+            phasestriker_enhanced: "MASTERY: Ramping laser that grows in size and damage the longer it focuses on the same target.",
             stormcaller_enhanced: "MASTERY: Elite stormcaller with maximum chain lightning power and enhanced conductivity."
         };
         
@@ -6903,8 +6955,8 @@ function tryVoidStep(player, target, now = performance.now()){
             // Wizard skills
             case 'phasestriker':
                 p.subclass = 'phasestriker';
-                p.blinkDamage = true;
-                announce('PHASE STRIKER ACTIVATED - Damaging Blink!');
+                p.phasestRikerLevel = 1; // Level 1: Global laser range
+                announce('PHASESTRIKER LV1 - Global Range Laser!');
                 break;
             case 'stormcaller':
                 p.subclass = 'stormcaller';
@@ -6915,8 +6967,8 @@ function tryVoidStep(player, target, now = performance.now()){
                 
             // Wizard Tier 2 Enhanced Skills
             case 'phasestriker_enhanced':
-                p.blinkDamageEnhanced = true;
-                announce('VOID BLINK ACTIVATED - Maximum Void Damage!');
+                p.phasestRikerLevel = 2; // Level 2: Global range + ramping damage/size
+                announce('PHASESTRIKER LV2 - Ramping Laser Power!');
                 break;
             case 'stormcaller_enhanced':
                 p.chainLightningEnhanced = true;
@@ -6934,7 +6986,7 @@ function tryVoidStep(player, target, now = performance.now()){
             case 'demolitionist': p.missileCluster = true; break;
             case 'juggernaut': break;
             case 'marauder': p.beefMaxCharges = 2; p.beefCharges = 2; break;
-            case 'phasestriker': p.blinkDamage = true; break;
+            case 'phasestriker': break; // Enhanced mobility only, no blink damage
             case 'stormcaller':
                 p.hasChainLightning = true;
                 playSound('thunder');
@@ -7071,8 +7123,7 @@ function tryVoidStep(player, target, now = performance.now()){
                 break;
             case 'phasestriker':
                 p.hasPhasestriker = true;
-                p.blinkDamage = true;
-                console.log('PHASESTRIKER: Set blinkDamage=true, hasPhasestriker=true');
+                console.log('PHASESTRIKER: Set hasPhasestriker=true (mobility only)');
                 announce('PHASESTRIKER ACTIVATED!');
                 break;
             case 'stormcaller':
