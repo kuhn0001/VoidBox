@@ -975,7 +975,7 @@ class FlameParticle {
     // --- GAME STATE & DATA ---
     const player_initial_state = {
         x: W / 2, y: H * 0.8, r: 14, hp: 100, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1, fireRate: 0.18,
-        vampirism: 0, shield: 0, shieldMax: 0, multishot: 1, isInvincible: false, piercing: 0, explosive: false,
+        vampirism: 0, shield: 0, shieldMax: 0, multishot: 2, isInvincible: false, piercing: 0, explosive: false,
         hasShieldBubble: false, powerupTimers: {},
         upgradeLevels: { dmg: 0, speed: 0, hp: 0, max_shield: 0, crit_chance: 0, ghost_hounds: 0, launcher: 0, lazarus_beam: 0, gravity_well: 0 },
         grenades: 0, hasVoidBeam: false, voidBeamCooldown: 0,
@@ -990,7 +990,7 @@ class FlameParticle {
         flameWallActiveT: 0,
         beefChargeState: 'ready', beefChargeCooldown: 0, beefChargeOrigin: null, beefChargeTarget: null, beefChargeT: 0, beefCharges: 1, beefMaxCharges: 1,
         beefDoubleCharge: false, beefBigExplosion: false, // New skill tree abilities
-        hasChainLightning: false, chainLightningCooldown: 0,
+        hasChainLightning: false, chainLightningCooldown: 0, stormstrikerLevel: 0,
         subclass: null, missilePierce: 0, missileCluster: false, blinkDamage: false,
         enhancedClusters: false, enhancedPierce: false, hasStormcaller: false, hasPhasestriker: false,
         // Void caller enhanced options
@@ -5775,15 +5775,22 @@ function render(dt) {
     function fireChainLightning() {
         const p = store.player;
         
-        if (p.hasDoubleStorm) {
-            // Fire two chain lightning bolts simultaneously from left and right sides
+        if (p.stormstrikerLevel >= 2) {
+            // Level 2: Fire two chain lightning bolts from wing guns
+            fireChainLightningBolt(1.0, { x: p.x - 18, y: p.y - 8 }); // Left wing gun
+            fireChainLightningBolt(1.0, { x: p.x + 18, y: p.y - 8 }); // Right wing gun
+        } else if (p.stormstrikerLevel >= 1) {
+            // Level 1: Fire single lightning bolt from left wing gun
+            fireChainLightningBolt(1.0, { x: p.x - 18, y: p.y - 8 }); // Left wing gun
+        } else if (p.hasDoubleStorm) {
+            // Legacy system for existing saves
             fireChainLightningBolt(1.0, { x: p.x - 25, y: p.y - 20 }); // Left bolt
             fireChainLightningBolt(1.0, { x: p.x + 25, y: p.y - 20 }); // Right bolt
         } else if (p.hasHybridVoid) {
             // Fire single lightning bolt (reduced power for hybrid)
             fireChainLightningBolt(0.7); // 70% damage for hybrid mode
         } else {
-            // Standard single chain lightning with stochastic chaining
+            // Standard single chain lightning from ship center
             fireChainLightningBolt();
         }
     }
@@ -6259,6 +6266,7 @@ function tryVoidStep(player, target, now = performance.now()){
         p.missileCluster = false;
         p.blinkDamage = false;
         p.hasChainLightning = false;
+        p.stormstrikerLevel = 0;
         p.hasVoidLaser = false;
         p.voidLaserTarget = null;
         p.voidLaserDamageTimer = 0;
@@ -6901,7 +6909,8 @@ function tryVoidStep(player, target, now = performance.now()){
             case 'stormcaller':
                 p.subclass = 'stormcaller';
                 p.hasChainLightning = true;
-                announce('STORMCALLER ACTIVATED - Chain Lightning!');
+                p.stormstrikerLevel = 1; // Level 1: Single left wing lightning
+                announce('STORMSTRIKER LV1 - Left Wing Lightning!');
                 break;
                 
             // Wizard Tier 2 Enhanced Skills
@@ -6911,7 +6920,8 @@ function tryVoidStep(player, target, now = performance.now()){
                 break;
             case 'stormcaller_enhanced':
                 p.chainLightningEnhanced = true;
-                announce('CHAIN STORM ACTIVATED - Maximum Lightning Power!');
+                p.stormstrikerLevel = 2; // Level 2: Twin wing lightning
+                announce('STORMSTRIKER LV2 - Twin Wing Lightning!');
                 break;
         }
     }
