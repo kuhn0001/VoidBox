@@ -1067,7 +1067,33 @@ class FlameParticle {
                 const cost = 12 + (p.vampirismLevel * 5); return `+3% lifesteal, +4% dmg. Cost: ${cost}`;
             }
         },
-        'hp': { name: "MAX HP", icon: '❤️', baseCost: 20, scale: 1.4, maxLevel: 10, category: 'health', effect: () => { store.player.hpMax += 10; store.player.hp += 10; }, desc: level => `+10 Max HP (Lvl ${level + 1})` },
+        'hp': { 
+            name: "MAX HP", 
+            icon: '❤️', 
+            baseCost: 20, 
+            scale: 1.4, 
+            maxLevel: 20, 
+            category: 'health', 
+            effect: (level) => { 
+                const p = store.player;
+                // Scale HP upgrades with current wave for late game viability
+                let hpIncrease = 10;
+                if (store.world.wave > 20) {
+                    // After wave 20, HP upgrades scale with wave
+                    hpIncrease = 10 + (store.world.wave - 20) * 2;
+                }
+                p.hpMax += hpIncrease; 
+                p.hp += hpIncrease;
+                console.log(`HP upgrade: +${hpIncrease} HP (wave ${store.world.wave})`);
+            }, 
+            desc: level => {
+                let hpIncrease = 10;
+                if (store.world.wave > 20) {
+                    hpIncrease = 10 + (store.world.wave - 20) * 2;
+                }
+                return `+${hpIncrease} Max HP (Lvl ${level + 1})`;
+            }
+        },
         'nano_save': { name: "NANO SAVE", icon: '💾', cost: 25, isPremium: true, max: 3, category: 'utility', apply: () => { if (store.player.nanoSaves < 3) { store.player.nanoSaves++; return true; } return false; }, desc: () => `Auto-heals on low HP. Charges: ${store.player.nanoSaves}/3` },
         'luck_boost': { name: "LUCK BOOST", icon: '🍀', baseCost: 25, scale: 2, maxLevel: 5, category: 'utility', effect: (level) => { store.player.luckBoost = (store.player.luckBoost || 0) + (0.15 / Math.pow(2, level)); }, desc: level => `+${(0.15 / Math.pow(2, level) * 100).toFixed(1)}% drop chance (Lvl ${level + 1})` },
         'dmg': { name: "DAMAGE", icon: '💪', baseCost: 25, scale: 1.5, maxLevel: 10, category: 'attack', effect: () => store.player.dmgMult *= 1.07, desc: level => `+7% Damage (Lvl ${level + 1})` },
@@ -2130,7 +2156,17 @@ class FlameParticle {
         }
 
         let base = store.world.wave < 200 ? 1.065 : 1.04;
-        const dmgScale = Math.pow(base, store.world.wave - 1);
+        // Cap damage scaling to prevent one-shot kills in late game
+        // Linear scaling after wave 30 instead of exponential
+        let dmgScale;
+        if (store.world.wave <= 30) {
+            dmgScale = Math.pow(base, store.world.wave - 1);
+        } else {
+            const wave30Scale = Math.pow(base, 29); // Scale at wave 30
+            const linearGrowth = (store.world.wave - 30) * 0.5; // +50% per wave after 30
+            dmgScale = wave30Scale * (1 + linearGrowth);
+        }
+        console.log(`Wave ${store.world.wave}: Damage scale = ${dmgScale.toFixed(2)}`);
         store.eBullets.forEach(b => {
             b.x += b.vx * dt;
             b.y += b.vy * dt;
@@ -2755,6 +2791,12 @@ class FlameParticle {
     function levelUp() {
         announce(`LEVEL UP! ⚡ CHOOSE YOUR AUGMENTATION!`);
         pauseGame();
+        
+        // Natural health growth: 10% per level
+        const healthGrowth = store.player.hpMax * 0.1;
+        store.player.hpMax += healthGrowth;
+        store.player.hp += healthGrowth;
+        console.log(`Level up health growth: +${Math.round(healthGrowth)} HP (now ${Math.round(store.player.hpMax)} max)`);
         
         store.player.isInvincible = true;
         const speedBoost = store.player.speed * 0.75;
@@ -4942,7 +4984,12 @@ function render(dt) {
             const time = performance.now() / 1000;
             const shieldPercent = player.beefShield / player.beefShieldMax;
             const pulseIntensity = 0.7 + 0.3 * Math.sin(time * 2.5);
-            const shieldRadius = 26 + 6 * Math.sin(time * 3) * shieldPercent;
+            
+            // Base radius scales with shield level (8px minimum, up to 30px at full shield)
+            const baseRadius = 8 + (22 * shieldPercent); // 8px at 0%, 30px at 100%
+            // Add wobbling effect on top of the scaled base
+            const wobbleAmount = 4 * shieldPercent; // Wobble gets stronger as shield grows
+            const shieldRadius = baseRadius + wobbleAmount * Math.sin(time * 3);
             
             // Create void power shield gradient (dark purple/black energy)
             const shieldGradient = ctx.createRadialGradient(0, 0, shieldRadius * 0.2, 0, 0, shieldRadius);
@@ -6981,12 +7028,19 @@ function tryVoidStep(player, target, now = performance.now()){
         switch(genome) {
             case 'beef':
                 // Remove HP bonus, add dynamic beef shield system
-                // Beef shield = 20% of base health (before HP bonus was applied)
-                p.beefShieldMax = p.hpMax * 0.2; // 20% of base health
+                // Beef shield scales aggressively to match late game damage
+                // Early: (wave * 6) + 10, Late: exponential catch-up
+                let baseShield = (store.world.wave * 6) + 10;
+                if (store.world.wave > 30) {
+                    // Exponential scaling after wave 30 to match damage
+                    const extraWaves = store.world.wave - 30;
+                    baseShield = 190 + (extraWaves * extraWaves * 2); // Quadratic growth
+                }
+                p.beefShieldMax = baseShield;
                 p.beefShield = p.beefShieldMax * 0.5; // Start with 50% shield for visibility
                 p.beefShieldDamageDealt = 0; // Track damage dealt for shield charging
                 p.beefShieldDamageTaken = 0; // Track damage taken for shield depletion
-                console.log('BEEF: Initialized dynamic shield system - max:', p.beefShieldMax, 'starting:', p.beefShield);
+                console.log('BEEF: Initialized dynamic shield system - wave:', store.world.wave, 'max:', p.beefShieldMax, 'starting:', p.beefShield);
                 break;
             case 'wizard':
                 // Initialize voidmancer laser beam system instead of multishot
