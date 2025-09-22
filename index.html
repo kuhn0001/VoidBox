@@ -973,8 +973,8 @@ class FlameParticle {
 
     // --- GAME STATE & DATA ---
     const player_initial_state = {
-        x: W / 2, y: H * 0.8, r: 14, hp: 100, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1, fireRate: 0.18,
-        vampirism: 0, shield: 0, shieldMax: 0, multishot: 2, isInvincible: false, piercing: 0, explosive: false,
+        x: W / 2, y: H * 0.8, r: 14, hp: 200, hpMax: 200, fireT: 0, speed: 380, dmgMult: 1.2, fireRate: 0.16,
+        vampirism: 0, shield: 50, shieldMax: 50, multishot: 1, isInvincible: false, piercing: 0, explosive: false,
         hasShieldBubble: false, powerupTimers: {},
         upgradeLevels: { dmg: 0, speed: 0, hp: 0, max_shield: 0, crit_chance: 0, ghost_hounds: 0, launcher: 0, lazarus_beam: 0, gravity_well: 0 },
         grenades: 0, hasVoidBeam: false, voidBeamCooldown: 0,
@@ -1027,7 +1027,14 @@ class FlameParticle {
             collarStacks: 0, 
             consecutiveFastKills: 0, 
             fastKillBonus: 0,
-            isLowHealth: false
+            isLowHealth: false,
+            // Temporal Warp System
+            temporalAnomalyTriggered: false,
+            isTemporalWarp: false,
+            temporalWarpPhase: null, // 'transform', 'waves', 'boss', 'death', 'return'
+            temporalWarpTimer: 0,
+            temporalOriginalStats: null,
+            temporalQuestUnlocked: false
         },
         player: { ...player_initial_state },
         boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [],
@@ -1051,7 +1058,45 @@ class FlameParticle {
             if (p.multishot < 5) { p.multishot++; } else { if (p.addFrontNext) { p.multishot++; } else { p.rearMultishot = (p.rearMultishot || 0) + 1; } p.addFrontNext = !p.addFrontNext; }
         }},
         { id: 'shield', name: 'VOID SHIELD', icon: '🛡️', desc: '+20 regenerating shield', apply: () => { store.player.shieldMax += 20; store.player.shield = store.player.shieldMax; } },
-        { id: 'flamethrower', name: 'LAVA CHUNKS', icon: '🌋', desc: 'Spews chunks of molten rock in a cone.', apply: () => { store.player.flamethrowerLevel++; } }
+        { id: 'flamethrower', name: 'LAVA CHUNKS', icon: '🌋', desc: 'Spews chunks of molten rock in a cone.', apply: () => { store.player.flamethrowerLevel++; } },
+        
+        // ◢◣ ENTROPY REDUCTION ENGINE UPGRADES - MULTI-PILOT ◣◢
+        { id: 'stellarRegeneration', name: 'STELLAR REJUVENATION', icon: '🌟', desc: 'Rekindle dying stars and prevent heat death. +50% entropy efficiency.', 
+          available: () => ENTROPY_ENGINE.active,
+          apply: () => { 
+              ENTROPY_ENGINE.maxwellDemons += 2; 
+              ENTROPY_ENGINE.quantumCoherence *= 1.5; 
+              console.log('🌟 STELLAR REJUVENATION ACTIVATED - The universe is saved! 🌟');
+              console.log(`Enhanced efficiency for ${store.player.pilotGenome.toUpperCase()} pilot entropy system`);
+          } },
+        { id: 'negentropicField', name: 'NEGENTRIOPIC FIELD', icon: '⚛️', desc: 'Generate pure order from chaos. +15% damage based on entropy reduced.', 
+          available: () => ENTROPY_ENGINE.active,
+          apply: () => { 
+              ENTROPY_ENGINE.negentropicField += 0.15; 
+              store.player.dmgMult *= (1 + Math.abs(ENTROPY_ENGINE.entropyReduction) * 1e15);
+              console.log(`⚛️ NEGENTRIOPIC FIELD ENHANCED: ${(ENTROPY_ENGINE.negentropicField * 100).toFixed(1)}% bonus for ${store.player.pilotGenome.toUpperCase()} pilot`);
+          } },
+          
+        // ◢◣ TEMPORAL TECHNOLOGY UPGRADES ◣◢
+        { id: 'temporalStabilizer', name: 'TEMPORAL STABILIZER', icon: '🕰️', desc: 'Harness future knowledge. +25% XP from all sources.', 
+          available: () => store.world.temporalQuestUnlocked,
+          apply: () => { 
+              store.world.xpMultiplier *= 1.25;
+              console.log('🕰️ TEMPORAL STABILIZER: Future knowledge accelerates learning');
+          } },
+        { id: 'causalityEngine', name: 'CAUSALITY ENGINE', icon: '⚛️', desc: 'Manipulate cause and effect. Critical hits restore 5 HP.', 
+          available: () => store.world.temporalQuestUnlocked,
+          apply: () => { 
+              store.player.temporalHealing = (store.player.temporalHealing || 0) + 5;
+              console.log('⚛️ CAUSALITY ENGINE: Critical strikes bend spacetime');
+          } },
+        { id: 'chronoBlast', name: 'CHRONO BLAST', icon: '💫', desc: 'Time-dilated projectiles. +1 multishot, bullets move 50% faster.', 
+          available: () => store.world.temporalQuestUnlocked,
+          apply: () => { 
+              store.player.multishot++;
+              store.player.temporalSpeedBoost = (store.player.temporalSpeedBoost || 1) * 1.5;
+              console.log('💫 CHRONO BLAST: Relativistic ammunition engaged');
+          } }
     ];
     
     const SHOP_UPGRADES = {
@@ -1257,11 +1302,11 @@ class FlameParticle {
     function createBoss(scale) {
         const bossCycle = Math.floor((store.world.wave - 5) / 5) % 5;
         const types = [
-            { name: 'VOID SENTINEL', baseHp: 1300, r: 55, behavior: 'sentinel', color: '#8B4A9C' },
-            { name: 'NEXUS PHANTOM', baseHp: 1500, r: 50, behavior: 'hex', color: '#66aaff'},
-            { name: 'NEURAL CORE', baseHp: 1800, r: 60, behavior: 'malignus', color: '#2E8B57' },
-            { name: 'DEATH ENGINE', baseHp: 9000, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true },
-            { name: 'HIVE SOVEREIGN', baseHp: 7200, r: 85, behavior: 'broodlord', color: '#2d5016' }
+            { name: 'VOID SENTINEL', baseHp: 1500, r: 55, behavior: 'sentinel', color: '#8B4A9C' },
+            { name: 'NEXUS PHANTOM', baseHp: 1800, r: 50, behavior: 'hex', color: '#66aaff'},
+            { name: 'NEURAL CORE', baseHp: 2200, r: 60, behavior: 'malignus', color: '#2E8B57' },
+            { name: 'DEATH ENGINE', baseHp: 6000, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true },
+            { name: 'HIVE SOVEREIGN', baseHp: 5500, r: 85, behavior: 'broodlord', color: '#2d5016' }
         ];
         const type = types[bossCycle];
         let hp = type.baseHp * scale * store.world.bossHealthBonus;
@@ -1280,11 +1325,11 @@ class FlameParticle {
 
     function spawnEnemy(type = 'drone') {
         const cfgs = {
-            drone: { r: 10, v: 80, vx: 0, hp: 25, color: '#C0C0C0', xp: 5, score: 50, shards: 1, fireRateChance: 0.004 },
-            hunter: { r: 20, v: 100, vx: 0, hp: 20, color: '#DC143C', xp: 8, score: 80, shards: 1, fireRateChance: 0.005 },
-            trap_king_add: { r: 6, v: 90, vx: 0, hp: 10, color: '#ffc83d', damage: 5, xp: 2, score: 10, shards: 1 },
-            phantom: { r: 14, v: 90, vx: 0, hp: 40, color: '#FFFFFF', xp: 10, score: 100, shards: 2, fireRateChance: 0.006, fireCooldown: 1.5 },
-            mech: { r: 18, v: 40, vx: 0, hp: 90, color: '#FF8500', xp: 15, score: 150, shards: 3, fireRateChance: 0.007, attackPhase: 0 },
+            drone: { r: 10, v: 80, vx: 0, hp: 20, color: '#C0C0C0', xp: 5, score: 50, shards: 1, fireRateChance: 0.004 },
+            hunter: { r: 20, v: 100, vx: 0, hp: 15, color: '#DC143C', xp: 8, score: 80, shards: 1, fireRateChance: 0.005 },
+            trap_king_add: { r: 6, v: 90, vx: 0, hp: 8, color: '#ffc83d', damage: 5, xp: 2, score: 10, shards: 1 },
+            phantom: { r: 14, v: 90, vx: 0, hp: 30, color: '#FFFFFF', xp: 10, score: 100, shards: 2, fireRateChance: 0.006, fireCooldown: 1.5 },
+            mech: { r: 18, v: 40, vx: 0, hp: 70, color: '#FF8500', xp: 15, score: 150, shards: 3, fireRateChance: 0.007, attackPhase: 0 },
             construct_shard: { r: 10, v: 120, vx: 0, hp: 15, color: '#e03434', xp: 3, score: 30, shards: 1 },
             avian_hatchling: { r: 8, v: 150, vx: 0, hp: 20, color: '#9370DB', xp: 4, score: 40, shards: 1 },
             angler: { r: 22, v: 30, vx: 0, hp: 120, color: '#00008b', xp: 18, score: 180, shards: 4, fireRateChance: 0.008 },
@@ -1632,7 +1677,7 @@ class FlameParticle {
                 }
             }
         }
-        if (p.shieldMax > 0 && p.shield < p.shieldMax) p.shield = Math.min(p.shieldMax, p.shield + 2 * dt);
+        if (p.shieldMax > 0 && p.shield < p.shieldMax) p.shield = Math.min(p.shieldMax, p.shield + 0.5 * dt);
         for (const key in p.powerupTimers) { p.powerupTimers[key].remaining -= dt; if (p.powerupTimers[key].remaining <= 0) { if (key === 'drones') store.drones = []; delete p.powerupTimers[key]; } }
         if (p.hasRearGuard && p.rearGuardCooldown > 0) { p.rearGuardCooldown -= dt; if (p.rearGuardCooldown <= 0) { p.rearGuardReady = true; } }
         if (p.hasVoidBeam) { p.voidBeamCooldown -= dt; if (p.voidBeamCooldown <= 0) { activateGravityWell(); p.voidBeamCooldown = 30; } }
@@ -2128,6 +2173,13 @@ class FlameParticle {
         stepPowerups(dt);
         stepHounds(dt);
         updateGibs(dt);
+        
+        // ◢◣ UPDATE ENTROPY REDUCTION ENGINE ◣◢
+        enhanceStellarFusion(); // Continuously update fusion rates
+        
+        // ◢◣ UPDATE TEMPORAL WARP SYSTEM ◣◢
+        updateTemporalWarp(dt);
+        
         stepMissiles(dt);
         stepLasers(dt);
         stepMines(dt);
@@ -2156,17 +2208,18 @@ class FlameParticle {
         }
 
         let base = store.world.wave < 200 ? 1.065 : 1.04;
-        // Cap damage scaling to prevent one-shot kills in late game
-        // Linear scaling after wave 30 instead of exponential
+        // BETTER BALANCE: Even more gentle scaling
         let dmgScale;
-        if (store.world.wave <= 30) {
-            dmgScale = Math.pow(base, store.world.wave - 1);
+        if (store.world.wave <= 10) {
+            // Very gentle exponential growth for early game
+            dmgScale = Math.pow(1.03, store.world.wave - 1); // Reduced from 1.05 to 1.03
         } else {
-            const wave30Scale = Math.pow(base, 29); // Scale at wave 30
-            const linearGrowth = (store.world.wave - 30) * 0.5; // +50% per wave after 30
-            dmgScale = wave30Scale * (1 + linearGrowth);
+            // Minimal linear scaling after wave 10
+            const wave10Scale = Math.pow(1.03, 9); // ~1.3x at wave 10
+            const veryGentleGrowth = (store.world.wave - 10) * 0.02; // Only +2% per wave after 10
+            dmgScale = wave10Scale * (1 + veryGentleGrowth);
         }
-        console.log(`Wave ${store.world.wave}: Damage scale = ${dmgScale.toFixed(2)}`);
+        console.log(`Wave ${store.world.wave}: Damage scale = ${dmgScale.toFixed(2)} (BETTER BALANCED)`);
         store.eBullets.forEach(b => {
             b.x += b.vx * dt;
             b.y += b.vy * dt;
@@ -2425,8 +2478,8 @@ class FlameParticle {
             if (e.fireT > 0) e.fireT -= dt;
             if (e.fireT <= 0 && e.y > 0 && Math.random() < e.fireRateChance) {
                 switch (e.type) {
-                    case 'hunter': { const a=Math.atan2(store.player.y-e.y,store.player.x-e.x); store.eBullets.push({x:e.x,y:e.y,vx:Math.cos(a)*180,vy:Math.sin(a)*180,r:3,col:e.color,dmg:10*dmgScale}); e.fireT=1; break; }
-                    case 'phantom': { store.eBullets.push({x:e.x,y:e.y,vx:0,vy:180,r:3,col:e.color,dmg:8*dmgScale}); e.fireT=e.fireCooldown; break; }
+                    case 'hunter': { const a=Math.atan2(store.player.y-e.y,store.player.x-e.x); store.eBullets.push({x:e.x,y:e.y,vx:Math.cos(a)*180,vy:Math.sin(a)*180,r:3,col:e.color,dmg:6*dmgScale}); e.fireT=1; break; }
+                    case 'phantom': { store.eBullets.push({x:e.x,y:e.y,vx:0,vy:180,r:3,col:e.color,dmg:5*dmgScale}); e.fireT=e.fireCooldown; break; }
                     case 'mech': {
                         e.attackPhase = (e.attackPhase || 0) + 1;
                         // Changed from 50/50 to 85% lob attacks, 15% shoulder cannons for more frequent lobs
@@ -2469,13 +2522,13 @@ class FlameParticle {
                     }
                     case 'angler': { const a = Math.atan2(store.player.y - e.y, store.player.x - e.x); store.eBullets.push({x:e.x,y:e.y,vx:Math.cos(a)*120,vy:Math.sin(a)*120,r:4,col:e.color,dmg:15*dmgScale, life: 5}); e.fireT = 2.5; break; }
                     case 'manta': { for(let i=-1; i<=1; i++) { const angle = (90 + i * 30) * Math.PI/180; store.eBullets.push({x:e.x, y:e.y, vx:Math.cos(angle)*150, vy:Math.sin(angle)*150, r:3, col:e.color, dmg:12*dmgScale}); } e.fireT = 2.8; break; }
-                    default: { store.eBullets.push({x:e.x,y:e.y,vx:0,vy:150,r:3,col:e.color,dmg:8*dmgScale}); e.fireT=.5; }
+                    default: { store.eBullets.push({x:e.x,y:e.y,vx:0,vy:150,r:3,col:e.color,dmg:5*dmgScale}); e.fireT=.5; }
                 }
             }
 
             if (e.y > H + 30 || e.x < -30 || e.x > W + 30) e.dead = true;
             if (collide(e, store.player)) {
-                takeDamage(15 * dmgScale);
+                takeDamage(8 * dmgScale); // Reduced from 15 to 8 for better balance
                 store.world.shards += e.shards;
                 e.dead = true;
             }
@@ -2514,6 +2567,12 @@ class FlameParticle {
                 if (collide(b, e)) {
                     if (b.isFlame) e.slowTimer = 1.0;
                     
+                    // Skip damage to Heat Death boss - it's just atmospheric
+                    if (e.isHeatDeath) {
+                        b.dead = true;
+                        continue;
+                    }
+                    
                     let dmg = b.dmg || 20;
                     if (e === store.boss && b.isDrone) dmg *= 0.4;
                     
@@ -2521,6 +2580,11 @@ class FlameParticle {
                         dmg *= store.player.critDamage;
                         store.activeEffects.push(createEffect('critText', e.x, e.y));
                         if (Math.random() < 0.05) spawnPowerup(e.x, e.y);
+                        
+                        // ◢◣ TEMPORAL HEALING FROM CAUSALITY ENGINE ◣◢
+                        if (store.player.temporalHealing && store.player.temporalHealing > 0) {
+                            store.player.hp = Math.min(store.player.hpMax, store.player.hp + store.player.temporalHealing);
+                        }
                     }
                     
                     if (e === store.boss) playSound('hit');
@@ -2552,6 +2616,13 @@ class FlameParticle {
                             store.world.shards += e.shards;
                             store.world.xp += e.xp;
                             store.world.kills++;
+                            
+                            // ◢◣ ENTROPY REDUCTION VIA ENEMY DESTRUCTION ◣◢
+                            const entropyReduced = calculateEntropyReduction(store.world.wave, 1, b.damage);
+                            if (entropyReduced > 0 && Math.random() < 0.05) { // 5% chance to show message
+                                console.log(`⚛️ Entropy reduced: ${entropyReduced.toExponential(2)} J/K - Universe grows more ordered!`);
+                            }
+                            
                             spawnPowerup(e.x, e.y);
                             explode(e.x, e.y);
                         }
@@ -2656,6 +2727,10 @@ class FlameParticle {
                 }
             }
             store.world.wave++;
+            
+            // ◢◣ TEMPORAL ANOMALY TRIGGER ◣◢
+            checkTemporalAnomaly();
+            
             const hpBonus = 3;
             store.player.hpMax += hpBonus;
             store.player.hp += hpBonus;
@@ -2832,6 +2907,8 @@ class FlameParticle {
         const panel = q('levelPanel'), grid = q('skillsGrid');
         const availableUpgrades = LEVEL_UPGRADES.filter(u => {
             if (u.id === 'flamethrower') return store.player.flamethrowerLevel < 3;
+            // Check if upgrade has availability function
+            if (u.available && typeof u.available === 'function') return u.available();
             return true;
         });
 
@@ -3317,7 +3394,7 @@ function render(dt) {
     
     function takeDamage(dmg) {
         if (store.player.isInvincible || playerIsInvulnerable()) return;
-        if (store.boss && store.boss.isInvincible) return;
+        // Removed boss invincibility check here - that was preventing ALL damage incorrectly
 
         if (store.player.hasShieldBubble) {
             store.player.hasShieldBubble = false;
@@ -3393,7 +3470,29 @@ function render(dt) {
     
     function escapeHtml(s) { s = String(s ?? ''); return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
     function announce(text) { const el = q('announce'); el.textContent = text; el.classList.remove('hide'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('hide'), 2500); }
-    function updateHUD() { const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0; const healthText = `HP: ${Math.round(t.hp)} / ${t.hpMax}`; const shieldText = t.shieldMax > 0 ? `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}` : ""; const beefShieldPercent = t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? Math.round(t.beefShield / t.beefShieldMax * 100) : 0; const beefShieldText = t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? `BEEF SHIELD: ${Math.round(t.beefShield)} / ${t.beefShieldMax}` : ""; q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${beefShieldPercent}%;background:linear-gradient(90deg,#ff8c00,#ff4500)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${beefShieldText}</div>` : ""}${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } 
+    function updateHUD() { const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0; const healthText = `HP: ${Math.round(t.hp)} / ${t.hpMax}`; const shieldText = t.shieldMax > 0 ? `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}` : ""; const beefShieldPercent = t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? Math.round(t.beefShield / t.beefShieldMax * 100) : 0; const beefShieldText = t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? `BEEF SHIELD: ${Math.round(t.beefShield)} / ${t.beefShieldMax}` : ""; 
+    
+    // ◢◣ ENTROPY REDUCTION ENGINE HUD DISPLAY - MULTI-PILOT ◣◢
+    let entropyPercent = 0;
+    let entropyText = "";
+    
+    if (ENTROPY_ENGINE.active) {
+        if (t.pilotGenome === 'wizard') {
+            // Void pilot - quantum entropy
+            entropyPercent = Math.min(100, Math.max(1, Math.abs(ENTROPY_ENGINE.quantumEntropy * 1e20)));
+            entropyText = `QUANTUM: -${(Math.abs(ENTROPY_ENGINE.quantumEntropy) * 1e18).toFixed(2)} J/K • FUSION: ${ENTROPY_ENGINE.stellarFusionRate.toFixed(1)}x`;
+        } else if (t.pilotGenome === 'beef') {
+            // Beef pilot - kinetic entropy
+            entropyPercent = Math.min(100, Math.max(1, Math.abs(ENTROPY_ENGINE.kineticEntropy * 1e18)));
+            entropyText = `KINETIC: -${(Math.abs(ENTROPY_ENGINE.kineticEntropy) * 1e16).toFixed(2)} J/K • FUSION: ${ENTROPY_ENGINE.stellarFusionRate.toFixed(1)}x`;
+        } else if (t.pilotGenome === 'rocketman') {
+            // Rocketman pilot - explosive entropy
+            entropyPercent = Math.min(100, Math.max(1, Math.abs(ENTROPY_ENGINE.explosiveEntropy * 1e19)));
+            entropyText = `EXPLOSIVE: -${(Math.abs(ENTROPY_ENGINE.explosiveEntropy) * 1e17).toFixed(2)} J/K • FUSION: ${ENTROPY_ENGINE.stellarFusionRate.toFixed(1)}x`;
+        }
+    }
+    
+    q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${beefShieldPercent}%;background:linear-gradient(90deg,#ff8c00,#ff4500)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${beefShieldText}</div>` : ""}${ENTROPY_ENGINE.active ? `<div class="bar" style="margin-top:2px;"><span style="width:${entropyPercent}%;background:linear-gradient(90deg,#9966ff,#6633cc)"></span></div><div style="font-size: 8px; text-align: center; line-height: 1; color: #9966ff;">${entropyText}</div>` : ""}${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } 
         
         // Update FPS counter
         if (!store.fpsLastTime) {
@@ -3475,7 +3574,8 @@ function render(dt) {
     function firePlayer() {
         const p = store.player;
         if (p.beefChargeState && p.beefChargeState !== 'ready') return;
-        const bulletSpeed = 420;
+        const baseBulletSpeed = 420;
+        const bulletSpeed = baseBulletSpeed * (p.temporalSpeedBoost || 1); // Chrono Blast speed boost
         const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0);
         const angleSpread = 10;
         for (let i = 0; i < totalMultishot; i++) { const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: p.x + 10 * Math.sin(angle), y: p.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: p.explosive ? "#cc99ff" : "#b266ff", dmg: 20 * p.dmgMult, pierce: p.piercing, explosive: p.explosive }); }
@@ -4653,7 +4753,24 @@ function render(dt) {
         }
     }
 
-    function drawBoss(t) {ctx.save(); ctx.translate(t.x, t.y); if (t.isEnraged) {ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 50);} const hpRatio = Math.max(0, Math.min(1, ((t.hp || 0) / (t.hpMax || 1)))); ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(-60, -t.r - 20, 120, 8); const healthBarColor = t.name === 'EVIL BABYMOON' ? '#ffd700' : (t.color || '#ff4444'); ctx.fillStyle = healthBarColor; ctx.fillRect(-60, -t.r - 20, 120 * hpRatio, 8); ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.strokeRect(-60, -t.r - 20, 120, 8); if (t.behavior === "malignus") {const time = performance.now() / 1000; ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.4, 0, Math.PI * 2); ctx.fill(); const numShards = 5; for (let i = 0; i < numShards; i++) {ctx.save(); const angle = time * (0.5 + 0.1 * i) + i * (2 * Math.PI / numShards); const dist = 0.8 * t.r; ctx.rotate(angle); ctx.translate(dist, 0); ctx.rotate(2 * time); ctx.fillStyle = addAlpha(t.color, 0.67); ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2; const shardSize = 0.3 * t.r; ctx.beginPath(); ctx.moveTo(0, -shardSize); ctx.lineTo(shardSize / 2, shardSize); ctx.lineTo(-shardSize / 2, shardSize); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();}} else if (t.behavior === "hex") {ctx.translate(0, 30); const bodyW_top = t.r * 1.5; const bodyW_bottom = t.r * 2.5; const bodyH = t.r * 1.5; ctx.fillStyle = "#66aaff"; ctx.strokeStyle = "#5599e5"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_bottom / 2, bodyH / 2); ctx.lineTo(-bodyW_bottom / 2, bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#e03434"; ctx.strokeStyle = "#c02d2d"; const crownH = t.r * 0.8, crownW = bodyW_top * 0.9; ctx.beginPath(); ctx.moveTo(-crownW / 2, -bodyH / 2); ctx.lineTo(-crownW / 2 + crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(0, -bodyH / 2 - crownH / 2); ctx.lineTo(crownW / 2 - crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(crownW / 2, -bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#000"; ctx.fillRect(-t.r * 0.6, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(t.r * 0.2, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(-t.r * 0.4, 0, t.r * 0.8, t.r * 0.1); ctx.strokeStyle = "#ffd700"; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(0, 0, t.r * 1.1, 0.5, Math.PI - 0.5); ctx.stroke(); ctx.fillStyle = "#ffd700"; ctx.strokeStyle = "#daa520"; ctx.lineWidth = 3; const medR = t.r * 0.5; ctx.beginPath(); ctx.moveTo(0, t.r * 1.1 + medR); for (let i = 1; i <= 8; i++) {const angle = i * (2 * Math.PI / 8); ctx.lineTo(medR * Math.sin(angle), t.r * 1.1 + medR * Math.cos(angle));} ctx.closePath(); ctx.fill(); ctx.stroke();} else if (t.behavior === "construct") {
+    function drawBoss(t) {
+        // Special rendering for Heat Death of the Universe
+        if (t.isHeatDeath) {
+            // Darken the top half of screen with haze effect
+            ctx.save();
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillRect(0, 0, W, H/2);
+            
+            // Add dark gray haze
+            ctx.fillStyle = 'rgba(32, 32, 32, 0.6)';
+            ctx.fillRect(0, 0, W, H/2);
+            
+            // No health bar or physical form - just the void
+            ctx.restore();
+            return;
+        }
+        
+        ctx.save(); ctx.translate(t.x, t.y); if (t.isEnraged) {ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 50);} const hpRatio = Math.max(0, Math.min(1, ((t.hp || 0) / (t.hpMax || 1)))); ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(-60, -t.r - 20, 120, 8); const healthBarColor = t.name === 'EVIL BABYMOON' ? '#ffd700' : (t.color || '#ff4444'); ctx.fillStyle = healthBarColor; ctx.fillRect(-60, -t.r - 20, 120 * hpRatio, 8); ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.strokeRect(-60, -t.r - 20, 120, 8); if (t.behavior === "malignus") {const time = performance.now() / 1000; ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.4, 0, Math.PI * 2); ctx.fill(); const numShards = 5; for (let i = 0; i < numShards; i++) {ctx.save(); const angle = time * (0.5 + 0.1 * i) + i * (2 * Math.PI / numShards); const dist = 0.8 * t.r; ctx.rotate(angle); ctx.translate(dist, 0); ctx.rotate(2 * time); ctx.fillStyle = addAlpha(t.color, 0.67); ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2; const shardSize = 0.3 * t.r; ctx.beginPath(); ctx.moveTo(0, -shardSize); ctx.lineTo(shardSize / 2, shardSize); ctx.lineTo(-shardSize / 2, shardSize); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();}} else if (t.behavior === "hex") {ctx.translate(0, 30); const bodyW_top = t.r * 1.5; const bodyW_bottom = t.r * 2.5; const bodyH = t.r * 1.5; ctx.fillStyle = "#66aaff"; ctx.strokeStyle = "#5599e5"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_bottom / 2, bodyH / 2); ctx.lineTo(-bodyW_bottom / 2, bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#e03434"; ctx.strokeStyle = "#c02d2d"; const crownH = t.r * 0.8, crownW = bodyW_top * 0.9; ctx.beginPath(); ctx.moveTo(-crownW / 2, -bodyH / 2); ctx.lineTo(-crownW / 2 + crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(0, -bodyH / 2 - crownH / 2); ctx.lineTo(crownW / 2 - crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(crownW / 2, -bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#000"; ctx.fillRect(-t.r * 0.6, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(t.r * 0.2, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(-t.r * 0.4, 0, t.r * 0.8, t.r * 0.1); ctx.strokeStyle = "#ffd700"; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(0, 0, t.r * 1.1, 0.5, Math.PI - 0.5); ctx.stroke(); ctx.fillStyle = "#ffd700"; ctx.strokeStyle = "#daa520"; ctx.lineWidth = 3; const medR = t.r * 0.5; ctx.beginPath(); ctx.moveTo(0, t.r * 1.1 + medR); for (let i = 1; i <= 8; i++) {const angle = i * (2 * Math.PI / 8); ctx.lineTo(medR * Math.sin(angle), t.r * 1.1 + medR * Math.cos(angle));} ctx.closePath(); ctx.fill(); ctx.stroke();} else if (t.behavior === "construct") {
         // Check if this is the DEATH ENGINE boss
         if (t.name === 'DEATH ENGINE') {
             // Update skull renderer position and color for red final phase
@@ -5056,6 +5173,127 @@ function render(dt) {
             ctx.textAlign = 'center';
             const shieldText = `${Math.round(player.beefShield)}/${Math.round(player.beefShieldMax)}`;
             ctx.fillText(shieldText, 0, meterY - 2);
+        }
+        
+        // ◢◣ ENTROPY REDUCTION FIELD VISUALIZATION - MULTI-PILOT ◣◢
+        if (ENTROPY_ENGINE.active) {
+            const time = performance.now() / 1000;
+            let entropyIntensity = 0;
+            let fieldColor = '#9966ff';
+            let meterText = '';
+            
+            if (player.pilotGenome === 'wizard') {
+                // Void pilot - quantum field (purple)
+                entropyIntensity = Math.min(1, Math.abs(ENTROPY_ENGINE.quantumEntropy) * 1e16);
+                fieldColor = '#9966ff';
+                meterText = `QUANTUM -ΔS ${ENTROPY_ENGINE.stellarFusionRate.toFixed(1)}x`;
+                
+                // Maxwell's Demon particles (void pilot only)
+                const demonCount = ENTROPY_ENGINE.maxwellDemons;
+                for (let i = 0; i < demonCount; i++) {
+                    const angle = (i / demonCount) * Math.PI * 2 + time * 0.5;
+                    const orbitRadius = 25 + 10 * Math.sin(time * 2 + i);
+                    const demonX = Math.cos(angle) * orbitRadius;
+                    const demonY = Math.sin(angle) * orbitRadius;
+                    
+                    ctx.fillStyle = `rgba(153, 102, 255, ${0.8 * entropyIntensity})`;
+                    ctx.beginPath();
+                    ctx.arc(demonX, demonY, 2, 0, 2 * Math.PI);
+                    ctx.fill();
+                    
+                    // Energy trail
+                    ctx.strokeStyle = `rgba(153, 102, 255, ${0.3 * entropyIntensity})`;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    const trailX = Math.cos(angle - 0.5) * (orbitRadius - 5);
+                    const trailY = Math.sin(angle - 0.5) * (orbitRadius - 5);
+                    ctx.moveTo(trailX, trailY);
+                    ctx.lineTo(demonX, demonY);
+                    ctx.stroke();
+                }
+                
+            } else if (player.pilotGenome === 'beef') {
+                // Beef pilot - kinetic field (orange/red energy waves)
+                entropyIntensity = Math.min(1, Math.abs(ENTROPY_ENGINE.kineticEntropy) * 1e14);
+                fieldColor = '#ff6600';
+                meterText = `KINETIC -ΔS ${ENTROPY_ENGINE.stellarFusionRate.toFixed(1)}x`;
+                
+                // Kinetic energy waves
+                for (let i = 0; i < 3; i++) {
+                    const waveRadius = 20 + i * 8 + Math.sin(time * 3 + i) * 3;
+                    ctx.strokeStyle = `rgba(255, 102, 0, ${0.4 * entropyIntensity * (1 - i * 0.2)})`;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, waveRadius, 0, 2 * Math.PI);
+                    ctx.stroke();
+                }
+                
+            } else if (player.pilotGenome === 'rocketman') {
+                // Rocketman - explosive redistribution (yellow/gold sparks)
+                entropyIntensity = Math.min(1, Math.abs(ENTROPY_ENGINE.explosiveEntropy) * 1e15);
+                fieldColor = '#ffcc00';
+                meterText = `EXPLOSIVE -ΔS ${ENTROPY_ENGINE.stellarFusionRate.toFixed(1)}x`;
+                
+                // Explosive redistribution sparks
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2 + time * 2;
+                    const sparkRadius = 15 + Math.sin(time * 4 + i) * 8;
+                    const sparkX = Math.cos(angle) * sparkRadius;
+                    const sparkY = Math.sin(angle) * sparkRadius;
+                    
+                    ctx.fillStyle = `rgba(255, 204, 0, ${0.7 * entropyIntensity})`;
+                    ctx.beginPath();
+                    ctx.arc(sparkX, sparkY, 1.5, 0, 2 * Math.PI);
+                    ctx.fill();
+                    
+                    // Explosion pattern lines
+                    ctx.strokeStyle = `rgba(255, 204, 0, ${0.3 * entropyIntensity})`;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(sparkX, sparkY);
+                    ctx.stroke();
+                }
+            }
+            
+            // Universal entropy reduction field
+            if (entropyIntensity > 0.1) {
+                const fieldGradient = ctx.createRadialGradient(0, 0, 10, 0, 0, 40);
+                fieldGradient.addColorStop(0, `rgba(${fieldColor === '#9966ff' ? '153, 102, 255' : fieldColor === '#ff6600' ? '255, 102, 0' : '255, 204, 0'}, 0)`);
+                fieldGradient.addColorStop(0.7, `rgba(${fieldColor === '#9966ff' ? '153, 102, 255' : fieldColor === '#ff6600' ? '255, 102, 0' : '255, 204, 0'}, ${0.1 * entropyIntensity})`);
+                fieldGradient.addColorStop(1, `rgba(${fieldColor === '#9966ff' ? '102, 51, 204' : fieldColor === '#ff6600' ? '204, 51, 0' : '204, 153, 0'}, ${0.2 * entropyIntensity})`);
+                
+                ctx.fillStyle = fieldGradient;
+                ctx.beginPath();
+                ctx.arc(0, 0, 40 + 5 * Math.sin(time * 3), 0, 2 * Math.PI);
+                ctx.fill();
+            }
+            
+            // Entropy meter (universal for all pilots)
+            const entropyMeterY = -45;
+            const entropyMeterWidth = 50;
+            const entropyMeterHeight = 3;
+            
+            // Background
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(-entropyMeterWidth/2, entropyMeterY, entropyMeterWidth, entropyMeterHeight);
+            
+            // Entropy fill
+            const entropyPercent = Math.min(1, entropyIntensity);
+            if (entropyPercent > 0) {
+                ctx.fillStyle = fieldColor;
+                ctx.fillRect(-entropyMeterWidth/2, entropyMeterY, entropyMeterWidth * entropyPercent, entropyMeterHeight);
+            }
+            
+            // Border and text
+            ctx.strokeStyle = fieldColor;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(-entropyMeterWidth/2, entropyMeterY, entropyMeterWidth, entropyMeterHeight);
+            
+            ctx.fillStyle = fieldColor;
+            ctx.font = '7px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(meterText, 0, entropyMeterY - 2);
         }
 
         if (player.hasRearGuard && player.rearGuardReady) {
@@ -6633,6 +6871,446 @@ function render(dt) {
     let invulUntil = 0;
     const rifts = [];
     const blinkFlashes = [];
+    
+    // ◢◣◥◤ ENTROPY REDUCTION ENGINE - MULTI-PILOT SYSTEM ◢◣◥◤
+    // Maxwell's Demon + Szilard Engine + Quantum Field Manipulation
+    const ENTROPY_ENGINE = {
+        active: false,
+        entropyReduction: 0,
+        quantumCoherence: 1.0,
+        maxwellDemons: 0,
+        stellarFusionRate: 1.0,
+        universalHeatDeath: false,
+        thermalGradient: 0,
+        negentropicField: 0,
+        // Pilot-specific entropy systems
+        kineticEntropy: 0,        // Beef pilot - kinetic energy conversion
+        explosiveEntropy: 0,      // Rocketman pilot - explosive redistribution  
+        quantumEntropy: 0         // Void pilot - pure quantum manipulation
+    };
+    
+    // Physics Constants for Entropy Reduction
+    const PHYSICS = {
+        BOLTZMANN_CONSTANT: 1.380649e-23,
+        PLANCK_CONSTANT: 6.62607015e-34,
+        SPEED_OF_LIGHT: 299792458,
+        STEFAN_BOLTZMANN: 5.670374419e-8,
+        VACUUM_PERMEABILITY: 4 * Math.PI * 1e-7
+    };
+    
+    // Entropy Reduction Formula: ΔS = -k_B * ln(Ω) * Q_coherence * N_demons
+    function calculateEntropyReduction(waveNumber, kills, damageDelt) {
+        if (!ENTROPY_ENGINE.active) return 0;
+        
+        const pilotType = store.player.pilotGenome;
+        let entropyReduced = 0;
+        
+        if (pilotType === 'wizard') {
+            // VOID PILOT: Pure quantum manipulation (original system)
+            const coherenceFactor = Math.exp(-waveNumber / 1000) * ENTROPY_ENGINE.quantumCoherence;
+            const demonMultiplier = 1 + ENTROPY_ENGINE.maxwellDemons * 0.1;
+            const negentropicEnergy = kills * 10 + damageDelt * 0.01;
+            const informationBits = Math.log2(Math.max(1, kills));
+            const szilardWork = informationBits * PHYSICS.BOLTZMANN_CONSTANT * 300;
+            
+            entropyReduced = -szilardWork * coherenceFactor * demonMultiplier * negentropicEnergy / 1e20;
+            ENTROPY_ENGINE.quantumEntropy += entropyReduced;
+            
+        } else if (pilotType === 'beef') {
+            // BEEF PILOT: Kinetic entropy conversion via collision dynamics
+            const kineticEnergy = store.player.speed * damageDelt * 0.001; // Mass-energy from movement
+            const collisionOrder = kills * 5; // Each kill creates order from chaos
+            const thermalConversion = Math.sqrt(kineticEnergy * collisionOrder);
+            
+            entropyReduced = -thermalConversion / 1e18;
+            ENTROPY_ENGINE.kineticEntropy += entropyReduced;
+            console.log(`💥 KINETIC ENTROPY CONVERSION: ${entropyReduced.toExponential(2)} J/K`);
+            
+        } else if (pilotType === 'rocketman') {
+            // ROCKETMAN: Explosive entropy redistribution via controlled detonation
+            const explosiveYield = damageDelt * 0.1; // Energy from explosions
+            const redistributionFactor = Math.log(1 + kills) * 2; // Exponential distribution efficiency
+            const orderedExplosion = explosiveYield * redistributionFactor * Math.PI; // π for circular distribution
+            
+            entropyReduced = -orderedExplosion / 1e19;
+            ENTROPY_ENGINE.explosiveEntropy += entropyReduced;
+            if (Math.random() < 0.03) { // 3% chance to show message
+                console.log(`🚀 EXPLOSIVE ENTROPY REDISTRIBUTION: ${entropyReduced.toExponential(2)} J/K`);
+            }
+        }
+        
+        // Universal entropy tracking
+        ENTROPY_ENGINE.entropyReduction += entropyReduced;
+        ENTROPY_ENGINE.thermalGradient = Math.sin(performance.now() / 1000) * Math.abs(entropyReduced) * 100;
+        
+        return entropyReduced;
+    }
+    
+    // Stellar Fusion Rate Enhancement via Entropy Manipulation  
+    function enhanceStellarFusion() {
+        if (!ENTROPY_ENGINE.active) return 1.0;
+        
+        // Negative entropy increases fusion efficiency via quantum tunneling enhancement
+        const fusionBoost = 1.0 + (ENTROPY_ENGINE.entropyReduction * 1e15);
+        ENTROPY_ENGINE.stellarFusionRate = Math.max(0.1, fusionBoost);
+        
+        // Prevent heat death by maintaining thermal gradients
+        if (ENTROPY_ENGINE.entropyReduction > 0.001) {
+            ENTROPY_ENGINE.universalHeatDeath = false;
+        }
+        
+        return ENTROPY_ENGINE.stellarFusionRate;
+    }
+    
+    // Activate entropy engine for all pilots with specialized systems
+    function activateEntropyEngine() {
+        const pilotType = store.player.pilotGenome;
+        if (pilotType && ['wizard', 'beef', 'rocketman'].includes(pilotType)) {
+            ENTROPY_ENGINE.active = true;
+            ENTROPY_ENGINE.maxwellDemons = Math.floor(store.world.level / 10);
+            ENTROPY_ENGINE.quantumCoherence = Math.min(1.0, 0.5 + store.world.score / 1000000);
+            
+            console.log(`🌌 ENTROPY REDUCTION ENGINE ACTIVATED 🌌`);
+            console.log(`📡 REVERSING UNIVERSAL HEAT DEATH 📡`);
+            
+            if (pilotType === 'wizard') {
+                console.log(`🔮 VOID PILOT: Pure Quantum Manipulation System`);
+                console.log(`⚛️ Physics: ΔS = -k_B * ln(Ω) * Q_coherence * N_demons`);
+                console.log(`🔬 Maxwell's Demons: ${ENTROPY_ENGINE.maxwellDemons}`);
+                console.log(`🌀 Quantum Coherence: ${ENTROPY_ENGINE.quantumCoherence.toFixed(3)}`);
+            } else if (pilotType === 'beef') {
+                console.log(`💥 BEEF PILOT: Kinetic Entropy Conversion System`);
+                console.log(`⚡ Physics: ΔS = -√(KE * Order) via collision dynamics`);
+                console.log(`🏃 Kinetic conversion efficiency based on speed and impact`);
+            } else if (pilotType === 'rocketman') {
+                console.log(`🚀 ROCKETMAN: Explosive Entropy Redistribution System`);
+                console.log(`💣 Physics: ΔS = -(Yield * ln(kills) * π) via controlled detonation`);
+                console.log(`🎯 Explosive distribution creates ordered energy patterns`);
+            }
+            
+            console.log(`🌟 Mission: Save the Sun and all dying stars! 🌟`);
+            console.log(`🔥 Stellar fusion enhancement: ${ENTROPY_ENGINE.stellarFusionRate.toFixed(1)}x`);
+        }
+    }
+    
+    // ◢◣ TEMPORAL WARP SYSTEM ◣◢
+    function checkTemporalAnomaly() {
+        if (store.world.temporalAnomalyTriggered || store.world.isTemporalWarp) return;
+        
+        // Don't trigger during boss fights or if there are active enemies
+        if (store.boss || store.enemies.length > 0) return;
+        
+        // Trigger at wave 15 with physics justification
+        if (store.world.wave === 15) {
+            store.world.temporalAnomalyTriggered = true;
+            showTemporalAnomalyChoice();
+        }
+    }
+    
+    function showTemporalAnomalyChoice() {
+        const choice = confirm(
+            "⚠️ TEMPORAL ANOMALY DETECTED ⚠️\n\n" +
+            `Relativistic effects detected near c=${PHYSICS.SPEED_OF_LIGHT} m/s\n` +
+            "Spacetime distortion creates temporal rift to future timeline.\n\n" +
+            "⚛️ WARNING: Dangerous temporal effects ahead\n" +
+            "🕰️ Time jump may cause causality paradox\n\n" +
+            "Enter the time rift?"
+        );
+        
+        if (choice) {
+            initTemporalWarp();
+        }
+    }
+    
+    function initTemporalWarp() {
+        console.log("🌀 INITIATING TEMPORAL WARP SEQUENCE 🌀");
+        
+        // Save original player state
+        store.world.temporalOriginalStats = {
+            wave: store.world.wave,
+            hp: store.player.hp,
+            hpMax: store.player.hpMax,
+            shield: store.player.shield,
+            shieldMax: store.player.shieldMax,
+            dmgMult: store.player.dmgMult,
+            speed: store.player.speed,
+            multishot: store.player.multishot,
+            xp: store.world.xp,
+            shards: store.world.shards
+        };
+        
+        store.world.isTemporalWarp = true;
+        store.world.temporalWarpPhase = 'transform';
+        store.world.temporalWarpTimer = 0;
+        
+        // Apply future ship transformation
+        applyFutureShipUpgrade();
+    }
+    
+    function applyFutureShipUpgrade() {
+        console.log("🚀 SHIP TRANSFORMATION: FUTURE TECHNOLOGY ENGAGED");
+        
+        // Massive temporary stat boosts
+        store.player.dmgMult *= 50;  // 50x damage
+        store.player.speed *= 3;     // 3x speed
+        store.player.multishot = Math.max(store.player.multishot, 8); // At least 8 shots
+        store.player.hpMax = 2000;   // Future ship durability
+        store.player.hp = store.player.hpMax;
+        store.player.shieldMax = 2000; // Massive shields
+        store.player.shield = store.player.shieldMax;
+        
+        announce("◢ FUTURE SHIP ONLINE - OVERWHELMING POWER ◣");
+        
+        // Start power demonstration phase after brief delay
+        setTimeout(() => {
+            store.world.temporalWarpPhase = 'waves';
+            store.world.temporalWarpTimer = 0;
+            initTemporalWaves();
+        }, 1000);
+    }
+    
+    function initTemporalWaves() {
+        console.log("⚡ TEMPORAL POWER DEMONSTRATION: DECIMATING FUTURE ENEMIES");
+        announce("◢ FUTURE TIMELINE - YEAR 2847 ◣");
+        
+        // Clear current enemies and spawn demonstration waves
+        store.enemies = [];
+        store.eBullets = [];
+        
+        // Spawn first demonstration wave
+        spawnTemporalWave(1);
+    }
+    
+    function spawnTemporalWave(waveNum) {
+        const enemyCount = 15 + waveNum * 5;
+        
+        for (let i = 0; i < enemyCount; i++) {
+            const enemy = spawnEnemy('basic');
+            enemy.x = Math.random() * W;
+            enemy.y = -50 - Math.random() * 200;
+            enemy.hp *= 0.1; // Make them die instantly to show power
+            store.enemies.push(enemy);
+        }
+        
+        announce(`◢ TEMPORAL WAVE ${waveNum} - ANNIHILATION MODE ◣`);
+    }
+    
+    function updateTemporalWarp(dt) {
+        if (!store.world.isTemporalWarp) return;
+        
+        // Safety check: if somehow we have normal bosses during temporal warp, abort
+        if (store.boss && !store.boss.isHeatDeath) {
+            console.log("⚠️ TEMPORAL WARP CONFLICT DETECTED - ABORTING");
+            store.world.isTemporalWarp = false;
+            store.world.temporalWarpPhase = null;
+            store.player.isInvincible = false;
+            return;
+        }
+        
+        store.world.temporalWarpTimer += dt;
+        
+        if (store.world.temporalWarpPhase === 'waves') {
+            // Check if enemies are cleared for wave progression
+            if (store.enemies.length === 0) {
+                if (store.world.temporalWarpTimer < 8) { // First wave cleared quickly
+                    spawnTemporalWave(2);
+                    store.world.temporalWarpTimer = 4; // Reset timer for second wave
+                } else if (store.world.temporalWarpTimer >= 15) { // After ~15 seconds total
+                    // Start Heat Death boss fight
+                    store.world.temporalWarpPhase = 'boss';
+                    store.world.temporalWarpTimer = 0;
+                    initHeatDeathBoss();
+                }
+            }
+        } else if (store.world.temporalWarpPhase === 'boss') {
+            // Heat death boss phase - player dies after 10 seconds
+            if (store.world.temporalWarpTimer >= 10) {
+                store.world.temporalWarpPhase = 'death';
+                store.world.temporalWarpTimer = 0;
+                initTemporalDeath();
+            }
+        } else if (store.world.temporalWarpPhase === 'death') {
+            // Death narrative phase
+            if (store.world.temporalWarpTimer >= 3) {
+                store.world.temporalWarpPhase = 'return';
+                store.world.temporalWarpTimer = 0;
+                returnFromTemporalWarp();
+            }
+        }
+    }
+    
+    function initHeatDeathBoss() {
+        console.log("💀 HEAT DEATH OF THE UNIVERSE - INEVITABLE DOOM");
+        
+        // Clear everything and create the void boss
+        store.enemies = [];
+        store.eBullets = [];
+        
+        // Create Heat Death "boss" (invisible, atmospheric)
+        store.boss = {
+            name: "HEAT DEATH OF THE UNIVERSE",
+            x: W/2,
+            y: H/4,
+            hp: 999999999, // Effectively invincible
+            hpMax: 999999999,
+            dead: false,
+            isHeatDeath: true, // Special flag
+            visible: false // Don't show in normal HUD
+        };
+        
+        announce("💀 HEAT DEATH OF THE UNIVERSE 💀");
+        
+        // Show futility message
+        setTimeout(() => {
+            announce("⚫ YOUR WEAPONS HAVE NO EFFECT ⚫");
+        }, 3000);
+        
+        setTimeout(() => {
+            announce("🌌 THE VOID CONSUMES ALL 🌌");
+        }, 6000);
+    }
+    
+    function initTemporalDeath() {
+        console.log("💀 TEMPORAL DEATH: CONSUMED BY THE VOID");
+        
+        // Player dies automatically
+        store.player.hp = 0;
+        store.boss = null;
+        
+        // Show narrative text
+        setTimeout(() => {
+            announce("💭 THIS FUTURE... MUST BE PREVENTED... 💭");
+        }, 1000);
+    }
+    
+    function returnFromTemporalWarp() {
+        console.log("✨ RETURNING FROM TEMPORAL WARP - REALITY RESTORED");
+        
+        // Restore original stats
+        const orig = store.world.temporalOriginalStats;
+        store.world.wave = orig.wave;
+        store.player.hp = orig.hp;
+        store.player.hpMax = orig.hpMax;
+        store.player.shield = orig.shield;
+        store.player.shieldMax = orig.shieldMax;
+        store.player.dmgMult = orig.dmgMult;
+        store.player.speed = orig.speed;
+        store.player.multishot = orig.multishot;
+        
+        // Give temporal rewards
+        const bonusXP = 500;
+        const bonusShards = 50;
+        
+        store.world.xp += bonusXP;
+        store.world.shards += bonusShards;
+        
+        // Reset temporal state
+        store.world.isTemporalWarp = false;
+        store.world.temporalWarpPhase = null;
+        store.world.temporalWarpTimer = 0;
+        store.world.temporalQuestUnlocked = true;
+        
+        // ◢◣ CRITICAL: Clear all invincibility and temporal effects ◣◢
+        store.player.isInvincible = false;
+        store.player.temporalSpeedBoost = 1; // Reset bullet speed
+        
+        // Clear temporal enemies and restart normal wave
+        store.enemies = [];
+        store.eBullets = [];
+        store.boss = null;
+        
+        // Show reward animation and narrative
+        showTemporalRewards(bonusXP, bonusShards);
+        
+        // Resume normal gameplay
+        initWave();
+        
+        announce("⚡ TIMELINE RESTORED - NEW QUEST UNLOCKED ⚡");
+        setTimeout(() => {
+            announce("🎯 OBJECTIVE: PREVENT THE DARK TIMELINE");
+        }, 3000);
+    }
+    
+    function showTemporalRewards(xp, shards) {
+        console.log(`🎁 TEMPORAL REWARDS: +${xp} XP, +${shards} SHARDS`);
+        
+        // Create animated reward display
+        const rewardDisplay = document.createElement('div');
+        rewardDisplay.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10000;
+            background: linear-gradient(135deg, rgba(0,0,0,0.9), rgba(32,32,64,0.9));
+            border: 3px solid #ffd700;
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            font-family: monospace;
+            color: white;
+            box-shadow: 0 0 30px rgba(255,215,0,0.5);
+            animation: temporalRewardPulse 0.5s ease-out;
+        `;
+        
+        // Add CSS animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes temporalRewardPulse {
+                0% { transform: translate(-50%, -50%) scale(0.3); opacity: 0; }
+                50% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+                100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+            }
+            @keyframes temporalCountUp {
+                0% { opacity: 0; transform: translateY(10px); }
+                100% { opacity: 1; transform: translateY(0); }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        rewardDisplay.innerHTML = `
+            <div style="font-size: 18px; margin-bottom: 10px; color: #ffd700;">
+                � TEMPORAL KNOWLEDGE ACQUIRED 🌌
+            </div>
+            <div style="font-size: 24px; margin: 15px 0;">
+                <span style="color: #66ff66; text-shadow: 0 0 10px #66ff66;">+${xp}</span>
+                <span style="color: #66ff66; margin: 0 10px;">XP</span>
+            </div>
+            <div style="font-size: 24px; margin: 15px 0;">
+                <span style="color: #ffd700; text-shadow: 0 0 10px #ffd700;">+${shards}</span>
+                <span style="color: #ffd700; margin: 0 10px;">SHARDS</span>
+            </div>
+            <div style="font-size: 12px; color: #cccccc; margin-top: 15px;">
+                ⚛️ Future timeline knowledge preserved ⚛️
+            </div>
+        `;
+        
+        document.body.appendChild(rewardDisplay);
+        
+        // Add counting animation effect
+        setTimeout(() => {
+            const numbers = rewardDisplay.querySelectorAll('span[style*="text-shadow"]');
+            numbers.forEach(num => {
+                num.style.animation = 'temporalCountUp 0.8s ease-out';
+            });
+        }, 200);
+        
+        // Auto-remove after 4 seconds
+        setTimeout(() => {
+            rewardDisplay.style.animation = 'temporalRewardPulse 0.3s ease-in reverse';
+            setTimeout(() => {
+                if (rewardDisplay.parentNode) {
+                    document.body.removeChild(rewardDisplay);
+                }
+                if (style.parentNode) {
+                    document.head.removeChild(style);
+                }
+            }, 300);
+        }, 4000);
+        
+        announce(`🎁 TEMPORAL KNOWLEDGE GAINED: +${xp} XP • +${shards} SHARDS`);
+    }
+    
     function spawnBlinkFlash(x, y, life=200){ blinkFlashes.push({x, y, life, birth: performance.now(), dead:false}); }
     function spawnRift(x1,y1,x2,y2, life=VOIDSTEP.riftMs){
         rifts.push({ x1,y1,x2,y2, birth: performance.now(), life, dead:false });
@@ -6920,6 +7598,10 @@ function tryVoidStep(player, target, now = performance.now()){
             store.player.pilotGenome = genome;
             panel.classList.add('hide');
             applyGenomeBonus(genome);
+            
+            // ◢◣ ACTIVATE ENTROPY REDUCTION ENGINE FOR ALL PILOTS ◣◢
+            activateEntropyEngine(); // Now works for wizard, beef, and rocketman
+            
             resumeGame();
             cards.forEach(c => c.removeEventListener('click', clickHandler));
         };
