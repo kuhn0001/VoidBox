@@ -1061,7 +1061,8 @@ class FlameParticle {
         { id: 'shield', name: 'VOID SHIELD', icon: '🛡️', desc: '+20 regenerating shield', apply: () => { store.player.shieldMax += 20; store.player.shield = store.player.shieldMax; } },
         { id: 'flamethrower', name: 'LAVA CHUNKS', icon: '🌋', desc: 'Spews chunks of molten rock in a cone.', apply: () => { store.player.flamethrowerLevel++; } },
         
-        // ◢◣ ENTROPY REDUCTION ENGINE UPGRADES - MULTI-PILOT ◣◢
+        // ◢◣ ENTROPY REDUCTION ENGINE UPGRADES - MULTI-PILOT ◣◢ [DISABLED FOR STABILITY]
+        /*
         { id: 'stellarRegeneration', name: 'STELLAR REJUVENATION', icon: '🌟', desc: 'Rekindle dying stars and prevent heat death. +50% entropy efficiency.', 
           available: () => ENTROPY_ENGINE.active,
           apply: () => { 
@@ -1077,6 +1078,7 @@ class FlameParticle {
               store.player.dmgMult *= (1 + Math.abs(ENTROPY_ENGINE.entropyReduction) * 1e15);
               console.log(`⚛️ NEGENTRIOPIC FIELD ENHANCED: ${(ENTROPY_ENGINE.negentropicField * 100).toFixed(1)}% bonus for ${store.player.pilotGenome.toUpperCase()} pilot`);
           } },
+        */
           
         // ◢◣ TEMPORAL TECHNOLOGY UPGRADES ◣◢
         { id: 'temporalStabilizer', name: 'TEMPORAL STABILIZER', icon: '🕰️', desc: 'Harness future knowledge. +25% XP from all sources.', 
@@ -2211,8 +2213,8 @@ class FlameParticle {
         stepHounds(dt);
         updateGibs(dt);
         
-        // ◢◣ UPDATE ENTROPY REDUCTION ENGINE ◣◢
-        enhanceStellarFusion(); // Continuously update fusion rates
+        // ◢◣ UPDATE ENTROPY REDUCTION ENGINE ◣◢ [DISABLED FOR STABILITY]
+        // enhanceStellarFusion(); // Continuously update fusion rates
         
         // ◢◣ UPDATE TEMPORAL WARP SYSTEM ◣◢
         updateTemporalWarp(dt);
@@ -2598,11 +2600,13 @@ class FlameParticle {
                             store.world.xp += e.xp;
                             store.world.kills++;
                             
-                            // ◢◣ ENTROPY REDUCTION VIA ENEMY DESTRUCTION ◣◢
+                            // ◢◣ ENTROPY REDUCTION VIA ENEMY DESTRUCTION ◣◢ [DISABLED FOR STABILITY]
+                            /*
                             const entropyReduced = calculateEntropyReduction(store.world.wave, 1, b.damage);
                             if (entropyReduced > 0 && Math.random() < 0.05) { // 5% chance to show message
                                 console.log(`⚛️ Entropy reduced: ${entropyReduced.toExponential(2)} J/K - Universe grows more ordered!`);
                             }
+                            */
                             
                             spawnPowerup(e.x, e.y);
                             explode(e.x, e.y);
@@ -3484,7 +3488,8 @@ function render(dt) {
     function announce(text) { const el = q('announce'); el.textContent = text; el.classList.remove('hide'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('hide'), 2500); }
     function updateHUD() { const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0; const healthText = `HP: ${Math.round(t.hp)} / ${t.hpMax}`; const shieldText = t.shieldMax > 0 ? `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}` : ""; const beefShieldPercent = t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? Math.round(t.beefShield / t.beefShieldMax * 100) : 0; const beefShieldText = t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? `BEEF SHIELD: ${Math.round(t.beefShield)} / ${t.beefShieldMax}` : ""; 
     
-    // ◢◣ ENTROPY REDUCTION ENGINE HUD DISPLAY - MULTI-PILOT ◣◢
+    // ◢◣ ENTROPY REDUCTION ENGINE HUD DISPLAY - MULTI-PILOT ◣◢ [DISABLED FOR STABILITY]
+    /*
     let entropyPercent = 0;
     let entropyText = "";
     
@@ -3512,8 +3517,13 @@ function render(dt) {
             entropyText = `EXPLOSIVE: -${isNaN(displayValue) ? '0.00' : displayValue.toFixed(2)} J/K • FUSION: ${fusionRate.toFixed(1)}x`;
         }
     }
+    */
     
-    q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${beefShieldPercent}%;background:linear-gradient(90deg,#ff8c00,#ff4500)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${beefShieldText}</div>` : ""}${ENTROPY_ENGINE.active ? `<div class="bar" style="margin-top:2px;"><span style="width:${entropyPercent}%;background:linear-gradient(90deg,#9966ff,#6633cc)"></span></div><div style="font-size: 8px; text-align: center; line-height: 1; color: #9966ff;">${entropyText}</div>` : ""}${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } 
+    // Disable entropy display for stability
+    let entropyPercent = 0;
+    let entropyText = "";
+    
+    q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${beefShieldPercent}%;background:linear-gradient(90deg,#ff8c00,#ff4500)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${beefShieldText}</div>` : ""}${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } 
         
         // Update FPS counter
         if (!store.fpsLastTime) {
@@ -5206,7 +5216,8 @@ function render(dt) {
             ctx.fillText(shieldText, 0, meterY - 2);
         }
         
-        // ◢◣ ENTROPY REDUCTION FIELD VISUALIZATION - MULTI-PILOT ◣◢
+        // ◢◣ ENTROPY REDUCTION FIELD VISUALIZATION - MULTI-PILOT ◣◢ [DISABLED FOR STABILITY]
+        /*
         if (ENTROPY_ENGINE.active) {
             const time = performance.now() / 1000;
             let entropyIntensity = 0;
@@ -5326,6 +5337,7 @@ function render(dt) {
             ctx.textAlign = 'center';
             ctx.fillText(meterText, 0, entropyMeterY - 2);
         }
+        */
 
         if (player.hasRearGuard && player.rearGuardReady) {
             ctx.fillStyle = `rgba(100, 255, 255, ${0.4 + 0.3 * Math.sin(performance.now() / 200)})`;
@@ -6903,10 +6915,10 @@ function render(dt) {
     const rifts = [];
     const blinkFlashes = [];
     
-    // ◢◣◥◤ ENTROPY REDUCTION ENGINE - MULTI-PILOT SYSTEM ◢◣◥◤
+    // ◢◣◥◤ ENTROPY REDUCTION ENGINE - MULTI-PILOT SYSTEM ◢◣◥◤ [DISABLED FOR STABILITY]
     // Maxwell's Demon + Szilard Engine + Quantum Field Manipulation
     const ENTROPY_ENGINE = {
-        active: false,
+        active: false, // PERMANENTLY DISABLED FOR STABILITY
         entropyReduction: 0,
         quantumCoherence: 1.0,
         maxwellDemons: 0,
@@ -6999,11 +7011,11 @@ function render(dt) {
         return ENTROPY_ENGINE.stellarFusionRate;
     }
     
-    // Activate entropy engine for all pilots with specialized systems
+    // Activate entropy engine for all pilots with specialized systems [DISABLED FOR STABILITY]
     function activateEntropyEngine() {
         const pilotType = store.player.pilotGenome;
         if (pilotType && ['wizard', 'beef', 'rocketman'].includes(pilotType)) {
-            ENTROPY_ENGINE.active = true;
+            // ENTROPY_ENGINE.active = true; // DISABLED FOR STABILITY
             ENTROPY_ENGINE.maxwellDemons = Math.floor(store.world.level / 10);
             ENTROPY_ENGINE.quantumCoherence = Math.min(1.0, 0.5 + store.world.score / 1000000);
             
@@ -7637,8 +7649,8 @@ function tryVoidStep(player, target, now = performance.now()){
             panel.classList.add('hide');
             applyGenomeBonus(genome);
             
-            // ◢◣ ACTIVATE ENTROPY REDUCTION ENGINE FOR ALL PILOTS ◣◢
-            activateEntropyEngine(); // Now works for wizard, beef, and rocketman
+            // ◢◣ ACTIVATE ENTROPY REDUCTION ENGINE FOR ALL PILOTS ◣◢ [DISABLED FOR STABILITY]
+            // activateEntropyEngine(); // Now works for wizard, beef, and rocketman
             
             resumeGame();
             cards.forEach(c => c.removeEventListener('click', clickHandler));
