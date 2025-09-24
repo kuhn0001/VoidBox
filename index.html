@@ -3489,18 +3489,27 @@ function render(dt) {
     let entropyText = "";
     
     if (ENTROPY_ENGINE.active) {
+        // Ensure stellarFusionRate is valid
+        const fusionRate = isNaN(ENTROPY_ENGINE.stellarFusionRate) ? 1.0 : ENTROPY_ENGINE.stellarFusionRate;
+        
         if (t.pilotGenome === 'wizard') {
             // Void pilot - quantum entropy
-            entropyPercent = Math.min(100, Math.max(1, Math.abs(ENTROPY_ENGINE.quantumEntropy * 1e20)));
-            entropyText = `QUANTUM: -${(Math.abs(ENTROPY_ENGINE.quantumEntropy) * 1e18).toFixed(2)} J/K • FUSION: ${ENTROPY_ENGINE.stellarFusionRate.toFixed(1)}x`;
+            const quantumValue = Math.abs(ENTROPY_ENGINE.quantumEntropy || 0);
+            entropyPercent = Math.min(100, Math.max(1, quantumValue * 1e20));
+            const displayValue = (quantumValue * 1e18);
+            entropyText = `QUANTUM: -${isNaN(displayValue) ? '0.00' : displayValue.toFixed(2)} J/K • FUSION: ${fusionRate.toFixed(1)}x`;
         } else if (t.pilotGenome === 'beef') {
             // Beef pilot - kinetic entropy
-            entropyPercent = Math.min(100, Math.max(1, Math.abs(ENTROPY_ENGINE.kineticEntropy * 1e18)));
-            entropyText = `KINETIC: -${(Math.abs(ENTROPY_ENGINE.kineticEntropy) * 1e16).toFixed(2)} J/K • FUSION: ${ENTROPY_ENGINE.stellarFusionRate.toFixed(1)}x`;
+            const kineticValue = Math.abs(ENTROPY_ENGINE.kineticEntropy || 0);
+            entropyPercent = Math.min(100, Math.max(1, kineticValue * 1e18));
+            const displayValue = (kineticValue * 1e16);
+            entropyText = `KINETIC: -${isNaN(displayValue) ? '0.00' : displayValue.toFixed(2)} J/K • FUSION: ${fusionRate.toFixed(1)}x`;
         } else if (t.pilotGenome === 'rocketman') {
             // Rocketman pilot - explosive entropy
-            entropyPercent = Math.min(100, Math.max(1, Math.abs(ENTROPY_ENGINE.explosiveEntropy * 1e19)));
-            entropyText = `EXPLOSIVE: -${(Math.abs(ENTROPY_ENGINE.explosiveEntropy) * 1e17).toFixed(2)} J/K • FUSION: ${ENTROPY_ENGINE.stellarFusionRate.toFixed(1)}x`;
+            const explosiveValue = Math.abs(ENTROPY_ENGINE.explosiveEntropy || 0);
+            entropyPercent = Math.min(100, Math.max(1, explosiveValue * 1e19));
+            const displayValue = (explosiveValue * 1e17);
+            entropyText = `EXPLOSIVE: -${isNaN(displayValue) ? '0.00' : displayValue.toFixed(2)} J/K • FUSION: ${fusionRate.toFixed(1)}x`;
         }
     }
     
@@ -6972,12 +6981,18 @@ function render(dt) {
     function enhanceStellarFusion() {
         if (!ENTROPY_ENGINE.active) return 1.0;
         
+        // Ensure entropy reduction is valid
+        const entropyReduction = isNaN(ENTROPY_ENGINE.entropyReduction) ? 0 : ENTROPY_ENGINE.entropyReduction;
+        
         // Negative entropy increases fusion efficiency via quantum tunneling enhancement
-        const fusionBoost = 1.0 + (Math.max(0, ENTROPY_ENGINE.entropyReduction) * 1e15);
-        ENTROPY_ENGINE.stellarFusionRate = Math.max(0.1, fusionBoost);
+        const fusionBoost = 1.0 + (Math.max(0, entropyReduction) * 1e15);
+        const calculatedRate = Math.max(0.1, fusionBoost);
+        
+        // Ensure the result is never NaN
+        ENTROPY_ENGINE.stellarFusionRate = isNaN(calculatedRate) ? 1.0 : calculatedRate;
         
         // Prevent heat death by maintaining thermal gradients
-        if (ENTROPY_ENGINE.entropyReduction > 0.001) {
+        if (entropyReduction > 0.001) {
             ENTROPY_ENGINE.universalHeatDeath = false;
         }
         
