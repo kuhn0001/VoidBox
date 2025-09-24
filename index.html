@@ -608,6 +608,7 @@
         }
         
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.1.1/socket.io.js"></script>
 </head>
 <body>
     <div id="wrap">
@@ -801,6 +802,7 @@
     <div id="bottom-right-controls">
         <button id="shopBtn" class="fixed-btn" type="button">⚡ MECH FORGE</button>
         <button id="menuBtn" class="fixed-btn" type="button">🏆 TOP PILOTS</button>
+        <button id="multiplayerBtn" class="fixed-btn" type="button">🌐 MULTIPLAYER</button>
     </div>
     <button id="pauseBtn" class="fixed-btn hide" type="button">PAUSE</button>
 
@@ -1018,8 +1020,8 @@ class FlameParticle {
             bossesAtPilotSelection: null,
             lowHealthTutorialShown: false, 
             bossSpawnTime: 0, 
-            waveStartTime: 0,
-            waveTransitionTimer: null, 
+            waveStartTime: 0, 
+            waveTransitionTimer: null,
             enemyHealthBonus: 1.0, 
             bossHealthBonus: 1.0, 
             enemyDensityBonus: 1.0, 
@@ -1048,7 +1050,473 @@ class FlameParticle {
         cheatInvincibilityCooldown: 0,
         cheatDogHealCooldown: 0,
         heartbeatT: 0,
-        cheatsUsed: false
+        cheatsUsed: false,
+        // Multiplayer properties
+        isMultiplayer: false,
+        socket: null,
+        roomId: null,
+        playerName: 'Pilot',
+        otherPlayers: {},
+        multiplayerMode: 'race', // 'race' or 'cooperative'
+        isRoomCreator: false // true if this player created the room (and should control enemy spawning)
+    };
+
+    let enemyIdCounter = 0;
+
+    // --- MULTIPLAYER FUNCTIONS ---
+    const multiplayer = {
+        connect: function() {
+            if (store.socket) {
+                console.log('Socket already exists, not creating new connection');
+                return;
+            }
+            announce('🔌 Connecting to multiplayer server...');
+            console.log('Creating new socket connection...');
+            
+            // Determine server URL - use Cloudflare tunnel for production, localhost for development
+            const urlParams = new URLSearchParams(window.location.search);
+            const isLocalFile = window.location.protocol === 'file:' || 
+                               window.location.hostname === '' || 
+                               window.location.hostname === 'localhost' || 
+                               window.location.hostname === '127.0.0.1';
+            const serverUrl = urlParams.get('server') || 
+                             (isLocalFile ? 'http://localhost:3000' : 'https://game.voidboxllc.com');
+            
+            console.log('Connecting to server:', serverUrl, '(protocol:', window.location.protocol, 'hostname:', window.location.hostname + ')');
+            store.socket = io(serverUrl, {
+                autoConnect: true,
+                reconnection: false // Disable automatic reconnection for now
+            });
+            
+            store.socket.on('connect', () => {
+                console.log('Socket connected successfully');
+                announce('✅ Connected! Opening lobby...');
+                // Set player name on server
+                store.socket.emit('setPlayerName', store.playerName);
+                this.showLobby();
+            });
+            
+            store.socket.on('disconnect', () => {
+                console.log('Socket disconnected');
+                announce('❌ Disconnected from server');
+                store.isMultiplayer = false;
+                store.roomId = null;
+                store.otherPlayers = {};
+            });
+
+            store.socket.on('connect_error', (error) => {
+                console.error('Connection error:', error);
+                announce('❌ Connection failed: ' + error.message);
+            });
+            
+            store.socket.on('roomJoined', (data) => {
+                store.roomId = data.roomId;
+                announce(`🎯 Joined room: ${store.roomId}`);
+                console.log('Joined room:', store.roomId);
+            });
+            
+            store.socket.on('playerJoined', (data) => {
+                store.otherPlayers[data.id] = data.player;
+                announce(`👤 ${data.player.name || 'Player'} joined the room`);
+                console.log('Player joined:', data.id);
+                this.updateLobbyUI();
+            });
+            
+            store.socket.on('playerLeft', (data) => {
+                delete store.otherPlayers[data.id];
+                announce(`👋 Player left the room`);
+                console.log('Player left:', data.id);
+                this.updateLobbyUI();
+            });
+            
+            store.socket.on('gameStart', () => {
+                announce('🏁 Race starting! Get ready...');
+                this.hideLobby();
+                this.startRace();
+            });
+            
+            store.socket.on('playerUpdate', (data) => {
+                if (store.otherPlayers[data.id]) {
+                    store.otherPlayers[data.id] = { ...store.otherPlayers[data.id], ...data };
+                }
+            });
+            
+            store.socket.on('enemyUpdate', (data) => {
+                this.syncEnemies(data);
+            });
+            
+            // New server-authoritative game state handler
+            store.socket.on('gameState', (data) => {
+                if (!store.isMultiplayer) return;
+                
+                // Apply server game state
+                store.enemies = data.enemies || [];
+                if (data.boss !== undefined) {
+                    store.boss = data.boss;
+                }
+                if (data.wave !== undefined) {
+                    store.world.wave = data.wave;
+                }
+                if (data.waveStartTime !== undefined) {
+                    store.world.waveStartTime = data.waveStartTime;
+                }
+                
+                // Update other players from server state
+                if (data.players) {
+                    Object.keys(data.players).forEach(playerId => {
+                        if (playerId !== store.socket.id && store.otherPlayers[playerId]) {
+                            const serverPlayer = data.players[playerId];
+                            store.otherPlayers[playerId].x = serverPlayer.x;
+                            store.otherPlayers[playerId].y = serverPlayer.y;
+                            store.otherPlayers[playerId].hp = serverPlayer.hp;
+                            store.otherPlayers[playerId].score = serverPlayer.score;
+                        }
+                    });
+                }
+            });
+        },
+        
+        startRace: function() {
+            console.log('startRace called - setting up multiplayer race');
+            store.isMultiplayer = true;
+            store.multiplayerMode = 'race';
+            console.log('isPaused before reset:', store.isPaused);
+            console.log('isGameOver before reset:', store.isGameOver);
+            // Initialize seeded random for deterministic gameplay
+            this.seedRandom = this.createSeededRandom(store.roomId);
+            // Reset game state
+            resetGame();
+            console.log('isPaused after reset:', store.isPaused);
+            console.log('isGameOver after reset:', store.isGameOver);
+            // Start the game
+            initWave();
+            resumeGame();
+            console.log('isPaused after resume:', store.isPaused);
+            console.log('isGameOver after resume:', store.isGameOver);
+            console.log('isRoomCreator:', store.isRoomCreator);
+            console.log('enemies count:', store.enemies.length);
+            console.log('Race started!');
+        },
+        
+        createSeededRandom: function(seed) {
+            // Simple seeded random number generator for deterministic gameplay
+            let x = Math.sin(seed) * 10000;
+            return function() {
+                x = Math.sin(x) * 10000;
+                return x - Math.floor(x);
+            };
+        },
+        
+        syncEnemies: function(gameState) {
+            // For non-room creators, completely replace enemy array with synced data
+            if (!store.isRoomCreator) {
+                if (gameState.enemies) {
+                    console.log('Syncing enemies - received:', gameState.enemies.length, 'enemies');
+                    if (gameState.enemies.length > 0) {
+                        console.log('First enemy position:', gameState.enemies[0].x, gameState.enemies[0].y);
+                        console.log('Screen width:', W, 'height:', H);
+                    }
+                    store.enemies = gameState.enemies.map(enemy => ({ ...enemy })); // Deep copy
+                }
+                if (gameState.boss !== undefined) {
+                    store.boss = gameState.boss ? { ...gameState.boss } : null; // Deep copy or null
+                }
+            }
+        },
+        
+        sendPlayerUpdate: function() {
+            if (!store.socket || !store.isMultiplayer) return;
+            const playerData = {
+                id: store.socket.id,
+                name: store.playerName,
+                x: store.player.x,
+                y: store.player.y,
+                hp: store.player.hp,
+                score: store.world.score
+            };
+            store.socket.emit('playerUpdate', playerData);
+        },
+        
+        sendEnemyUpdate: function() {
+            if (!store.socket || !store.isMultiplayer || !store.isRoomCreator) return;
+            if (store.enemies.length > 0) {
+                console.log('Sending enemy update - count:', store.enemies.length, 'first enemy pos:', store.enemies[0].x, store.enemies[0].y);
+            }
+            const enemyData = store.enemies.map(enemy => ({
+                id: enemy.id,
+                type: enemy.type,
+                x: enemy.x,
+                y: enemy.y,
+                hp: enemy.hp,
+                hpMax: enemy.hpMax,
+                r: enemy.r,
+                v: enemy.v,
+                vx: enemy.vx,
+                vy: enemy.vy,
+                phase: enemy.phase,
+                t: enemy.t,
+                fireT: enemy.fireT,
+                color: enemy.color,
+                xp: enemy.xp,
+                score: enemy.score,
+                shards: enemy.shards,
+                fireRateChance: enemy.fireRateChance,
+                isBursting: enemy.isBursting,
+                burstTimer: enemy.burstTimer,
+                stunTimer: enemy.stunTimer,
+                knockback: enemy.knockback,
+                // Manta-specific properties
+                startX: enemy.startX,
+                amplitude: enemy.amplitude,
+                frequency: enemy.frequency,
+                dodgeCooldown: enemy.dodgeCooldown,
+                isDodging: enemy.isDodging,
+                // Other properties
+                attackPhase: enemy.attackPhase,
+                damage: enemy.damage
+            }));
+            
+            const gameState = {
+                enemies: enemyData,
+                boss: store.boss ? {
+                    name: store.boss.name,
+                    x: store.boss.x,
+                    y: store.boss.y,
+                    hp: store.boss.hp,
+                    hpMax: store.boss.hpMax,
+                    attackPhase: store.boss.attackPhase,
+                    t: store.boss.t
+                } : null
+            };
+            
+            store.socket.emit('enemyUpdate', gameState);
+        },
+        
+        createRoom: function(roomName) {
+            if (!store.socket) return;
+            announce('🏗️ Creating room "' + roomName + '"...');
+            console.log('Emitting createRoom with name:', roomName);
+            store.socket.emit('createRoom', roomName, (roomId) => {
+                console.log('CreateRoom callback received, roomId:', roomId);
+                if (roomId) {
+                    store.roomId = roomId;
+                    store.isRoomCreator = true; // This player created the room
+                    announce('✅ Room created! ID: ' + roomId);
+                    console.log('Created room:', roomId);
+                } else {
+                    announce('❌ Failed to create room');
+                }
+            });
+        },
+        
+        joinRoom: function(roomId) {
+            if (!store.socket) return;
+            announce('🎯 Joining room ' + roomId + '...');
+            console.log('Emitting joinRoom with ID:', roomId);
+            store.socket.emit('joinRoom', roomId, (error) => {
+                console.log('JoinRoom callback received, error:', error);
+                if (!error) {
+                    store.roomId = roomId;
+                    store.isRoomCreator = false; // This player joined an existing room
+                    announce('✅ Successfully joined room ' + roomId);
+                    console.log('Joined room:', roomId);
+                } else {
+                    announce('❌ Failed to join room: ' + error);
+                    alert('Failed to join room: ' + error);
+                }
+            });
+        },
+        
+        showLobby: function() {
+            // Create lobby UI
+            const lobby = document.createElement('div');
+            lobby.id = 'multiplayerLobby';
+            lobby.innerHTML = `
+                <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1000; display: flex; align-items: center; justify-content: center;">
+                    <div style="background: var(--bg); border: 2px solid var(--accent); border-radius: 16px; padding: 20px; max-width: 400px; width: 90%;">
+                        <h2 style="color: var(--fg); text-align: center; margin-bottom: 20px;">MULTIPLAYER LOBBY</h2>
+                        <div style="margin-bottom: 20px;">
+                            <label style="color: var(--fg); display: block; margin-bottom: 5px;">Your Name:</label>
+                            <input id="playerNameInput" type="text" value="${store.playerName}" style="width: 100%; padding: 8px; background: rgba(150,80,255,0.1); border: 1px solid var(--edge); border-radius: 8px; color: var(--fg);">
+                        </div>
+                        <div style="margin-bottom: 20px;">
+                            <button id="createRoomBtn" style="width: 100%; padding: 12px; background: var(--accent); border: none; border-radius: 8px; color: white; font-weight: bold; margin-bottom: 10px; cursor: pointer;">CREATE ROOM</button>
+                            <button id="joinRoomBtn" style="width: 100%; padding: 12px; background: var(--accent2); border: none; border-radius: 8px; color: white; font-weight: bold; cursor: pointer;">JOIN ROOM</button>
+                            <button id="startRaceBtn" style="width: 100%; padding: 12px; background: #00ff96; border: none; border-radius: 8px; color: black; font-weight: bold; margin-top: 10px; cursor: pointer; display: none;">START RACE</button>
+                        </div>
+                        <div id="roomList" style="max-height: 200px; overflow-y: auto;"></div>
+                        <div id="playerList" style="max-height: 150px; overflow-y: auto; margin-top: 10px;"></div>
+                        <button id="closeLobbyBtn" style="width: 100%; padding: 8px; background: transparent; border: 1px solid var(--edge); border-radius: 8px; color: var(--fg); margin-top: 10px; cursor: pointer;">CLOSE</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(lobby);
+            
+            // Event listeners
+            q('playerNameInput').addEventListener('input', (e) => {
+                store.playerName = e.target.value;
+            });
+            
+            q('createRoomBtn').addEventListener('click', () => {
+                const roomName = prompt('Enter room name:');
+                if (roomName) {
+                    this.createRoom(roomName);
+                }
+            });
+            
+            q('joinRoomBtn').addEventListener('click', () => {
+                const roomId = prompt('Enter room ID:');
+                if (roomId) {
+                    this.joinRoom(roomId);
+                }
+            });
+            
+            q('startRaceBtn').addEventListener('click', () => {
+                if (store.socket) {
+                    announce('🏁 Starting race...');
+                    store.socket.emit('startGame');
+                }
+            });
+            
+            q('closeLobbyBtn').addEventListener('click', () => {
+                this.hideLobby();
+            });
+            
+            // Update player name when input changes
+            q('playerNameInput').addEventListener('input', (e) => {
+                store.playerName = e.target.value;
+                if (store.socket) {
+                    store.socket.emit('setPlayerName', store.playerName);
+                }
+            });
+            
+            this.updateRoomList();
+        },
+        
+        updateLobbyUI: function() {
+            const startBtn = q('startRaceBtn');
+            const playerCount = Object.keys(store.otherPlayers).length + 1; // +1 for current player
+            
+            if (startBtn) {
+                if (playerCount >= 2) {
+                    startBtn.style.display = 'block';
+                    startBtn.textContent = `START RACE (${playerCount} players)`;
+                } else {
+                    startBtn.style.display = 'none';
+                }
+            }
+            
+            // Update player list
+            const playerList = q('playerList') || this.createPlayerList();
+            playerList.innerHTML = '<h3 style="color: var(--fg); margin-bottom: 10px;">Players in Room:</h3>';
+            
+            // Add current player
+            const currentPlayerEl = document.createElement('div');
+            currentPlayerEl.innerHTML = `<div style="background: var(--accent); border-radius: 8px; padding: 8px; margin-bottom: 5px; color: white;">${store.playerName} (You)</div>`;
+            playerList.appendChild(currentPlayerEl);
+            
+            // Add other players
+            Object.values(store.otherPlayers).forEach(player => {
+                const playerEl = document.createElement('div');
+                playerEl.innerHTML = `<div style="background: var(--accent2); border-radius: 8px; padding: 8px; margin-bottom: 5px; color: white;">${player.name || 'Player'}</div>`;
+                playerList.appendChild(playerEl);
+            });
+        },
+        
+        createPlayerList: function() {
+            const lobby = q('multiplayerLobby');
+            if (!lobby) return null;
+            
+            const playerList = document.createElement('div');
+            playerList.id = 'playerList';
+            playerList.style = 'max-height: 150px; overflow-y: auto; margin-top: 10px;';
+            
+            const controls = lobby.querySelector('.lobby-controls');
+            if (controls) {
+                controls.appendChild(playerList);
+            }
+            
+            return playerList;
+        },
+        
+        hideLobby: function() {
+            const lobby = q('multiplayerLobby');
+            if (lobby) {
+                // Instead of removing entirely, transform into multiplayer game UI
+                lobby.innerHTML = `
+                    <div id="multiplayerGameUI" style="position: fixed; top: 10px; right: 10px; background: rgba(20,20,30,0.9); border: 1px solid var(--edge); border-radius: 8px; padding: 10px; z-index: 1000; min-width: 200px;">
+                        <div style="color: var(--accent); font-weight: bold; margin-bottom: 8px;">🌐 MULTIPLAYER RACE</div>
+                        <div id="playerInfo" style="color: var(--fg); font-size: 12px;">
+                            <div>Room: ${store.roomId ? store.roomId.substring(0, 8) + '...' : 'Unknown'}</div>
+                            <div>Role: ${store.isRoomCreator ? 'HOST' : 'PLAYER'}</div>
+                            <div id="connectedPlayers">Players: Loading...</div>
+                        </div>
+                        <div id="otherPlayerStats" style="margin-top: 8px; border-top: 1px solid var(--edge); padding-top: 8px;">
+                        </div>
+                        <button id="leaveRaceBtn" style="width: 100%; padding: 6px; background: #ff6b6b; border: none; border-radius: 4px; color: white; font-size: 11px; cursor: pointer; margin-top: 8px;">LEAVE RACE</button>
+                    </div>
+                `;
+                
+                // Add event listener for leave button
+                q('leaveRaceBtn').addEventListener('click', () => {
+                    if (store.socket) {
+                        store.socket.emit('leaveRoom');
+                        store.isMultiplayer = false;
+                        lobby.remove();
+                        resetGame();
+                        announce('Left multiplayer race');
+                    }
+                });
+            }
+        },
+        
+        updateRoomList: function() {
+            if (!store.socket) return;
+            store.socket.emit('getRoomNames', {}, (rooms) => {
+                const roomList = q('roomList');
+                if (!roomList) return;
+                roomList.innerHTML = '<h3 style="color: var(--fg); margin-bottom: 10px;">Available Rooms:</h3>';
+                rooms.forEach(room => {
+                    const roomEl = document.createElement('div');
+                    roomEl.innerHTML = `
+                        <div style="background: rgba(150,80,255,0.1); border: 1px solid var(--edge); border-radius: 8px; padding: 10px; margin-bottom: 5px; cursor: pointer;">
+                            <strong style="color: var(--fg);">${room.name}</strong> (ID: ${room.id})
+                        </div>
+                    `;
+                    // Add click event listener instead of inline onclick
+                    roomEl.querySelector('div').addEventListener('click', () => {
+                        this.joinRoom(room.id);
+                    });
+                    roomList.appendChild(roomEl);
+                });
+            });
+        },
+        
+        updateMultiplayerUI: function() {
+            const connectedPlayersEl = q('connectedPlayers');
+            const otherPlayerStatsEl = q('otherPlayerStats');
+            
+            if (connectedPlayersEl) {
+                const playerCount = Object.keys(store.otherPlayers).length + 1;
+                connectedPlayersEl.textContent = `Players: ${playerCount}`;
+            }
+            
+            if (otherPlayerStatsEl) {
+                let statsHtml = '';
+                Object.values(store.otherPlayers).forEach(player => {
+                    const playerName = player.name || 'Player';
+                    const score = player.score || 0;
+                    const hp = player.hp || 0;
+                    statsHtml += `
+                        <div style="font-size: 11px; color: var(--fg); margin: 2px 0;">
+                            <strong>${playerName}</strong><br>
+                            Score: ${score} | HP: ${hp}
+                        </div>
+                    `;
+                });
+                otherPlayerStatsEl.innerHTML = statsHtml;
+            }
+        }
     };
 
     const LEVEL_UPGRADES = [
@@ -1265,57 +1733,82 @@ class FlameParticle {
     function initWave() {
         const isBossWave = store.world.wave % 5 === 0;
         if (isBossWave) {
-            store.enemies = [];
-            
-            // FIXED: Balanced boss scaling instead of aggressive exponential growth
-            // Old: 1 + (wave/5 - 1) * 1.5 caused 4x HP by wave 15
-            // New: Gentler scaling with reasonable progression
-            let bossHpScale;
-            if (store.world.wave <= 5) {
-                bossHpScale = 1; // No scaling for early bosses
-            } else if (store.world.wave <= 15) {
-                bossHpScale = 1 + (store.world.wave - 5) * 0.2; // +20% per wave 6-15
-            } else {
-                bossHpScale = 1 + 10 * 0.2 + (store.world.wave - 15) * 0.1; // +10% per wave after 15
+            // In server-authoritative mode, disable client-side boss spawning
+            // Server handles all boss spawning and sends game state updates
+            if (store.isMultiplayer) {
+                store.enemies = [];
+                store.boss = null;
+                announce(`⚡ GUARDIAN INCOMING ⚡`);
+                return;
             }
             
-            store.boss = createBoss(bossHpScale);
-            store.world.bossSpawnTime = performance.now();
-            if (store.boss.name === 'VOID SENTINEL') playSound('trap');
-            else if (store.boss.name === 'NEURAL CORE') playSound('horn');
-            announce(`⚡ GUARDIAN: ${store.boss.name} ⚡`);
-        } else {
-            store.enemies = [];
-            // Enemy density optimization for performance - halve spawn count but double health at mid-game
-            const isOptimizedWave = store.world.wave >= 37 && store.world.level >= 17;
-            const baseSpawnCount = Math.floor((7 + Math.floor(store.world.wave * 1.8)) * store.world.enemyDensityBonus);
-            const spawnCount = isOptimizedWave ? Math.max(1, Math.floor(baseSpawnCount / 2)) : baseSpawnCount;
-            
-            console.log(`Wave ${store.world.wave}: Spawning ${spawnCount} enemies (base: ${baseSpawnCount}, density: ${store.world.enemyDensityBonus})`);
-            
-            for (let i = 0; i < spawnCount; i++) {
-                const types = ['drone', 'drone', 'hunter'];
-                if (store.world.wave > 3) types.push('phantom');
-                if (store.world.wave > 5) types.push('mech');
-                if (store.world.wave > 7) types.push('angler');
-                if (store.world.wave > 9) types.push('manta');
+            // Only room creator spawns boss in multiplayer
+            if (!store.isMultiplayer || store.isRoomCreator) {
+                store.enemies = [];
                 
-                console.log(`Available enemy types for wave ${store.world.wave}:`, types);
-                const enemy = spawnEnemy(types[Math.floor(Math.random() * types.length)]);
-                
-                // Double health for optimized waves to maintain difficulty
-                if (isOptimizedWave) {
-                    enemy.hp *= 2;
-                    enemy.hpMax *= 2;
+                // FIXED: Balanced boss scaling instead of aggressive exponential growth
+                // Old: 1 + (wave/5 - 1) * 1.5 caused 4x HP by wave 15
+                // New: Gentler scaling with reasonable progression
+                let bossHpScale;
+                if (store.world.wave <= 5) {
+                    bossHpScale = 1; // No scaling for early bosses
+                } else if (store.world.wave <= 15) {
+                    bossHpScale = 1 + (store.world.wave - 5) * 0.2; // +20% per wave 6-15
+                } else {
+                    bossHpScale = 1 + 10 * 0.2 + (store.world.wave - 15) * 0.1; // +10% per wave after 15
                 }
                 
-                console.log(`Spawned ${enemy.type} at (${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)}) with ${enemy.hp} HP`);
-                store.enemies.push(enemy);
+                store.boss = createBoss(bossHpScale);
+                store.world.bossSpawnTime = performance.now();
+                if (store.boss.name === 'VOID SENTINEL') playSound('trap');
+                else if (store.boss.name === 'NEURAL CORE') playSound('horn');
+                announce(`⚡ GUARDIAN: ${store.boss.name} ⚡`);
+            } else {
+                // Non-creator just clears enemies and waits for sync
+                store.enemies = [];
+                store.boss = null;
+                announce(`⚡ GUARDIAN INCOMING ⚡`);
+            }
+        } else {
+            // In server-authoritative mode, disable client-side enemy spawning
+            // Server handles all enemy spawning and sends game state updates
+            if (store.isMultiplayer) {
+                store.enemies = [];
+                announce(`◢ SECTOR ${store.world.wave} ◣`);
+                return;
             }
             
-            console.log(`Total enemies spawned: ${store.enemies.length}`);
-            store.world.waveStartTime = performance.now();
-            announce(`◢ SECTOR ${store.world.wave} ◣`);
+            // Only room creator spawns enemies in multiplayer  
+            if (!store.isMultiplayer || store.isRoomCreator) {
+                store.enemies = [];
+                // Enemy density optimization for performance - halve spawn count but double health at mid-game
+                const isOptimizedWave = store.world.wave >= 37 && store.world.level >= 17;
+                const baseSpawnCount = Math.floor((7 + Math.floor(store.world.wave * 1.8)) * store.world.enemyDensityBonus);
+                const spawnCount = isOptimizedWave ? Math.max(1, Math.floor(baseSpawnCount / 2)) : baseSpawnCount;
+                
+                for (let i = 0; i < spawnCount; i++) {
+                    const types = ['drone', 'drone', 'hunter'];
+                    if (store.world.wave > 3) types.push('phantom');
+                    if (store.world.wave > 5) types.push('mech');
+                    if (store.world.wave > 7) types.push('angler');
+                    if (store.world.wave > 9) types.push('manta');
+                    const enemy = spawnEnemy(types[Math.floor((store.isMultiplayer ? multiplayer.seedRandom() : Math.random()) * types.length)]);
+                    
+                    // Double health for optimized waves to maintain difficulty
+                    if (isOptimizedWave) {
+                        enemy.hp *= 2;
+                        enemy.hpMax *= 2;
+                    }
+                    
+                    store.enemies.push(enemy);
+                }
+                store.world.waveStartTime = performance.now();
+                announce(`◢ SECTOR ${store.world.wave} ◣`);
+            } else {
+                // Non-creator just clears enemies and waits for sync
+                store.enemies = [];
+                announce(`◢ SECTOR ${store.world.wave} ◣`);
+            }
         }
     }
     
@@ -1335,8 +1828,6 @@ class FlameParticle {
         // hp *= collarBonus;
         
         const boss = { ...type, x: W / 2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, patternPhase: 0, isEnraged: false, attackPhase: 0, phaseTimer: 0 };
-        
-        console.log(`🏆 Boss Created: ${boss.name} | Wave: ${store.world.wave} | HP: ${hp} | Scale: ${scale}`);
         
         // Create Boss class instance for DEATH ENGINE
         if (boss.name === 'DEATH ENGINE') {
@@ -1374,9 +1865,7 @@ class FlameParticle {
         // DISABLED: Collar bonus was making enemies unkillable
         // const collarBonus = 1 + (store.world.collarStacks > 0 ? 0.4 + (store.world.collarStacks - 1) * 0.1 : 0);
         // c.hp *= collarBonus;
-        
-        console.log(`🔍 Enemy Health Debug | Type: ${type} | Base: ${cfgs[type].hp} | Wave: ${wave} | WaveMult: ${waveMultiplier.toFixed(2)} | EnemyBonus: ${store.world.enemyHealthBonus.toFixed(2)} | Final HP: ${c.hp.toFixed(1)}`);
-        const e = { ...c, type, id: Date.now() + Math.random(), x: 20 + Math.random() * (W - 40), y: -50 - Math.random() * 250, hpMax: c.hp, phase: type === 'phantom', t: 0, fireT: (c.fireCooldown || 0), isBursting: false, burstTimer: 0, stunTimer: 0, knockback: null };
+        const e = { ...c, type, id: store.isMultiplayer ? enemyIdCounter++ : Date.now() + Math.random(), x: 20 + (store.isMultiplayer ? multiplayer.seedRandom() : Math.random()) * (W - 40), y: -50 - (store.isMultiplayer ? multiplayer.seedRandom() : Math.random()) * 250, hpMax: c.hp, phase: type === 'phantom', t: 0, fireT: (c.fireCooldown || 0), isBursting: false, burstTimer: 0, stunTimer: 0, knockback: null };
         if (e.type === 'manta') { e.startX = e.x; e.amplitude = 150 + Math.random() * 100; e.frequency = 0.5 + Math.random() * 0.5; e.dodgeCooldown = 0; e.isDodging = false; }
         return e;
     }
@@ -1801,6 +2290,16 @@ class FlameParticle {
                         }
                     }
                 }
+            });
+        }
+        
+        // Send player input to server for multiplayer
+        if (store.isMultiplayer && store.socket && store.socket.connected) {
+            store.socket.emit('playerInput', {
+                x: p.x,
+                y: p.y,
+                hp: p.hp,
+                score: p.score
             });
         }
     }
@@ -2256,7 +2755,7 @@ class FlameParticle {
             const veryGentleGrowth = (store.world.wave - 10) * 0.02; // Only +2% per wave after 10
             dmgScale = wave10Scale * (1 + veryGentleGrowth);
         }
-        console.log(`Wave ${store.world.wave}: Damage scale = ${dmgScale.toFixed(2)} (BETTER BALANCED)`);
+        // console.log(`Wave ${store.world.wave}: Damage scale = ${dmgScale.toFixed(2)} (BETTER BALANCED)`);
         store.eBullets.forEach(b => {
             b.x += b.vx * dt;
             b.y += b.vy * dt;
@@ -2434,8 +2933,8 @@ class FlameParticle {
                 } else if (e.type === 'manta') {
                     e.t += dt;
                     
-                    // DISABLED DODGE SYSTEM - was causing enemies to jump off-screen and become unkillable
-                    // Simple sinusoidal snake movement only
+                    // FIXED: Simplified manta movement to prevent off-screen jumping
+                    // Old complex dodge system caused enemies to become unkillable by jumping off-screen
                     e.x = e.startX + e.amplitude * Math.sin(e.t * e.frequency);
                     e.y += e.v * speedMultiplier * dt;
                 } else if (!e.isOrbiter) {
@@ -2691,18 +3190,16 @@ class FlameParticle {
         store.activeEffects = store.activeEffects.filter(e => e.isActive !== false);
 
         if (!store.boss && store.enemies.length === 0) {
-            // Add some delay before starting next wave to prevent rapid cycling
+            // FIXED: Add wave transition timer to prevent rapid wave cycling
             if (!store.world.waveTransitionTimer) {
                 store.world.waveTransitionTimer = performance.now();
-                return;
             }
             
-            // Wait at least 0.5 seconds before progressing to next wave
-            if (performance.now() - store.world.waveTransitionTimer < 500) {
+            const timeSinceWaveEnd = (performance.now() - store.world.waveTransitionTimer) / 1000;
+            if (timeSinceWaveEnd < 0.5) {
+                // Wait 0.5 seconds before transitioning to next wave
                 return;
             }
-            
-            console.log(`Wave ${store.world.wave} completed, transitioning to wave ${store.world.wave + 1}`);
             
             if (store.world.waveStartTime > 0) {
                 const waveClearTime = (performance.now() - store.world.waveStartTime) / 1000;
@@ -2719,15 +3216,15 @@ class FlameParticle {
             store.world.wave++;
             store.world.waveTransitionTimer = null; // Reset timer
             
-            // ◢◣ TEMPORAL ANOMALY TRIGGER ◣◢ (COMMENTED OUT - NEEDS POLISH)
+            // ◢◣ TEMPORAL ANOMALY TRIGGER ◣◢ - DISABLED FOR MULTIPLAYER STABILITY
             // checkTemporalAnomaly();
             
             const hpBonus = 3;
             store.player.hpMax += hpBonus;
             store.player.hp += hpBonus;
             initWave();
-        } else {
-            // Reset wave transition timer if there are still enemies or boss
+        } else if (store.world.waveTransitionTimer) {
+            // Reset transition timer if there are still enemies or boss
             store.world.waveTransitionTimer = null;
         }
 
@@ -2740,6 +3237,24 @@ class FlameParticle {
 
         if (store.player.hp <= 0) {
             handleGameOver();
+        }
+
+        // Multiplayer synchronization
+        if (store.isMultiplayer && store.socket) {
+            // Send player updates every few frames
+            if (store.frame % 10 === 0) {
+                multiplayer.sendPlayerUpdate();
+            }
+            
+            // Send enemy updates every few frames
+            if (store.frame % 15 === 0) {
+                multiplayer.sendEnemyUpdate();
+            }
+            
+            // Update multiplayer UI every few frames
+            if (store.frame % 30 === 0) {
+                multiplayer.updateMultiplayerUI();
+            }
         }
     }
 
@@ -2948,6 +3463,7 @@ class FlameParticle {
             lowHealthTutorialShown: false, 
             bossSpawnTime: 0, 
             waveStartTime: 0, 
+            waveTransitionTimer: null,
             enemyHealthBonus: 1.0, 
             bossHealthBonus: 1.0, 
             enemyDensityBonus: 1.0, 
@@ -3201,6 +3717,36 @@ function render(dt) {
     store.hounds.forEach(h => drawHound(h));
     if (store.iceman) drawIceman(store.iceman);
     drawShip(store.player.x, store.player.y, store.player);
+    
+    // Draw other players in multiplayer
+    if (store.isMultiplayer) {
+        Object.values(store.otherPlayers).forEach(otherPlayer => {
+            if (otherPlayer.x !== undefined && otherPlayer.y !== undefined) {
+                // Draw other player ship with different color
+                ctx.save();
+                ctx.translate(otherPlayer.x, otherPlayer.y);
+                
+                // Draw ship outline
+                ctx.strokeStyle = '#00ff96'; // Green for other players
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, -store.player.r);
+                ctx.lineTo(store.player.r * 0.8, store.player.r * 0.6);
+                ctx.lineTo(0, store.player.r * 0.3);
+                ctx.lineTo(-store.player.r * 0.8, store.player.r * 0.6);
+                ctx.closePath();
+                ctx.stroke();
+                
+                // Draw player name
+                ctx.fillStyle = '#00ff96';
+                ctx.font = '12px Orbitron';
+                ctx.textAlign = 'center';
+                ctx.fillText(otherPlayer.name || 'Player', 0, -store.player.r - 15);
+                
+                ctx.restore();
+            }
+        });
+    }
     
     // Draw EMP disabled effect on player
     if (store.player.empDisabled) {
@@ -5328,7 +5874,7 @@ function render(dt) {
 
         ctx.restore();
     }
-    function drawEnemy(e) { const{x:t,y:o,r:a,type:r,color:n,hp:l,hpMax:s,t:c}=e;ctx.save();ctx.translate(t,o);l<s&&l>0&&(ctx.fillStyle='rgba(0,0,0,0.5)',ctx.fillRect(-a,-a-8,2*a,3),ctx.fillStyle="#b266ff",ctx.fillRect(-a,-a-8,2*a*(l/s),3));ctx.lineWidth=2;ctx.beginPath();switch(r){case"avian_hatchling":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a*1.2);ctx.lineTo(a,-a*0.5);ctx.lineTo(a,a*0.5);ctx.lineTo(0,a*1.2);ctx.lineTo(-a,a*0.5);ctx.lineTo(-a,-a*0.5);ctx.closePath();ctx.fill();ctx.stroke();break;case"construct_shard":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a);ctx.lineTo(a,0);ctx.lineTo(0,a);ctx.lineTo(-a,0);ctx.closePath();ctx.fill();ctx.stroke();break;case"trap_king_add":case"drone":const e=ctx.createLinearGradient(-a,-a,a,a);e.addColorStop(0,"#E0E0E0");e.addColorStop(1,"#A0A0A0");ctx.fillStyle=e;ctx.strokeStyle="#808080";ctx.beginPath();ctx.moveTo(-1.2*a,0);ctx.quadraticCurveTo(0,-a,1.2*a,0);ctx.quadraticCurveTo(0,.6*a,-1.2*a,0);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#aaddff";ctx.strokeStyle="#FFFFFF";ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-.2*a,.6*a,Math.PI,0);ctx.fill();ctx.stroke();ctx.fillStyle=r==="trap_king_add"?"#ffc83d":"#32CD32";ctx.beginPath();ctx.ellipse(0,-.2*a,.3*a,.4*a,0,0,2*Math.PI);ctx.fill();ctx.fillStyle="#000000";ctx.beginPath();ctx.ellipse(-.1*a,-.25*a,.08*a,.15*a,-.5,0,2*Math.PI);ctx.ellipse(.1*a,-.25*a,.08*a,.15*a,.5,0,2*Math.PI);ctx.fill();break;
+    function drawEnemy(e) { const{x:t,y:o,r:a,type:r,color:n,hp:l,hpMax:s,t:c}=e;if(!isFinite(a)||a<=0)return;ctx.save();ctx.translate(t,o);l<s&&l>0&&(ctx.fillStyle='rgba(0,0,0,0.5)',ctx.fillRect(-a,-a-8,2*a,3),ctx.fillStyle="#b266ff",ctx.fillRect(-a,-a-8,2*a*(l/s),3));ctx.lineWidth=2;ctx.beginPath();switch(r){case"avian_hatchling":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a*1.2);ctx.lineTo(a,-a*0.5);ctx.lineTo(a,a*0.5);ctx.lineTo(0,a*1.2);ctx.lineTo(-a,a*0.5);ctx.lineTo(-a,-a*0.5);ctx.closePath();ctx.fill();ctx.stroke();break;case"construct_shard":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a);ctx.lineTo(a,0);ctx.lineTo(0,a);ctx.lineTo(-a,0);ctx.closePath();ctx.fill();ctx.stroke();break;case"trap_king_add":case"drone":const e=ctx.createLinearGradient(-a,-a,a,a);e.addColorStop(0,"#E0E0E0");e.addColorStop(1,"#A0A0A0");ctx.fillStyle=e;ctx.strokeStyle="#808080";ctx.beginPath();ctx.moveTo(-1.2*a,0);ctx.quadraticCurveTo(0,-a,1.2*a,0);ctx.quadraticCurveTo(0,.6*a,-1.2*a,0);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#aaddff";ctx.strokeStyle="#FFFFFF";ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-.2*a,.6*a,Math.PI,0);ctx.fill();ctx.stroke();ctx.fillStyle=r==="trap_king_add"?"#ffc83d":"#32CD32";ctx.beginPath();ctx.ellipse(0,-.2*a,.3*a,.4*a,0,0,2*Math.PI);ctx.fill();ctx.fillStyle="#000000";ctx.beginPath();ctx.ellipse(-.1*a,-.25*a,.08*a,.15*a,-.5,0,2*Math.PI);ctx.ellipse(.1*a,-.25*a,.08*a,.15*a,.5,0,2*Math.PI);ctx.fill();break;
         case "hunter":
             ctx.strokeStyle = '#BE2545';
             ctx.fillStyle = n + "cc";
@@ -6990,6 +7536,9 @@ function render(dt) {
     function checkTemporalAnomaly() {
         if (store.world.temporalAnomalyTriggered || store.world.isTemporalWarp) return;
         
+        // Don't trigger in multiplayer mode for simplicity
+        if (store.isMultiplayer) return;
+        
         // Don't trigger during boss fights or if there are active enemies
         if (store.boss || store.enemies.length > 0) return;
         
@@ -7439,7 +7988,6 @@ function tryVoidStep(player, target, now = performance.now()){
                 const bossDamage = shockDamage * damageFalloff * 0.4;
                 store.boss.hp -= bossDamage; // Reduced boss damage
                 store.world.totalDamage += bossDamage;
-                console.log(`💥 Boss Hit (Shockwave): ${bossDamage.toFixed(1)} damage | HP: ${store.boss.hp.toFixed(1)}/${store.boss.hpMax}`);
             }
         }
         
@@ -8619,6 +9167,14 @@ function tryVoidStep(player, target, now = performance.now()){
         if(store.isGameOver || isAnyPanelOpen()) return;
         store.isPaused = !store.isPaused;
         q('pauseBtn').textContent = store.isPaused ? 'RESUME' : 'PAUSE';
+    });
+
+    q('multiplayerBtn').addEventListener('click', () => {
+        if (!store.socket) {
+            multiplayer.connect();
+        } else {
+            multiplayer.showLobby();
+        }
     });
     
     q('grenadeBtnUI').addEventListener('click',useGrenade);
