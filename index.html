@@ -1279,12 +1279,16 @@ class FlameParticle {
             const baseSpawnCount = Math.floor((7 + Math.floor(store.world.wave * 1.8)) * store.world.enemyDensityBonus);
             const spawnCount = isOptimizedWave ? Math.max(1, Math.floor(baseSpawnCount / 2)) : baseSpawnCount;
             
+            console.log(`Wave ${store.world.wave}: Spawning ${spawnCount} enemies (base: ${baseSpawnCount}, density: ${store.world.enemyDensityBonus})`);
+            
             for (let i = 0; i < spawnCount; i++) {
                 const types = ['drone', 'drone', 'hunter'];
                 if (store.world.wave > 3) types.push('phantom');
                 if (store.world.wave > 5) types.push('mech');
                 if (store.world.wave > 7) types.push('angler');
                 if (store.world.wave > 9) types.push('manta');
+                
+                console.log(`Available enemy types for wave ${store.world.wave}:`, types);
                 const enemy = spawnEnemy(types[Math.floor(Math.random() * types.length)]);
                 
                 // Double health for optimized waves to maintain difficulty
@@ -1293,8 +1297,11 @@ class FlameParticle {
                     enemy.hpMax *= 2;
                 }
                 
+                console.log(`Spawned ${enemy.type} at (${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)}) with ${enemy.hp} HP`);
                 store.enemies.push(enemy);
             }
+            
+            console.log(`Total enemies spawned: ${store.enemies.length}`);
             store.world.waveStartTime = performance.now();
             announce(`◢ SECTOR ${store.world.wave} ◣`);
         }
@@ -2420,26 +2427,21 @@ class FlameParticle {
                                 e.isDodging = true;
                                 e.dodgeCooldown = 2; // 2 second cooldown
                                 
-                                // Reduce HP by half
-                                e.hp = Math.max(1, Math.floor(e.hp / 2));
+                                // FIXED: Don't reduce HP - that was a bug!
+                                // The dodge is a defensive maneuver, not self-damage
                                 
-                                // Calculate dodge movement - 2 snake lengths back and random left/right
-                                const snakeLength = e.amplitude * 2; // Use amplitude as approximate snake length
-                                e.dodgeTargetY = e.y - snakeLength * 2; // Move back 2 snake lengths
-                                e.dodgeTargetX = e.x + (Math.random() < 0.5 ? -1 : 1) * snakeLength; // Random left/right
+                                // Calculate dodge movement - stay within reasonable bounds
+                                const dodgeDistance = 80; // Fixed dodge distance instead of using amplitude
+                                e.dodgeTargetY = Math.max(50, e.y - dodgeDistance); // Don't go too far up
+                                e.dodgeTargetX = Math.max(50, Math.min(W-50, e.x + (Math.random() < 0.5 ? -1 : 1) * dodgeDistance)); // Stay on screen
                                 e.dodgeStartX = e.x;
                                 e.dodgeStartY = e.y;
                                 e.dodgeTimer = 0.3; // Quick dodge duration
                                 
-                                console.log('Manta dodging! HP reduced to:', e.hp, 'Moving to:', e.dodgeTargetX, e.dodgeTargetY, 'Bullet distance:', dist);
                                 break; // Only dodge for first detected bullet
                             }
                         }
-                        
-                        // Debug: log when manta is checking for bullets
-                        if (store.bullets.length > 0 && nearestBulletDist < 120) {
-                            console.log('Manta checking dodge - nearest bullet:', nearestBulletDist, 'bullets:', store.bullets.length, 'cooldown:', e.dodgeCooldown);
-                        }
+
                     }
                     
                     if (e.isDodging && e.dodgeTimer > 0) {
@@ -2451,13 +2453,10 @@ class FlameParticle {
                         e.x = e.dodgeStartX + (e.dodgeTargetX - e.dodgeStartX) * dodgeProgress;
                         e.y = e.dodgeStartY + (e.dodgeTargetY - e.dodgeStartY) * dodgeProgress;
                         
-                        console.log('Manta dodging progress:', Math.round(dodgeProgress * 100) + '%', 'pos:', Math.round(e.x), Math.round(e.y));
-                        
                         if (e.dodgeTimer <= 0) {
                             // Dodge finished, resume normal movement
                             e.isDodging = false;
                             e.startX = e.x; // Update snake movement origin to new position
-                            console.log('Manta dodge complete! New startX:', e.startX);
                         }
                     } else {
                         // Normal sinusoidal snake movement
