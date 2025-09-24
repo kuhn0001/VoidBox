@@ -1266,11 +1266,23 @@ class FlameParticle {
         const isBossWave = store.world.wave % 5 === 0;
         if (isBossWave) {
             store.enemies = [];
-            const bossHpScale = 1 + (store.world.wave / 5 - 1) * 1.5;
+            
+            // FIXED: Balanced boss scaling instead of aggressive exponential growth
+            // Old: 1 + (wave/5 - 1) * 1.5 caused 4x HP by wave 15
+            // New: Gentler scaling with reasonable progression
+            let bossHpScale;
+            if (store.world.wave <= 5) {
+                bossHpScale = 1; // No scaling for early bosses
+            } else if (store.world.wave <= 15) {
+                bossHpScale = 1 + (store.world.wave - 5) * 0.2; // +20% per wave 6-15
+            } else {
+                bossHpScale = 1 + 10 * 0.2 + (store.world.wave - 15) * 0.1; // +10% per wave after 15
+            }
+            
             store.boss = createBoss(bossHpScale);
             store.world.bossSpawnTime = performance.now();
-            if (store.boss.name === 'TRAP KING') playSound('trap');
-            else if (store.boss.name === 'CORE MALIGNUS') playSound('horn');
+            if (store.boss.name === 'VOID SENTINEL') playSound('trap');
+            else if (store.boss.name === 'NEURAL CORE') playSound('horn');
             announce(`⚡ GUARDIAN: ${store.boss.name} ⚡`);
         } else {
             store.enemies = [];
@@ -1318,10 +1330,13 @@ class FlameParticle {
         ];
         const type = types[bossCycle];
         let hp = type.baseHp * scale * store.world.bossHealthBonus;
-        const collarBonus = 1 + (store.world.collarStacks > 0 ? 0.4 + (store.world.collarStacks - 1) * 0.1 : 0);
-        hp *= collarBonus;
+        // DISABLED: Collar bonus was making bosses unkillable
+        // const collarBonus = 1 + (store.world.collarStacks > 0 ? 0.4 + (store.world.collarStacks - 1) * 0.1 : 0);
+        // hp *= collarBonus;
         
         const boss = { ...type, x: W / 2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, patternPhase: 0, isEnraged: false, attackPhase: 0, phaseTimer: 0 };
+        
+        console.log(`🏆 Boss Created: ${boss.name} | Wave: ${store.world.wave} | HP: ${hp} | Scale: ${scale}`);
         
         // Create Boss class instance for DEATH ENGINE
         if (boss.name === 'DEATH ENGINE') {
@@ -1344,9 +1359,23 @@ class FlameParticle {
             manta: { r: 26, v: 50, vx: 0, hp: 150, color: '#53B6FF', xp: 22, score: 220, shards: 5, fireRateChance: 0.009 }
         };
         let c = { ...cfgs[type] }; const wave = store.world.wave;
-        c.hp *= Math.pow(1.075, wave) * store.world.enemyHealthBonus;
-        const collarBonus = 1 + (store.world.collarStacks > 0 ? 0.4 + (store.world.collarStacks - 1) * 0.1 : 0);
-        c.hp *= collarBonus;
+        
+        // FIXED: Much gentler health scaling to prevent unkillable enemies
+        // Old: Math.pow(1.075, wave) - exponential growth was too aggressive
+        // New: Linear growth with soft cap
+        let waveMultiplier;
+        if (wave <= 10) {
+            waveMultiplier = 1 + (wave - 1) * 0.15; // +15% per wave early game
+        } else {
+            waveMultiplier = 1 + 9 * 0.15 + (wave - 10) * 0.05; // +5% per wave after wave 10
+        }
+        
+        c.hp *= waveMultiplier * store.world.enemyHealthBonus;
+        // DISABLED: Collar bonus was making enemies unkillable
+        // const collarBonus = 1 + (store.world.collarStacks > 0 ? 0.4 + (store.world.collarStacks - 1) * 0.1 : 0);
+        // c.hp *= collarBonus;
+        
+        console.log(`🔍 Enemy Health Debug | Type: ${type} | Base: ${cfgs[type].hp} | Wave: ${wave} | WaveMult: ${waveMultiplier.toFixed(2)} | EnemyBonus: ${store.world.enemyHealthBonus.toFixed(2)} | Final HP: ${c.hp.toFixed(1)}`);
         const e = { ...c, type, id: Date.now() + Math.random(), x: 20 + Math.random() * (W - 40), y: -50 - Math.random() * 250, hpMax: c.hp, phase: type === 'phantom', t: 0, fireT: (c.fireCooldown || 0), isBursting: false, burstTimer: 0, stunTimer: 0, knockback: null };
         if (e.type === 'manta') { e.startX = e.x; e.amplitude = 150 + Math.random() * 100; e.frequency = 0.5 + Math.random() * 0.5; e.dodgeCooldown = 0; e.isDodging = false; }
         return e;
@@ -2405,64 +2434,10 @@ class FlameParticle {
                 } else if (e.type === 'manta') {
                     e.t += dt;
                     
-                    // Update dodge cooldown
-                    if (e.dodgeCooldown > 0) {
-                        e.dodgeCooldown -= dt;
-                    }
-                    
-                    // Check for nearby bullets if not on cooldown
-                    if (e.dodgeCooldown <= 0 && !e.isDodging) {
-                        const dodgeRadius = 120; // Detection radius for dodge (increased from 80)
-                        let nearestBulletDist = Infinity;
-                        
-                        for (let bullet of store.bullets) {
-                            const dx = bullet.x - e.x;
-                            const dy = bullet.y - e.y;
-                            const dist = Math.sqrt(dx * dx + dy * dy);
-                            
-                            if (dist < nearestBulletDist) nearestBulletDist = dist;
-                            
-                            if (dist < dodgeRadius) {
-                                // Trigger dodge
-                                e.isDodging = true;
-                                e.dodgeCooldown = 2; // 2 second cooldown
-                                
-                                // FIXED: Don't reduce HP - that was a bug!
-                                // The dodge is a defensive maneuver, not self-damage
-                                
-                                // Calculate dodge movement - stay within reasonable bounds
-                                const dodgeDistance = 80; // Fixed dodge distance instead of using amplitude
-                                e.dodgeTargetY = Math.max(50, e.y - dodgeDistance); // Don't go too far up
-                                e.dodgeTargetX = Math.max(50, Math.min(W-50, e.x + (Math.random() < 0.5 ? -1 : 1) * dodgeDistance)); // Stay on screen
-                                e.dodgeStartX = e.x;
-                                e.dodgeStartY = e.y;
-                                e.dodgeTimer = 0.3; // Quick dodge duration
-                                
-                                break; // Only dodge for first detected bullet
-                            }
-                        }
-
-                    }
-                    
-                    if (e.isDodging && e.dodgeTimer > 0) {
-                        // Perform dodge movement
-                        e.dodgeTimer -= dt;
-                        const dodgeProgress = 1 - (e.dodgeTimer / 0.3); // Progress from 0 to 1
-                        
-                        // Smooth interpolation for dodge movement
-                        e.x = e.dodgeStartX + (e.dodgeTargetX - e.dodgeStartX) * dodgeProgress;
-                        e.y = e.dodgeStartY + (e.dodgeTargetY - e.dodgeStartY) * dodgeProgress;
-                        
-                        if (e.dodgeTimer <= 0) {
-                            // Dodge finished, resume normal movement
-                            e.isDodging = false;
-                            e.startX = e.x; // Update snake movement origin to new position
-                        }
-                    } else {
-                        // Normal sinusoidal snake movement
-                        e.x = e.startX + e.amplitude * Math.sin(e.t * e.frequency);
-                        e.y += e.v * speedMultiplier * dt;
-                    }
+                    // DISABLED DODGE SYSTEM - was causing enemies to jump off-screen and become unkillable
+                    // Simple sinusoidal snake movement only
+                    e.x = e.startX + e.amplitude * Math.sin(e.t * e.frequency);
+                    e.y += e.v * speedMultiplier * dt;
                 } else if (!e.isOrbiter) {
                     e.x += (e.vx || 0) * speedMultiplier * dt;
                     e.y += e.v * speedMultiplier * dt;
@@ -2732,11 +2707,12 @@ class FlameParticle {
             if (store.world.waveStartTime > 0) {
                 const waveClearTime = (performance.now() - store.world.waveStartTime) / 1000;
                 if (waveClearTime < 5 && store.world.wave > 1) {
-                    store.world.enemyDensityBonus *= 1.1;
-                    store.world.enemyHealthBonus *= 1.05;
-                    store.world.xpMultiplier *= 1.05;
-                    store.world.collarStacks++;
-                    announce("SWARM INTENSITY RISING!");
+                    // DISABLED: Exponential health scaling was making enemies unkillable
+                    // store.world.enemyDensityBonus *= 1.1;
+                    // store.world.enemyHealthBonus *= 1.05;
+                    store.world.xpMultiplier *= 1.05; // Keep XP bonus only
+                    // store.world.collarStacks++; // Disabled collar stacking
+                    announce("EXPERIENCE BONUS ACTIVATED!");
                 }
             }
             
@@ -2841,10 +2817,11 @@ class FlameParticle {
         }
         store.world.bossHealthBonus *= healthBonusMultiplier;
         if (announcedAdaptation) {
-            const enemyHealthBonus = healthBonusMultiplier > 1.1 ? 1.15 : 1.05;
-            store.world.enemyHealthBonus *= enemyHealthBonus;
-            store.world.enemyDensityBonus *= 1.10;
-            setTimeout(() => announce("ENEMY SWARMS INTENSIFYING!"), 1000);
+            // DISABLED: Exponential health scaling was making bosses unkillable
+            // const enemyHealthBonus = healthBonusMultiplier > 1.1 ? 1.15 : 1.05;
+            // store.world.enemyHealthBonus *= enemyHealthBonus;
+            // store.world.enemyDensityBonus *= 1.10;
+            setTimeout(() => announce("GUARDIAN DEFEATED!"), 1000);
         }
     }
 
@@ -5115,7 +5092,6 @@ function render(dt) {
         
         // Draw beef shield bubble if pilot is beef and shield is active
         if (player.pilotGenome === 'beef' && player.beefShield > 0) {
-            console.log('Rendering beef shield - pilot:', player.pilotGenome, 'shield:', player.beefShield, 'max:', player.beefShieldMax);
             const time = performance.now() / 1000;
             const shieldPercent = player.beefShield / player.beefShieldMax;
             const pulseIntensity = 0.7 + 0.3 * Math.sin(time * 2.5);
@@ -5159,7 +5135,6 @@ function render(dt) {
         
         // Draw floating beef shield meter above ship
         if (player.pilotGenome === 'beef' && player.beefShieldMax > 0) {
-            console.log('Rendering beef shield meter - pilot:', player.pilotGenome, 'shield:', player.beefShield, 'max:', player.beefShieldMax);
             const shieldPercent = player.beefShield / player.beefShieldMax;
             const meterY = -35; // Position above ship
             const meterWidth = 40;
@@ -7464,6 +7439,7 @@ function tryVoidStep(player, target, now = performance.now()){
                 const bossDamage = shockDamage * damageFalloff * 0.4;
                 store.boss.hp -= bossDamage; // Reduced boss damage
                 store.world.totalDamage += bossDamage;
+                console.log(`💥 Boss Hit (Shockwave): ${bossDamage.toFixed(1)} damage | HP: ${store.boss.hp.toFixed(1)}/${store.boss.hpMax}`);
             }
         }
         
