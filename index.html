@@ -1027,7 +1027,7 @@ class FlameParticle {
 
     // --- GAME STATE & DATA ---
     const player_initial_state = {
-        x: W / 2, y: H * 0.8, r: 14, hp: 200, hpMax: 200, fireT: 0, speed: 380, dmgMult: 1.2, fireRate: 0.16,
+        x: W / 2, y: H * 0.8, r: 14, hp: 50, hpMax: 50, fireT: 0, speed: 380, dmgMult: 1.2, fireRate: 0.16,
         vampirism: 0, shield: 50, shieldMax: 50, multishot: 2, isInvincible: false, piercing: 0, explosive: false,
         hasShieldBubble: false, powerupTimers: {},
         upgradeLevels: { dmg: 0, speed: 0, hp: 0, max_shield: 0, crit_chance: 0, ghost_hounds: 0, launcher: 0, lazarus_beam: 0, gravity_well: 0 },
@@ -1080,6 +1080,7 @@ class FlameParticle {
             powerupCooldown: 0, 
             xpMultiplier: 1.0, 
             collarStacks: 0, 
+            lateGameDamageScaling: 1,
             consecutiveFastKills: 0, 
             fastKillBonus: 0,
             isLowHealth: false,
@@ -1348,12 +1349,28 @@ class FlameParticle {
             announce(`⚡ GUARDIAN: ${store.boss.name} ⚡`);
         } else {
             store.enemies = [];
-            // Enemy density optimization for performance - halve spawn count but double health at mid-game
-            const isOptimizedWave = store.world.wave >= 37 && store.world.level >= 17;
-            const baseSpawnCount = Math.floor((7 + Math.floor(store.world.wave * 1.8)) * store.world.enemyDensityBonus);
-            const spawnCount = isOptimizedWave ? Math.max(1, Math.floor(baseSpawnCount / 2)) : baseSpawnCount;
             
-            console.log(`Wave ${store.world.wave}: Spawning ${spawnCount} enemies (base: ${baseSpawnCount}, density: ${store.world.enemyDensityBonus})`);
+            // NEW SCALING SYSTEM: After wave 35, stop increasing spawn count and increase enemy stats instead
+            let baseSpawnCount, spawnCount, lateGameScaling = 1;
+            
+            if (store.world.wave <= 35) {
+                // Normal scaling: increase spawn count with waves
+                baseSpawnCount = Math.floor((7 + Math.floor(store.world.wave * 1.8)) * store.world.enemyDensityBonus);
+                spawnCount = baseSpawnCount;
+            } else {
+                // Wave 35+: Cap spawn count, scale enemy stats instead
+                baseSpawnCount = Math.floor((7 + Math.floor(35 * 1.8)) * store.world.enemyDensityBonus);
+                spawnCount = Math.max(1, Math.floor(baseSpawnCount * 0.8)); // Slightly fewer enemies for performance
+                
+                // Calculate what the spawn count WOULD have been, use that as scaling factor
+                const theoreticalSpawnCount = Math.floor((7 + Math.floor(store.world.wave * 1.8)) * store.world.enemyDensityBonus);
+                lateGameScaling = theoreticalSpawnCount / baseSpawnCount; // This becomes our health/damage multiplier
+            }
+            
+            // Store late-game scaling factor globally for damage calculations
+            store.world.lateGameDamageScaling = lateGameScaling;
+            
+            console.log(`Wave ${store.world.wave}: Spawning ${spawnCount} enemies (base: ${baseSpawnCount}, lateGameScaling: ${lateGameScaling.toFixed(2)}x)`);
             
             for (let i = 0; i < spawnCount; i++) {
                 const types = ['drone', 'drone', 'hunter'];
@@ -1362,13 +1379,13 @@ class FlameParticle {
                 if (store.world.wave > 7) types.push('angler');
                 if (store.world.wave > 9) types.push('manta');
                 
-                console.log(`Available enemy types for wave ${store.world.wave}:`, types);
                 const enemy = spawnEnemy(types[Math.floor(Math.random() * types.length)]);
                 
-                // Double health for optimized waves to maintain difficulty
-                if (isOptimizedWave) {
-                    enemy.hp *= 2;
-                    enemy.hpMax *= 2;
+                // Apply late-game scaling to health and damage
+                if (lateGameScaling > 1) {
+                    enemy.hp *= lateGameScaling;
+                    enemy.hpMax *= lateGameScaling;
+                    enemy.damage = (enemy.damage || 10) * lateGameScaling; // Scale damage too
                 }
                 
                 console.log(`Spawned ${enemy.type} at (${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)}) with ${enemy.hp} HP`);
@@ -1392,7 +1409,7 @@ class FlameParticle {
         ];
         const type = types[bossCycle];
         let hp = type.baseHp * scale * store.world.bossHealthBonus;
-        const collarBonus = 1 + (store.world.collarStacks * 0.12); // 12% increase per collar stack
+        const collarBonus = 1 + (store.world.collarStacks * 0.25); // 25% increase per collar stack
         hp *= collarBonus;
         
         const boss = { ...type, x: W / 2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, patternPhase: 0, isEnraged: false, attackPhase: 0, phaseTimer: 0 };
@@ -1432,7 +1449,7 @@ class FlameParticle {
         }
         
         c.hp *= waveMultiplier * store.world.enemyHealthBonus;
-        const collarBonus = 1 + (store.world.collarStacks * 0.12); // 12% increase per collar stack
+        const collarBonus = 1 + (store.world.collarStacks * 0.25); // 25% increase per collar stack
         c.hp *= collarBonus;
         
         console.log(`🔍 Enemy Health Debug | Type: ${type} | Base: ${cfgs[type].hp} | Wave: ${wave} | WaveMult: ${waveMultiplier.toFixed(2)} | EnemyBonus: ${store.world.enemyHealthBonus.toFixed(2)} | CollarBonus: ${collarBonus.toFixed(2)} | Final HP: ${c.hp.toFixed(1)}`);
@@ -2316,10 +2333,11 @@ class FlameParticle {
             const veryGentleGrowth = (store.world.wave - 10) * 0.02; // Only +2% per wave after 10
             dmgScale = wave10Scale * (1 + veryGentleGrowth);
         }
-        // Apply collar bonus to enemy damage as well
-        const collarBonus = 1 + (store.world.collarStacks * 0.12); // 12% increase per collar stack
-        dmgScale *= collarBonus;
-        console.log(`Wave ${store.world.wave}: Damage scale = ${dmgScale.toFixed(2)} (BETTER BALANCED) | CollarStacks: ${store.world.collarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x`);
+        // Apply collar bonus and late-game scaling to enemy damage
+        const collarBonus = 1 + (store.world.collarStacks * 0.25); // 25% increase per collar stack
+        const lateGameBonus = store.world.lateGameDamageScaling || 1;
+        dmgScale *= collarBonus * lateGameBonus;
+        console.log(`Wave ${store.world.wave}: Damage scale = ${dmgScale.toFixed(2)} | CollarStacks: ${store.world.collarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x | LateGameBonus: ${lateGameBonus.toFixed(2)}x`);
         store.eBullets.forEach(b => {
             b.x += b.vx * dt;
             b.y += b.vy * dt;
@@ -2804,7 +2822,7 @@ class FlameParticle {
             // ◢◣ TEMPORAL ANOMALY TRIGGER ◣◢ (COMMENTED OUT - NEEDS POLISH)
             // checkTemporalAnomaly();
             
-            const hpBonus = 3;
+            const hpBonus = 1;
             store.player.hpMax += hpBonus;
             store.player.hp += hpBonus;
             initWave();
