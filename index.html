@@ -1338,13 +1338,12 @@ class FlameParticle {
         ];
         const type = types[bossCycle];
         let hp = type.baseHp * scale * store.world.bossHealthBonus;
-        // DISABLED: Collar bonus was making bosses unkillable
-        // const collarBonus = 1 + (store.world.collarStacks > 0 ? 0.4 + (store.world.collarStacks - 1) * 0.1 : 0);
-        // hp *= collarBonus;
+        const collarBonus = 1 + (store.world.collarStacks > 0 ? 0.4 + (store.world.collarStacks - 1) * 0.1 : 0);
+        hp *= collarBonus;
         
         const boss = { ...type, x: W / 2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, patternPhase: 0, isEnraged: false, attackPhase: 0, phaseTimer: 0 };
         
-        console.log(`🏆 Boss Created: ${boss.name} | Wave: ${store.world.wave} | HP: ${hp} | Scale: ${scale}`);
+        console.log(`🏆 Boss Created: ${boss.name} | Wave: ${store.world.wave} | HP: ${hp} | Scale: ${scale} | CollarStacks: ${store.world.collarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x`);
         
         // Create Boss class instance for DEATH ENGINE
         if (boss.name === 'DEATH ENGINE') {
@@ -1379,11 +1378,10 @@ class FlameParticle {
         }
         
         c.hp *= waveMultiplier * store.world.enemyHealthBonus;
-        // DISABLED: Collar bonus was making enemies unkillable
-        // const collarBonus = 1 + (store.world.collarStacks > 0 ? 0.4 + (store.world.collarStacks - 1) * 0.1 : 0);
-        // c.hp *= collarBonus;
+        const collarBonus = 1 + (store.world.collarStacks > 0 ? 0.4 + (store.world.collarStacks - 1) * 0.1 : 0);
+        c.hp *= collarBonus;
         
-        console.log(`🔍 Enemy Health Debug | Type: ${type} | Base: ${cfgs[type].hp} | Wave: ${wave} | WaveMult: ${waveMultiplier.toFixed(2)} | EnemyBonus: ${store.world.enemyHealthBonus.toFixed(2)} | Final HP: ${c.hp.toFixed(1)}`);
+        console.log(`🔍 Enemy Health Debug | Type: ${type} | Base: ${cfgs[type].hp} | Wave: ${wave} | WaveMult: ${waveMultiplier.toFixed(2)} | EnemyBonus: ${store.world.enemyHealthBonus.toFixed(2)} | CollarBonus: ${collarBonus.toFixed(2)} | Final HP: ${c.hp.toFixed(1)}`);
         const e = { ...c, type, id: Date.now() + Math.random(), x: 20 + Math.random() * (W - 40), y: -50 - Math.random() * 250, hpMax: c.hp, phase: type === 'phantom', t: 0, fireT: (c.fireCooldown || 0), isBursting: false, burstTimer: 0, stunTimer: 0, knockback: null };
         if (e.type === 'manta') { e.startX = e.x; e.amplitude = 150 + Math.random() * 100; e.frequency = 0.5 + Math.random() * 0.5; e.dodgeCooldown = 0; e.isDodging = false; }
         return e;
@@ -2723,12 +2721,11 @@ class FlameParticle {
             if (store.world.waveStartTime > 0) {
                 const waveClearTime = (performance.now() - store.world.waveStartTime) / 1000;
                 if (waveClearTime < 5 && store.world.wave > 1) {
-                    // DISABLED: Exponential health scaling was making enemies unkillable
-                    // store.world.enemyDensityBonus *= 1.1;
-                    // store.world.enemyHealthBonus *= 1.05;
-                    store.world.xpMultiplier *= 1.05; // Keep XP bonus only
-                    // store.world.collarStacks++; // Disabled collar stacking
-                    announce("EXPERIENCE BONUS ACTIVATED!");
+                    store.world.enemyDensityBonus *= 1.1;
+                    store.world.enemyHealthBonus *= 1.05;
+                    store.world.xpMultiplier *= 1.05;
+                    store.world.collarStacks++;
+                    announce("SWARM INTENSITY RISING!");
                 }
             }
             
@@ -2839,10 +2836,9 @@ class FlameParticle {
         }
         store.world.bossHealthBonus *= healthBonusMultiplier;
         if (announcedAdaptation) {
-            // DISABLED: Exponential health scaling was making bosses unkillable
-            // const enemyHealthBonus = healthBonusMultiplier > 1.1 ? 1.15 : 1.05;
-            // store.world.enemyHealthBonus *= enemyHealthBonus;
-            // store.world.enemyDensityBonus *= 1.10;
+            const enemyHealthBonus = healthBonusMultiplier > 1.1 ? 1.15 : 1.05;
+            store.world.enemyHealthBonus *= enemyHealthBonus;
+            store.world.enemyDensityBonus *= 1.10;
             setTimeout(() => announce("GUARDIAN DEFEATED!"), 1000);
         }
     }
