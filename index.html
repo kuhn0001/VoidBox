@@ -1266,6 +1266,12 @@ class FlameParticle {
 
     function initWave() {
         const isBossWave = store.world.wave % 5 === 0;
+        
+        // Clear poison puddles at start of each wave for clean slate
+        if (store.poisonPuddles) {
+            store.poisonPuddles = [];
+        }
+        
         if (isBossWave) {
             store.enemies = [];
             
@@ -2803,6 +2809,12 @@ class FlameParticle {
         store.world.score += 2000; store.world.shards += 25; store.world.xp += 100; store.world.bosses++;
         const bossX = store.boss.x;
         const bossY = store.boss.y;
+        
+        // Clear any poison puddles from HIVE SOVEREIGN when boss is defeated
+        if (store.poisonPuddles) {
+            store.poisonPuddles = [];
+        }
+        
         store.boss = null;
         announce('⚡ GUARDIAN DEFEATED ⚡');
         explode(bossX, bossY, true);
@@ -2983,7 +2995,7 @@ class FlameParticle {
         
         store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = [];
         store.drones = []; store.hounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
-        store.lightningBolts = []; store.empNovas = [];
+        store.lightningBolts = []; store.empNovas = []; store.poisonPuddles = [];
         store.iceman = null;
         store._startTs = performance.now(); store.isGameOver = false;
         store.cheatsUsed = false;
