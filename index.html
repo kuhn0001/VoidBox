@@ -3842,6 +3842,7 @@ function render(dt) {
                 b.safeZoneY = H * 0.5; // Start safe zone in middle
                 b.safeZoneChanges = 0;
                 b.maxSafeZoneChanges = 3;
+                b.hasDoneSecondDisappear = false;
             }
 
             // Phase 1: Normal attacks until 50% HP
@@ -3945,165 +3946,49 @@ function render(dt) {
             else if (b.disappearPhase) {
                 const disappearTime = (performance.now() - b.disappearStartTime) / 1000;
                 
-                // Change bullet pattern/safe zone location during disappear phase
-                if (b.safeZoneChanges < b.maxSafeZoneChanges) {
-                    const changeInterval = 3; // Change every 3 seconds (shorter phases)
-                    if (disappearTime > (b.safeZoneChanges + 1) * changeInterval) {
-                        // Store old safe zone position for reference
-                        b.oldSafeZoneY = b.safeZoneY;
-                        
-                        // Set safe zone based on pattern type
-                        switch(b.safeZoneChanges) {
-                            case 0: // Preparing for horizontal pattern
-                                b.safeZoneY = H * 0.5; // Middle horizontal
-                                announce(`HORIZONTAL BARRAGE INCOMING!`);
-                                break;
-                            case 1: // Preparing for vertical pattern  
-                                b.safeZoneY = H * 0.5; // Safe zone will be vertical middle
-                                announce(`VERTICAL STORM APPROACHING!`);
-                                break;
-                            case 2: // Preparing for diagonal pattern
-                                b.safeZoneY = H * 0.3; // Corner safe zones
-                                announce(`DIAGONAL CHAOS UNLEASHED!`);
-                                break;
-                        }
-                        
-                        b.safeZoneChanges++;
-                        playSound('shao_kahn'); // Laugh when safe zone changes
-                    }
-                }
-                
-                // Spawn train bullets continuously with different patterns per subphase
+                // Spawn train bullets continuously - 2 chunks moving opposite directions with safe zone in middle
                 if (!b.trainBulletTimer) b.trainBulletTimer = 0;
                 b.trainBulletTimer -= dt;
                 
                 if (b.trainBulletTimer <= 0) {
                     b.trainBulletTimer = 0.08; // Very frequent spawning
                     
-                    const safeZoneHeight = 80;
+                    const safeZoneHeight = 120; // Safe zone in middle
+                    const safeZoneY = H * 0.5; // Center of screen
                     const bulletSpeed = 280;
-                    const bulletSpacing = 30;
+                    const bulletSpacing = 25;
                     
-                    // Different bullet patterns for each subphase
-                    const currentSubphase = b.safeZoneChanges;
+                    // Top chunk: bullets moving right to left (from top)
+                    const topBoundary = safeZoneY - safeZoneHeight/2;
+                    if (topBoundary > 30) {
+                        for (let y = 0; y < topBoundary; y += bulletSpacing) {
+                            store.eBullets.push({
+                                x: -10, y: y,
+                                vx: bulletSpeed, vy: 0,
+                                r: 6, col: '#FF0000',
+                                dmg: 25 * dmgScale,
+                                life: (W + 20) / bulletSpeed + 1
+                            });
+                        }
+                    }
                     
-                    switch(currentSubphase) {
-                        case 0:
-                            // Phase 1: Horizontal trains (original pattern)
-                            // Safe zone in horizontal center
-                            const topBoundary1 = b.safeZoneY - safeZoneHeight/2;
-                            if (topBoundary1 > 30) {
-                                for (let y = 0; y < topBoundary1; y += bulletSpacing) {
-                                    store.eBullets.push({
-                                        x: -10, y: y,
-                                        vx: bulletSpeed, vy: 0,
-                                        r: 6, col: '#FF0000',
-                                        dmg: 25 * dmgScale,
-                                        life: (W + 20) / bulletSpeed + 1
-                                    });
-                                }
-                            }
-                            
-                            const bottomBoundary1 = b.safeZoneY + safeZoneHeight/2;
-                            if (bottomBoundary1 < H - 30) {
-                                for (let y = bottomBoundary1; y < H; y += bulletSpacing) {
-                                    store.eBullets.push({
-                                        x: W + 10, y: y,
-                                        vx: -bulletSpeed, vy: 0,
-                                        r: 6, col: '#FF0000',
-                                        dmg: 25 * dmgScale,
-                                        life: (W + 20) / bulletSpeed + 1
-                                    });
-                                }
-                            }
-                            break;
-                            
-                        case 1:
-                            // Phase 2: Vertical trains (left/right sides)
-                            // Safe zone positioned vertically in middle (around x = W/2)
-                            const safeZoneWidth = 100;
-                            const leftBoundary = (W/2) - safeZoneWidth/2;
-                            const rightBoundary = (W/2) + safeZoneWidth/2;
-                            
-                            // Left side vertical bullets (moving down)
-                            for (let x = 0; x < leftBoundary; x += bulletSpacing) {
-                                store.eBullets.push({
-                                    x: x, y: -10,
-                                    vx: 0, vy: bulletSpeed,
-                                    r: 6, col: '#FF4500',
-                                    dmg: 25 * dmgScale,
-                                    life: (H + 20) / bulletSpeed + 1
-                                });
-                            }
-                            
-                            // Right side vertical bullets (moving up)
-                            for (let x = rightBoundary; x < W; x += bulletSpacing) {
-                                store.eBullets.push({
-                                    x: x, y: H + 10,
-                                    vx: 0, vy: -bulletSpeed,
-                                    r: 6, col: '#FF4500',
-                                    dmg: 25 * dmgScale,
-                                    life: (H + 20) / bulletSpeed + 1
-                                });
-                            }
-                            break;
-                            
-                        case 2:
-                            // Phase 3: Diagonal cross pattern
-                            // Safe zone in one corner (randomized)
-                            const cornerChoice = Math.floor(Math.random() * 4);
-                            let safeCornerX, safeCornerY;
-                            
-                            switch(cornerChoice) {
-                                case 0: safeCornerX = W * 0.2; safeCornerY = H * 0.2; break; // Top-left
-                                case 1: safeCornerX = W * 0.8; safeCornerY = H * 0.2; break; // Top-right  
-                                case 2: safeCornerX = W * 0.2; safeCornerY = H * 0.8; break; // Bottom-left
-                                case 3: safeCornerX = W * 0.8; safeCornerY = H * 0.8; break; // Bottom-right
-                            }
-                            
-                            // Main diagonal (top-left to bottom-right)
-                            const diagBulletCount1 = 20;
-                            for (let i = 0; i < diagBulletCount1; i++) {
-                                const t = i / (diagBulletCount1 - 1);
-                                const startX = -50;
-                                const startY = t * H;
-                                const distance = Math.sqrt((safeCornerX - startX) ** 2 + (safeCornerY - startY) ** 2);
-                                
-                                if (distance > 80) { // Avoid safe zone
-                                    store.eBullets.push({
-                                        x: startX, y: startY,
-                                        vx: bulletSpeed * 0.7, vy: bulletSpeed * 0.3,
-                                        r: 6, col: '#8B0000',
-                                        dmg: 25 * dmgScale,
-                                        life: 6
-                                    });
-                                }
-                            }
-                            
-                            // Counter diagonal (top-right to bottom-left) 
-                            const diagBulletCount2 = 20;
-                            for (let i = 0; i < diagBulletCount2; i++) {
-                                const t = i / (diagBulletCount2 - 1);
-                                const startX = W + 50;
-                                const startY = t * H;
-                                const distance = Math.sqrt((safeCornerX - startX) ** 2 + (safeCornerY - startY) ** 2);
-                                
-                                if (distance > 80) { // Avoid safe zone
-                                    store.eBullets.push({
-                                        x: startX, y: startY,
-                                        vx: -bulletSpeed * 0.7, vy: bulletSpeed * 0.3,
-                                        r: 6, col: '#8B0000',
-                                        dmg: 25 * dmgScale,
-                                        life: 6
-                                    });
-                                }
-                            }
-                            break;
+                    // Bottom chunk: bullets moving left to right (from bottom)
+                    const bottomBoundary = safeZoneY + safeZoneHeight/2;
+                    if (bottomBoundary < H - 30) {
+                        for (let y = bottomBoundary; y < H; y += bulletSpacing) {
+                            store.eBullets.push({
+                                x: W + 10, y: y,
+                                vx: -bulletSpeed, vy: 0,
+                                r: 6, col: '#FF0000',
+                                dmg: 25 * dmgScale,
+                                life: (W + 20) / bulletSpeed + 1
+                            });
+                        }
                     }
                 }
                 
-                // Return after 9 seconds (3 phases * 3 seconds each)
-                if (disappearTime > 9) {
+                // Return after 4 seconds (single phase)
+                if (disappearTime > 4) {
                     b.disappearPhase = false;
                     b.visible = true;
                     b.isInvincible = false;
@@ -4123,11 +4008,106 @@ function render(dt) {
                     announce('THE DEATH ENGINE RETURNS!');
                 }
             }
+            // Second disappear phase (enraged) - 2 fields of bullets with contact safe zone
+            else if (b.disappearPhase && b.hasDoneSecondDisappear) {
+                const disappearTime = (performance.now() - b.disappearStartTime) / 1000;
+                
+                // Spawn train bullets continuously - 2 fields going opposite directions with contact safe zone
+                if (!b.trainBulletTimer) b.trainBulletTimer = 0;
+                b.trainBulletTimer -= dt;
+                
+                if (b.trainBulletTimer <= 0) {
+                    b.trainBulletTimer = 0.06; // Even more frequent spawning for enraged phase
+                    
+                    const safeZoneWidth = 60; // Narrower safe zone - contact without buffer
+                    const safeZoneX = W * 0.5; // Center of screen
+                    const bulletSpeed = 320; // Faster bullets
+                    const bulletSpacing = 20;
+                    
+                    // Left field: bullets moving right (from left side)
+                    const leftBoundary = safeZoneX - safeZoneWidth/2;
+                    if (leftBoundary > 30) {
+                        for (let x = 0; x < leftBoundary; x += bulletSpacing) {
+                            for (let y = 0; y < H; y += bulletSpacing * 2) { // Fill vertically
+                                store.eBullets.push({
+                                    x: x, y: y,
+                                    vx: bulletSpeed, vy: 0,
+                                    r: 5, col: '#FF0000',
+                                    dmg: 30 * dmgScale, // Higher damage
+                                    life: (W + 20) / bulletSpeed + 1
+                                });
+                            }
+                        }
+                    }
+                    
+                    // Right field: bullets moving left (from right side)
+                    const rightBoundary = safeZoneX + safeZoneWidth/2;
+                    if (rightBoundary < W - 30) {
+                        for (let x = rightBoundary; x < W; x += bulletSpacing) {
+                            for (let y = 0; y < H; y += bulletSpacing * 2) { // Fill vertically
+                                store.eBullets.push({
+                                    x: x, y: y,
+                                    vx: -bulletSpeed, vy: 0,
+                                    r: 5, col: '#FF0000',
+                                    dmg: 30 * dmgScale, // Higher damage
+                                    life: (W + 20) / bulletSpeed + 1
+                                });
+                            }
+                        }
+                    }
+                }
+                
+                // Return after 5 seconds (longer enraged phase)
+                if (disappearTime > 5) {
+                    b.disappearPhase = false;
+                    b.visible = true;
+                    b.isInvincible = false;
+                    b.fireT = 0.5; // Very aggressive after returning
+                    
+                    // Reposition boss
+                    b.x = W / 2;
+                    b.y = 100;
+                    
+                    // Update skull renderer position
+                    if (b.skullRenderer) {
+                        b.skullRenderer.x = b.x;
+                        b.skullRenderer.y = b.y;
+                    }
+                    
+                    playSound('shao_kahn'); // Final laugh as he returns
+                    announce('THE DEATH ENGINE RETURNS FOR THE FINAL ASSAULT!');
+                }
+            }
             // Phase 2: Normal combat after returning
             else if (b.phase === 2 && !b.disappearPhase) {
                 // Calculate health percentage for final phase mechanics
                 const healthPercent = b.hp / b.hpMax;
                 const isFinalPhase = healthPercent <= 0.25; // Final phase at 25% health
+                
+                // Second disappear phase when enraged (red)
+                if (isFinalPhase && !b.hasDoneSecondDisappear) {
+                    b.hasDoneSecondDisappear = true;
+                    b.disappearPhase = true;
+                    b.disappearStartTime = performance.now();
+                    b.isInvincible = true;
+                    b.visible = false;
+                    
+                    // Move boss offscreen
+                    b.x = W / 2;
+                    b.y = H + 200;
+                    
+                    // Update skull renderer position
+                    if (b.skullRenderer) {
+                        b.skullRenderer.x = b.x;
+                        b.skullRenderer.y = b.y;
+                    }
+                    
+                    playSound('shao_kahn'); // Skull laugh when disappearing again
+                    announce('THE DEATH ENGINE VANISHES INTO THE VOID AGAIN!');
+                    
+                    // Reset bullet timer
+                    b.trainBulletTimer = 0;
+                }
                 
                 // Red coloration and faster movement in final phase
                 const moveSpeed = isFinalPhase ? 0.9 : 0.6; // Faster movement when low on health
