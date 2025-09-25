@@ -4169,12 +4169,19 @@ function render(dt) {
         const p = store.player;
         
         // Beef shield takes damage first if pilot is beef
-        if (p.pilotGenome === 'beef' && p.beefShield > 0) {
+        if (p.pilotGenome === 'beef' && p.beefShield > 0 && p.beefShieldCooldown <= 0) {
             const beefAbsorbed = Math.min(p.beefShield, dmg);
             p.beefShield -= beefAbsorbed;
             dmg -= beefAbsorbed;
             p.beefShieldDamageTaken += beefAbsorbed;
             console.log(`Beef shield absorbed ${beefAbsorbed} damage, remaining: ${p.beefShield}`);
+            
+            // If beef shield was depleted, start cooldown
+            if (p.beefShield <= 0) {
+                p.beefShieldCooldown = 2.0; // 2 second cooldown before shield can absorb again
+                console.log('Beef shield depleted - starting cooldown');
+            }
+            
             if (dmg <= 0) return; // All damage absorbed by beef shield
         }
         
@@ -4210,6 +4217,12 @@ function render(dt) {
         
         // Skip if no damage events
         if (damageDealt === 0 && damageTaken === 0) return;
+        
+        // Update cooldown
+        if (p.beefShieldCooldown > 0) {
+            p.beefShieldCooldown -= 0.016; // Decrease by ~1/60 (assuming 60 FPS)
+            if (p.beefShieldCooldown < 0) p.beefShieldCooldown = 0;
+        }
         
         // Growth rate: 1 shield per 50 damage dealt, shrinkage rate: 1 shield per 30 damage taken
         // Made more responsive for better gameplay feel
@@ -8525,6 +8538,7 @@ function tryVoidStep(player, target, now = performance.now()){
                 p.beefShield = p.beefShieldMax * 0.5; // Start with 50% shield for visibility
                 p.beefShieldDamageDealt = 0; // Track damage dealt for shield charging
                 p.beefShieldDamageTaken = 0; // Track damage taken for shield depletion
+                p.beefShieldCooldown = 0; // Cooldown after depletion before shield can absorb again
                 console.log('BEEF: Initialized dynamic shield system - wave:', store.world.wave, 'max:', p.beefShieldMax, 'starting:', p.beefShield);
                 break;
             case 'wizard':
