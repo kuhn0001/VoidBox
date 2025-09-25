@@ -9,6 +9,10 @@ const io = require('socket.io')(http, {
 });
 const uuid = require('uuid');
 const _ = require('lodash');
+const path = require('path');
+
+// Serve static files from the parent directory (where index.html and multi.html are)
+app.use(express.static(path.join(__dirname, '..')));
 
 const PORT = process.env.PORT || 8080;
 const rooms = {};
