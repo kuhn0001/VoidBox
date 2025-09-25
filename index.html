@@ -606,6 +606,45 @@
             color: #1a0033;
             opacity: 0.4;
         }
+
+        /* Teleport Tutorial Popup */
+        #teleportTutorialPanel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, rgba(0,0,0,0.95) 0%, rgba(102,0,204,0.2) 100%);
+            border: 2px solid var(--accent);
+            border-radius: 15px;
+            padding: 40px;
+            max-width: 500px;
+            text-align: center;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 0 30px rgba(204,153,255,0.4);
+        }
+
+        #teleportTutorialPanel h2 {
+            color: var(--accent);
+            font-family: 'Orbitron';
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px var(--accent);
+        }
+
+        .teleport-instruction {
+            font-size: 18px;
+            color: #ffddff;
+            margin: 15px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .teleport-icon {
+            font-size: 24px;
+            filter: drop-shadow(0 0 5px var(--accent));
+        }
         
     </style>
 </head>
@@ -645,7 +684,7 @@
                             <div class="skill-card" data-genome="beef">
                                 <div class="skill-icon"><img src="cow.png" class="pilot-icon" alt="BEEF"></div>
                                 <div class="skill-title">BEEF</div>
-                                <div class="skill-desc">A charging juggernaut that automatically retaliates against nearby foes.</div>
+                                <div class="skill-desc">Cybernetic heavy assault unit with adaptive bio-armor that responds to hostile engagement. Neural implants trigger reflexive counterstrike protocols when threatened.</div>
                                 <div class="skill-bonuses">
                                     + Defense<br>
                                     + Special Ability
@@ -654,7 +693,7 @@
                             <div class="skill-card" data-genome="rocketman">
                                 <div class="skill-icon"><img src="rockyboy.png" class="pilot-icon" alt="ROCKETMAN"></div>
                                 <div class="skill-title">ROCKETMAN</div>
-                                <div class="skill-desc">A master of explosive ordnance who commands devastating missile strikes.</div>
+                                <div class="skill-desc">Former corporate military contractor with black-market ordnance mods. Tactical AI systems provide precision strike capabilities and explosive payload optimization.</div>
                                 <div class="skill-bonuses">
                                     + Special Ability<br>
                                     &nbsp;
@@ -663,11 +702,7 @@
                             <div class="skill-card" data-genome="wizard">
                                 <div class="skill-icon"><img src="goggles.png" class="pilot-icon" alt="VOIDMANCER"></div>
                                 <div class="skill-title">VOIDMANCER</div>
-                                <div class="skill-desc">An ethereal pilot who can blink through the void itself.</div>
-                                <div class="ability-hint">
-                                    <span class="ability-icon">🖱️</span> Right-click or 
-                                    <span class="ability-icon">👆👆</span> double-tap to teleport
-                                </div>
+                                <div class="skill-desc">Quantum-phase enhanced operative with experimental void-fold technology. Neural interfaces allow instantaneous spatial displacement through dimensional rifts.</div>
                                 <div class="skill-bonuses">
                                     + Special Ability<br>
                                     &nbsp;
@@ -766,6 +801,25 @@
                         <div id="shopGrid" class="grid"></div>
                         <div class="row" style="justify-content:center;margin-top:10px">
                             <button id="closeShop" class="btn" type="button">CLOSE</button>
+                        </div>
+                    </div>
+                    <div id="teleportTutorialPanel" class="panel hide">
+                        <div class="matrix-container"></div>
+                        <h2>⚡ VOID-FOLD PROTOCOL ⚡</h2>
+                        <div class="teleport-instruction">
+                            <span class="teleport-icon">🖱️</span>
+                            <span>Right-click to teleport</span>
+                        </div>
+                        <div class="teleport-instruction">
+                            <span class="teleport-icon">👆👆</span>
+                            <span>Double-tap to teleport (mobile)</span>
+                        </div>
+                        <div style="margin-top: 30px;">
+                            <p style="color: #ccaaff; font-size: 14px; margin-bottom: 20px;">
+                                Quantum displacement damages enemies at origin point.<br>
+                                Use strategically to escape danger and deal damage.
+                            </p>
+                            <button id="closeTeleportTutorial" class="btn" type="button">GOT IT</button>
                         </div>
                     </div>
                 </div>
@@ -7679,7 +7733,7 @@ function tryVoidStep(player, target, now = performance.now()){
     }
 
     // --- PAUSE & MENU LOGIC ---
-    const PANELS = ['namePanel', 'pilotPanel', 'scorePanel', 'levelPanel', 'shopPanel', 'storyPanel', 'subclassPanel'];
+    const PANELS = ['namePanel', 'pilotPanel', 'scorePanel', 'levelPanel', 'shopPanel', 'storyPanel', 'subclassPanel', 'teleportTutorialPanel'];
     function isAnyPanelOpen() {
         return PANELS.some(id => !q(id).classList.contains('hide'));
     }
@@ -7721,16 +7775,43 @@ function tryVoidStep(player, target, now = performance.now()){
             panel.classList.add('hide');
             applyGenomeBonus(genome);
             
-            // ◢◣ ACTIVATE ENTROPY REDUCTION ENGINE FOR ALL PILOTS ◣◢ [DISABLED FOR STABILITY]
-            // activateEntropyEngine(); // Now works for wizard, beef, and rocketman
-            
-            resumeGame();
+            // Show teleport tutorial for voidmancer
+            if (genome === 'wizard') {
+                showTeleportTutorial();
+            } else {
+                // ◢◣ ACTIVATE ENTROPY REDUCTION ENGINE FOR ALL PILOTS ◣◢ [DISABLED FOR STABILITY]
+                // activateEntropyEngine(); // Now works for wizard, beef, and rocketman
+                
+                resumeGame();
+            }
             cards.forEach(c => c.removeEventListener('click', clickHandler));
         };
         
         cards.forEach(card => {
             card.addEventListener('click', clickHandler);
         });
+    }
+
+    function showTeleportTutorial() {
+        const panel = q('teleportTutorialPanel');
+        
+        // Initialize matrix
+        const matrixContainer = panel.querySelector('.matrix-container');
+        if (matrixContainer.matrix) {
+            matrixContainer.matrix.init();
+        }
+        
+        panel.classList.remove('hide');
+        
+        // Set up close button handler
+        const closeBtn = q('closeTeleportTutorial');
+        const closeHandler = () => {
+            panel.classList.add('hide');
+            closeBtn.removeEventListener('click', closeHandler);
+            resumeGame();
+        };
+        
+        closeBtn.addEventListener('click', closeHandler);
     }
 
     // --- GIBBING EFFECT ---
@@ -7831,17 +7912,23 @@ function tryVoidStep(player, target, now = performance.now()){
         
         switch(genome) {
             case 'beef':
-                // Remove HP bonus, add dynamic beef shield system
-                // Beef shield scales aggressively to match late game damage
-                // Early: (wave * 6) + 10, Late: exponential catch-up
-                let baseShield = (store.world.wave * 6) + 10;
-                if (store.world.wave > 30) {
-                    // Exponential scaling after wave 30 to match damage
-                    const extraWaves = store.world.wave - 30;
-                    baseShield = 190 + (extraWaves * extraWaves * 2); // Quadratic growth
+                // Beef shield system - balanced progression to prevent one-shots while maintaining meaningful damage
+                let baseShield = 10; // Start low to allow meaningful damage early game
+                
+                // Only scale shield after 3rd boss (bosses defeated >= 3)
+                if (store.world.bosses >= 3) {
+                    // Gentle scaling after boss 3: +3 per wave beyond boss unlock
+                    const wavesAfterBoss3 = Math.max(0, store.world.wave - 15); // Assume boss 3 around wave 15
+                    baseShield = 10 + (wavesAfterBoss3 * 3);
+                    
+                    // More aggressive scaling only after wave 25 to match late game damage
+                    if (store.world.wave > 25) {
+                        const lateWaves = store.world.wave - 25;
+                        baseShield = 40 + (lateWaves * 5); // +5 per wave after 25
+                    }
                 }
                 p.beefShieldMax = baseShield;
-                p.beefShield = p.beefShieldMax * 0.5; // Start with 50% shield for visibility
+                p.beefShield = Math.max(5, p.beefShieldMax * 0.75); // Start with 75% shield, minimum 5
                 p.beefShieldDamageDealt = 0; // Track damage dealt for shield charging
                 p.beefShieldDamageTaken = 0; // Track damage taken for shield depletion
                 p.beefShieldCooldown = 0; // Cooldown after depletion before shield can absorb again
