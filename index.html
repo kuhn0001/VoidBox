@@ -666,6 +666,16 @@
                 <div id="diagBox">
                     <div class="chip">v3.8.0</div>
                     <div class="chip">FPS <span id="fps">—</span></div>
+                    <div class="chip">Collar <span id="collar">0 (0%)</span></div>
+                </div>
+                
+                <div id="healthTable" style="position:absolute; top:50px; left:10px; font-size:10px; color:var(--fg); background:rgba(0,0,0,0.5); padding:5px; border-radius:5px;">
+                    <table>
+                        <tr><td>Enemy Base HP</td><td id="enemyBaseHp">-</td></tr>
+                        <tr><td>Enemy Current HP</td><td id="enemyCurrentHp">-</td></tr>
+                        <tr><td>Boss Base HP</td><td id="bossBaseHp">-</td></tr>
+                        <tr><td>Boss Current HP</td><td id="bossCurrentHp">-</td></tr>
+                    </table>
                 </div>
                 
                 <div id="ui">
@@ -1187,7 +1197,7 @@ class FlameParticle {
                 }
                 p.hpMax += hpIncrease; 
                 p.hp += hpIncrease;
-                console.log(`HP upgrade: +${hpIncrease} HP (wave ${store.world.wave})`);
+                // console.log(`HP upgrade: +${hpIncrease} HP (wave ${store.world.wave})`);
             }, 
             desc: level => {
                 let hpIncrease = 10;
@@ -1370,7 +1380,11 @@ class FlameParticle {
             // Store late-game scaling factor globally for damage calculations
             store.world.lateGameDamageScaling = lateGameScaling;
             
-            console.log(`Wave ${store.world.wave}: Spawning ${spawnCount} enemies (base: ${baseSpawnCount}, lateGameScaling: ${lateGameScaling.toFixed(2)}x)`);
+            // Apply collar bonus to spawn count
+            const collarBonus = 1 + (store.world.collarStacks * 0.08);
+            spawnCount = Math.floor(spawnCount * collarBonus);
+            
+            // console.log(`Wave ${store.world.wave}: Spawning ${spawnCount} enemies (base: ${baseSpawnCount}, lateGameScaling: ${lateGameScaling.toFixed(2)}x)`);
             
             for (let i = 0; i < spawnCount; i++) {
                 const types = ['drone', 'drone', 'hunter'];
@@ -1388,11 +1402,11 @@ class FlameParticle {
                     enemy.damage = (enemy.damage || 10) * lateGameScaling; // Scale damage too
                 }
                 
-                console.log(`Spawned ${enemy.type} at (${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)}) with ${enemy.hp} HP`);
+                // console.log(`Spawned ${enemy.type} at (${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)}) with ${enemy.hp} HP`);
                 store.enemies.push(enemy);
             }
             
-            console.log(`Total enemies spawned: ${store.enemies.length}`);
+            // console.log(`Total enemies spawned: ${store.enemies.length}`);
             store.world.waveStartTime = performance.now();
             announce(`◢ SECTOR ${store.world.wave} ◣`);
         }
@@ -1401,20 +1415,20 @@ class FlameParticle {
     function createBoss(scale) {
         const bossCycle = Math.floor((store.world.wave - 5) / 5) % 5;
         const types = [
-            { name: 'VOID SENTINEL', baseHp: 1500, r: 55, behavior: 'sentinel', color: '#8B4A9C' },
-            { name: 'NEXUS PHANTOM', baseHp: 1800, r: 50, behavior: 'hex', color: '#66aaff'},
-            { name: 'NEURAL CORE', baseHp: 2200, r: 60, behavior: 'malignus', color: '#2E8B57' },
-            { name: 'DEATH ENGINE', baseHp: 6000, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true },
-            { name: 'HIVE SOVEREIGN', baseHp: 5500, r: 85, behavior: 'broodlord', color: '#2d5016' }
+            { name: 'VOID SENTINEL', baseHp: 1800, r: 55, behavior: 'sentinel', color: '#8B4A9C' },
+            { name: 'NEXUS PHANTOM', baseHp: 2100, r: 50, behavior: 'hex', color: '#66aaff'},
+            { name: 'NEURAL CORE', baseHp: 2800, r: 60, behavior: 'malignus', color: '#2E8B57' },
+            { name: 'DEATH ENGINE', baseHp: 9000, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true },
+            { name: 'HIVE SOVEREIGN', baseHp: 8500, r: 85, behavior: 'broodlord', color: '#2d5016' }
         ];
         const type = types[bossCycle];
         let hp = type.baseHp * scale * store.world.bossHealthBonus;
-        const collarBonus = 1 + (store.world.collarStacks * 0.25); // 25% increase per collar stack
+        const collarBonus = 1 + (store.world.collarStacks * 0.08); // 8% increase per collar stack
         hp *= collarBonus;
         
         const boss = { ...type, x: W / 2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, patternPhase: 0, isEnraged: false, attackPhase: 0, phaseTimer: 0 };
         
-        console.log(`🏆 Boss Created: ${boss.name} | Wave: ${store.world.wave} | HP: ${hp} | Scale: ${scale} | CollarStacks: ${store.world.collarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x`);
+        // console.log(`🏆 Boss Created: ${boss.name} | Wave: ${store.world.wave} | HP: ${hp} | Scale: ${scale} | CollarStacks: ${store.world.collarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x`);
         
         // Create Boss class instance for DEATH ENGINE
         if (boss.name === 'DEATH ENGINE') {
@@ -1426,15 +1440,15 @@ class FlameParticle {
 
     function spawnEnemy(type = 'drone') {
         const cfgs = {
-            drone: { r: 10, v: 80, vx: 0, hp: 20, color: '#C0C0C0', xp: 5, score: 50, shards: 1, fireRateChance: 0.004 },
-            hunter: { r: 20, v: 100, vx: 0, hp: 15, color: '#DC143C', xp: 8, score: 80, shards: 1, fireRateChance: 0.005 },
-            trap_king_add: { r: 6, v: 90, vx: 0, hp: 8, color: '#ffc83d', damage: 5, xp: 2, score: 10, shards: 1 },
-            phantom: { r: 14, v: 90, vx: 0, hp: 30, color: '#FFFFFF', xp: 10, score: 100, shards: 2, fireRateChance: 0.006, fireCooldown: 1.5 },
-            mech: { r: 18, v: 40, vx: 0, hp: 70, color: '#FF8500', xp: 15, score: 150, shards: 3, fireRateChance: 0.007, attackPhase: 0 },
-            construct_shard: { r: 10, v: 120, vx: 0, hp: 15, color: '#e03434', xp: 3, score: 30, shards: 1 },
-            avian_hatchling: { r: 8, v: 150, vx: 0, hp: 20, color: '#9370DB', xp: 4, score: 40, shards: 1 },
-            angler: { r: 22, v: 30, vx: 0, hp: 120, color: '#00008b', xp: 18, score: 180, shards: 4, fireRateChance: 0.008 },
-            manta: { r: 26, v: 50, vx: 0, hp: 150, color: '#53B6FF', xp: 22, score: 220, shards: 5, fireRateChance: 0.009 }
+            drone: { r: 10, v: 80, vx: 0, hp: 22, color: '#C0C0C0', xp: 5, score: 50, shards: 1, fireRateChance: 0.004 },
+            hunter: { r: 20, v: 100, vx: 0, hp: 18, color: '#DC143C', xp: 8, score: 80, shards: 1, fireRateChance: 0.005 },
+            trap_king_add: { r: 6, v: 90, vx: 0, hp: 9, color: '#ffc83d', damage: 5, xp: 2, score: 10, shards: 1 },
+            phantom: { r: 14, v: 90, vx: 0, hp: 35, color: '#FFFFFF', xp: 10, score: 100, shards: 2, fireRateChance: 0.006, fireCooldown: 1.5 },
+            mech: { r: 18, v: 40, vx: 0, hp: 73, color: '#FF8500', xp: 15, score: 150, shards: 3, fireRateChance: 0.007, attackPhase: 0 },
+            construct_shard: { r: 10, v: 120, vx: 0, hp: 17, color: '#e03434', xp: 3, score: 30, shards: 1 },
+            avian_hatchling: { r: 8, v: 150, vx: 0, hp: 22, color: '#9370DB', xp: 4, score: 40, shards: 1 },
+            angler: { r: 22, v: 30, vx: 0, hp: 150, color: '#00008b', xp: 18, score: 180, shards: 4, fireRateChance: 0.008 },
+            manta: { r: 26, v: 50, vx: 0, hp: 175, color: '#53B6FF', xp: 22, score: 220, shards: 5, fireRateChance: 0.009 }
         };
         let c = { ...cfgs[type] }; const wave = store.world.wave;
         
@@ -1449,10 +1463,10 @@ class FlameParticle {
         }
         
         c.hp *= waveMultiplier * store.world.enemyHealthBonus;
-        const collarBonus = 1 + (store.world.collarStacks * 0.25); // 25% increase per collar stack
+        const collarBonus = 1 + (store.world.collarStacks * 0.08); // 8% increase per collar stack
         c.hp *= collarBonus;
         
-        console.log(`🔍 Enemy Health Debug | Type: ${type} | Base: ${cfgs[type].hp} | Wave: ${wave} | WaveMult: ${waveMultiplier.toFixed(2)} | EnemyBonus: ${store.world.enemyHealthBonus.toFixed(2)} | CollarBonus: ${collarBonus.toFixed(2)} | Final HP: ${c.hp.toFixed(1)}`);
+        // console.log(`🔍 Enemy Health Debug | Type: ${type} | Base: ${cfgs[type].hp} | Wave: ${wave} | WaveMult: ${waveMultiplier.toFixed(2)} | EnemyBonus: ${store.world.enemyHealthBonus.toFixed(2)} | CollarBonus: ${collarBonus.toFixed(2)} | Final HP: ${c.hp.toFixed(1)}`);
         const e = { ...c, type, id: Date.now() + Math.random(), x: 20 + Math.random() * (W - 40), y: -50 - Math.random() * 250, hpMax: c.hp, phase: type === 'phantom', t: 0, fireT: (c.fireCooldown || 0), isBursting: false, burstTimer: 0, stunTimer: 0, knockback: null };
         if (e.type === 'manta') { e.startX = e.x; e.amplitude = 150 + Math.random() * 100; e.frequency = 0.5 + Math.random() * 0.5; e.dodgeCooldown = 0; e.isDodging = false; }
         return e;
@@ -1475,7 +1489,7 @@ class FlameParticle {
                         p.beefChargeOrigin = { x: p.x, y: p.y }; // Current position becomes new origin
                         p.beefChargeTarget = { x: p.beefChainTargets[p.beefChainIndex].x, y: p.beefChainTargets[p.beefChainIndex].y };
                         p.beefChargeT = 0; // Reset timing for next jump
-                        console.log(`Chaining to target ${p.beefChainIndex + 1} of ${p.beefChainTargets.length}`);
+                        // console.log(`Chaining to target ${p.beefChainIndex + 1} of ${p.beefChainTargets.length}`);
                     } else {
                         // Chain complete - stay at final position for chain mode, or return for single charge
                         if (p.beefChainMode) {
@@ -1484,7 +1498,7 @@ class FlameParticle {
                             p.isInvincible = false;
                             p.beefChainTargets = [];
                             p.beefChainIndex = 0;
-                            console.log('Chain jumping complete!');
+                            // console.log('Chain jumping complete!');
                         } else {
                             // Single charge - return to origin
                             p.beefChargeState = 'returning'; 
@@ -1583,7 +1597,7 @@ class FlameParticle {
                             p.beefChargeTarget = { x: closestEnemy.x, y: closestEnemy.y };
                         }
                         
-                        console.log(`Chain setup: ${p.beefChainTargets.length} targets for ${p.beefMaxCharges} charges`);
+                        // console.log(`Chain setup: ${p.beefChainTargets.length} targets for ${p.beefMaxCharges} charges`);
                     } else {
                         // Original single charge system
                         p.beefChargeOrigin = { x: p.x, y: p.y }; 
@@ -1856,7 +1870,7 @@ class FlameParticle {
                 if (dist < currentRadius + p.r) {
                     // Player is in hazardous puddle - apply damage and burning effect
                     if (!p.lastMechPuddleDamageTime || performance.now() - p.lastMechPuddleDamageTime > 400) {
-                        console.log('Player in mech puddle! Taking', puddle.damage, 'damage');
+                        // console.log('Player in mech puddle! Taking', puddle.damage, 'damage');
                         takeDamage(puddle.damage);
                         p.lastMechPuddleDamageTime = performance.now();
                         
@@ -2334,10 +2348,10 @@ class FlameParticle {
             dmgScale = wave10Scale * (1 + veryGentleGrowth);
         }
         // Apply collar bonus and late-game scaling to enemy damage
-        const collarBonus = 1 + (store.world.collarStacks * 0.25); // 25% increase per collar stack
+        const collarBonus = 1 + (store.world.collarStacks * 0.08); // 8% increase per collar stack
         const lateGameBonus = store.world.lateGameDamageScaling || 1;
         dmgScale *= collarBonus * lateGameBonus;
-        console.log(`Wave ${store.world.wave}: Damage scale = ${dmgScale.toFixed(2)} | CollarStacks: ${store.world.collarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x | LateGameBonus: ${lateGameBonus.toFixed(2)}x`);
+        // console.log(`Wave ${store.world.wave}: Damage scale = ${dmgScale.toFixed(2)} | CollarStacks: ${store.world.collarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x | LateGameBonus: ${lateGameBonus.toFixed(2)}x`);
         store.eBullets.forEach(b => {
             b.x += b.vx * dt;
             b.y += b.vy * dt;
@@ -2365,7 +2379,7 @@ class FlameParticle {
                 const puddleX = b.targetX;
                 const puddleY = b.targetY;
                 
-                console.log('Mech volley landed! Creating puddle at target:', puddleX, puddleY);
+                // console.log('Mech volley landed! Creating puddle at target:', puddleX, puddleY);
                 store.mechPuddles.push({
                     x: puddleX,
                     y: puddleY,
@@ -2742,7 +2756,7 @@ class FlameParticle {
                                 });
                             }
                             
-                            console.log('Puddle destroyed by bullet! +1 shard, +1 xp');
+                            // console.log('Puddle destroyed by bullet! +1 shard, +1 xp');
                             store.mechPuddles.splice(i, 1);
                         }
                         
@@ -2791,7 +2805,7 @@ class FlameParticle {
                 return;
             }
             
-            console.log(`Wave ${store.world.wave} completed, transitioning to wave ${store.world.wave + 1}`);
+            // console.log(`Wave ${store.world.wave} completed, transitioning to wave ${store.world.wave + 1}`);
             
             if (store.world.waveStartTime > 0) {
                 const waveClearTime = (performance.now() - store.world.waveStartTime) / 1000;
@@ -2913,18 +2927,18 @@ class FlameParticle {
                 healthBonusMultiplier = 1.4 + store.world.fastKillBonus;
                 announce(`STREAK x${store.world.consecutiveFastKills}! GUARDIAN OVERDRIVE!`);
             } else { healthBonusMultiplier = 1.4; announce("GUARDIANS ADAPTING RAPIDLY!"); }
-            // Instant kill: +4 collar stacks (40% increase)
-            store.world.collarStacks += 4;
-            announce(`⚡ INSTANT DEATH! COLLAR TIGHTENS +4 ⚡`);
+            // Collar: add stacks based on speed
+            store.world.collarStacks += (10 - fightDuration);
+            announce(`⚡ COLLAR TIGHTENS +${(10 - fightDuration).toFixed(1)} ⚡`);
         } else if (fightDuration < 10) {
             announcedAdaptation = true; 
             healthBonusMultiplier = 1.10;
             store.world.consecutiveFastKills = 0; 
             store.world.fastKillBonus = 0;
-            // Fast kill: +1 collar stack (10% increase)
-            store.world.collarStacks += 1;
-            announce(`⚡ FAST KILL! COLLAR TIGHTENS +1 ⚡`);
-        } else if (fightDuration > 10) {
+            // Collar: add stacks based on speed
+            store.world.collarStacks += (10 - fightDuration);
+            announce(`⚡ COLLAR TIGHTENS +${(10 - fightDuration).toFixed(1)} ⚡`);
+        } else if (fightDuration >= 10) {
             // Slow kill: reset collar stacks (except for DEATH ENGINE)
             if (bossName !== 'DEATH ENGINE') {
                 store.world.collarStacks = 0; 
@@ -3664,8 +3678,27 @@ function render(dt) {
         if (now - store.fpsLastTime >= 1000) {
             const fps = Math.round((store.fpsFrameCount * 1000) / (now - store.fpsLastTime));
             q('fps').textContent = fps;
+            q('collar').textContent = `${store.world.collarStacks.toFixed(1)} (${((store.world.collarStacks * 0.08) * 100).toFixed(0)}%)`;
             store.fpsFrameCount = 0;
             store.fpsLastTime = now;
+            
+            // Update health table
+            const collarBonus = 1 + (store.world.collarStacks * 0.08);
+            if (store.enemies.length > 0) {
+                const enemy = store.enemies[0];
+                q('enemyBaseHp').textContent = Math.round(enemy.hpMax / collarBonus);
+                q('enemyCurrentHp').textContent = Math.round(enemy.hp);
+            } else {
+                q('enemyBaseHp').textContent = '-';
+                q('enemyCurrentHp').textContent = '-';
+            }
+            if (store.boss) {
+                q('bossBaseHp').textContent = Math.round(store.boss.hpMax / collarBonus);
+                q('bossCurrentHp').textContent = Math.round(store.boss.hp);
+            } else {
+                q('bossBaseHp').textContent = '-';
+                q('bossCurrentHp').textContent = '-';
+            }
         }
     }
     function updateLeaderboard(leaderboardData) { 
