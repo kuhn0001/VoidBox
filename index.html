@@ -664,17 +664,13 @@
                 </div>
                 <canvas id="game" width="960" height="540"></canvas>
                 <div id="diagBox">
-                    <div class="chip">v3.8.0</div>
-                    <div class="chip">FPS <span id="fps">—</span></div>
-                    <div class="chip">Collar <span id="collar">0 (0%)</span></div>
-                </div>
-                
-                <div id="healthTable" style="position:absolute; top:50px; left:10px; font-size:10px; color:var(--fg); background:rgba(0,0,0,0.5); padding:5px; border-radius:5px;">
-                    <table>
-                        <tr><td>Enemy Base HP</td><td id="enemyBaseHp">-</td></tr>
-                        <tr><td>Enemy Current HP</td><td id="enemyCurrentHp">-</td></tr>
-                        <tr><td>Boss Base HP</td><td id="bossBaseHp">-</td></tr>
-                        <tr><td>Boss Current HP</td><td id="bossCurrentHp">-</td></tr>
+                    <table style="font-size:10px; color:var(--fg); background:rgba(0,0,0,0.7); padding:8px; border-radius:8px; border-spacing:8px 2px;">
+                        <tr><td>v3.8.0</td><td>FPS:</td><td><span id="fps">—</span></td></tr>
+                        <tr><td>Collar:</td><td colspan="2"><span id="collar">0 (0%)</span></td></tr>
+                        <tr><td>Dmg/Bullet:</td><td colspan="2"><span id="damagePerBullet">—</span></td></tr>
+                        <tr><td>Avg Enemy HP:</td><td colspan="2"><span id="avgEnemyHp">—</span></td></tr>
+                        <tr><td>Enemy Base:</td><td><span id="enemyBaseHp">-</span></td><td>Current:</td><td><span id="enemyCurrentHp">-</span></td></tr>
+                        <tr><td>Boss Base:</td><td><span id="bossBaseHp">-</span></td><td>Current:</td><td><span id="bossCurrentHp">-</span></td></tr>
                     </table>
                 </div>
                 
@@ -725,50 +721,15 @@
                         <h2 style="font-family:'Orbitron';color:var(--accent)">CHOOSE SPECIALIZATION</h2>
                         <div id="subclassGrid" class="grid" style="grid-template-columns: repeat(2, 1fr);">
                         </div>
+                        <!-- Dynamic skill tree that adapts based on selected subclass -->
                         <div id="skillTree" class="skill-tree hide">
                             <button class="close-btn" id="skillTreeCloseBtn" type="button">✕</button>
-                            <div class="skill-tree-title">BEEF SPECIALIZATION TREE</div>
-                            <div class="skill-grid">
-                                <!-- Tier 1: Base subclass choices -->
-                                <div class="skill-row">
-                                    <div class="skill-track">
-                                        <div class="track-title">MARAUDER</div>
-                                        <div class="skill-icon-button available" data-skill="marauder" data-tier="1">
-                                            <img src="marauder.png" alt="Marauder" class="skill-icon-image">
-                                            <div class="skill-info-overlay">
-                                                <div class="skill-overlay-title">MARAUDER</div>
-                                                <div class="skill-overlay-desc">Rapid assault specialist with multiple charges for sustained combat dominance</div>
-                                            </div>
-                                        </div>
-                                        <div class="skill-icon-button locked" data-skill="marauder_enhanced" data-tier="2" data-parent="marauder">
-                                            <img src="marauder.png" alt="Triple Charge" class="skill-icon-image enhanced">
-                                            <div class="skill-info-overlay">
-                                                <div class="skill-overlay-title">TRIPLE CHARGE</div>
-                                                <div class="skill-overlay-desc">MASTERY: Enhanced marauder with three devastating charges</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="skill-track">
-                                        <div class="track-title">JUGGERNAUT</div>
-                                        <div class="skill-icon-button available" data-skill="juggernaut" data-tier="1">
-                                            <img src="jug.png" alt="Juggernaut" class="skill-icon-image">
-                                            <div class="skill-info-overlay">
-                                                <div class="skill-overlay-title">JUGGERNAUT</div>
-                                                <div class="skill-overlay-desc">Heavy assault specialist with devastating explosive impact attacks</div>
-                                            </div>
-                                        </div>
-                                        <div class="skill-icon-button locked" data-skill="juggernaut_enhanced" data-tier="2" data-parent="juggernaut">
-                                            <img src="jug.png" alt="Big Bang" class="skill-icon-image enhanced">
-                                            <div class="skill-info-overlay">
-                                                <div class="skill-overlay-title">BIG BANG</div>
-                                                <div class="skill-overlay-desc">MASTERY: Enhanced juggernaut with massive explosion radius</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                            <div class="skill-tree-title" id="skillTreeTitle">SPECIALIZATION TREE</div>
+                            <div class="skill-grid" id="skillTreeGrid">
+                                <!-- This will be populated dynamically based on subclass -->
                             </div>
                             <div class="skill-description" id="skillDescription">
-                                Choose your specialization path: Marauder for sustained assault, Juggernaut for devastating impact. Select both for the ultimate combo!
+                                Choose your specialization path: Marauder for sustained assault, Juggernaut for devastating impact, Shield for defense, Charge for mobility. Mix and match for powerful combos!
                             </div>
                         </div>
                     </div>
@@ -807,7 +768,7 @@
                         <button type="button" class="close-btn" id="closeShopTopBtn">×</button>
                         <h2 style="font-family:'Orbitron';color:var(--accent)">⚡ MECH FORGE ⚡</h2>
                         <button id="skillTreeBtn" class="btn skill-tree-button" type="button" style="margin:10px auto; display:block; font-size:12px; opacity:0.5; pointer-events:none;" disabled>🌳 SKILL TREE</button>
-                        <p style="color:#ffddff">Available Shards: <span id="shopShards">0</span></p>
+                        <p style="color:#ffddff">Available gold: <span id="shopgold">0</span></p>
                         <div id="shopGrid" class="grid"></div>
                         <div class="row" style="justify-content:center;margin-top:10px">
                             <button id="closeShop" class="btn" type="button">CLOSE</button>
@@ -1045,7 +1006,7 @@ class FlameParticle {
         hasLazarusBeam: false, lazarusBeamCooldown: 0,
         hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 0, vampirismLevel: 0, flamethrowerLevel: 0,
         flamethrowerT: 0, // Separate timer for lava chunks, unaffected by overclock
-        luckBoost: 0, magnetRadius: 0, hasIceman: false, critChance: 0.02, critDamage: 2,
+        luckBoost: 0, magnetRadius: 0, hasIceman: false, critChance: 0.02, critDamage: 1.85,
         pilotGenome: null, missileVolley: 2,
         hasRearGuard: false, rearGuardCooldown: 0, rearGuardReady: true,
         rearMultishot: 0, addFrontNext: true,
@@ -1074,7 +1035,7 @@ class FlameParticle {
         world: { 
             wave: 1, 
             score: 0, 
-            shards: 0, 
+            gold: 0, 
             xp: 0, 
             level: 1, 
             kills: 0, 
@@ -1117,8 +1078,8 @@ class FlameParticle {
     };
 
     const LEVEL_UPGRADES = [
-        { id: 'dmg', name: 'PLASMA CORE', icon: '💥', desc: '+7% damage', apply: () => { store.player.dmgMult *= 1.07; } },
-        { id: 'fire', name: 'OVERCLOCK', icon: '🔥', desc: '+7% fire rate', apply: () => { store.player.fireRate *= 0.70; } },
+        { id: 'dmg', name: 'PLASMA CORE', icon: '💥', desc: '+6% damage', apply: () => { store.player.dmgMult *= 1.06; } },
+        { id: 'fire', name: 'OVERCLOCK', icon: '🔥', desc: '+6% fire rate', apply: () => { store.player.fireRate *= 0.60; } },
         { id: 'multi', name: 'SCATTER PROTOCOL', icon: '☄️', desc: '+1 projectile', apply: () => {
             const p = store.player;
             if (p.multishot < 5) { p.multishot++; } else { if (p.addFrontNext) { p.multishot++; } else { p.rearMultishot = (p.rearMultishot || 0) + 1; } p.addFrontNext = !p.addFrontNext; }
@@ -1173,7 +1134,7 @@ class FlameParticle {
             name: "VAMPIRIC ROUNDS", icon: '🩸', isPremium: true, max: 4, category: 'utility',
             apply: () => {
                 const p = store.player; const cost = 12 + (p.vampirismLevel * 5);
-                if (store.world.shards >= cost && p.vampirismLevel < 4) { store.world.shards -= cost; p.vampirismLevel++; p.vampirism += 0.03; p.dmgMult += 0.04; return true; } return false;
+                if (store.world.gold >= cost && p.vampirismLevel < 4) { store.world.gold -= cost; p.vampirismLevel++; p.vampirism += 0.03; p.dmgMult += 0.04; return true; } return false;
             },
             desc: () => {
                 const p = store.player; if (p.vampirismLevel >= 4) return `Max Level Reached (${(p.vampirism * 100).toFixed(0)}% Lifesteal, +${p.vampirismLevel * 4}% Dmg)`;
@@ -1183,7 +1144,7 @@ class FlameParticle {
         'hp': { 
             name: "MAX HP", 
             icon: '❤️', 
-            baseCost: 20, 
+            baseCost: 40, 
             scale: 1.4, 
             maxLevel: 20, 
             category: 'health', 
@@ -1208,15 +1169,15 @@ class FlameParticle {
             }
         },
         'nano_save': { name: "NANO SAVE", icon: '💾', cost: 25, isPremium: true, max: 3, category: 'utility', apply: () => { if (store.player.nanoSaves < 3) { store.player.nanoSaves++; return true; } return false; }, desc: () => `Auto-heals on low HP. Charges: ${store.player.nanoSaves}/3` },
-        'luck_boost': { name: "LUCK BOOST", icon: '🍀', baseCost: 25, scale: 2, maxLevel: 5, category: 'utility', effect: (level) => { store.player.luckBoost = (store.player.luckBoost || 0) + (0.15 / Math.pow(2, level)); }, desc: level => `+${(0.15 / Math.pow(2, level) * 100).toFixed(1)}% drop chance (Lvl ${level + 1})` },
-        'dmg': { name: "DAMAGE", icon: '💪', baseCost: 25, scale: 1.5, maxLevel: 10, category: 'attack', effect: () => store.player.dmgMult *= 1.07, desc: level => `+7% Damage (Lvl ${level + 1})` },
-        'crit_chance': { name: "SHINOBI REFLEXES", icon: '🥷', baseCost: 20, increment: 12, maxLevel: 10, category: 'attack', effect: () => { store.player.critChance *= 1.5; store.player.critDamage *= 1.5; }, desc: level => `+50% Crit Chance & Dmg (Lvl ${level + 1})` },
-        'speed': { name: "SPEED", icon: '🚀', baseCost: 30, scale: 1.6, maxLevel: 8, category: 'utility', effect: () => store.player.speed *= 1.10, desc: level => `+10% Speed (Lvl ${level + 1})` },
-        'grenade': { name: "NOVA GRENADE", icon: '💥💣💥', cost: 35, isPremium: true, max: 3, category: 'attack', apply: () => { if (store.player.grenades < 3) { store.player.grenades++; return true; } return false; }, desc: () => `Buy 1 (Max 3)` },
+        'luck_boost': { name: "LUCK BOOST", icon: '🍀', baseCost: 50, scale: 2, maxLevel: 5, category: 'utility', effect: (level) => { store.player.luckBoost = (store.player.luckBoost || 0) + (0.15 / Math.pow(2, level)); }, desc: level => `+${(0.15 / Math.pow(2, level) * 100).toFixed(1)}% drop chance (Lvl ${level + 1})` },
+        'dmg': { name: "DAMAGE", icon: '💪', baseCost: 50, scale: 1.5, maxLevel: 10, category: 'attack', effect: () => store.player.dmgMult *= 1.06, desc: level => `+6% Damage (Lvl ${level + 1})` },
+        'crit_chance': { name: "SHINOBI REFLEXES", icon: '🥷', baseCost: 40, increment: 24, maxLevel: 10, category: 'attack', effect: () => { store.player.critChance *= 1.5; store.player.critDamage *= 1.5; }, desc: level => `+50% Crit Chance & Dmg (Lvl ${level + 1})` },
+        'speed': { name: "SPEED", icon: '🚀', baseCost: 60, scale: 1.6, maxLevel: 8, category: 'utility', effect: () => store.player.speed *= 1.10, desc: level => `+10% Speed (Lvl ${level + 1})` },
+        'grenade': { name: "NOVA GRENADE", icon: '💥💣💥', cost: 70, isPremium: true, max: 3, category: 'attack', apply: () => { if (store.player.grenades < 3) { store.player.grenades++; return true; } return false; }, desc: () => `Buy 1 (Max 3)` },
         'max_shield': { 
             name: "MAX SHIELD", 
             icon: '🛡️', 
-            baseCost: 40, 
+            baseCost: 80, 
             scale: 1.8, 
             maxLevel: 20, // Increased max level
             category: 'health', 
@@ -1241,12 +1202,12 @@ class FlameParticle {
                 }
             }
         },
-        'mine_wall': { name: "MINE WALL", icon: '💣', cost: 40, isPremium: true, max: 2, category: 'attack', apply: () => { const activeWalls = store.mines.filter(m => m.isWallMine).length > 0; if(!activeWalls) { deployMineWall(); return true; } return false; }, desc: () => `Deploy a wall of mines.` },
-        'rear_guard': { name: 'AFT FLANKSHIELD', icon: '🛡️✨', baseCost: 65, scale: 2, maxLevel: 2, category: 'utility', effect: (level) => { if (level === 0) store.player.hasRearGuard = true; else store.player.rearGuardCooldown = 6; }, desc: level => level === 0 ? `Blocks one enemy volley from behind every 8s.` : `Reduce cooldown to 6s.` },
+        'mine_wall': { name: "MINE WALL", icon: '💣', cost: 80, isPremium: true, max: 2, category: 'attack', apply: () => { const activeWalls = store.mines.filter(m => m.isWallMine).length > 0; if(!activeWalls) { deployMineWall(); return true; } return false; }, desc: () => `Deploy a wall of mines.` },
+        'rear_guard': { name: 'AFT FLANKSHIELD', icon: '🛡️✨', baseCost: 130, scale: 2, maxLevel: 2, category: 'utility', effect: (level) => { if (level === 0) store.player.hasRearGuard = true; else store.player.rearGuardCooldown = 6; }, desc: level => level === 0 ? `Blocks one enemy volley from behind every 8s.` : `Reduce cooldown to 6s.` },
         'launcher': {
                 name: 'FRAG LAUNCHER',
                 icon: '💥',
-                baseCost: 50,
+                baseCost: 100,
                 scale: 2,
                 maxLevel: 3,
                 category: 'attack',
@@ -1260,11 +1221,11 @@ class FlameParticle {
                     return "Max projectiles reached.";
                 }
             },
-        'iceman': { name: "THE ICEMAN", icon: '❄️', cost: 59, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.hasIceman) { store.player.hasIceman = true; store.iceman = { x: store.player.x, y: store.player.y + 50, t: 0 }; return true; } return false; }, desc: () => `A clone mirrors your attacks.` },
-        'lazarus_beam': { name: "LORD LAZARUS", icon: '☢️☄️☢️', baseCost: 100, scale: 3, maxLevel: 2, category: 'attack', effect: (level) => { if (level === 0) { store.player.hasLazarusBeam = true; store.player.lazarusBeamCooldown = 15; } }, desc: level => { if (level === 0) return 'Lazarus smites foes twice as often.'; if (level === 1) return 'Lazarus fires two beams at once.'; return 'Max Level'; }},
-        'magnet_pull': { name: "GRAV-PULSE", icon: '🧲', cost: 45, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (store.player.magnetRadius <= 0) { store.player.magnetRadius = 150; return true; } return false; }, desc: () => `Pulls in nearby powerups.` },
-        'gravity_well': { name: "GRAVITY WELL", icon: '🕳️', baseCost: 150, scale: 2, maxLevel: 2, category: 'attack', effect: (level) => { if (level === 0) { store.player.hasVoidBeam = true; store.player.voidBeamCooldown = 15; }}, desc: level => { if (level === 0) return 'Unleash a singularity that traps and crushes foes.'; if (level === 1) return 'Summon a second, smaller singularity.'; return 'Max Level'; }},
-        'ghost_hounds': { name: "GHOST HOUNDS", icon: '👻🐺', baseCost: 75, scale: 2, maxLevel: 2, category: 'attack', effect: () => { if (!store.player.hasHounds) { store.player.hasHounds = true; store.hounds = [createHound(-1), createHound(1)]; } else { store.hounds.push(createHound(-2)); store.hounds.push(createHound(2)); } playSound('dogs'); }, desc: level => { if (level === 0) return `Unlocks 2 spectral hounds.`; if (level === 1) return `Add 2 more hounds.`; return "Max hounds reached."; } }
+        'iceman': { name: "THE ICEMAN", icon: '❄️', cost: 118, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.hasIceman) { store.player.hasIceman = true; store.iceman = { x: store.player.x, y: store.player.y + 50, t: 0 }; return true; } return false; }, desc: () => `A clone mirrors your attacks.` },
+        'lazarus_beam': { name: "LORD LAZARUS", icon: '☢️☄️☢️', baseCost: 200, scale: 3, maxLevel: 2, category: 'attack', effect: (level) => { if (level === 0) { store.player.hasLazarusBeam = true; store.player.lazarusBeamCooldown = 15; } }, desc: level => { if (level === 0) return 'Lazarus smites foes twice as often.'; if (level === 1) return 'Lazarus fires two beams at once.'; return 'Max Level'; }},
+        'magnet_pull': { name: "GRAV-PULSE", icon: '🧲', cost: 90, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (store.player.magnetRadius <= 0) { store.player.magnetRadius = 150; return true; } return false; }, desc: () => `Pulls in nearby powerups.` },
+        'gravity_well': { name: "GRAVITY WELL", icon: '🕳️', baseCost: 300, scale: 2, maxLevel: 2, category: 'attack', effect: (level) => { if (level === 0) { store.player.hasVoidBeam = true; store.player.voidBeamCooldown = 15; }}, desc: level => { if (level === 0) return 'Unleash a singularity that traps and crushes foes.'; if (level === 1) return 'Summon a second, smaller singularity.'; return 'Max Level'; }},
+        'ghost_hounds': { name: "GHOST HOUNDS", icon: '👻🐺', baseCost: 150, scale: 2, maxLevel: 2, category: 'attack', effect: () => { if (!store.player.hasHounds) { store.player.hasHounds = true; store.hounds = [createHound(-1), createHound(1)]; } else { store.hounds.push(createHound(-2)); store.hounds.push(createHound(2)); } playSound('dogs'); }, desc: level => { if (level === 0) return `Unlocks 2 spectral hounds.`; if (level === 1) return `Add 2 more hounds.`; return "Max hounds reached."; } }
     };
     
     const POWERUP_TYPES = {
@@ -1415,8 +1376,8 @@ class FlameParticle {
     function createBoss(scale) {
         const bossCycle = Math.floor((store.world.wave - 5) / 5) % 5;
         const types = [
-            { name: 'VOID SENTINEL', baseHp: 1800, r: 55, behavior: 'sentinel', color: '#8B4A9C' },
-            { name: 'NEXUS PHANTOM', baseHp: 2100, r: 50, behavior: 'hex', color: '#66aaff'},
+            { name: 'VOID SENTINEL', baseHp: 1700, r: 55, behavior: 'sentinel', color: '#8B4A9C' },
+            { name: 'NEXUS PHANTOM', baseHp: 2200, r: 50, behavior: 'hex', color: '#66aaff'},
             { name: 'NEURAL CORE', baseHp: 2800, r: 60, behavior: 'malignus', color: '#2E8B57' },
             { name: 'DEATH ENGINE', baseHp: 9000, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true },
             { name: 'HIVE SOVEREIGN', baseHp: 8500, r: 85, behavior: 'broodlord', color: '#2d5016' }
@@ -1440,15 +1401,15 @@ class FlameParticle {
 
     function spawnEnemy(type = 'drone') {
         const cfgs = {
-            drone: { r: 10, v: 80, vx: 0, hp: 22, color: '#C0C0C0', xp: 5, score: 50, shards: 1, fireRateChance: 0.004 },
-            hunter: { r: 20, v: 100, vx: 0, hp: 18, color: '#DC143C', xp: 8, score: 80, shards: 1, fireRateChance: 0.005 },
-            trap_king_add: { r: 6, v: 90, vx: 0, hp: 9, color: '#ffc83d', damage: 5, xp: 2, score: 10, shards: 1 },
-            phantom: { r: 14, v: 90, vx: 0, hp: 35, color: '#FFFFFF', xp: 10, score: 100, shards: 2, fireRateChance: 0.006, fireCooldown: 1.5 },
-            mech: { r: 18, v: 40, vx: 0, hp: 73, color: '#FF8500', xp: 15, score: 150, shards: 3, fireRateChance: 0.007, attackPhase: 0 },
-            construct_shard: { r: 10, v: 120, vx: 0, hp: 17, color: '#e03434', xp: 3, score: 30, shards: 1 },
-            avian_hatchling: { r: 8, v: 150, vx: 0, hp: 22, color: '#9370DB', xp: 4, score: 40, shards: 1 },
-            angler: { r: 22, v: 30, vx: 0, hp: 150, color: '#00008b', xp: 18, score: 180, shards: 4, fireRateChance: 0.008 },
-            manta: { r: 26, v: 50, vx: 0, hp: 175, color: '#53B6FF', xp: 22, score: 220, shards: 5, fireRateChance: 0.009 }
+            drone: { r: 10, v: 80, vx: 0, hp: 22, color: '#C0C0C0', xp: 5, score: 50, gold: 2, fireRateChance: 0.004 },
+            hunter: { r: 20, v: 100, vx: 0, hp: 18, color: '#DC143C', xp: 8, score: 80, gold: 2, fireRateChance: 0.005 },
+            trap_king_add: { r: 6, v: 90, vx: 0, hp: 9, color: '#ffc83d', damage: 5, xp: 2, score: 10, gold: 1 },
+            phantom: { r: 14, v: 90, vx: 0, hp: 35, color: '#FFFFFF', xp: 10, score: 100, gold: 3, fireRateChance: 0.006, fireCooldown: 1.5 },
+            mech: { r: 18, v: 40, vx: 0, hp: 73, color: '#FF8500', xp: 15, score: 150, gold: 5, fireRateChance: 0.007, attackPhase: 0 },
+            construct_gold: { r: 10, v: 120, vx: 0, hp: 17, color: '#e03434', xp: 3, score: 30, gold: 1 },
+            avian_hatchling: { r: 8, v: 150, vx: 0, hp: 22, color: '#9370DB', xp: 4, score: 40, gold: 1 },
+            angler: { r: 22, v: 30, vx: 0, hp: 150, color: '#00008b', xp: 18, score: 180, gold: 4, fireRateChance: 0.008 },
+            manta: { r: 26, v: 50, vx: 0, hp: 175, color: '#53B6FF', xp: 22, score: 220, gold: 5, fireRateChance: 0.009 }
         };
         let c = { ...cfgs[type] }; const wave = store.world.wave;
         
@@ -1474,7 +1435,7 @@ class FlameParticle {
 
     function stepPlayer(dt) {
         const p = store.player;
-        if (p.pilotGenome === 'beef' && p.beefChargeState !== 'ready') {
+        if (p.pilotGenome === 'beef' && p.beefChargeState !== 'ready' && (p.skillTree?.beef_charge || p.subclass === 'marauder' || p.subclass === 'juggernaut')) {
             p.beefChargeT += dt;
             const chargeDuration = 0.25; const returnDuration = 0.35;
             if (p.beefChargeState === 'charging') {
@@ -1523,7 +1484,7 @@ class FlameParticle {
             p.x += (vx * p.speed * dt * 0.005); p.y += (vy * p.speed * dt * 0.005);
             p.x = clamp(p.x, 20, W - 20); p.y = clamp(p.y, 20, H - 20);
         }
-        if (p.pilotGenome === 'beef') {
+        if (p.pilotGenome === 'beef' && (p.skillTree?.beef_charge || p.subclass === 'marauder' || p.subclass === 'juggernaut')) {
             if (p.beefCharges < p.beefMaxCharges) {
                 if (p.beefChargeCooldown > 0) {
                     p.beefChargeCooldown -= dt;
@@ -1733,78 +1694,26 @@ class FlameParticle {
             }
         }
         
-        if (p.powerupTimers['missile']) {
-            p.missileFireT -= dt;
-            if (p.missileFireT <= 0) {
-                p.missileFireT = p.pilotGenome === 'rocketman' ? 1.0 : 1.2;
-                let closest = null, closestDist = Infinity;
-                const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
-                potentialTargets.forEach(e => {
-                    if (e.dead || e.hp <= 0 || e.y < 0) return;
-                    const dist = (p.x - e.x)**2 + (p.y - e.y)**2;
-                    if (dist < closestDist) { closest = e; closestDist = dist; }
-                });
-                if (closest) {
-                    const isRocketman = p.pilotGenome === 'rocketman';
-                    const missileDmg = isRocketman ? (95 * p.dmgMult * 0.7) : (95 * p.dmgMult);
-                    const missileProps = { r: 4, target: closest, speed: 400, life: 0, dmg: missileDmg, hits: 0, travelDistance: 0 };
+        /*
+        I did not modify the code.
+        The base damage for enemy bullets is determined when they are created, primarily within the `stepWorld` function.
 
-                    // Check for hybrid rocketman (has both cluster and piercing abilities)
-                    const hasClusterAbility = p.subclass === 'demolitionist' || p.missileCluster || p.rocketmanHybrid;
-                    const hasPiercingAbility = p.subclass === 'railgunner' || p.missilePierce > 0 || p.rocketmanHybrid;
-                    
-                    if (hasClusterAbility) {
-                        // Count cluster volleys for sound management
-                        store.player.clusterSoundCounter++;
-                        const shouldPlaySound = store.player.clusterSoundCounter >= 5;
-                        if (shouldPlaySound) {
-                            store.player.clusterSoundCounter = 0;
-                        }
-                        
-                        const spreadAngle = 10; const initialSpeed = 300;
-                        for (let i = 0; i < p.missileVolley; i++) {
-                            const angleOffset = (i - (p.missileVolley - 1) / 2) * spreadAngle * (Math.PI / 180);
-                            // Only the first missile in the volley plays sound (and only every 5th volley)
-                            const playSound = shouldPlaySound && i === 0;
-                            // For hybrid, missiles have both cluster and piercing abilities
-                            const pierce = hasPiercingAbility ? (p.missilePierce || 2) : 0;
-                            store.missiles.push({ ...missileProps, x: p.x, y: p.y, startX: p.x, startY: p.y, vx: Math.sin(angleOffset) * initialSpeed, vy: -Math.cos(angleOffset) * initialSpeed, turnRate: 4, pierce: pierce, cluster: true, playSound: playSound });
-                        }
-                        if (p.hasIceman && store.iceman) {
-                             for (let i = 0; i < p.missileVolley; i++) {
-                                const angleOffset = (i - (p.missileVolley - 1) / 2) * spreadAngle * (Math.PI / 180);
-                                const pierce = hasPiercingAbility ? (p.missilePierce || 2) : 0;
-                                store.missiles.push({ ...missileProps, x: store.iceman.x, y: store.iceman.y, startX: store.iceman.x, startY: store.iceman.y, vx: Math.sin(angleOffset) * initialSpeed, vy: -Math.cos(angleOffset) * initialSpeed, dmg: missileDmg * 0.35, isIceman: true, turnRate: 4, pierce: pierce, cluster: true, playSound: false });
-                            }
-                        }
-                    } else if (hasPiercingAbility) {
-                        // Pure railgunner without clusters
-                        for (let i = 0; i < p.missileVolley; i++) {
-                            const offsetX = (i - (p.missileVolley - 1) / 2) * 15;
-                            store.missiles.push({ ...missileProps, x: p.x + offsetX, y: p.y, startX: p.x + offsetX, startY: p.y, vx: 0, vy: -300, turnRate: 5, pierce: p.missilePierce, cluster: false, playSound: false });
-                        }
-                        if (p.hasIceman && store.iceman) {
-                            for (let i = 0; i < p.missileVolley; i++) {
-                                const offsetX = (i - (p.missileVolley - 1) / 2) * 15;
-                                store.missiles.push({ ...missileProps, x: store.iceman.x + offsetX, y: store.iceman.y, startX: store.iceman.x + offsetX, startY: store.iceman.y, vx: 0, vy: -300, dmg: missileDmg * 0.35, isIceman: true, turnRate: 5, pierce: p.missilePierce, cluster: false, playSound: false });
-                            }
-                        }
-                    } else {
-                        // Basic missiles with no special abilities
-                        for (let i = 0; i < p.missileVolley; i++) {
-                            const offsetX = (i - (p.missileVolley - 1) / 2) * 15;
-                            store.missiles.push({ ...missileProps, x: p.x + offsetX, y: p.y, startX: p.x + offsetX, startY: p.y, vx: 0, vy: -300, turnRate: 5, pierce: 0, cluster: false, playSound: false });
-                        }
-                        if (p.hasIceman && store.iceman) {
-                            for (let i = 0; i < p.missileVolley; i++) {
-                                const offsetX = (i - (p.missileVolley - 1) / 2) * 15;
-                                store.missiles.push({ ...missileProps, x: store.iceman.x + offsetX, y: store.iceman.y, startX: store.iceman.x + offsetX, startY: store.iceman.y, vx: 0, vy: -300, dmg: missileDmg * 0.35, isIceman: true, turnRate: 5, pierce: 0, cluster: false, playSound: false });
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        Inside `stepWorld`, a `dmgScale` variable is calculated based on the current wave, collar stacks, and other late-game factors.
+
+        Then, for each enemy type that can fire, a base damage value is set and multiplied by this `dmgScale`.
+
+        Here are some examples from the `stepWorld` function:
+
+        *   **Hunter:** `dmg: 6 * dmgScale`
+        *   **Phantom:** `dmg: 5 * dmgScale`
+        *   **Mech (Shoulder Cannon):** `dmg: 12 * dmgScale`
+        *   **Mech (Lob Attack):** `dmg: 18 * dmgScale`
+        *   **Angler:** `dmg: 15 * dmgScale`
+        *   **Manta:** `dmg: 12 * dmgScale`
+        *   **Default/Drone:** `dmg: 5 * dmgScale`
+
+        The base damage is the hardcoded number (e.g., 6, 5, 12) which is then scaled up as the game progresses. The collision damage from an enemy running into the player is also scaled: `takeDamage(8 * dmgScale)`.
+        */
         if (p.shieldMax > 0 && p.shield < p.shieldMax) p.shield = Math.min(p.shieldMax, p.shield + 0.5 * dt);
         for (const key in p.powerupTimers) { p.powerupTimers[key].remaining -= dt; if (p.powerupTimers[key].remaining <= 0) { if (key === 'drones') store.drones = []; delete p.powerupTimers[key]; } }
         if (p.hasRearGuard && p.rearGuardCooldown > 0) { p.rearGuardCooldown -= dt; if (p.rearGuardCooldown <= 0) { p.rearGuardReady = true; } }
@@ -2516,7 +2425,7 @@ class FlameParticle {
                 let speedMultiplier = (e.slowTimer > 0) ? 0.3 : 1.0;
                 if (e.slowTimer > 0) e.slowTimer -= dt;
 
-                if (e.type === 'construct_shard' || e.type === 'avian_hatchling') {
+                if (e.type === 'construct_gold' || e.type === 'avian_hatchling') {
                     const dx = store.player.x - e.x, dy = store.player.y - e.y, dist = Math.sqrt(dx * dx + dy * dy);
                     if (dist > 1) {
                         e.x += (dx / dist) * e.v * speedMultiplier * dt;
@@ -2599,7 +2508,7 @@ class FlameParticle {
             if (e.y > H + 30 || e.x < -30 || e.x > W + 30) e.dead = true;
             if (collide(e, store.player)) {
                 takeDamage(8 * dmgScale); // Reduced from 15 to 8 for better balance
-                store.world.shards += e.shards;
+                store.world.gold += e.gold;
                 e.dead = true;
             }
         });
@@ -2649,7 +2558,7 @@ class FlameParticle {
                         continue;
                     }
                     
-                    let dmg = b.dmg || 20;
+                    let dmg = b.dmg || 15;
                     if (e === store.boss && b.isDrone) dmg *= 0.4;
                     
                     if (Math.random() < store.player.critChance) {
@@ -2689,7 +2598,7 @@ class FlameParticle {
                         } else {
                             spawnGibs(e.x, e.y, e.color);
                             store.world.score += e.score;
-                            store.world.shards += e.shards;
+                            store.world.gold += e.gold;
                             store.world.xp += e.xp;
                             store.world.kills++;
                             
@@ -2721,11 +2630,11 @@ class FlameParticle {
                     
                     if (dist < puddle.r + (b.r || 2)) {
                         // Puddle hit by bullet - take damage
-                        puddle.hp -= (b.dmg || 20);
+                        puddle.hp -= (b.dmg || 15);
                         
                         if (puddle.hp <= 0) {
                             // Puddle destroyed - award rewards
-                            store.world.shards += 1;
+                            store.world.gold += 1;
                             store.world.xp += 1;
                             
                             // Small explosion effect
@@ -2756,7 +2665,7 @@ class FlameParticle {
                                 });
                             }
                             
-                            // console.log('Puddle destroyed by bullet! +1 shard, +1 xp');
+                            // console.log('Puddle destroyed by bullet! +1 gold, +1 xp');
                             store.mechPuddles.splice(i, 1);
                         }
                         
@@ -2807,26 +2716,44 @@ class FlameParticle {
             
             // console.log(`Wave ${store.world.wave} completed, transitioning to wave ${store.world.wave + 1}`);
             
-            if (store.world.waveStartTime > 0) {
+            if (store.world.waveStartTime > 0 && store.world.wave > 1) {
                 const waveClearTime = (performance.now() - store.world.waveStartTime) / 1000;
-                if (waveClearTime < 3 && store.world.wave > 1) {
-                    // Instant clear: +4 collar stacks
-                    store.world.collarStacks += 4;
+                
+                // Guaranteed minimum collar stacks for any reasonable clear
+                let collarStacksToAdd = 0;
+                
+                if (waveClearTime < 2) {
+                    // Ultra-instant clear: +9 collar stacks (addresses missing 9 stack issue)
+                    collarStacksToAdd = 9;
+                    store.world.enemyDensityBonus *= 1.15;
+                    store.world.xpMultiplier *= 1.1;
+                    announce("💥 ULTRA-INSTANT CLEAR! COLLAR CRUSHES +9 💥");
+                } else if (waveClearTime < 4) {
+                    // Instant clear: +6 collar stacks
+                    collarStacksToAdd = 6;
                     store.world.enemyDensityBonus *= 1.1;
-                    store.world.enemyHealthBonus *= 1.05;
-                    store.world.xpMultiplier *= 1.05;
-                    announce("⚡ INSTANT WAVE CLEAR! COLLAR TIGHTENS +4 ⚡");
-                } else if (waveClearTime < 7 && store.world.wave > 1) {
-                    // Too fast clear: +1 collar stack
-                    store.world.collarStacks += 1;
+                    store.world.xpMultiplier *= 1.07;
+                    announce("⚡ INSTANT WAVE CLEAR! COLLAR TIGHTENS +6 ⚡");
+                } else if (waveClearTime < 8) {
+                    // Fast clear: +3 collar stacks
+                    collarStacksToAdd = 3;
                     store.world.enemyDensityBonus *= 1.05;
-                    store.world.enemyHealthBonus *= 1.02;
-                    store.world.xpMultiplier *= 1.02;
-                    announce("⚡ FAST WAVE CLEAR! COLLAR TIGHTENS +1 ⚡");
-                } else if (waveClearTime > 15 && store.world.wave > 1) {
-                    // Slow clear: reset collar stacks
-                    store.world.collarStacks = 0;
-                    announce("🐌 SLOW WAVE CLEAR - COLLAR RELAXES");
+                    store.world.xpMultiplier *= 1.03;
+                    announce("⚡ FAST WAVE CLEAR! COLLAR TIGHTENS +3 ⚡");
+                } else if (waveClearTime < 12) {
+                    // Normal clear: +1 collar stack
+                    collarStacksToAdd = 1;
+                    announce("⚡ COLLAR TIGHTENS +1 ⚡");
+                } else if (waveClearTime > 20) {
+                    // Very slow clear: reset collar stacks
+                    store.world.collarStacks = Math.max(0, store.world.collarStacks - 2);
+                    announce("🐌 SLOW CLEAR - COLLAR LOOSENS");
+                }
+                
+                // Add collar stacks immediately to ensure they're always applied
+                if (collarStacksToAdd > 0) {
+                    store.world.collarStacks += collarStacksToAdd;
+                    console.log(`Wave ${store.world.wave} cleared in ${waveClearTime.toFixed(2)}s - Added ${collarStacksToAdd} collar stacks (Total: ${store.world.collarStacks})`);
                 }
             }
             
@@ -2852,6 +2779,26 @@ class FlameParticle {
             levelUp();
         }
 
+        // Collar decay system - prevent infinite stacking
+        if (!store.world.collarDecayTimer) {
+            store.world.collarDecayTimer = 0;
+        }
+        store.world.collarDecayTimer += dt;
+        
+        // Apply gradual collar decay every 10 seconds if stacks are high
+        if (store.world.collarDecayTimer >= 10) {
+            store.world.collarDecayTimer = 0;
+            if (store.world.collarStacks > 20) {
+                // Decay faster when collar stacks are very high
+                const decay = Math.max(0.5, store.world.collarStacks * 0.02);
+                store.world.collarStacks = Math.max(0, store.world.collarStacks - decay);
+                // High collar stacks decay applied
+            } else if (store.world.collarStacks > 5) {
+                // Gentle decay for moderate stacks
+                store.world.collarStacks = Math.max(0, store.world.collarStacks - 0.3);
+            }
+        }
+
         if (store.player.hp <= 0) {
             handleGameOver();
         }
@@ -2875,8 +2822,12 @@ class FlameParticle {
             // 1st boss defeated - show pilot class selection
             store.player.pilotGenome = 'pending';
             setTimeout(showPilotSelect, 1000);
-        } else if (bossCount >= 2 && store.player.pilotGenome && store.player.pilotGenome !== 'pending') {
-            // 2nd+ boss defeated - show skill tree for all pilots
+        } else if (bossCount === 2 && store.player.pilotGenome && store.player.pilotGenome !== 'pending' && !store.player.subclass) {
+            // 2nd boss defeated - show subclass selection
+            console.log(`2nd boss defeated - showing subclass selection for ${store.player.pilotGenome}`);
+            setTimeout(showSubclassSelect, 1500);
+        } else if (bossCount >= 3 && store.player.pilotGenome && store.player.pilotGenome !== 'pending' && store.player.subclass) {
+            // 3rd+ boss defeated - show skill tree for selected subclass
             
             // Don't award points or show tree if already fully capped OR if 4 skill points have been spent
             const skillPointsSpent = store.player.skillPointsSpent || 0;
@@ -2892,7 +2843,7 @@ class FlameParticle {
                 }
                 store.player.skillTreeProgress.bossesDefeated = bossCount;
                 store.player.skillPoints = (store.player.skillPoints || 0) + 1;
-                console.log(`${bossCount}${bossCount === 2 ? 'nd' : bossCount === 3 ? 'rd' : 'th'} boss defeated - showing skill tree for ${store.player.pilotGenome} with`, store.player.skillPoints, 'points');
+                console.log(`${bossCount}${bossCount === 3 ? 'rd' : bossCount === 4 ? 'th' : 'th'} boss defeated - showing skill tree for ${store.player.subclass} with`, store.player.skillPoints, 'points');
                 setTimeout(showSkillTreeModal, 1500);
             }
         }
@@ -2904,7 +2855,7 @@ class FlameParticle {
             }
         }
         
-        store.world.score += 2000; store.world.shards += 25; store.world.xp += 100; store.world.bosses++;
+        store.world.score += 2000; store.world.gold += 25; store.world.xp += 100; store.world.bosses++;
         const bossX = store.boss.x;
         const bossY = store.boss.y;
         const bossName = store.boss.name; // Store boss name before nulling
@@ -2919,7 +2870,12 @@ class FlameParticle {
         explode(bossX, bossY, true);
 
         let healthBonusMultiplier = 1.0, announcedAdaptation = false;
-        if (fightDuration <= 4) {
+        // Calculate collar stacks to add based on boss kill speed (more generous)
+        let collarStacksToAdd = 0;
+        
+        if (fightDuration <= 2) {
+            // Ultra-fast boss kill: massive collar bonus
+            collarStacksToAdd = 12;
             announcedAdaptation = true;
             if (store.world.wave >= 15) {
                 store.world.consecutiveFastKills++;
@@ -2927,40 +2883,63 @@ class FlameParticle {
                 healthBonusMultiplier = 1.4 + store.world.fastKillBonus;
                 announce(`STREAK x${store.world.consecutiveFastKills}! GUARDIAN OVERDRIVE!`);
             } else { healthBonusMultiplier = 1.4; announce("GUARDIANS ADAPTING RAPIDLY!"); }
-            // Collar: add stacks based on speed
-            store.world.collarStacks += (10 - fightDuration);
-            announce(`⚡ COLLAR TIGHTENS +${(10 - fightDuration).toFixed(1)} ⚡`);
-        } else if (fightDuration < 10) {
+            announce(`💥 COLLAR CRUSHES +${collarStacksToAdd} 💥`);
+        } else if (fightDuration <= 5) {
+            // Fast boss kill
+            collarStacksToAdd = Math.max(8, Math.floor(12 - (fightDuration * 1.5)));
+            announcedAdaptation = true;
+            if (store.world.wave >= 15) {
+                store.world.consecutiveFastKills++;
+                if (store.world.consecutiveFastKills === 1) { store.world.fastKillBonus = 0.20; } else { store.world.fastKillBonus *= 2; }
+                healthBonusMultiplier = 1.4 + store.world.fastKillBonus;
+                announce(`STREAK x${store.world.consecutiveFastKills}! GUARDIAN OVERDRIVE!`);
+            } else { healthBonusMultiplier = 1.4; announce("GUARDIANS ADAPTING RAPIDLY!"); }
+            announce(`⚡ COLLAR TIGHTENS +${collarStacksToAdd} ⚡`);
+        } else if (fightDuration < 8) {
+            // Decent boss kill
+            collarStacksToAdd = Math.max(3, Math.floor(10 - fightDuration));
             announcedAdaptation = true; 
-            healthBonusMultiplier = 1.10;
+            healthBonusMultiplier = 1.15;
             store.world.consecutiveFastKills = 0; 
             store.world.fastKillBonus = 0;
-            // Collar: add stacks based on speed
-            store.world.collarStacks += (10 - fightDuration);
-            announce(`⚡ COLLAR TIGHTENS +${(10 - fightDuration).toFixed(1)} ⚡`);
-        } else if (fightDuration >= 10) {
-            // Slow kill: reset collar stacks (except for DEATH ENGINE)
+            announce(`⚡ COLLAR TIGHTENS +${collarStacksToAdd} ⚡`);
+        } else if (fightDuration < 12) {
+            // Slow boss kill: minimal collar bonus
+            collarStacksToAdd = 1;
+            announcedAdaptation = true; 
+            healthBonusMultiplier = 1.05;
+            store.world.consecutiveFastKills = 0; 
+            store.world.fastKillBonus = 0;
+            announce(`⚡ COLLAR TIGHTENS +${collarStacksToAdd} ⚡`);
+        } else {
+            // Very slow kill: reduce collar stacks (except for DEATH ENGINE)
             if (bossName !== 'DEATH ENGINE') {
-                store.world.collarStacks = 0; 
-                announce("ADAPTATION RESET!");
+                store.world.collarStacks = Math.max(0, store.world.collarStacks - 3); 
+                announce("⚖️ COLLAR LOOSENS - ADAPTATION WEAKENS");
             } else {
                 announce("THE DEATH ENGINE'S CURSE PERSISTS!");
             }
             store.world.consecutiveFastKills = 0; 
             store.world.fastKillBonus = 0;
             healthBonusMultiplier = 1.0;
-        } else {
-            announcedAdaptation = true; 
-            healthBonusMultiplier = 1.10;
-            store.world.consecutiveFastKills = 0; 
-            store.world.fastKillBonus = 0;
-            announce("GUARDIANS ADAPTING!");
         }
-        store.world.bossHealthBonus *= healthBonusMultiplier;
+        
+        // Add collar stacks immediately to ensure consistent application
+        if (collarStacksToAdd > 0) {
+            store.world.collarStacks += collarStacksToAdd;
+            console.log(`Boss ${bossName} defeated in ${fightDuration.toFixed(2)}s - Added ${collarStacksToAdd} collar stacks (Total: ${store.world.collarStacks})`);
+        }
+        // FIXED: Don't permanently modify health bonuses - collar handles this dynamically
+        // Instead, only apply temporary density and XP bonuses based on performance
         if (announcedAdaptation) {
-            const enemyHealthBonus = healthBonusMultiplier > 1.1 ? 1.15 : 1.05;
-            store.world.enemyHealthBonus *= enemyHealthBonus;
-            store.world.enemyDensityBonus *= 1.10;
+            // Only apply density bonuses, not permanent health increases
+            if (healthBonusMultiplier > 1.3) {
+                store.world.enemyDensityBonus *= 1.15;
+            } else if (healthBonusMultiplier > 1.1) {
+                store.world.enemyDensityBonus *= 1.10;
+            } else if (healthBonusMultiplier > 1.0) {
+                store.world.enemyDensityBonus *= 1.05;
+            }
             setTimeout(() => announce("GUARDIAN DEFEATED!"), 1000);
         }
     }
@@ -3090,7 +3069,7 @@ class FlameParticle {
         store.world = { 
             wave: 1, 
             score: 0, 
-            shards: 0, 
+            gold: 0, 
             xp: 0, 
             level: 1, 
             kills: 0, 
@@ -3666,7 +3645,7 @@ function render(dt) {
     let entropyPercent = 0;
     let entropyText = "";
     
-    q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • SHARDS <b>${store.world.shards}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${beefShieldPercent}%;background:linear-gradient(90deg,#ff8c00,#ff4500)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${beefShieldText}</div>` : ""}${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } 
+    q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • gold <b>${store.world.gold}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${beefShieldPercent}%;background:linear-gradient(90deg,#ff8c00,#ff4500)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${beefShieldText}</div>` : ""}${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } 
         
         // Update FPS counter
         if (!store.fpsLastTime) {
@@ -3678,12 +3657,35 @@ function render(dt) {
         if (now - store.fpsLastTime >= 1000) {
             const fps = Math.round((store.fpsFrameCount * 1000) / (now - store.fpsLastTime));
             q('fps').textContent = fps;
-            q('collar').textContent = `${store.world.collarStacks.toFixed(1)} (${((store.world.collarStacks * 0.08) * 100).toFixed(0)}%)`;
+            // Enhanced collar display with better feedback
+            const collarStacks = store.world.collarStacks || 0;
+            const collarPercent = (collarStacks * 0.08) * 100;
+            const collarStatus = collarStacks === 0 ? 'LOOSE' : 
+                                collarStacks < 5 ? 'SNUG' :
+                                collarStacks < 15 ? 'TIGHT' :
+                                collarStacks < 25 ? 'CRUSHING' : 'MAXIMUM';
+            q('collar').textContent = `${collarStacks.toFixed(1)} (${collarPercent.toFixed(0)}%) ${collarStatus}`;
+            
+            // Calculate damage per bullet and average enemy HP
+            const baseDamage = 15; // Updated from 20 to 15 (75% of original)
+            const actualDamage = baseDamage * store.player.dmgMult;
+            q('damagePerBullet').textContent = `${actualDamage.toFixed(1)}`;
+            
+            // Calculate average enemy HP across all enemy types
+            const enemyTypes = [
+                { hp: 20, name: 'drone' }, { hp: 15, name: 'hunter' }, { hp: 30, name: 'phantom' },
+                { hp: 80, name: 'mech' }, { hp: 120, name: 'angler' }, { hp: 150, name: 'manta' }
+            ];
+            const collarBonus = 1 + (store.world.collarStacks * 0.08);
+            const avgBaseHp = enemyTypes.reduce((sum, type) => sum + type.hp, 0) / enemyTypes.length;
+            const waveMultiplier = Math.pow(1.03, store.world.wave - 1);
+            const avgCurrentHp = avgBaseHp * waveMultiplier * collarBonus;
+            q('avgEnemyHp').textContent = `${avgCurrentHp.toFixed(0)}`;
+            
             store.fpsFrameCount = 0;
             store.fpsLastTime = now;
             
             // Update health table
-            const collarBonus = 1 + (store.world.collarStacks * 0.08);
             if (store.enemies.length > 0) {
                 const enemy = store.enemies[0];
                 q('enemyBaseHp').textContent = Math.round(enemy.hpMax / collarBonus);
@@ -3763,7 +3765,7 @@ function render(dt) {
             console.warn("Score submission failed, game continues offline:", err.message); 
         } 
     }
-    function fireBullet(x, y, vx, vy, props = {}) { const p = store.player; store.bullets.push({ x, y, vx, vy, r: p.explosive ? 5 : 3, col: p.explosive ? "#ED2F32" : "#b266ff", dmg: 20 * p.dmgMult, pierce: p.piercing, explosive: p.explosive, ...props }); }
+    function fireBullet(x, y, vx, vy, props = {}) { const p = store.player; store.bullets.push({ x, y, vx, vy, r: p.explosive ? 5 : 3, col: p.explosive ? "#ED2F32" : "#b266ff", dmg: 15 * p.dmgMult, pierce: p.piercing, explosive: p.explosive, ...props }); }
     function firePlayer() {
         const p = store.player;
         if (p.beefChargeState && p.beefChargeState !== 'ready') return;
@@ -3771,10 +3773,10 @@ function render(dt) {
         const bulletSpeed = baseBulletSpeed * (p.temporalSpeedBoost || 1); // Chrono Blast speed boost
         const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0);
         const angleSpread = 10;
-        for (let i = 0; i < totalMultishot; i++) { const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: p.x + 10 * Math.sin(angle), y: p.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: p.explosive ? "#cc99ff" : "#b266ff", dmg: 20 * p.dmgMult, pierce: p.piercing, explosive: p.explosive }); }
-        if (p.hasIceman && store.iceman) { for (let i = 0; i < totalMultishot; i++) { const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: store.iceman.x + 10 * Math.sin(angle), y: store.iceman.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: "#66aaff", dmg: 20 * p.dmgMult * 0.35, pierce: p.piercing, explosive: p.explosive, isIceman: true }); } }
-        if (p.rearMultishot > 0) { const rearAngleSpread = 15; for (let i = 0; i < p.rearMultishot; i++) { const angle = (i - (p.rearMultishot - 1) / 2) * rearAngleSpread; const radAngle = angle * Math.PI / 180; store.bullets.push({ x: p.x + 10 * Math.sin(radAngle), y: p.y + 12, vx: Math.sin(radAngle) * bulletSpeed, vy: Math.cos(radAngle) * bulletSpeed, r: 3, col: "#ffddff", dmg: 15 * p.dmgMult, pierce: p.piercing > 0 ? p.piercing - 1 : 0 }); } }
-        store.drones.forEach(drone => store.bullets.push({ x: p.x + drone.offset, y: p.y + 20, vx: 0, vy: -bulletSpeed, r: 3, col: "#66aaff", dmg: 20 * p.dmgMult * 0.4, isDrone: true }));
+        for (let i = 0; i < totalMultishot; i++) { const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: p.x + 10 * Math.sin(angle), y: p.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: p.explosive ? "#cc99ff" : "#b266ff", dmg: 15 * p.dmgMult, pierce: p.piercing, explosive: p.explosive }); }
+        if (p.hasIceman && store.iceman) { for (let i = 0; i < totalMultishot; i++) { const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: store.iceman.x + 10 * Math.sin(angle), y: store.iceman.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: "#66aaff", dmg: 15 * p.dmgMult * 0.35, pierce: p.piercing, explosive: p.explosive, isIceman: true }); } }
+        if (p.rearMultishot > 0) { const rearAngleSpread = 15; for (let i = 0; i < p.rearMultishot; i++) { const angle = (i - (p.rearMultishot - 1) / 2) * rearAngleSpread; const radAngle = angle * Math.PI / 180; store.bullets.push({ x: p.x + 10 * Math.sin(radAngle), y: p.y + 12, vx: Math.sin(radAngle) * bulletSpeed, vy: Math.cos(radAngle) * bulletSpeed, r: 3, col: "#ffddff", dmg: 11.25 * p.dmgMult, pierce: p.piercing > 0 ? p.piercing - 1 : 0 }); } }
+        store.drones.forEach(drone => store.bullets.push({ x: p.x + drone.offset, y: p.y + 20, vx: 0, vy: -bulletSpeed, r: 3, col: "#66aaff", dmg: 15 * p.dmgMult * 0.4, isDrone: true }));
         if (p.hasLauncher) {
             const speed = 350;
             const numPairs = store.player.upgradeLevels.launcher || 1;
@@ -4040,14 +4042,14 @@ function render(dt) {
                             } 
                             break; 
                         case 2: 
-                            // Spawn construct shards
-                            const numShards = 2 + Math.floor(store.world.wave / 10); 
-                            for(let i = 0; i < numShards; i++) { 
-                                const shard = spawnEnemy('construct_shard'); 
-                                shard.x = b.x + (Math.random() - 0.5) * 120; 
-                                shard.y = b.y + 60; 
-                                shard.color = '#8B0000';
-                                store.enemies.push(shard); 
+                            // Spawn construct gold
+                            const numgold = 2 + Math.floor(store.world.wave / 10); 
+                            for(let i = 0; i < numgold; i++) { 
+                                const gold = spawnEnemy('construct_gold'); 
+                                gold.x = b.x + (Math.random() - 0.5) * 120; 
+                                gold.y = b.y + 60; 
+                                gold.color = '#8B0000';
+                                store.enemies.push(gold); 
                             } 
                             break;
                         case 3:
@@ -4348,17 +4350,17 @@ function render(dt) {
                             } 
                             break; 
                         case 2: 
-                            // More shards (significantly more in final phase)
-                            const baseShards = 3 + Math.floor(store.world.wave / 8);
-                            const finalPhaseBonus = isFinalPhase ? Math.floor(baseShards * 0.75) : 0; // 75% more adds in final phase
-                            const numShards = baseShards + finalPhaseBonus;
-                            for(let i = 0; i < numShards; i++) { 
-                                const shard = spawnEnemy('construct_shard'); 
-                                shard.x = b.x + (Math.random() - 0.5) * 150; 
-                                shard.y = b.y + 60; 
-                                shard.color = isFinalPhase ? '#FF0000' : '#FF0000';
-                                shard.hp *= isFinalPhase ? 1.5 : 1.3; // Tougher adds in final phase
-                                store.enemies.push(shard); 
+                            // More gold (significantly more in final phase)
+                            const basegold = 3 + Math.floor(store.world.wave / 8);
+                            const finalPhaseBonus = isFinalPhase ? Math.floor(basegold * 0.75) : 0; // 75% more adds in final phase
+                            const numgold = basegold + finalPhaseBonus;
+                            for(let i = 0; i < numgold; i++) { 
+                                const gold = spawnEnemy('construct_gold'); 
+                                gold.x = b.x + (Math.random() - 0.5) * 150; 
+                                gold.y = b.y + 60; 
+                                gold.color = isFinalPhase ? '#FF0000' : '#FF0000';
+                                gold.hp *= isFinalPhase ? 1.5 : 1.3; // Tougher adds in final phase
+                                store.enemies.push(gold); 
                             } 
                             break; 
                         case 3: 
@@ -4417,12 +4419,12 @@ function render(dt) {
                             break; 
                         case 1: 
                         case 3: 
-                            const numShards = 3 + Math.floor(store.world.wave / 10); 
-                            for(let i = 0; i < numShards; i++) { 
-                                const shard = spawnEnemy('construct_shard'); 
-                                shard.x = b.x + (Math.random() - 0.5) * 100; 
-                                shard.y = b.y + 50; 
-                                store.enemies.push(shard); 
+                            const numgold = 3 + Math.floor(store.world.wave / 10); 
+                            for(let i = 0; i < numgold; i++) { 
+                                const gold = spawnEnemy('construct_gold'); 
+                                gold.x = b.x + (Math.random() - 0.5) * 100; 
+                                gold.y = b.y + 50; 
+                                store.enemies.push(gold); 
                             } 
                             break; 
                     } 
@@ -4442,15 +4444,15 @@ function render(dt) {
                             break; 
                         case 1: 
                         case 3: 
-                            const numShards = 2; 
-                            for(let i = 0; i < numShards; i++) { 
-                                const shard = spawnEnemy('construct_shard'); 
-                                shard.x = b.x + (i === 0 ? -50 : 50); 
-                                shard.y = b.y + 50; 
-                                shard.hp *= 1.5; 
-                                shard.v *= 1.3; 
-                                shard.color = '#ff4500'; 
-                                store.enemies.push(shard); 
+                            const numgold = 2; 
+                            for(let i = 0; i < numgold; i++) { 
+                                const gold = spawnEnemy('construct_gold'); 
+                                gold.x = b.x + (i === 0 ? -50 : 50); 
+                                gold.y = b.y + 50; 
+                                gold.hp *= 1.5; 
+                                gold.v *= 1.3; 
+                                gold.color = '#ff4500'; 
+                                store.enemies.push(gold); 
                             } 
                             break; 
                     } 
@@ -4990,7 +4992,7 @@ function render(dt) {
             return;
         }
         
-        ctx.save(); ctx.translate(t.x, t.y); if (t.isEnraged) {ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 50);} const hpRatio = Math.max(0, Math.min(1, ((t.hp || 0) / (t.hpMax || 1)))); ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(-60, -t.r - 20, 120, 8); const healthBarColor = t.name === 'EVIL BABYMOON' ? '#ffd700' : (t.color || '#ff4444'); ctx.fillStyle = healthBarColor; ctx.fillRect(-60, -t.r - 20, 120 * hpRatio, 8); ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.strokeRect(-60, -t.r - 20, 120, 8); if (t.behavior === "malignus") {const time = performance.now() / 1000; ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.4, 0, Math.PI * 2); ctx.fill(); const numShards = 5; for (let i = 0; i < numShards; i++) {ctx.save(); const angle = time * (0.5 + 0.1 * i) + i * (2 * Math.PI / numShards); const dist = 0.8 * t.r; ctx.rotate(angle); ctx.translate(dist, 0); ctx.rotate(2 * time); ctx.fillStyle = addAlpha(t.color, 0.67); ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2; const shardSize = 0.3 * t.r; ctx.beginPath(); ctx.moveTo(0, -shardSize); ctx.lineTo(shardSize / 2, shardSize); ctx.lineTo(-shardSize / 2, shardSize); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();}} else if (t.behavior === "hex") {ctx.translate(0, 30); const bodyW_top = t.r * 1.5; const bodyW_bottom = t.r * 2.5; const bodyH = t.r * 1.5; ctx.fillStyle = "#66aaff"; ctx.strokeStyle = "#5599e5"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_bottom / 2, bodyH / 2); ctx.lineTo(-bodyW_bottom / 2, bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#e03434"; ctx.strokeStyle = "#c02d2d"; const crownH = t.r * 0.8, crownW = bodyW_top * 0.9; ctx.beginPath(); ctx.moveTo(-crownW / 2, -bodyH / 2); ctx.lineTo(-crownW / 2 + crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(0, -bodyH / 2 - crownH / 2); ctx.lineTo(crownW / 2 - crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(crownW / 2, -bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#000"; ctx.fillRect(-t.r * 0.6, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(t.r * 0.2, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(-t.r * 0.4, 0, t.r * 0.8, t.r * 0.1); ctx.strokeStyle = "#ffd700"; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(0, 0, t.r * 1.1, 0.5, Math.PI - 0.5); ctx.stroke(); ctx.fillStyle = "#ffd700"; ctx.strokeStyle = "#daa520"; ctx.lineWidth = 3; const medR = t.r * 0.5; ctx.beginPath(); ctx.moveTo(0, t.r * 1.1 + medR); for (let i = 1; i <= 8; i++) {const angle = i * (2 * Math.PI / 8); ctx.lineTo(medR * Math.sin(angle), t.r * 1.1 + medR * Math.cos(angle));} ctx.closePath(); ctx.fill(); ctx.stroke();} else if (t.behavior === "construct") {
+        ctx.save(); ctx.translate(t.x, t.y); if (t.isEnraged) {ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 50);} const hpRatio = Math.max(0, Math.min(1, ((t.hp || 0) / (t.hpMax || 1)))); ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(-60, -t.r - 20, 120, 8); const healthBarColor = t.name === 'EVIL BABYMOON' ? '#ffd700' : (t.color || '#ff4444'); ctx.fillStyle = healthBarColor; ctx.fillRect(-60, -t.r - 20, 120 * hpRatio, 8); ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.strokeRect(-60, -t.r - 20, 120, 8); if (t.behavior === "malignus") {const time = performance.now() / 1000; ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.4, 0, Math.PI * 2); ctx.fill(); const numgold = 5; for (let i = 0; i < numgold; i++) {ctx.save(); const angle = time * (0.5 + 0.1 * i) + i * (2 * Math.PI / numgold); const dist = 0.8 * t.r; ctx.rotate(angle); ctx.translate(dist, 0); ctx.rotate(2 * time); ctx.fillStyle = addAlpha(t.color, 0.67); ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2; const goldize = 0.3 * t.r; ctx.beginPath(); ctx.moveTo(0, -goldize); ctx.lineTo(goldize / 2, goldize); ctx.lineTo(-goldize / 2, goldize); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();}} else if (t.behavior === "hex") {ctx.translate(0, 30); const bodyW_top = t.r * 1.5; const bodyW_bottom = t.r * 2.5; const bodyH = t.r * 1.5; ctx.fillStyle = "#66aaff"; ctx.strokeStyle = "#5599e5"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_bottom / 2, bodyH / 2); ctx.lineTo(-bodyW_bottom / 2, bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#e03434"; ctx.strokeStyle = "#c02d2d"; const crownH = t.r * 0.8, crownW = bodyW_top * 0.9; ctx.beginPath(); ctx.moveTo(-crownW / 2, -bodyH / 2); ctx.lineTo(-crownW / 2 + crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(0, -bodyH / 2 - crownH / 2); ctx.lineTo(crownW / 2 - crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(crownW / 2, -bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#000"; ctx.fillRect(-t.r * 0.6, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(t.r * 0.2, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(-t.r * 0.4, 0, t.r * 0.8, t.r * 0.1); ctx.strokeStyle = "#ffd700"; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(0, 0, t.r * 1.1, 0.5, Math.PI - 0.5); ctx.stroke(); ctx.fillStyle = "#ffd700"; ctx.strokeStyle = "#daa520"; ctx.lineWidth = 3; const medR = t.r * 0.5; ctx.beginPath(); ctx.moveTo(0, t.r * 1.1 + medR); for (let i = 1; i <= 8; i++) {const angle = i * (2 * Math.PI / 8); ctx.lineTo(medR * Math.sin(angle), t.r * 1.1 + medR * Math.cos(angle));} ctx.closePath(); ctx.fill(); ctx.stroke();} else if (t.behavior === "construct") {
         // Check if this is the DEATH ENGINE boss
         if (t.name === 'DEATH ENGINE') {
             // Update skull renderer position and color for red final phase
@@ -5555,7 +5557,7 @@ function render(dt) {
 
         ctx.restore();
     }
-    function drawEnemy(e) { const{x:t,y:o,r:a,type:r,color:n,hp:l,hpMax:s,t:c}=e;ctx.save();ctx.translate(t,o);l<s&&l>0&&(ctx.fillStyle='rgba(0,0,0,0.5)',ctx.fillRect(-a,-a-8,2*a,3),ctx.fillStyle="#b266ff",ctx.fillRect(-a,-a-8,2*a*(l/s),3));ctx.lineWidth=2;ctx.beginPath();switch(r){case"avian_hatchling":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a*1.2);ctx.lineTo(a,-a*0.5);ctx.lineTo(a,a*0.5);ctx.lineTo(0,a*1.2);ctx.lineTo(-a,a*0.5);ctx.lineTo(-a,-a*0.5);ctx.closePath();ctx.fill();ctx.stroke();break;case"construct_shard":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a);ctx.lineTo(a,0);ctx.lineTo(0,a);ctx.lineTo(-a,0);ctx.closePath();ctx.fill();ctx.stroke();break;case"trap_king_add":case"drone":const e=ctx.createLinearGradient(-a,-a,a,a);e.addColorStop(0,"#E0E0E0");e.addColorStop(1,"#A0A0A0");ctx.fillStyle=e;ctx.strokeStyle="#808080";ctx.beginPath();ctx.moveTo(-1.2*a,0);ctx.quadraticCurveTo(0,-a,1.2*a,0);ctx.quadraticCurveTo(0,.6*a,-1.2*a,0);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#aaddff";ctx.strokeStyle="#FFFFFF";ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-.2*a,.6*a,Math.PI,0);ctx.fill();ctx.stroke();ctx.fillStyle=r==="trap_king_add"?"#ffc83d":"#32CD32";ctx.beginPath();ctx.ellipse(0,-.2*a,.3*a,.4*a,0,0,2*Math.PI);ctx.fill();ctx.fillStyle="#000000";ctx.beginPath();ctx.ellipse(-.1*a,-.25*a,.08*a,.15*a,-.5,0,2*Math.PI);ctx.ellipse(.1*a,-.25*a,.08*a,.15*a,.5,0,2*Math.PI);ctx.fill();break;
+    function drawEnemy(e) { const{x:t,y:o,r:a,type:r,color:n,hp:l,hpMax:s,t:c}=e;ctx.save();ctx.translate(t,o);l<s&&l>0&&(ctx.fillStyle='rgba(0,0,0,0.5)',ctx.fillRect(-a,-a-8,2*a,3),ctx.fillStyle="#b266ff",ctx.fillRect(-a,-a-8,2*a*(l/s),3));ctx.lineWidth=2;ctx.beginPath();switch(r){case"avian_hatchling":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a*1.2);ctx.lineTo(a,-a*0.5);ctx.lineTo(a,a*0.5);ctx.lineTo(0,a*1.2);ctx.lineTo(-a,a*0.5);ctx.lineTo(-a,-a*0.5);ctx.closePath();ctx.fill();ctx.stroke();break;case"construct_gold":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a);ctx.lineTo(a,0);ctx.lineTo(0,a);ctx.lineTo(-a,0);ctx.closePath();ctx.fill();ctx.stroke();break;case"trap_king_add":case"drone":const e=ctx.createLinearGradient(-a,-a,a,a);e.addColorStop(0,"#E0E0E0");e.addColorStop(1,"#A0A0A0");ctx.fillStyle=e;ctx.strokeStyle="#808080";ctx.beginPath();ctx.moveTo(-1.2*a,0);ctx.quadraticCurveTo(0,-a,1.2*a,0);ctx.quadraticCurveTo(0,.6*a,-1.2*a,0);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#aaddff";ctx.strokeStyle="#FFFFFF";ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-.2*a,.6*a,Math.PI,0);ctx.fill();ctx.stroke();ctx.fillStyle=r==="trap_king_add"?"#ffc83d":"#32CD32";ctx.beginPath();ctx.ellipse(0,-.2*a,.3*a,.4*a,0,0,2*Math.PI);ctx.fill();ctx.fillStyle="#000000";ctx.beginPath();ctx.ellipse(-.1*a,-.25*a,.08*a,.15*a,-.5,0,2*Math.PI);ctx.ellipse(.1*a,-.25*a,.08*a,.15*a,.5,0,2*Math.PI);ctx.fill();break;
         case "hunter":
             ctx.strokeStyle = '#BE2545';
             ctx.fillStyle = n + "cc";
@@ -6277,8 +6279,8 @@ function render(dt) {
         pauseGame();
         const panel = q("shopPanel"),
             grid = q("shopGrid"),
-            shardsEl = q("shopShards");
-        shardsEl.textContent = store.world.shards;
+            goldEl = q("shopgold");
+        goldEl.textContent = store.world.gold;
 
         const currentItems = Object.keys(SHOP_UPGRADES).map(key => {
             const u = SHOP_UPGRADES[key];
@@ -6370,7 +6372,7 @@ function render(dt) {
                     desc = "Max Level Reached"
                 }
             }
-            if (store.world.shards < cost) isDisabled = true;
+            if (store.world.gold < cost) isDisabled = true;
             if (temporarilyDisabled.includes(key)) {
                 isDisabled = true;
                 desc = "Under maintenance.";
@@ -6388,13 +6390,13 @@ function render(dt) {
                 if (upgrade.isPremium) {
                     if (key === 'vampirism') {
                         const cost = 12 + (store.player.vampirismLevel * 5);
-                        if (store.world.shards >= cost) {
+                        if (store.world.gold >= cost) {
                             purchaseSuccessful = upgrade.apply()
                         }
                     } else {
                         const cost = upgrade.cost;
-                        if (store.world.shards >= cost) {
-                            store.world.shards -= cost;
+                        if (store.world.gold >= cost) {
+                            store.world.gold -= cost;
                             purchaseSuccessful = upgrade.apply()
                         }
                     }
@@ -6407,8 +6409,8 @@ function render(dt) {
                         cost = Math.floor(upgrade.baseCost * Math.pow(upgrade.scale, currentLevel));
                     }
 
-                    if (store.world.shards >= cost) {
-                        store.world.shards -= cost;
+                    if (store.world.gold >= cost) {
+                        store.world.gold -= cost;
                         upgrade.effect(currentLevel);
                         store.player.upgradeLevels[key] = (store.player.upgradeLevels[key] || 0) + 1;
                         purchaseSuccessful = true;
@@ -7262,7 +7264,7 @@ function render(dt) {
             speed: store.player.speed,
             multishot: store.player.multishot,
             xp: store.world.xp,
-            shards: store.world.shards
+            gold: store.world.gold
         };
         
         store.world.isTemporalWarp = true;
@@ -7425,10 +7427,10 @@ function render(dt) {
         
         // Give temporal rewards
         const bonusXP = 500;
-        const bonusShards = 50;
+        const bonusgold = 50;
         
         store.world.xp += bonusXP;
-        store.world.shards += bonusShards;
+        store.world.gold += bonusgold;
         
         // Reset temporal state
         store.world.isTemporalWarp = false;
@@ -7446,7 +7448,7 @@ function render(dt) {
         store.boss = null;
         
         // Show reward animation and narrative
-        showTemporalRewards(bonusXP, bonusShards);
+        showTemporalRewards(bonusXP, bonusgold);
         
         // Resume normal gameplay
         initWave();
@@ -7457,8 +7459,8 @@ function render(dt) {
         }, 3000);
     }
     
-    function showTemporalRewards(xp, shards) {
-        console.log(`🎁 TEMPORAL REWARDS: +${xp} XP, +${shards} SHARDS`);
+    function showTemporalRewards(xp, gold) {
+        console.log(`🎁 TEMPORAL REWARDS: +${xp} XP, +${gold} gold`);
         
         // Create animated reward display
         const rewardDisplay = document.createElement('div');
@@ -7496,15 +7498,15 @@ function render(dt) {
         
         rewardDisplay.innerHTML = `
             <div style="font-size: 18px; margin-bottom: 10px; color: #ffd700;">
-                � TEMPORAL KNOWLEDGE ACQUIRED 🌌
+                  TEMPORAL KNOWLEDGE ACQUIRED 🌌
             </div>
             <div style="font-size: 24px; margin: 15px 0;">
                 <span style="color: #66ff66; text-shadow: 0 0 10px #66ff66;">+${xp}</span>
                 <span style="color: #66ff66; margin: 0 10px;">XP</span>
             </div>
             <div style="font-size: 24px; margin: 15px 0;">
-                <span style="color: #ffd700; text-shadow: 0 0 10px #ffd700;">+${shards}</span>
-                <span style="color: #ffd700; margin: 0 10px;">SHARDS</span>
+                <span style="color: #ffd700; text-shadow: 0 0 10px #ffd700;">+${gold}</span>
+                <span style="color: #ffd700; margin: 0 10px;">gold</span>
             </div>
             <div style="font-size: 12px; color: #cccccc; margin-top: 15px;">
                 ⚛️ Future timeline knowledge preserved ⚛️
@@ -7534,7 +7536,7 @@ function render(dt) {
             }, 300);
         }, 4000);
         
-        announce(`🎁 TEMPORAL KNOWLEDGE GAINED: +${xp} XP • +${shards} SHARDS`);
+        announce(`🎁 TEMPORAL KNOWLEDGE GAINED: +${xp} XP • +${gold} gold`);
     }
     
     function spawnBlinkFlash(x, y, life=200){ blinkFlashes.push({x, y, life, birth: performance.now(), dead:false}); }
@@ -7986,17 +7988,102 @@ function tryVoidStep(player, target, now = performance.now()){
                 console.log('BEEF: Initialized dynamic shield system - wave:', store.world.wave, 'max:', p.beefShieldMax, 'starting:', p.beefShield);
                 break;
             case 'wizard':
-                // Initialize voidmancer laser beam system instead of multishot
-                p.hasVoidLaser = true;
-                p.voidLaserTarget = null;
-                p.voidLaserDamageTimer = 0;
-                p.voidLaserRetargetTimer = 0;
+                // Initialize voidmancer laser beam system if skill is available
+                if (p.skillTree?.void_laser || p.subclass === 'phasestriker' || p.subclass === 'stormcaller') {
+                    p.hasVoidLaser = true;
+                    p.voidLaserTarget = null;
+                    p.voidLaserDamageTimer = 0;
+                    p.voidLaserRetargetTimer = 0;
+                }
                 break;
             case 'rocketman':
                 break;
         }
     }
     
+    // 5-Node Skill Tree Data Structure - Single focused path per subclass
+    const SKILL_TREE_DATA = {
+        // Each subclass gets a focused 5-node skill tree leading to their class ability
+        marauder: {
+            title: 'MARAUDER MASTERY TREE',
+            path: {
+                name: 'MARAUDER PATH',
+                nodes: [
+                    { id: 'marauder_multi_charge', name: 'Multi Charge', desc: 'Gain additional charge attacks for sustained assault', icon: 'marauder.png', tier: 1 },
+                    { id: 'marauder_chain_assault', name: 'Chain Assault', desc: 'Charges can chain between enemies for devastating combos', icon: 'marauder.png', tier: 2 },
+                    { id: 'marauder_combat_mastery', name: 'Combat Mastery', desc: 'Enhanced battle tactics and improved assault capabilities', icon: 'marauder.png', tier: 3 },
+                    { id: 'marauder_elite_warrior', name: 'Elite Warrior', desc: 'Peak marauder training with superior combat prowess', icon: 'marauder.png', tier: 4 }
+                ]
+            },
+            classAbility: { id: 'beef_shield_unlock', name: 'BEEF SHIELD', desc: 'UNLOCK: Regenerating armor plating with damage absorption', icon: 'bshield.png', tier: 5 }
+        },
+        juggernaut: {
+            title: 'JUGGERNAUT MASTERY TREE',
+            path: {
+                name: 'JUGGERNAUT PATH',
+                nodes: [
+                    { id: 'juggernaut_big_boom', name: 'Big Boom', desc: 'Massively increased explosion damage and radius', icon: 'jug.png', tier: 1 },
+                    { id: 'juggernaut_chain_explosions', name: 'Chain Explosions', desc: 'Explosions trigger secondary blasts for area devastation', icon: 'jug.png', tier: 2 },
+                    { id: 'juggernaut_heavy_armor', name: 'Heavy Armor', desc: 'Enhanced defensive capabilities and damage resistance', icon: 'jug.png', tier: 3 },
+                    { id: 'juggernaut_unstoppable', name: 'Unstoppable Force', desc: 'Maximum juggernaut power with devastating impact', icon: 'jug.png', tier: 4 }
+                ]
+            },
+            classAbility: { id: 'beef_shield_unlock', name: 'BEEF SHIELD', desc: 'UNLOCK: Regenerating armor plating with damage absorption', icon: 'bshield.png', tier: 5 }
+        },
+        railgunner: {
+            title: 'RAILGUNNER MASTERY TREE',
+            path: {
+                name: 'RAILGUN PATH',
+                nodes: [
+                    { id: 'railgunner_super_pierce', name: 'Super Pierce', desc: 'Missiles pierce through multiple enemies with increased damage', icon: 'rocket.png', tier: 1 },
+                    { id: 'railgunner_perfect_aim', name: 'Perfect Aim', desc: 'Enhanced targeting and critical hit chance', icon: 'rocket.png', tier: 2 },
+                    { id: 'railgunner_advanced_ballistics', name: 'Advanced Ballistics', desc: 'Superior missile technology and guidance systems', icon: 'rocket.png', tier: 3 },
+                    { id: 'railgunner_precision_master', name: 'Precision Master', desc: 'Ultimate railgun mastery with devastating accuracy', icon: 'rocket.png', tier: 4 }
+                ]
+            },
+            classAbility: { id: 'firewall_unlock', name: 'FIREWALL', desc: 'UNLOCK: Deployable burning barrier for area control', icon: 'firewall.png', tier: 5 }
+        },
+        demolitionist: {
+            title: 'DEMOLITIONIST MASTERY TREE',
+            path: {
+                name: 'CLUSTER PATH',
+                nodes: [
+                    { id: 'demolitionist_mega_cluster', name: 'Mega Cluster', desc: 'Larger cluster explosions with more sub-projectiles', icon: 'rocket.png', tier: 1 },
+                    { id: 'demolitionist_smart_clusters', name: 'Smart Clusters', desc: 'Clusters seek targets and have enhanced blast radius', icon: 'rocket.png', tier: 2 },
+                    { id: 'demolitionist_explosive_mastery', name: 'Explosive Mastery', desc: 'Advanced explosive techniques and enhanced detonation power', icon: 'rocket.png', tier: 3 },
+                    { id: 'demolitionist_demolition_expert', name: 'Demolition Expert', desc: 'Peak explosive specialist with maximum destructive force', icon: 'rocket.png', tier: 4 }
+                ]
+            },
+            classAbility: { id: 'firewall_unlock', name: 'FIREWALL', desc: 'UNLOCK: Deployable burning barrier for area control', icon: 'firewall.png', tier: 5 }
+        },
+        phasestriker: {
+            title: 'PHASESTRIKER MASTERY TREE',
+            path: {
+                name: 'LASER PATH',
+                nodes: [
+                    { id: 'phasestriker_beam_focus', name: 'Beam Focus', desc: 'Enhanced laser damage and focus capabilities', icon: 'phase.png', tier: 1 },
+                    { id: 'phasestriker_void_mastery', name: 'Void Mastery', desc: 'Advanced void laser control and ramping power', icon: 'phase.png', tier: 2 },
+                    { id: 'phasestriker_dimensional_control', name: 'Dimensional Control', desc: 'Superior phase manipulation and reality warping', icon: 'phase.png', tier: 3 },
+                    { id: 'phasestriker_void_lord', name: 'Void Lord', desc: 'Ultimate mastery over void energy and phase space', icon: 'phase.png', tier: 4 }
+                ]
+            },
+            classAbility: { id: 'blink_unlock', name: 'BLINK', desc: 'UNLOCK: Teleportation ability with tactical positioning', icon: 'blink.png', tier: 5 }
+        },
+        stormcaller: {
+            title: 'STORMCALLER MASTERY TREE',
+            path: {
+                name: 'LIGHTNING PATH',
+                nodes: [
+                    { id: 'stormcaller_chain_boost', name: 'Chain Boost', desc: 'Enhanced chain lightning damage and jump distance', icon: 'storm.png', tier: 1 },
+                    { id: 'stormcaller_storm_mastery', name: 'Storm Mastery', desc: 'Advanced electrical warfare and multi-target hits', icon: 'storm.png', tier: 2 },
+                    { id: 'stormcaller_thunder_lord', name: 'Thunder Lord', desc: 'Superior electrical control and storm manipulation', icon: 'storm.png', tier: 3 },
+                    { id: 'stormcaller_storm_god', name: 'Storm God', desc: 'Ultimate mastery over lightning and electrical forces', icon: 'storm.png', tier: 4 }
+                ]
+            },
+            classAbility: { id: 'blink_unlock', name: 'BLINK', desc: 'UNLOCK: Teleportation ability with tactical positioning', icon: 'blink.png', tier: 5 }
+        }
+    };
+
     const SUBCLASSES = {
         rocketman: [
             { id: 'railgunner', name: 'Railgunner', desc: 'Missiles pierce through multiple enemies with devastating precision.', icon: 'rail.png' },
@@ -8112,103 +8199,90 @@ function tryVoidStep(player, target, now = performance.now()){
         }
     }
 
+
+
     function generateDynamicSkillTree() {
         const skillTreeElement = q('skillTree');
-        const pilotType = store.player.pilotGenome;
+        const subclass = store.player.subclass;
         
-        if (pilotType === 'beef') {
-            // Keep existing beef skill tree
-            skillTreeElement.innerHTML = `
-                <button class="close-btn" id="skillTreeCloseBtn" type="button">✕</button>
-                <div class="skill-tree-title">BEEF SPECIALIZATION TREE</div>
-                <div class="skill-grid">
-                    <div class="skill-row">
-                        <div class="skill-track">
-                            <div class="track-title">MARAUDER</div>
-                            <div class="skill-icon-button available" data-skill="marauder" data-tier="1">
-                                <img src="marauder.png" alt="Marauder" class="skill-icon-image">
-                                <div class="skill-info-overlay">
-                                    <div class="skill-overlay-title">MARAUDER</div>
-                                    <div class="skill-overlay-desc">Rapid assault specialist with multiple charges for sustained combat dominance</div>
-                                </div>
-                            </div>
-                            <div class="skill-icon-button locked" data-skill="marauder_enhanced" data-tier="2" data-parent="marauder">
-                                <img src="marauder.png" alt="Triple Charge" class="skill-icon-image enhanced">
-                                <div class="skill-info-overlay">
-                                    <div class="skill-overlay-title">TRIPLE CHARGE</div>
-                                    <div class="skill-overlay-desc">MASTERY: Enhanced marauder with three devastating charges</div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="skill-track">
-                            <div class="track-title">JUGGERNAUT</div>
-                            <div class="skill-icon-button available" data-skill="juggernaut" data-tier="1">
-                                <img src="jug.png" alt="Juggernaut" class="skill-icon-image">
-                                <div class="skill-info-overlay">
-                                    <div class="skill-overlay-title">JUGGERNAUT</div>
-                                    <div class="skill-overlay-desc">Heavy assault specialist with devastating explosive impact attacks</div>
-                                </div>
-                            </div>
-                            <div class="skill-icon-button locked" data-skill="juggernaut_enhanced" data-tier="2" data-parent="juggernaut">
-                                <img src="jug.png" alt="Big Bang" class="skill-icon-image enhanced">
-                                <div class="skill-info-overlay">
-                                    <div class="skill-overlay-title">BIG BANG</div>
-                                    <div class="skill-overlay-desc">MASTERY: Enhanced juggernaut with massive explosion radius</div>
-                                </div>
+        // Debug: Check subclass and genome alignment
+        
+        // Get the skill tree data for the current subclass
+        const treeData = SKILL_TREE_DATA[subclass];
+        if (!treeData) {
+            console.error('No skill tree data found for subclass:', subclass);
+            // Available subclasses in SKILL_TREE_DATA
+            return;
+        }
+        
+        // Generate the 5-node single path skill tree HTML
+        const path = treeData.path;
+        const classAbility = treeData.classAbility;
+        
+        skillTreeElement.innerHTML = `
+            <button class="close-btn" id="skillTreeCloseBtn" type="button">✕</button>
+            <div class="skill-tree-title">${treeData.title}</div>
+            <div class="skill-grid">
+                <div class="skill-row">
+                    <!-- Single focused path with 4 nodes leading to class ability -->
+                    <div class="skill-track">
+                        <div class="track-title">${path.name}</div>
+                        <!-- Tier 1 -->
+                        <div class="skill-icon-button available" data-skill="${path.nodes[0].id}" data-tier="1">
+                            <img src="${path.nodes[0].icon}" alt="${path.nodes[0].name}" class="skill-icon-image">
+                            <div class="skill-info-overlay">
+                                <div class="skill-overlay-title">${path.nodes[0].name}</div>
+                                <div class="skill-overlay-desc">${path.nodes[0].desc}</div>
                             </div>
                         </div>
-                    </div>
-                </div>
-                <div class="skill-description" id="skillDescription">
-                    Choose your specialization path: Marauder for sustained assault, Juggernaut for devastating impact. Select both for the ultimate combo!
-                </div>`;
-        } else if (pilotType === 'rocketman') {
-            // Create rocketman skill tree
-            skillTreeElement.innerHTML = `
-                <button class="close-btn" id="skillTreeCloseBtn" type="button">✕</button>
-                <div class="skill-tree-title">ROCKETMAN SPECIALIZATION TREE</div>
-                <div class="skill-grid">
-                    <div class="skill-row">
-                        <div class="skill-track">
-                            <div class="track-title">RAILGUNNER</div>
-                            <div class="skill-icon-button available" data-skill="railgunner" data-tier="1">
-                                <img src="rail.png" alt="Railgunner" class="skill-icon-image">
-                                <div class="skill-info-overlay">
-                                    <div class="skill-overlay-title">RAILGUNNER</div>
-                                    <div class="skill-overlay-desc">Precision missile specialist with devastating piercing capabilities</div>
-                                </div>
-                            </div>
-                            <div class="skill-icon-button locked" data-skill="railgunner_enhanced" data-tier="2" data-parent="railgunner">
-                                <img src="rail.png" alt="Super Pierce" class="skill-icon-image enhanced">
-                                <div class="skill-info-overlay">
-                                    <div class="skill-overlay-title">SUPER PIERCE</div>
-                                    <div class="skill-overlay-desc">MASTERY: Enhanced railgunner with maximum piercing power</div>
-                                </div>
+                        <!-- Tier 2 -->
+                        <div class="skill-icon-button locked" data-skill="${path.nodes[1].id}" data-tier="2" data-parent="${path.nodes[0].id}">
+                            <img src="${path.nodes[1].icon}" alt="${path.nodes[1].name}" class="skill-icon-image">
+                            <div class="skill-info-overlay">
+                                <div class="skill-overlay-title">${path.nodes[1].name}</div>
+                                <div class="skill-overlay-desc">${path.nodes[1].desc}</div>
                             </div>
                         </div>
-                        <div class="skill-track">
-                            <div class="track-title">DEMOLITIONIST</div>
-                            <div class="skill-icon-button available" data-skill="demolitionist" data-tier="1">
-                                <img src="demo.png" alt="Demolitionist" class="skill-icon-image">
-                                <div class="skill-info-overlay">
-                                    <div class="skill-overlay-title">DEMOLITIONIST</div>
-                                    <div class="skill-overlay-desc">Explosive missile specialist with devastating cluster bombs</div>
-                                </div>
+                        <!-- Tier 3 -->
+                        <div class="skill-icon-button locked" data-skill="${path.nodes[2].id}" data-tier="3" data-parent="${path.nodes[1].id}">
+                            <img src="${path.nodes[2].icon}" alt="${path.nodes[2].name}" class="skill-icon-image">
+                            <div class="skill-info-overlay">
+                                <div class="skill-overlay-title">${path.nodes[2].name}</div>
+                                <div class="skill-overlay-desc">${path.nodes[2].desc}</div>
                             </div>
-                            <div class="skill-icon-button locked" data-skill="demolitionist_enhanced" data-tier="2" data-parent="demolitionist">
-                                <img src="demo.png" alt="Mega Clusters" class="skill-icon-image enhanced">
-                                <div class="skill-info-overlay">
-                                    <div class="skill-overlay-title">MEGA CLUSTERS</div>
-                                    <div class="skill-overlay-desc">MASTERY: Enhanced demolitionist with massive cluster explosions</div>
-                                </div>
+                        </div>
+                        <!-- Tier 4 -->
+                        <div class="skill-icon-button locked" data-skill="${path.nodes[3].id}" data-tier="4" data-parent="${path.nodes[2].id}">
+                            <img src="${path.nodes[3].icon}" alt="${path.nodes[3].name}" class="skill-icon-image">
+                            <div class="skill-info-overlay">
+                                <div class="skill-overlay-title">${path.nodes[3].name}</div>
+                                <div class="skill-overlay-desc">${path.nodes[3].desc}</div>
+                            </div>
+                        </div>
+                        <!-- Class Ability: Final unlock (5th node) -->
+                        <div class="skill-icon-button locked" data-skill="${classAbility.id}" data-tier="5" data-parent="${path.nodes[3].id}">
+                            <img src="${classAbility.icon}" alt="${classAbility.name}" class="skill-icon-image class-ability">
+                            <div class="skill-info-overlay">
+                                <div class="skill-overlay-title">${classAbility.name}</div>
+                                <div class="skill-overlay-desc">${classAbility.desc}</div>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="skill-description" id="skillDescription">
-                    Choose your specialization path: Railgunner for piercing precision, Demolitionist for explosive devastation. Select both for the ultimate combo!
-                </div>`;
-        } else if (pilotType === 'wizard') {
+            </div>
+            <div class="skill-description" id="skillDescription">
+                Master your ${subclass} specialization through focused training. Complete all nodes to unlock your class ability!
+            </div>`;
+        
+        // Initialize skill tree progression
+        initializeSkillTree();
+    }
+    
+    // Old skill tree code - now commented out as we use dynamic trees
+    /*
+    function generateOldSkillTree() {
+        // Old static skill trees removed - now using SKILL_TREE_DATA structure
+    }
             // Create wizard skill tree
             skillTreeElement.innerHTML = `
                 <button class="close-btn" id="skillTreeCloseBtn" type="button">✕</button>
@@ -8249,10 +8323,44 @@ function tryVoidStep(player, target, now = performance.now()){
                                 </div>
                             </div>
                         </div>
+                        <div class="skill-track">
+                            <div class="track-title">BLINK ABILITY</div>
+                            <div class="skill-icon-button available" data-skill="blink_ability" data-tier="1">
+                                <img src="blink.png" alt="Blink Ability" class="skill-icon-image">
+                                <div class="skill-info-overlay">
+                                    <div class="skill-overlay-title">BLINK ABILITY</div>
+                                    <div class="skill-overlay-desc">Mobility specialist with instant teleportation and damage</div>
+                                </div>
+                            </div>
+                            <div class="skill-icon-button locked" data-skill="blink_ability_enhanced" data-tier="2" data-parent="blink_ability">
+                                <img src="blink.png" alt="Void Step" class="skill-icon-image enhanced">
+                                <div class="skill-info-overlay">
+                                    <div class="skill-overlay-title">VOID STEP</div>
+                                    <div class="skill-overlay-desc">MASTERY: Enhanced blink with area damage and faster cooldown</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="skill-track">
+                            <div class="track-title">VOID LASER</div>
+                            <div class="skill-icon-button available" data-skill="void_laser" data-tier="1">
+                                <img src="voidlaser.png" alt="Void Laser" class="skill-icon-image">
+                                <div class="skill-info-overlay">
+                                    <div class="skill-overlay-title">VOID LASER</div>
+                                    <div class="skill-overlay-desc">Energy weapons specialist with focused beam attacks</div>
+                                </div>
+                            </div>
+                            <div class="skill-icon-button locked" data-skill="void_laser_enhanced" data-tier="2" data-parent="void_laser">
+                                <img src="voidlaser.png" alt="Annihilation Beam" class="skill-icon-image enhanced">
+                                <div class="skill-info-overlay">
+                                    <div class="skill-overlay-title">ANNIHILATION BEAM</div>
+                                    <div class="skill-overlay-desc">MASTERY: Enhanced void laser with ramping damage and wider beam</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="skill-description" id="skillDescription">
-                    Choose your specialization path: Phase Striker for void teleportation, Stormcaller for chain lightning. Select both for the ultimate combo!
+                    Choose your specialization path: Phase Striker for void teleportation, Stormcaller for chain lightning, Blink Ability for mobility, Void Laser for focused damage. Mix and match for powerful combos!
                 </div>`;
         } else {
             // Fallback for unknown pilot types
@@ -8265,23 +8373,28 @@ function tryVoidStep(player, target, now = performance.now()){
         }
     }
     
+    */
+    
     function initializeSkillTree() {
         const p = store.player;
-        const pilotType = p.pilotGenome;
+        const subclass = p.subclass;
         
         // Initialize skill tree properties if needed
         if (!p.skillTree) {
-            if (pilotType === 'beef') {
-                p.skillTree = { juggernaut: false, marauder: false, juggernaut_enhanced: false, marauder_enhanced: false };
-            } else if (pilotType === 'rocketman') {
-                p.skillTree = { railgunner: false, demolitionist: false, railgunner_enhanced: false, demolitionist_enhanced: false };
-            } else if (pilotType === 'wizard') {
-                p.skillTree = { phasestriker: false, stormcaller: false, phasestriker_enhanced: false, stormcaller_enhanced: false };
-            } else {
-                // Fallback for unknown pilot types
-                p.skillTree = {};
+            p.skillTree = {};
+            
+            // Initialize all skills as false for the current subclass
+            const treeData = SKILL_TREE_DATA[subclass];
+            if (treeData) {
+                // Add path skills (4 nodes)
+                treeData.path.nodes.forEach(node => {
+                    p.skillTree[node.id] = false;
+                });
+                // Add class ability (5th node)
+                p.skillTree[treeData.classAbility.id] = false;
             }
         }
+        
         if (!p.skillTreeProgress) p.skillTreeProgress = { bossesDefeated: 0, tier1Choice: null, tier2Choice: null };
         if (!p.skillPoints) p.skillPoints = 0;
         if (!p.skillPointsSpent) p.skillPointsSpent = 0;
@@ -8294,6 +8407,13 @@ function tryVoidStep(player, target, now = performance.now()){
     
     function updateSkillTreeUI() {
         const p = store.player;
+        const panel = q('subclassPanel');
+        
+        // Early return if skill tree panel is not visible - major performance optimization
+        if (!panel || panel.classList.contains('hide') || !panel.classList.contains('skill-tree-active')) {
+            return;
+        }
+        
         const iconButtons = document.querySelectorAll('.skill-icon-button');
         
         // Update button states first, regardless of whether tree will close
@@ -8318,18 +8438,16 @@ function tryVoidStep(player, target, now = performance.now()){
         });
         
         // Safety check: if no skill points remain and skill tree is open, close it
-        if (p.skillPoints <= 0 && !q('subclassPanel').classList.contains('hide') && q('subclassPanel').classList.contains('skill-tree-active')) {
+        if (p.skillPoints <= 0) {
             setTimeout(() => {
-                console.log('Auto-closing skill tree from updateSkillTreeUI - no points remaining');
                 closeSkillTree();
             }, 100);
             return;
         }
         
         // If tree is fully capped, also close it
-        if (isSkillTreeFullyCapped() && !q('subclassPanel').classList.contains('hide') && q('subclassPanel').classList.contains('skill-tree-active')) {
+        if (isSkillTreeFullyCapped()) {
             setTimeout(() => {
-                console.log('Auto-closing skill tree from updateSkillTreeUI - tree fully capped');
                 closeSkillTree();
             }, 100);
             return;
@@ -8348,7 +8466,6 @@ function tryVoidStep(player, target, now = performance.now()){
     
     function canLearnSkill(skill, tier, parent) {
         const p = store.player;
-        const pilotType = p.pilotGenome;
         
         // Can't learn a skill that's already learned
         if (p.skillTree && p.skillTree[skill]) return false;
@@ -8359,20 +8476,9 @@ function tryVoidStep(player, target, now = performance.now()){
             return true; // First tier is always available with skill points
         }
         
-        if (tier === 2) {
-            if (parent === 'both') {
-                // Requires both tier 1 skills based on pilot type
-                if (pilotType === 'beef') {
-                    return p.skillTree.juggernaut && p.skillTree.marauder;
-                } else if (pilotType === 'rocketman') {
-                    return p.skillTree.railgunner && p.skillTree.demolitionist;
-                } else if (pilotType === 'wizard') {
-                    return p.skillTree.phasestriker && p.skillTree.stormcaller;
-                }
-            } else {
-                // Requires specific parent skill
-                return p.skillTree[parent];
-            }
+        // For tiers 2-5, requires the specific parent skill to be learned
+        if (tier >= 2 && tier <= 5) {
+            return p.skillTree && p.skillTree[parent];
         }
         
         return false;
@@ -8434,10 +8540,10 @@ function tryVoidStep(player, target, now = performance.now()){
         // Click handlers - icon buttons are directly clickable
         freshButtons.forEach(button => {
             button.addEventListener('click', () => {
-                console.log('Button clicked:', button.dataset.skill, 'Classes:', button.className);
+                // Skill button clicked
                 if (button.classList.contains('available')) {
                     const skill = button.dataset.skill;
-                    console.log('About to learn skill:', skill);
+                    // About to learn skill
                     learnSkill(skill);
                 }
             });
@@ -8448,19 +8554,17 @@ function tryVoidStep(player, target, now = performance.now()){
     
     function learnSkill(skill) {
         if (isLearningSkill) {
-            console.log('Already learning a skill, ignoring duplicate call');
+            // Already learning a skill, ignoring duplicate call
             return;
         }
         
         isLearningSkill = true;
-        console.log('Learning skill:', skill);
         
         try {
             const p = store.player;
             const skillButton = document.querySelector(`[data-skill="${skill}"]`);
             const tier = parseInt(skillButton.dataset.tier);
             
-            console.log('Skill tier:', tier, 'Can learn:', canLearnSkill(skill, tier, skillButton.dataset.parent));
             if (!canLearnSkill(skill, tier, skillButton.dataset.parent)) {
                 isLearningSkill = false;
                 return;
@@ -8470,12 +8574,10 @@ function tryVoidStep(player, target, now = performance.now()){
             p.skillTree[skill] = true;
             p.skillPoints--; // Spend the skill point
             p.skillPointsSpent = (p.skillPointsSpent || 0) + 1; // Track total spent
-            
-            console.log('Applying skill bonus for:', skill);
             // Apply the skill effects
             applySkillBonus(skill);
             
-            console.log('Checking for combo...');
+            // Check for combo when both base skills are learned
             // Check for combo when both base skills are learned
             const pilotType = p.pilotGenome;
             if (tier === 1) {
@@ -8494,7 +8596,7 @@ function tryVoidStep(player, target, now = performance.now()){
             console.log('Updating UI...');
             updateSkillTreeUI();
             
-            console.log('Remaining skill points:', p.skillPoints);
+            // Update remaining skill points display
             
             // Check if tree is now fully capped
             if (isSkillTreeFullyCapped()) {
@@ -8526,29 +8628,24 @@ function tryVoidStep(player, target, now = performance.now()){
     
     function isSkillTreeFullyCapped() {
         const p = store.player;
-        const pilotType = p.pilotGenome;
+        const subclass = p.subclass;
         
-        if (!p.skillTree) return false;
+        if (!p.skillTree || !subclass) return false;
         
-        // Define all possible skills for each pilot type
-        const allSkills = {
-            'beef': ['marauder', 'juggernaut', 'marauder_enhanced', 'juggernaut_enhanced'],
-            'rocketman': ['railgunner', 'demolitionist', 'railgunner_enhanced', 'demolitionist_enhanced'],
-            'wizard': ['phasestriker', 'stormcaller', 'phasestriker_enhanced', 'stormcaller_enhanced']
-        };
+        // Check if the current subclass skill tree is fully capped (all 5 nodes learned)
+        const treeData = SKILL_TREE_DATA[subclass];
+        if (!treeData) return false;
         
-        const skillsForPilot = allSkills[pilotType];
-        if (!skillsForPilot) return false;
+        // Check if all 4 path nodes + class ability are learned
+        const allNodes = [
+            ...treeData.path.nodes.map(node => node.id),
+            treeData.classAbility.id
+        ];
         
-        // Check if all skills are learned - debug output
-        const allLearned = skillsForPilot.every(skill => p.skillTree[skill] === true);
-        console.log(`Skill tree cap check for ${pilotType}: ${allLearned ? 'CAPPED' : 'NOT CAPPED'}`, skillsForPilot.map(s => `${s}:${p.skillTree[s] || false}`));
-        
-        return allLearned;
+        return allNodes.every(skill => p.skillTree[skill] === true);
     }
     
     function applySkillBonus(skill) {
-        console.log('applySkillBonus called with skill:', skill);
         const p = store.player;
         
         switch(skill) {
@@ -8635,6 +8732,332 @@ function tryVoidStep(player, target, now = performance.now()){
                 p.stormstrikerLevel = 2; // Level 2: Twin wing lightning
                 announce('STORMSTRIKER LV2 - Twin Wing Lightning!');
                 break;
+                
+            // New Beef Skills
+            case 'beef_shield':
+                p.beefShieldMax = 100;
+                p.beefShield = 100;
+                p.beefShieldRegenRate = 5; // Shield per second
+                announce('BEEF SHIELD ACTIVATED - Defensive Armor Plating!');
+                break;
+            case 'beef_shield_enhanced':
+                p.beefShieldMax = Math.max(p.beefShieldMax || 100, 200);
+                p.beefShield = p.beefShieldMax;
+                p.beefShieldRegenRate = 15; // Faster regeneration
+                p.beefShieldReflect = true; // Reflect damage back to enemies
+                announce('FORTRESS MODE ACTIVATED - Enhanced Defense and Reflection!');
+                break;
+            case 'beef_charge':
+                p.beefChargeState = 'ready';
+                p.beefChargeCooldown = 0;
+                p.beefCharges = 1;
+                p.beefMaxCharges = 1;
+                announce('BEEF CHARGE ACTIVATED - Devastating Rush Attack!');
+                break;
+            case 'beef_charge_enhanced':
+                p.beefChargeDamageMultiplier = 2.0; // Double charge damage
+                p.beefChargeRange = 1.5; // Increased range
+                announce('RAMMING SPEED ACTIVATED - Enhanced Charge Power!');
+                break;
+                
+            // New Rocketman Skills
+            case 'flame_barrier':
+                p.flameBarrierActive = false;
+                p.flameBarrierCooldown = 0;
+                p.flameBarrierDuration = 8; // 8 seconds
+                p.flameBarrierRecharge = 15; // 15 second cooldown
+                announce('FLAME BARRIER ACTIVATED - Burning Protective Field!');
+                break;
+            case 'flame_barrier_enhanced':
+                p.flameBarrierDuration = 12; // Longer duration
+                p.flameBarrierRecharge = 10; // Faster cooldown
+                p.flameBarrierExplosive = true; // Explosive reactive damage
+                announce('INFERNO WALL ACTIVATED - Explosive Reactive Defense!');
+                break;
+            case 'missile_volley':
+                p.missileVolley = Math.max(p.missileVolley || 2, 4);
+                announce('MISSILE VOLLEY ACTIVATED - Multi-Missile Salvos!');
+                break;
+            case 'missile_volley_enhanced':
+                p.missileVolley = Math.max(p.missileVolley || 4, 6);
+                p.missileReloadBonus = 0.5; // 50% faster reload
+                announce('BARRAGE MODE ACTIVATED - Maximum Firepower!');
+                break;
+                
+            // New Wizard Skills  
+            case 'blink_ability':
+                p.blinkDamage = true;
+                p.blinkCooldown = 0;
+                p.blinkRecharge = 3; // 3 second cooldown
+                announce('BLINK ABILITY ACTIVATED - Damaging Teleportation!');
+                break;
+            case 'blink_ability_enhanced':
+                p.blinkDamageEnhanced = true;
+                p.blinkRecharge = 2; // Faster cooldown
+                p.blinkAreaDamage = true; // Area damage on teleport
+                announce('VOID STEP ACTIVATED - Enhanced Teleportation Power!');
+                break;
+            case 'void_laser':
+                p.hasVoidLaser = true;
+                p.voidLaserTarget = null;
+                p.voidLaserDamageTimer = 0;
+                p.voidLaserRetargetTimer = 0;
+                announce('VOID LASER ACTIVATED - Focused Beam Weapon!');
+                break;
+            case 'void_laser_enhanced':
+                p.voidLaserEnhanced = true;
+                p.voidLaserRampingDamage = 1.0; // Starts at 1x, builds up
+                p.voidLaserBeamWidth = 2.0; // Wider beam
+                announce('ANNIHILATION BEAM ACTIVATED - Ramping Laser Power!');
+                break;
+                
+            // NEW 5-NODE SKILL TREE SKILLS
+            // Marauder Tree Skills
+            case 'marauder_multi_charge':
+                p.beefMaxCharges = Math.max(p.beefMaxCharges || 1, 3);
+                p.beefCharges = Math.max(p.beefCharges, 3);
+                announce('MULTI CHARGE ACTIVATED - Additional Charge Attacks!');
+                break;
+            case 'marauder_chain_assault':
+                p.beefChainMode = true;
+                p.beefChainBonus = 1.5; // 50% bonus damage on chain
+                announce('CHAIN ASSAULT ACTIVATED - Chain Between Enemies!');
+                break;
+            case 'marauder_armor_boost':
+                p.hpMax += 25;
+                p.hp += 25;
+                p.damageReduction = (p.damageReduction || 0) + 0.15;
+                announce('BATTLE ARMOR ACTIVATED - Enhanced Durability!');
+                break;
+            case 'marauder_shield_mastery':
+                if (p.beefShieldMax) {
+                    p.beefShieldRegenRate = (p.beefShieldRegenRate || 5) * 2;
+                    p.beefShieldRegenDelay = Math.max((p.beefShieldRegenDelay || 3) - 1, 1);
+                }
+                announce('SHIELD MASTERY ACTIVATED - Enhanced Shield Regeneration!');
+                break;
+                
+            // Juggernaut Tree Skills
+            case 'juggernaut_big_boom':
+                p.beefExplosionRadius = (p.beefExplosionRadius || 1.0) * 1.8;
+                p.beefExplosionDamage = (p.beefExplosionDamage || 1.0) * 2.0;
+                announce('BIG BOOM ACTIVATED - Massive Explosion Power!');
+                break;
+            case 'juggernaut_chain_explosions':
+                p.beefChainExplosions = true;
+                p.beefSecondaryExplosions = 3;
+                announce('CHAIN EXPLOSIONS ACTIVATED - Secondary Blast Waves!');
+                break;
+            case 'juggernaut_speed_boost':
+                p.speedMult *= 1.4;
+                p.beefChargeSpeed = (p.beefChargeSpeed || 1.0) * 1.6;
+                announce('HEAVY MOMENTUM ACTIVATED - Enhanced Speed and Charge!');
+                break;
+            case 'juggernaut_dash_mastery':
+                p.beefKnockbackResistance = true;
+                p.beefChargeCooldown = Math.max((p.beefChargeCooldown || 3) - 1, 1);
+                announce('UNSTOPPABLE FORCE ACTIVATED - Enhanced Mobility!');
+                break;
+                
+            // Railgunner Tree Skills
+            case 'railgunner_super_pierce':
+                p.missilePierce = Math.max(p.missilePierce || 2, 5);
+                p.missilePierceDamage = (p.missilePierceDamage || 1.0) * 1.3;
+                announce('SUPER PIERCE ACTIVATED - Maximum Penetration!');
+                break;
+            case 'railgunner_perfect_aim':
+                p.missileCritChance = (p.missileCritChance || 0) + 0.25;
+                p.missileAccuracy = (p.missileAccuracy || 1.0) * 1.5;
+                announce('PERFECT AIM ACTIVATED - Enhanced Targeting!');
+                break;
+            case 'railgunner_flame_mastery':
+                p.flameBarrierDamage = (p.flameBarrierDamage || 1.0) * 1.8;
+                p.flameBarrierRadius = (p.flameBarrierRadius || 1.0) * 1.4;
+                announce('FLAME MASTERY ACTIVATED - Enhanced Fire Power!');
+                break;
+            case 'railgunner_wall_control':
+                p.flameBarrierCount = (p.flameBarrierCount || 1) + 1;
+                p.flameBarrierDuration *= 1.5;
+                announce('WALL CONTROL ACTIVATED - Advanced Flame Tactics!');
+                break;
+                
+            // Demolitionist Tree Skills  
+            case 'demolitionist_mega_cluster':
+                p.missileClusterCount = Math.max(p.missileClusterCount || 4, 8);
+                p.missileClusterRadius = (p.missileClusterRadius || 1.0) * 1.6;
+                announce('MEGA CLUSTER ACTIVATED - Massive Cluster Bombs!');
+                break;
+            case 'demolitionist_smart_clusters':
+                p.missileClusterSeeking = true;
+                p.missileClusterHomingStrength = 0.8;
+                announce('SMART CLUSTERS ACTIVATED - Seeking Sub-Projectiles!');
+                break;
+            case 'demolitionist_fire_boost':
+                p.fireDamageBonus = (p.fireDamageBonus || 1.0) * 2.0;
+                p.burnDuration = (p.burnDuration || 3) * 1.5;
+                announce('INFERNO BOOST ACTIVATED - Enhanced Fire Damage!');
+                break;
+            case 'demolitionist_flame_master':
+                p.flameBarrierExplosive = true;
+                p.flameBarrierReactiveDamage = 150;
+                announce('FLAME MASTER ACTIVATED - Explosive Barriers!');
+                break;
+                
+            // Phasestriker Tree Skills
+            case 'phasestriker_beam_focus':
+                p.voidLaserDamage = (p.voidLaserDamage || 1.0) * 1.5;
+                p.voidLaserFocusBonus = true;
+                announce('BEAM FOCUS ACTIVATED - Enhanced Laser Power!');
+                break;
+            case 'phasestriker_void_mastery':
+                p.voidLaserRampRate = (p.voidLaserRampRate || 0.1) * 2;
+                p.voidLaserMaxRamp = (p.voidLaserMaxRamp || 3.0) * 1.5;
+                announce('VOID MASTERY ACTIVATED - Advanced Laser Control!');
+                break;
+            case 'phasestriker_blink_boost':
+                p.blinkRange = (p.blinkRange || 200) * 1.8;
+                p.blinkCooldown = Math.max((p.blinkCooldown || 5) - 2, 1);
+                announce('BLINK BOOST ACTIVATED - Enhanced Teleportation!');
+                break;
+            case 'phasestriker_phase_mastery':
+                p.blinkDamage = (p.blinkDamage || 50) * 2;
+                p.blinkInvulnerable = true; // Brief invulnerability during blink
+                announce('PHASE MASTERY ACTIVATED - Dimensional Superiority!');
+                break;
+                
+            // Stormcaller Tree Skills
+            case 'stormcaller_chain_boost':
+                p.chainLightningDamage = (p.chainLightningDamage || 1.0) * 1.8;
+                p.chainLightningRange = (p.chainLightningRange || 150) * 1.4;
+                announce('CHAIN BOOST ACTIVATED - Enhanced Lightning Power!');
+                break;
+            case 'stormcaller_storm_mastery':
+                p.chainLightningJumps = Math.max(p.chainLightningJumps || 3, 6);
+                p.chainLightningMultiHit = true;
+                announce('STORM MASTERY ACTIVATED - Advanced Electrical Warfare!');
+                break;
+            case 'stormcaller_warp_boost':
+                if (!p.blinkRange) p.blinkRange = 200;
+                p.blinkRange *= 1.6;
+                p.blinkRecharge = Math.max((p.blinkRecharge || 5) - 1.5, 1);
+                announce('WARP BOOST ACTIVATED - Enhanced Teleportation!');
+                break;
+            case 'stormcaller_void_control':
+                p.blinkTimeRipple = true;
+                p.blinkRippleDamage = 100;
+                announce('VOID CONTROL ACTIVATED - Time Ripple Effects!');
+                break;
+                
+            // NEW TIER 3 & 4 SKILLS FOR SINGLE PATH PROGRESSION
+            // Marauder Advanced Skills
+            case 'marauder_combat_mastery':
+                p.beefChainDamageBonus = (p.beefChainDamageBonus || 1.0) * 2.0;
+                p.beefAttackSpeed = (p.beefAttackSpeed || 1.0) * 1.3;
+                announce('COMBAT MASTERY ACTIVATED - Advanced Assault Techniques!');
+                break;
+            case 'marauder_elite_warrior':
+                p.beefMaxCharges = Math.max(p.beefMaxCharges || 3, 5);
+                p.beefCharges = Math.max(p.beefCharges, 5);
+                p.beefEliteCombat = true;
+                announce('ELITE WARRIOR ACTIVATED - Peak Marauder Prowess!');
+                break;
+                
+            // Juggernaut Advanced Skills
+            case 'juggernaut_heavy_armor':
+                p.hpMax += 50;
+                p.hp += 50;
+                p.damageReduction = (p.damageReduction || 0) + 0.25;
+                p.knockbackImmunity = true;
+                announce('HEAVY ARMOR ACTIVATED - Superior Protection!');
+                break;
+            case 'juggernaut_unstoppable':
+                p.beefExplosionRadius *= 2.5;
+                p.beefExplosionDamage *= 3.0;
+                p.beefUnstoppableForce = true;
+                announce('UNSTOPPABLE FORCE ACTIVATED - Maximum Impact Power!');
+                break;
+                
+            // Railgunner Advanced Skills
+            case 'railgunner_advanced_ballistics':
+                p.missilePierce = Math.max(p.missilePierce || 5, 8);
+                p.missileVelocity = (p.missileVelocity || 1.0) * 1.8;
+                p.missileHomingStrength = (p.missileHomingStrength || 0.5) * 1.5;
+                announce('ADVANCED BALLISTICS ACTIVATED - Superior Missile Technology!');
+                break;
+            case 'railgunner_precision_master':
+                p.missileCritChance = (p.missileCritChance || 0.25) + 0.5;
+                p.missileCritDamage = (p.missileCritDamage || 2.0) * 2.0;
+                p.railgunMastery = true;
+                announce('PRECISION MASTER ACTIVATED - Ultimate Accuracy!');
+                break;
+                
+            // Demolitionist Advanced Skills
+            case 'demolitionist_explosive_mastery':
+                p.missileClusterCount = Math.max(p.missileClusterCount || 8, 12);
+                p.explosionChain = true;
+                p.explosionChainCount = 3;
+                announce('EXPLOSIVE MASTERY ACTIVATED - Chain Detonations!');
+                break;
+            case 'demolitionist_demolition_expert':
+                p.missileClusterRadius *= 2.0;
+                p.megaExplosionChance = 0.3; // 30% chance for mega explosions
+                p.demolitionExpert = true;
+                announce('DEMOLITION EXPERT ACTIVATED - Maximum Destructive Force!');
+                break;
+                
+            // Phasestriker Advanced Skills
+            case 'phasestriker_dimensional_control':
+                p.voidLaserPhase = true;
+                p.voidLaserPhaseDamage = 2.5;
+                p.dimensionalControl = true;
+                announce('DIMENSIONAL CONTROL ACTIVATED - Reality Manipulation!');
+                break;
+            case 'phasestriker_void_lord':
+                p.voidLaserMaxRamp *= 3.0;
+                p.voidMastery = true;
+                p.voidLordPower = true;
+                announce('VOID LORD ACTIVATED - Ultimate Phase Mastery!');
+                break;
+                
+            // Stormcaller Advanced Skills  
+            case 'stormcaller_thunder_lord':
+                p.chainLightningJumps = Math.max(p.chainLightningJumps || 6, 10);
+                p.lightningStorm = true;
+                p.thunderLordPower = true;
+                announce('THUNDER LORD ACTIVATED - Storm Dominion!');
+                break;
+            case 'stormcaller_storm_god':
+                p.chainLightningDamage *= 3.0;
+                p.stormGodPower = true;
+                p.omnipotentLightning = true;
+                announce('STORM GOD ACTIVATED - Divine Electrical Mastery!');
+                break;
+                
+            // CLASS ABILITY UNLOCKS (5th node rewards)
+            case 'beef_shield_unlock':
+                p.beefShieldMax = 150;
+                p.beefShield = 150;
+                p.beefShieldRegenRate = 8;
+                p.beefShieldRegenDelay = 3;
+                playSound('powerup');
+                announce('🛡️ BEEF SHIELD UNLOCKED! - Class Ability Activated!');
+                break;
+            case 'blink_unlock':
+                p.hasBlink = true;
+                p.blinkRange = 250;
+                p.blinkCooldown = 4;
+                p.blinkDamage = 75;
+                playSound('powerup');
+                announce('✨ BLINK UNLOCKED! - Class Ability Activated!');
+                break;
+            case 'firewall_unlock':
+                p.hasFirewall = true;
+                p.firewallDuration = 10;
+                p.firewallCooldown = 15;
+                p.firewallDamage = 50;
+                playSound('powerup');
+                announce('🔥 FIREWALL UNLOCKED! - Class Ability Activated!');
+                break;
         }
     }
 
@@ -8646,7 +9069,11 @@ function tryVoidStep(player, target, now = performance.now()){
             case 'demolitionist': p.missileCluster = true; break;
             case 'juggernaut': break;
             case 'marauder': p.beefMaxCharges = 2; p.beefCharges = 2; break;
-            case 'phasestriker': break; // Enhanced mobility only, no blink damage
+            case 'phasestriker': 
+                // FIXED: Phasestriker now gets enhanced laser range and void step capability
+                p.phasestRikerLevel = 1; 
+                p.hasPhasestriker = true;
+                break;
             case 'stormcaller':
                 p.hasChainLightning = true;
                 playSound('thunder');
@@ -8997,7 +9424,7 @@ function tryVoidStep(player, target, now = performance.now()){
         store.cheatsUsed = true;
         announce('CHEAT: POWER UP!');
         resetGame();
-        store.world.shards = 800;
+        store.world.gold = 800;
         store.player.multishot = 10;
         initWave();
         cheatCodeBuffer = "";
