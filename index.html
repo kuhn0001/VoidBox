@@ -713,7 +713,7 @@
                                     &nbsp;
                                 </div>
                             </div>
-                            <div class="skill-card" data-genome="wizard">
+                            <div class="skill-card" data-genome="voidmancer">
                                 <div class="skill-icon"><img src="goggles.png" class="pilot-icon" alt="VOIDMANCER"></div>
                                 <div class="skill-title">VOIDMANCER</div>
                                 <div class="skill-desc">Quantum-phase enhanced operative with experimental void-fold technology. Neural interfaces allow instantaneous spatial displacement through dimensional rifts.</div>
@@ -1686,7 +1686,7 @@ class FlameParticle {
                     store.flameParticles.push(new FlameParticle(p.x, p.y + 10, attachedEnemy));
                 }
             }
-        } else if (p.pilotGenome === 'wizard') {
+        } else if (p.pilotGenome === 'voidmancer') {
             if (p.hasChainLightning || p.hasHybridVoid) {
                 p.chainLightningCooldown -= dt;
                 if (p.chainLightningCooldown <= 0) { fireChainLightning(); p.chainLightningCooldown = 1.5; }
@@ -2788,10 +2788,12 @@ class FlameParticle {
                     }
                 }
                 
-                // Add collar stacks immediately to ensure they're always applied
-                if (collarStacksToAdd > 0) {
+                // Add collar stacks only after 2nd boss is defeated - let first two bosses play normally
+                if (collarStacksToAdd > 0 && store.world.bosses >= 2) {
                     store.world.collarStacks += collarStacksToAdd;
                     console.log(`Wave ${store.world.wave} cleared in ${waveClearTime.toFixed(2)}s - Added ${collarStacksToAdd} collar stacks (Total: ${store.world.collarStacks})`);
+                } else if (collarStacksToAdd > 0 && store.world.bosses < 2) {
+                    console.log(`Wave ${store.world.wave} cleared in ${waveClearTime.toFixed(2)}s - Collar system inactive until 3rd boss (Bosses defeated: ${store.world.bosses})`);
                 }
             }
             
@@ -2823,8 +2825,8 @@ class FlameParticle {
         }
         store.world.collarDecayTimer += dt;
         
-        // Apply gradual collar decay every 10 seconds if stacks are high (except during Death Engine fight)
-        if (store.world.collarDecayTimer >= 10) {
+        // Apply gradual collar decay every 10 seconds if stacks are high (only after 2nd boss, except during Death Engine fight)
+        if (store.world.collarDecayTimer >= 10 && store.world.bosses >= 2) {
             store.world.collarDecayTimer = 0;
             
             // Don't decay collar stacks during Death Engine fight due to its intermission phases
@@ -2970,10 +2972,12 @@ class FlameParticle {
             healthBonusMultiplier = 1.0;
         }
         
-        // Add collar stacks immediately to ensure consistent application
-        if (collarStacksToAdd > 0) {
+        // Add collar stacks only after 2nd boss is defeated - collar system starts with 3rd boss
+        if (collarStacksToAdd > 0 && store.world.bosses >= 2) {
             store.world.collarStacks += collarStacksToAdd;
             console.log(`Boss ${bossName} defeated in ${fightDuration.toFixed(2)}s - Added ${collarStacksToAdd} collar stacks (Total: ${store.world.collarStacks})`);
+        } else if (collarStacksToAdd > 0 && store.world.bosses < 2) {
+            console.log(`Boss ${bossName} defeated in ${fightDuration.toFixed(2)}s - Collar system will activate after 2nd boss (Current bosses: ${store.world.bosses})`);
         }
         // FIXED: Don't permanently modify health bonuses - collar handles this dynamically
         // Instead, only apply temporary density and XP bonuses based on performance
@@ -3672,7 +3676,7 @@ function render(dt) {
         // Ensure stellarFusionRate is valid
         const fusionRate = isNaN(ENTROPY_ENGINE.stellarFusionRate) ? 1.0 : ENTROPY_ENGINE.stellarFusionRate;
         
-        if (t.pilotGenome === 'wizard') {
+        if (t.pilotGenome === 'voidmancer') {
             // Void pilot - quantum entropy
             const quantumValue = Math.abs(ENTROPY_ENGINE.quantumEntropy || 0);
             entropyPercent = Math.min(100, Math.max(1, quantumValue * 1e20));
@@ -5454,7 +5458,7 @@ function render(dt) {
             let fieldColor = '#9966ff';
             let meterText = '';
             
-            if (player.pilotGenome === 'wizard') {
+            if (player.pilotGenome === 'voidmancer') {
                 // Void pilot - quantum field (purple)
                 entropyIntensity = Math.min(1, Math.abs(ENTROPY_ENGINE.quantumEntropy) * 1e16);
                 fieldColor = '#9966ff';
@@ -6482,7 +6486,7 @@ function render(dt) {
         const skillPointsSpent = store.player.skillPointsSpent || 0;
         const reachedMaxPoints = skillPointsSpent >= 4;
         
-        // Enable if: 2nd boss defeated AND (beef, rocketman, or wizard pilot) AND (has skill points OR not reached 4 points spent)
+        // Enable if: 2nd boss defeated AND (beef, rocketman, or voidmancer pilot) AND (has skill points OR not reached 4 points spent)
         const shouldEnable = bossCount >= 2 && hasSkillTreeAccess && (hasSkillPoints || !reachedMaxPoints);
         
         if (shouldEnable) {
@@ -7178,7 +7182,7 @@ function render(dt) {
         const pilotType = store.player.pilotGenome;
         let entropyReduced = 0;
         
-        if (pilotType === 'wizard') {
+        if (pilotType === 'voidmancer') {
             // VOID PILOT: Pure quantum manipulation (original system)
             const coherenceFactor = Math.exp(-waveNumber / 1000) * ENTROPY_ENGINE.quantumCoherence;
             const demonMultiplier = 1 + ENTROPY_ENGINE.maxwellDemons * 0.1;
@@ -7244,7 +7248,7 @@ function render(dt) {
     // Activate entropy engine for all pilots with specialized systems [DISABLED FOR STABILITY]
     function activateEntropyEngine() {
         const pilotType = store.player.pilotGenome;
-        if (pilotType && ['wizard', 'beef', 'rocketman'].includes(pilotType)) {
+        if (pilotType && ['voidmancer', 'beef', 'rocketman'].includes(pilotType)) {
             // ENTROPY_ENGINE.active = true; // DISABLED FOR STABILITY
             ENTROPY_ENGINE.maxwellDemons = Math.floor(store.world.level / 10);
             ENTROPY_ENGINE.quantumCoherence = Math.min(1.0, 0.5 + store.world.score / 1000000);
@@ -7252,7 +7256,7 @@ function render(dt) {
             console.log(`🌌 ENTROPY REDUCTION ENGINE ACTIVATED 🌌`);
             console.log(`📡 REVERSING UNIVERSAL HEAT DEATH 📡`);
             
-            if (pilotType === 'wizard') {
+            if (pilotType === 'voidmancer') {
                 console.log(`🔮 VOID PILOT: Pure Quantum Manipulation System`);
                 console.log(`⚛️ Physics: ΔS = -k_B * ln(Ω) * Q_coherence * N_demons`);
                 console.log(`🔬 Maxwell's Demons: ${ENTROPY_ENGINE.maxwellDemons}`);
@@ -7881,7 +7885,7 @@ function tryVoidStep(player, target, now = performance.now()){
             
             // Resume game for all genomes (removed teleport tutorial popup)
             // ◢◣ ACTIVATE ENTROPY REDUCTION ENGINE FOR ALL PILOTS ◣◢ [DISABLED FOR STABILITY]
-            // activateEntropyEngine(); // Now works for wizard, beef, and rocketman
+            // activateEntropyEngine(); // Now works for voidmancer, beef, and rocketman
             
             resumeGame();
             cards.forEach(c => c.removeEventListener('click', clickHandler));
@@ -8014,8 +8018,8 @@ function tryVoidStep(player, target, now = performance.now()){
             case 'beef':
                 // Base beef no longer gets abilities by default - subclasses must unlock them via skill trees
                 break;
-            case 'wizard':
-                // Base wizard no longer gets abilities by default - subclasses must unlock them via skill trees
+            case 'voidmancer':
+                // Base voidmancer no longer gets abilities by default - subclasses must unlock them via skill trees
                 break;
             case 'rocketman':
                 break;
@@ -8114,7 +8118,7 @@ function tryVoidStep(player, target, now = performance.now()){
             { id: 'juggernaut', name: 'juggernaut', desc: 'Charge ability creates a damaging explosion on impact.', icon: 'jug2.png' },
             { id: 'marauder', name: 'Marauder', desc: 'Gain a second charge for your special ability.', icon: 'marauder.png' }
         ],
-        wizard: [
+        voidmancer: [
             { id: 'phasestriker', name: 'Phase Striker', desc: 'Basic short-range void laser that can be upgraded for unlimited range and power.', icon: 'phase.png' },
             { id: 'stormcaller', name: 'Stormcaller', desc: 'Chain lightning that jumps between enemies with 50% chance per jump.', icon: 'storm.png' },
             { id: 'voidmancer', name: 'Voidmancer', desc: 'Enhanced multishot capability and increased ship speed for tactical advantage.', icon: 'goggles.png' }
@@ -8312,7 +8316,7 @@ function tryVoidStep(player, target, now = performance.now()){
     function generateOldSkillTree() {
         // Old static skill trees removed - now using SKILL_TREE_DATA structure
     }
-            // Create wizard skill tree
+            // Create voidmancer skill tree
             skillTreeElement.innerHTML = `
                 <button class="close-btn" id="skillTreeCloseBtn" type="button">✕</button>
                 <div class="skill-tree-title">VOIDMANCER SPECIALIZATION TREE</div>
@@ -8562,7 +8566,7 @@ function tryVoidStep(player, target, now = performance.now()){
                     description.textContent = "Choose your specialization path: Marauder for sustained assault, Juggernaut for devastating impact. Select both for the ultimate combo!";
                 } else if (pilotType === 'rocketman') {
                     description.textContent = "Choose your specialization path: Railgunner for piercing precision, Demolitionist for explosive devastation. Select both for the ultimate combo!";
-                } else if (pilotType === 'wizard') {
+                } else if (pilotType === 'voidmancer') {
                     description.textContent = "Choose your specialization path: Phase Striker for void teleportation, Stormcaller for chain lightning. Select both for the ultimate combo!";
                 }
             });
@@ -8618,8 +8622,8 @@ function tryVoidStep(player, target, now = performance.now()){
                 } else if (pilotType === 'rocketman' && p.skillTree.railgunner && p.skillTree.demolitionist) {
                     p.rocketmanHybrid = true;
                     announce('HYBRID MISSILES COMBO ACTIVATED!');
-                } else if (pilotType === 'wizard' && p.skillTree.phasestriker && p.skillTree.stormcaller) {
-                    p.wizardHybrid = true;
+                } else if (pilotType === 'voidmancer' && p.skillTree.phasestriker && p.skillTree.stormcaller) {
+                    p.voidmancerHybrid = true;
                     announce('VOID STORM COMBO ACTIVATED!');
                 }
             }
@@ -8782,7 +8786,7 @@ function tryVoidStep(player, target, now = performance.now()){
                 announce('MEGA CLUSTERS ACTIVATED - Devastating Explosions!');
                 break;
                 
-            // Wizard skills  
+            // Voidmancer skills  
             case 'phasestriker':
                 p.subclass = 'phasestriker';
                 // Give basic SHORT RANGE void laser as first upgrade
@@ -8803,7 +8807,7 @@ function tryVoidStep(player, target, now = performance.now()){
             case 'voidmancer':
                 p.subclass = 'voidmancer';
                 // Give +2 multishot base and ship speed boost
-                p.multishot = Math.max(p.multishot || 0, p.multishot + 2);
+                p.multishot = (p.multishot || 2) + 2; // Base 2 + 2 = 4 bullets total
                 p.speed = (p.speed || 2.5) * 1.4; // 40% speed boost
                 announce('VOIDMANCER ACTIVATED - Enhanced Multishot & Speed!');
                 break;
@@ -8827,7 +8831,7 @@ function tryVoidStep(player, target, now = performance.now()){
                 announce('DEMOLITIONIST ACTIVATED - Explosive Flame Wall!');
                 break;
                 
-            // Wizard Tier 2 Enhanced Skills
+            // Voidmancer Tier 2 Enhanced Skills
             case 'phasestriker_enhanced':
                 p.phasestRikerLevel = 2; // Level 2: Global range + ramping damage/size
                 announce('PHASESTRIKER LV2 - Ramping Laser Power!');
@@ -8889,7 +8893,7 @@ function tryVoidStep(player, target, now = performance.now()){
                 announce('BARRAGE MODE ACTIVATED - Maximum Firepower!');
                 break;
                 
-            // New Wizard Skills  
+            // New Voidmancer Skills  
             case 'blink_ability':
                 p.blinkDamage = true;
                 p.blinkCooldown = 0;
@@ -9252,7 +9256,7 @@ function tryVoidStep(player, target, now = performance.now()){
                     choices = isAdditive ? opts : opts.filter(o => o.id === 'enhanced_pierce');
                 }
             }
-        } else if (genome === 'wizard') {
+        } else if (genome === 'voidmancer') {
             // Voidmancer only gets the power they don't have
             if (!p.hasStormcaller && !p.hasPhasestriker) {
                 // First spec - let them choose
