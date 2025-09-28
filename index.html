@@ -1318,7 +1318,7 @@ class FlameParticle {
         beefChargeState: 'ready', beefChargeCooldown: 0, beefChargeOrigin: null, beefChargeTarget: null, beefChargeT: 0, beefCharges: 1, beefMaxCharges: 1,
         beefDoubleCharge: false, beefBigExplosion: false, // New skill tree abilities
         beefChainTargets: [], beefChainIndex: 0, beefChainMode: false, // Chain jumping system for marauder
-        hasChainLightning: false, chainLightningCooldown: 0, stormstrikerLevel: 0,
+        hasChainLightning: false, chainLightningCooldown: 0, stormstrikerLevel: 0, lightningAlternate: false,
         phasestRikerLevel: 0, voidLaserRampTime: 0, voidLaserLastTarget: null,
         subclass: null, missilePierce: 0, missileCluster: false, blinkDamage: false,
         enhancedClusters: false, enhancedPierce: false, hasStormcaller: false, hasPhasestriker: false,
@@ -1998,7 +1998,17 @@ class FlameParticle {
         } else if (p.pilotGenome === 'voidmancer') {
             if (p.hasChainLightning || p.hasHybridVoid) {
                 p.chainLightningCooldown -= dt;
-                if (p.chainLightningCooldown <= 0) { fireChainLightning(); p.chainLightningCooldown = 1.5; }
+                if (p.chainLightningCooldown <= 0) { 
+                    fireChainLightning(); 
+                    // Set cooldown based on stormstriker level - more bolts = faster alternation
+                    if (p.stormstrikerLevel >= 3) {
+                        p.chainLightningCooldown = 0.375; // 4-bolt rotation: quadruple fire rate
+                    } else if (p.stormstrikerLevel >= 2) {
+                        p.chainLightningCooldown = 0.75; // Alternating bolts: double fire rate
+                    } else {
+                        p.chainLightningCooldown = 1.5; // Single bolt: normal rate
+                    }
+                }
             }
             
             // Voidmancer base laser beam system
@@ -7388,22 +7398,33 @@ function render(dt) {
     function fireChainLightning() {
         const p = store.player;
         
-        if (p.stormstrikerLevel >= 2) {
-            // Level 2: Fire two chain lightning bolts from wing guns
-            fireChainLightningBolt(1.0, { x: p.x - 18, y: p.y - 8 }); // Left wing gun
-            fireChainLightningBolt(1.0, { x: p.x + 18, y: p.y - 8 }); // Right wing gun
-        } else if (p.stormstrikerLevel >= 1) {
-            // Level 1: Fire single lightning bolt from left wing gun
-            fireChainLightningBolt(1.0, { x: p.x - 18, y: p.y - 8 }); // Left wing gun
-        } else if (p.hasDoubleStorm) {
-            // Legacy system for existing saves
-            fireChainLightningBolt(1.0, { x: p.x - 25, y: p.y - 20 }); // Left bolt
-            fireChainLightningBolt(1.0, { x: p.x + 25, y: p.y - 20 }); // Right bolt
+        if (p.stormstrikerLevel >= 3) {
+            // Level 3: Fire four chain lightning bolts alternating in sequence (Thunder Lord)
+            // Cycle through positions: far left -> left wing -> right wing -> far right -> repeat
+            const positions = [
+                { x: p.x - 25, y: p.y - 15 }, // Far left
+                { x: p.x - 8, y: p.y - 8 },  // Left wing
+                { x: p.x + 8, y: p.y - 8 },  // Right wing  
+                { x: p.x + 25, y: p.y - 15 } // Far right
+            ];
+            
+            if (!p.lightningCycleIndex) p.lightningCycleIndex = 0;
+            const position = positions[p.lightningCycleIndex];
+            fireChainLightningBolt(1.0, position);
+            p.lightningCycleIndex = (p.lightningCycleIndex + 1) % 4;
+        } else if (p.stormstrikerLevel >= 2) {
+            // Level 2: Alternate between left and right wing guns (Twin Lightning)
+            if (p.lightningAlternate) {
+                fireChainLightningBolt(1.0, { x: p.x + 18, y: p.y - 8 }); // Right wing gun
+            } else {
+                fireChainLightningBolt(1.0, { x: p.x - 18, y: p.y - 8 }); // Left wing gun
+            }
+            p.lightningAlternate = !p.lightningAlternate; // Toggle for next shot
         } else if (p.hasHybridVoid) {
             // Fire single lightning bolt (reduced power for hybrid)
             fireChainLightningBolt(0.7); // 70% damage for hybrid mode
         } else {
-            // Standard single chain lightning from ship center
+            // Standard single chain lightning from ship center (default stormcaller)
             fireChainLightningBolt();
         }
     }
@@ -7428,9 +7449,9 @@ function render(dt) {
 
         if (!currentTarget) return;
 
-        const maxJumps = 25; // Increased to 25 for jackpot potential
-        const chainChance = 0.5; // 50% chance to chain
-        let currentDamage = 95 * p.dmgMult * damageMultiplier;
+        const maxJumps = 100; // High limit for unlimited potential with probabilistic limiting
+        const chainChance = 0.65; // 65% chance to chain each jump
+        let currentDamage = 95 * p.dmgMult * damageMultiplier * (p.chainLightningDamage || 1.0);
         const targetsHit = new Set();
         const chainPoints = [startPoint];
 
@@ -8453,9 +8474,9 @@ function tryVoidStep(player, target, now = performance.now()){
             path: {
                 name: 'LIGHTNING PATH',
                 nodes: [
-                    { id: 'stormcaller_chain_boost', name: 'Chain Boost', desc: '+80% chain lightning damage, +40% jump range - your lightning becomes devastating', icon: 'storm.png', tier: 1 },
-                    { id: 'stormcaller_storm_mastery', name: 'Storm Mastery', desc: 'Chain lightning jumps to 6 targets with multi-hit capability', icon: 'storm.png', tier: 2 },
-                    { id: 'stormcaller_thunder_lord', name: 'Thunder Lord', desc: 'Chain lightning jumps to 10 targets, adds lightning storm effects', icon: 'storm.png', tier: 3 },
+                    { id: 'stormcaller_chain_boost', name: 'Twin Lightning', desc: 'Alternating left/right wing lightning at double fire rate', icon: 'storm.png', tier: 1 },
+                    { id: 'stormcaller_storm_mastery', name: 'Storm Mastery', desc: '+50% jump range and +80% chain lightning damage', icon: 'storm.png', tier: 2 },
+                    { id: 'stormcaller_thunder_lord', name: 'Thunder Lord', desc: '4-position rotating lightning sequence at quadruple fire rate', icon: 'storm.png', tier: 3 },
                     { id: 'stormcaller_storm_god', name: 'Storm God', desc: '3x lightning damage multiplier - omnipotent electrical dominance', icon: 'storm.png', tier: 4 }
                 ]
             },
@@ -9454,16 +9475,14 @@ function tryVoidStep(player, target, now = performance.now()){
                 
             // Stormcaller Tree Skills
             case 'stormcaller_chain_boost':
-                // Enhance existing chain lightning ability (already unlocked by subclass)
-                p.stormstrikerLevel = 1; // Add wing positioning
-                p.chainLightningDamage = (p.chainLightningDamage || 1.0) * 1.8;
-                p.chainLightningRange = (p.chainLightningRange || 150) * 1.4;
-                announce('CHAIN BOOST ACTIVATED - Enhanced Lightning Power!');
+                // Add twin lightning bolts from wing guns
+                p.stormstrikerLevel = 2; // Twin wing lightning
+                announce('TWIN LIGHTNING ACTIVATED - Dual Chain Lightning!');
                 break;
             case 'stormcaller_storm_mastery':
-                p.chainLightningJumps = Math.max(p.chainLightningJumps || 3, 6);
-                p.chainLightningMultiHit = true;
-                announce('STORM MASTERY ACTIVATED - Advanced Electrical Warfare!');
+                p.chainLightningDamage = (p.chainLightningDamage || 1.0) * 1.8; // 80% damage boost
+                p.chainLightningRange = (p.chainLightningRange || 150) * 1.5; // 50% jump range boost
+                announce('STORM MASTERY ACTIVATED - Enhanced Range & Power!');
                 break;
             case 'stormcaller_warp_boost':
                 if (!p.blinkRange) p.blinkRange = 200;
@@ -9550,10 +9569,10 @@ function tryVoidStep(player, target, now = performance.now()){
                 
             // Stormcaller Advanced Skills  
             case 'stormcaller_thunder_lord':
-                p.chainLightningJumps = Math.max(p.chainLightningJumps || 6, 10);
+                p.stormstrikerLevel = 3; // 4-bolt lightning storm
                 p.lightningStorm = true;
                 p.thunderLordPower = true;
-                announce('THUNDER LORD ACTIVATED - Storm Dominion!');
+                announce('THUNDER LORD ACTIVATED - 4-Bolt Storm!');
                 break;
             case 'stormcaller_storm_god':
                 p.chainLightningDamage *= 3.0;
