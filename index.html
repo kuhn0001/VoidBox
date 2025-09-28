@@ -7368,10 +7368,13 @@ function render(dt) {
         // Determine range based on phasestriker level
         let maxRange;
         if (p.phasestRikerLevel >= 1) {
-            // Level 1+: Global range - can hit anything on screen
+            // Level 1+: Global range - can hit anything on screen (unlimited range upgrade)
             maxRange = Math.max(W, H) * 2; // Unlimited range using game dimensions
+        } else if (p.phasestRikerLevel >= 0.5) {
+            // Base phasestriker: Use voidLaserRange (medium range)
+            maxRange = p.voidLaserRange || 250;
         } else {
-            // Standard voidmancer range
+            // No phasestriker: Default short range
             maxRange = p.r * 12;
         }
         
@@ -9333,7 +9336,8 @@ function tryVoidStep(player, target, now = performance.now()){
                 p.voidLaserTarget = null;
                 p.voidLaserDamageTimer = 0;
                 p.voidLaserRetargetTimer = 0;
-                p.voidLaserRange = 200; // Short range initially - like a basic laser
+                p.voidLaserRange = 250; // 25% longer base range
+                p.phasestRikerLevel = 0.5; // Base phasestriker level
                 announce('PHASESTRIKER ACTIVATED - Basic Void Laser!');
                 break;
             case 'stormcaller':
@@ -9345,9 +9349,9 @@ function tryVoidStep(player, target, now = performance.now()){
                 break;
             case 'voidmancer':
                 p.subclass = 'voidmancer';
-                // Give +2 multishot base and ship speed boost
+                // Give +2 multishot base and mild speed boost
                 p.multishot = (p.multishot || 2) + 2; // Base 2 + 2 = 4 bullets total
-                p.speed = (p.speed || 2.5) * 1.4; // 40% speed boost
+                p.speed = (p.speed || 2.5) * 1.05; // 5% speed boost
                 announce('VOIDMANCER ACTIVATED - Enhanced Multishot & Speed!');
                 break;
             case 'railgunner':
@@ -9559,11 +9563,13 @@ function tryVoidStep(player, target, now = performance.now()){
             case 'phasestriker_unlimited_range':
                 // Remove range limitation from void laser
                 p.voidLaserRange = 999999; // Unlimited range - can hit any enemy
+                p.phasestRikerLevel = 1; // Upgrade to level 1 for unlimited range
+                console.log(`Phasestriker unlimited range: level=${p.phasestRikerLevel}, range=${p.voidLaserRange}`);
                 announce('UNLIMITED RANGE ACTIVATED - Global Laser Targeting!');
                 break;
             case 'phasestriker_ramping_power':
                 // Enable ramping damage/size effect
-                p.phasestRikerLevel = 2; // Level 2: Ramping damage/size
+                p.phasestRikerLevel = Math.max(p.phasestRikerLevel, 2); // Level 2: Ramping damage/size
                 announce('RAMPING POWER ACTIVATED - Growing Laser Strength!');
                 break;
             case 'phasestriker_blink_boost':
@@ -9715,6 +9721,8 @@ function tryVoidStep(player, target, now = performance.now()){
 
     function applySubclassBonus(subclass) {
         const p = store.player;
+        console.log(`Applying subclass bonus for: ${subclass}`);
+        console.log(`Before - multishot: ${p.multishot}, speed: ${p.speed}`);
 
         switch(subclass) {
             case 'railgunner': 
@@ -9740,7 +9748,9 @@ function tryVoidStep(player, target, now = performance.now()){
                 p.voidLaserTarget = null;
                 p.voidLaserDamageTimer = 0;
                 p.voidLaserRetargetTimer = 0;
-                p.voidLaserRange = 200; // Short range initially - like a basic laser
+                p.voidLaserRange = 250; // 25% longer base range
+                p.phasestRikerLevel = 0.5; // Base phasestriker level (between 0 and 1)
+                console.log(`Base phasestriker: level=${p.phasestRikerLevel}, range=${p.voidLaserRange}`);
                 break;
             case 'stormcaller':
                 p.subclass = 'stormcaller';
@@ -9750,11 +9760,13 @@ function tryVoidStep(player, target, now = performance.now()){
                 break;
             case 'voidmancer':
                 p.subclass = 'voidmancer';
-                // Give +2 multishot base and ship speed boost
+                // Give +2 multishot base and mild speed boost
                 p.multishot = (p.multishot || 2) + 2; // Base 2 + 2 = 4 bullets total
-                p.speed = (p.speed || 2.5) * 1.4; // 40% speed boost
+                p.speed = (p.speed || 2.5) * 1.05; // 5% speed boost
+                console.log(`After voidmancer - multishot: ${p.multishot}, speed: ${p.speed}`);
                 break;
         }
+        console.log(`Final - multishot: ${p.multishot}, speed: ${p.speed}`);
         store.world.enemyHealthBonus *= 1.10;
 }
 
