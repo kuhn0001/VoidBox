@@ -9226,63 +9226,8 @@ function tryVoidStep(player, target, now = performance.now()){
         const p = store.player;
         
         switch(skill) {
-            case 'juggernaut':
-                p.subclass = 'juggernaut';
-                // Give beef shield system when selecting juggernaut
-                let baseShield = 10; // Start low to allow meaningful damage early game
-                
-                // Only scale shield after 3rd boss (bosses defeated >= 3)
-                if (store.world.bosses >= 3) {
-                    // Gentle scaling after boss 3: +3 per wave beyond boss unlock
-                    const wavesAfterBoss3 = Math.max(0, store.world.wave - 15); // Assume boss 3 around wave 15
-                    baseShield = 10 + (wavesAfterBoss3 * 3);
-                    
-                    // More aggressive scaling only after wave 25 to match late game damage
-                    if (store.world.wave > 25) {
-                        const lateWaves = store.world.wave - 25;
-                        baseShield = 40 + (lateWaves * 5); // +5 per wave after 25
-                    }
-                }
-                p.beefShieldMax = baseShield;
-                p.beefShield = Math.max(5, p.beefShieldMax * 0.75); // Start with 75% shield, minimum 5
-                p.beefShieldDamageDealt = 0; // Track damage dealt for shield charging
-                p.beefShieldDamageTaken = 0; // Track damage taken for shield depletion
-                p.beefShieldCooldown = 0; // Cooldown after depletion before shield can absorb again
-                
-                // Give 2 charges like marauder originally gave
-                p.beefMaxCharges = Math.max(p.beefMaxCharges, 2);
-                p.beefCharges = Math.max(p.beefCharges, 2);
-                announce('JUGGERNAUT ACTIVATED - Shield & Charges!');
-                break;
-            case 'marauder':
-                p.subclass = 'marauder';
-                // Give beef shield system when selecting marauder
-                let baseShieldM = 10; // Start low to allow meaningful damage early game
-                
-                // Only scale shield after 3rd boss (bosses defeated >= 3)
-                if (store.world.bosses >= 3) {
-                    // Gentle scaling after boss 3: +3 per wave beyond boss unlock
-                    const wavesAfterBoss3M = Math.max(0, store.world.wave - 15); // Assume boss 3 around wave 15
-                    baseShieldM = 10 + (wavesAfterBoss3M * 3);
-                    
-                    // More aggressive scaling only after wave 25 to match late game damage
-                    if (store.world.wave > 25) {
-                        const lateWaves = store.world.wave - 25;
-                        baseShieldM = 40 + (lateWaves * 5); // +5 per wave after 25
-                    }
-                }
-                p.beefShieldMax = baseShieldM;
-                p.beefShield = Math.max(5, p.beefShieldMax * 0.75); // Start with 75% shield, minimum 5
-                p.beefShieldDamageDealt = 0; // Track damage dealt for shield charging
-                p.beefShieldDamageTaken = 0; // Track damage taken for shield depletion
-                p.beefShieldCooldown = 0; // Cooldown after depletion before shield can absorb again
-                
-                // Give 2 charges and enable chain jumping
-                p.beefMaxCharges = Math.max(p.beefMaxCharges, 2);  
-                p.beefCharges = Math.max(p.beefCharges, 2);
-                p.beefChainMode = true; // Enable chain jumping for marauder
-                announce('MARAUDER ACTIVATED - Shield & Chain Jumping!');
-                break;
+
+
                 
             // Tier 2 Enhanced Skills
             case 'marauder_enhanced':
@@ -9296,23 +9241,7 @@ function tryVoidStep(player, target, now = performance.now()){
                 announce('BIG BANG EXPLOSION ACTIVATED!');
                 break;
                 
-            // Rocketman skills
-            case 'railgunner':
-                // Don't overwrite existing subclass if they already have demolitionist
-                if (p.subclass !== 'demolitionist') {
-                    p.subclass = 'railgunner';
-                }
-                p.missilePierce = 2;
-                announce('RAILGUNNER ACTIVATED - Piercing Missiles!');
-                break;
-            case 'demolitionist':
-                // Don't overwrite existing subclass if they already have railgunner
-                if (p.subclass !== 'railgunner') {
-                    p.subclass = 'demolitionist';
-                }
-                p.missileCluster = true;
-                announce('DEMOLITIONIST ACTIVATED - Cluster Bombs!');
-                break;
+
                 
             // Rocketman Tier 2 Enhanced Skills
             case 'railgunner_enhanced':
@@ -9329,32 +9258,10 @@ function tryVoidStep(player, target, now = performance.now()){
                 break;
                 
             // Voidmancer skills  
-            case 'phasestriker':
-                p.subclass = 'phasestriker';
-                // Give basic SHORT RANGE void laser as first upgrade
-                p.hasVoidLaser = true;
-                p.voidLaserTarget = null;
-                p.voidLaserDamageTimer = 0;
-                p.voidLaserRetargetTimer = 0;
-                p.voidLaserRange = 250; // 25% longer base range
-                p.phasestRikerLevel = 0.5; // Base phasestriker level
-                announce('PHASESTRIKER ACTIVATED - Basic Void Laser!');
-                break;
-            case 'stormcaller':
-                p.subclass = 'stormcaller';
-                // Give basic chain lightning ability
-                p.hasChainLightning = true;
-                p.chainLightningCooldown = 0;
-                announce('STORMCALLER ACTIVATED - Chain Lightning!');
-                break;
-            case 'voidmancer':
-                p.subclass = 'voidmancer';
-                // Give +2 multishot base and mild speed boost
-                p.multishot = (p.multishot || 2) + 2; // Base 2 + 2 = 4 bullets total
-                p.speed = (p.speed || 2.5) * 1.05; // 5% speed boost
-                announce('VOIDMANCER ACTIVATED - Enhanced Multishot & Speed!');
-                break;
-            case 'railgunner':
+
+
+
+            case 'railgunner_barrier':
                 p.subclass = 'railgunner';
                 // Give flame barrier ability
                 p.flameBarrierActive = false;
@@ -9363,7 +9270,7 @@ function tryVoidStep(player, target, now = performance.now()){
                 p.flameBarrierRecharge = 15; // 15 second cooldown
                 announce('RAILGUNNER ACTIVATED - Flame Barrier Defense!');
                 break;
-            case 'demolitionist':
+            case 'demolitionist_barrier':
                 p.subclass = 'demolitionist';
                 // Give enhanced flame barrier ability
                 p.flameBarrierActive = false;
@@ -9727,19 +9634,70 @@ function tryVoidStep(player, target, now = performance.now()){
         switch(subclass) {
             case 'railgunner': 
                 p.subclass = 'railgunner';
-                // No abilities by default - must unlock via skill tree
+                p.missilePierce = 2;
+                announce('RAILGUNNER ACTIVATED - Piercing Missiles!');
                 break;
             case 'demolitionist': 
                 p.subclass = 'demolitionist';
-                // No abilities by default - must unlock via skill tree
+                p.missileCluster = true;
+                announce('DEMOLITIONIST ACTIVATED - Cluster Bombs!');
                 break;
             case 'juggernaut': 
                 p.subclass = 'juggernaut';
-                // No abilities by default - must unlock via skill tree
+                // Give beef shield system when selecting juggernaut
+                let baseShield = 10; // Start low to allow meaningful damage early game
+                
+                // Only scale shield after 3rd boss (bosses defeated >= 3)
+                if (store.world.bosses >= 3) {
+                    // Gentle scaling after boss 3: +3 per wave beyond boss unlock
+                    const wavesAfterBoss3 = Math.max(0, store.world.wave - 15); // Assume boss 3 around wave 15
+                    baseShield = 10 + (wavesAfterBoss3 * 3);
+                    
+                    // More aggressive scaling only after wave 25 to match late game damage
+                    if (store.world.wave > 25) {
+                        const lateWaves = store.world.wave - 25;
+                        baseShield = 40 + (lateWaves * 5); // +5 per wave after 25
+                    }
+                }
+                p.beefShieldMax = baseShield;
+                p.beefShield = Math.max(5, p.beefShieldMax * 0.75); // Start with 75% shield, minimum 5
+                p.beefShieldDamageDealt = 0; // Track damage dealt for shield charging
+                p.beefShieldDamageTaken = 0; // Track damage taken for shield depletion
+                p.beefShieldCooldown = 0; // Cooldown after depletion before shield can absorb again
+                
+                // Give 2 charges like marauder originally gave
+                p.beefMaxCharges = Math.max(p.beefMaxCharges, 2);
+                p.beefCharges = Math.max(p.beefCharges, 2);
+                announce('JUGGERNAUT ACTIVATED - Shield & Charges!');
                 break;
             case 'marauder': 
                 p.subclass = 'marauder';
-                // No abilities by default - must unlock via skill tree
+                // Give beef shield system when selecting marauder
+                let baseShieldM = 10; // Start low to allow meaningful damage early game
+                
+                // Only scale shield after 3rd boss (bosses defeated >= 3)
+                if (store.world.bosses >= 3) {
+                    // Gentle scaling after boss 3: +3 per wave beyond boss unlock
+                    const wavesAfterBoss3M = Math.max(0, store.world.wave - 15); // Assume boss 3 around wave 15
+                    baseShieldM = 10 + (wavesAfterBoss3M * 3);
+                    
+                    // More aggressive scaling only after wave 25 to match late game damage
+                    if (store.world.wave > 25) {
+                        const lateWaves = store.world.wave - 25;
+                        baseShieldM = 40 + (lateWaves * 5); // +5 per wave after 25
+                    }
+                }
+                p.beefShieldMax = baseShieldM;
+                p.beefShield = Math.max(5, p.beefShieldMax * 0.75); // Start with 75% shield, minimum 5
+                p.beefShieldDamageDealt = 0; // Track damage dealt for shield charging
+                p.beefShieldDamageTaken = 0; // Track damage taken for shield depletion
+                p.beefShieldCooldown = 0; // Cooldown after depletion before shield can absorb again
+                
+                // Give 2 charges and enable chain jumping
+                p.beefMaxCharges = Math.max(p.beefMaxCharges, 2);  
+                p.beefCharges = Math.max(p.beefCharges, 2);
+                p.beefChainMode = true; // Enable chain jumping for marauder
+                announce('MARAUDER ACTIVATED - Shield & Chain Jumping!');
                 break;
             case 'phasestriker': 
                 p.subclass = 'phasestriker';
