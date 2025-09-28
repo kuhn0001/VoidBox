@@ -1705,6 +1705,9 @@ class FlameParticle {
         // Create Boss class instance for DEATH ENGINE
         if (boss.name === 'DEATH ENGINE') {
             boss.skullRenderer = new Boss(ctx, boss.x, boss.y, boss.color);
+            // Store collar stacks before Death Engine fight to restore them after
+            store.world.deathEngineCollarStacks = store.world.collarStacks;
+            console.log(`Death Engine spawned - preserving ${store.world.deathEngineCollarStacks} collar stacks`);
         }
         
         return boss;
@@ -3291,12 +3294,20 @@ class FlameParticle {
             healthBonusMultiplier = 1.0;
         }
         
-        // Add collar stacks only after 2nd boss is defeated - collar system starts with 3rd boss
-        if (collarStacksToAdd > 0 && store.world.bosses >= 2) {
-            store.world.collarStacks += collarStacksToAdd;
-            console.log(`Boss ${bossName} defeated in ${fightDuration.toFixed(2)}s - Added ${collarStacksToAdd} collar stacks (Total: ${store.world.collarStacks})`);
-        } else if (collarStacksToAdd > 0 && store.world.bosses < 2) {
-            console.log(`Boss ${bossName} defeated in ${fightDuration.toFixed(2)}s - Collar system will activate after 2nd boss (Current bosses: ${store.world.bosses})`);
+        // Special handling for Death Engine - restore preserved collar stacks
+        if (bossName === 'DEATH ENGINE' && store.world.deathEngineCollarStacks !== undefined) {
+            const originalStacks = store.world.deathEngineCollarStacks;
+            store.world.collarStacks = originalStacks + collarStacksToAdd; // Restore + add earned stacks
+            console.log(`Death Engine defeated - restored ${originalStacks} collar stacks + ${collarStacksToAdd} earned = ${store.world.collarStacks} total`);
+            delete store.world.deathEngineCollarStacks; // Clean up
+        } else {
+            // Add collar stacks only after 2nd boss is defeated - collar system starts with 3rd boss
+            if (collarStacksToAdd > 0 && store.world.bosses >= 2) {
+                store.world.collarStacks += collarStacksToAdd;
+                console.log(`Boss ${bossName} defeated in ${fightDuration.toFixed(2)}s - Added ${collarStacksToAdd} collar stacks (Total: ${store.world.collarStacks})`);
+            } else if (collarStacksToAdd > 0 && store.world.bosses < 2) {
+                console.log(`Boss ${bossName} defeated in ${fightDuration.toFixed(2)}s - Collar system will activate after 2nd boss (Current bosses: ${store.world.bosses})`);
+            }
         }
         // FIXED: Don't permanently modify health bonuses - collar handles this dynamically
         // Instead, only apply temporary density and XP bonuses based on performance
@@ -8495,7 +8506,10 @@ function tryVoidStep(player, target, now = performance.now()){
                 // Base beef no longer gets abilities by default - subclasses must unlock them via skill trees
                 break;
             case 'voidmancer':
-                // Base voidmancer no longer gets abilities by default - subclasses must unlock them via skill trees
+                // Give +2 multishot base and mild speed boost for base voidmancer
+                p.multishot = (p.multishot || 2) + 2; // Base 2 + 2 = 4 bullets total
+                p.speed = (p.speed || 2.5) * 1.05; // 5% speed boost
+                console.log(`Base voidmancer genome applied - multishot: ${p.multishot}, speed: ${p.speed}`);
                 break;
             case 'rocketman':
                 break;
@@ -9718,10 +9732,8 @@ function tryVoidStep(player, target, now = performance.now()){
                 break;
             case 'voidmancer':
                 p.subclass = 'voidmancer';
-                // Give +2 multishot base and mild speed boost
-                p.multishot = (p.multishot || 2) + 2; // Base 2 + 2 = 4 bullets total
-                p.speed = (p.speed || 2.5) * 1.05; // 5% speed boost
-                console.log(`After voidmancer - multishot: ${p.multishot}, speed: ${p.speed}`);
+                // Base voidmancer bonus applied during genome selection
+                console.log(`Voidmancer subclass selected - multishot: ${p.multishot}, speed: ${p.speed}`);
                 break;
         }
         console.log(`Final - multishot: ${p.multishot}, speed: ${p.speed}`);
