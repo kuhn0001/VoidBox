@@ -3654,7 +3654,7 @@ function render(dt) {
             ctx.lineWidth = 2;
             ctx.beginPath();
             for (let i = 0; i < 3; i++) {
-                const rippleRadius = puddle.r * (0.3 + i * 0.3) + Math.sin(time * 2 + i) * 3;
+                const rippleRadius = puddle.r * (0.3 + i * 0.3) + Math.sin(frameTime * 2 + i) * 3;
                 const rippleAlpha = puddleAlpha * (0.8 - i * 0.2);
                 ctx.globalAlpha = rippleAlpha;
                 ctx.arc(0, bubbleOffset, rippleRadius, 0, Math.PI * 2);
@@ -3725,7 +3725,7 @@ function render(dt) {
             ctx.lineWidth = 1.5;
             ctx.beginPath();
             for (let i = 0; i < 2; i++) {
-                const energyRadius = Math.max(0.1, currentRadius * (0.4 + i * 0.3) + Math.sin(time * 3 + i * 2) * 2);
+                const energyRadius = Math.max(0.1, currentRadius * (0.4 + i * 0.3) + Math.sin(frameTime * 3 + i * 2) * 2);
                 const energyAlpha = puddleAlpha * (0.7 - i * 0.3) * flicker;
                 ctx.globalAlpha = energyAlpha;
                 ctx.arc(0, pulseOffset, energyRadius, 0, Math.PI * 2);
@@ -3760,8 +3760,7 @@ function render(dt) {
     
     // Draw EMP disabled effect on player
     if (store.player.empDisabled) {
-        const time = performance.now() / 1000;
-        const sizzleIntensity = 0.5 + 0.5 * Math.sin(time * 15);
+        const sizzleIntensity = 0.5 + 0.5 * Math.sin(frameTime * 15);
         
         ctx.save();
         ctx.translate(store.player.x, store.player.y);
@@ -3774,7 +3773,7 @@ function render(dt) {
         
         for (let i = 0; i < 8; i++) {
             if (Math.random() < 0.7) {
-                const angle = (i / 8) * Math.PI * 2 + time * 5;
+                const angle = (i / 8) * Math.PI * 2 + frameTime * 5;
                 const radius = store.player.r + 5;
                 const x1 = Math.cos(angle) * radius;
                 const y1 = Math.sin(angle) * radius;
@@ -3801,8 +3800,7 @@ function render(dt) {
     
     // Draw poison effect on player
     if (store.player.isPoisoned) {
-        const time = performance.now() / 1000;
-        const poisonAlpha = 0.3 + 0.2 * Math.sin(time * 8);
+        const poisonAlpha = 0.3 + 0.2 * Math.sin(frameTime * 8);
         
         ctx.save();
         ctx.globalCompositeOperation = 'multiply';
@@ -3816,13 +3814,13 @@ function render(dt) {
         ctx.save();
         ctx.translate(store.player.x, store.player.y);
         for (let i = 0; i < 6; i++) {
-            const angle = time * 2 + i * Math.PI / 3;
-            const x = Math.cos(angle) * (store.player.r + 12 + Math.sin(time * 4 + i) * 5);
-            const y = Math.sin(angle) * (store.player.r + 12 + Math.sin(time * 4 + i) * 5);
+            const angle = frameTime * 2 + i * Math.PI / 3;
+            const x = Math.cos(angle) * (store.player.r + 12 + Math.sin(frameTime * 4 + i) * 5);
+            const y = Math.sin(angle) * (store.player.r + 12 + Math.sin(frameTime * 4 + i) * 5);
             
-            ctx.fillStyle = `rgba(124, 252, 0, ${0.4 + 0.3 * Math.sin(time * 6 + i)})`;
+            ctx.fillStyle = `rgba(124, 252, 0, ${0.4 + 0.3 * Math.sin(frameTime * 6 + i)})`;
             ctx.beginPath();
-            ctx.arc(x, y, 2 + Math.sin(time * 5 + i), 0, Math.PI * 2);
+            ctx.arc(x, y, 2 + Math.sin(frameTime * 5 + i), 0, Math.PI * 2);
             ctx.fill();
         }
         ctx.restore();
@@ -8282,6 +8280,8 @@ function tryVoidStep(player, target, now = performance.now()){
         if (!store.isPaused) {
             store.isPaused = true;
             q('pauseBtn').classList.add('hide');
+            // Start matrix effects for any visible panels
+            startMatrixForVisiblePanels();
         }
     }
 
@@ -8290,6 +8290,44 @@ function tryVoidStep(player, target, now = performance.now()){
             store.isPaused = false;
             q('pauseBtn').classList.remove('hide');
             q('pauseBtn').textContent = 'PAUSE';
+            // Stop all matrix effects when gameplay resumes
+            stopAllMatrixEffects();
+        }
+    }
+    
+    // Stop all matrix effects
+    function stopAllMatrixEffects() {
+        document.querySelectorAll('.matrix-container').forEach(container => {
+            if (container.matrix) {
+                container.matrix.pause();
+            }
+        });
+    }
+    
+    // Start matrix effects for visible panels
+    function startMatrixForVisiblePanels() {
+        PANELS.forEach(panelId => {
+            const panel = q(panelId);
+            if (!panel.classList.contains('hide')) {
+                startMatrixForPanel(panel);
+            }
+        });
+    }
+    
+    // Helper function to start matrix effects for panels
+    function startMatrixForPanel(panel) {
+        const matrixContainer = panel.querySelector('.matrix-container');
+        if (matrixContainer && matrixContainer.matrix) {
+            matrixContainer.matrix.init();
+            matrixContainer.matrix.resume();
+        }
+    }
+    
+    // Helper function to stop matrix effects for panels  
+    function stopMatrixForPanel(panel) {
+        const matrixContainer = panel.querySelector('.matrix-container');
+        if (matrixContainer && matrixContainer.matrix) {
+            matrixContainer.matrix.pause();
         }
     }
     
@@ -8299,11 +8337,8 @@ function tryVoidStep(player, target, now = performance.now()){
         pauseGame();
         const panel = q('pilotPanel');
         
-        // Initialize matrix
-        const matrixContainer = panel.querySelector('.matrix-container');
-        if (matrixContainer.matrix) {
-            matrixContainer.matrix.init();
-        }
+        // Start matrix effect
+        startMatrixForPanel(panel);
         
         panel.classList.remove('hide');
         const cards = panel.querySelectorAll('.skill-card');
@@ -10262,7 +10297,7 @@ function tryVoidStep(player, target, now = performance.now()){
             this.animationId = null;
             
             this.init();
-            this.animate(0);
+            // Don't auto-start - will be controlled by panel visibility
         }
 
         init() {
@@ -10386,8 +10421,7 @@ function tryVoidStep(player, target, now = performance.now()){
 
         animate(currentTime) {
             if (!this.isRunning) {
-                this.animationId = requestAnimationFrame(time => this.animate(time));
-                return;
+                return; // Stop completely when not running
             }
             
             const deltaTime = currentTime - this.lastAnimationTime;
@@ -10400,13 +10434,38 @@ function tryVoidStep(player, target, now = performance.now()){
             
             this.animationId = requestAnimationFrame(time => this.animate(time));
         }
+        
+        pause() {
+            this.isRunning = false;
+            if (this.animationId) {
+                cancelAnimationFrame(this.animationId);
+                this.animationId = null;
+            }
+        }
+        
+        resume() {
+            if (!this.isRunning) {
+                this.isRunning = true;
+                this.lastAnimationTime = performance.now();
+                this.animate(this.lastAnimationTime);
+            }
+        }
+        
+        destroy() {
+            this.pause();
+            this.container.innerHTML = '';
+        }
     }
 
-    // Initialize matrix effects for all panels
+    // Initialize matrix effects for all panels - but don't start them yet
+    let matrixInstances = [];
     document.addEventListener('DOMContentLoaded', () => {
         const matrixContainers = document.querySelectorAll('.matrix-container');
         matrixContainers.forEach(container => {
-            new OptimizedMatrixRain(container);
+            const matrix = new OptimizedMatrixRain(container);
+            matrix.pause(); // Start paused
+            matrixInstances.push(matrix);
+            container.matrix = matrix; // Store reference on the container
         });
         
         // Initialize mobile controls
