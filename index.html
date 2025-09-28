@@ -653,6 +653,168 @@
             font-size: 24px;
             filter: drop-shadow(0 0 5px var(--accent));
         }
+
+        /* --- MOBILE JOYSTICK & BUTTON CONTROLS --- */
+        .mobile-control {
+            position: fixed;
+            z-index: 20;
+            opacity: 0.6;
+            display: none; /* Hidden by default */
+        }
+
+        body.mobile-controls-active .mobile-control {
+            display: block; /* Shown when body class is active */
+        }
+
+        #joystick-container {
+            bottom: 90px;
+            left: 45px;
+        }
+
+        #joystick-base {
+            width: 120px;
+            height: 120px;
+            background: rgba(50, 0, 70, 0.5);
+            border: 2px solid var(--accent);
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+        }
+
+        #joystick-stick {
+            width: 60px;
+            height: 60px;
+            background: radial-gradient(circle, #ffddff, var(--accent));
+            border-radius: 50%;
+            pointer-events: none; /* Pass touches through to the base */
+        }
+
+        #ability-button-container {
+            bottom: 100px;
+            right: 70px;
+        }
+
+        #ability-button {
+            width: 90px;
+            height: 90px;
+            background: rgba(150, 80, 255, 0.3);
+            border: 2px solid var(--accent);
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 0 15px rgba(178, 102, 255, .5);
+        }
+
+        #ability-icon {
+            width: 70px;
+            height: 70px;
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+            filter: drop-shadow(0 0 5px white);
+        }
+
+        /* --- TOGGLE SWITCH IN MECH FORGE --- */
+        .mobile-toggle-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            color: var(--accent);
+            font-family: 'Orbitron', 'Audiowide', ui-sans-serif;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 28px;
+        }
+
+        .switch input { 
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #330044;
+            border: 1px solid var(--accent);
+            transition: .4s;
+            border-radius: 28px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--accent2);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(22px);
+        }
+
+        /* --- SKILL TREE VIEWER BUTTON --- */
+        .skill-tree-btn-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 15px;
+        }
+
+        .skill-tree-viewer-btn {
+            background: linear-gradient(45deg, var(--accent2), var(--accent));
+            color: white;
+            border: 2px solid var(--accent);
+            padding: 8px 16px;
+            font-family: 'Orbitron', 'Audiowide', ui-sans-serif;
+            font-size: 12px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+        }
+
+        .skill-tree-viewer-btn:hover {
+            background: linear-gradient(45deg, var(--accent), var(--accent2));
+            box-shadow: 0 0 15px var(--accent);
+            transform: scale(1.05);
+        }
+
+        .skill-tree-viewer-btn:active {
+            transform: scale(0.95);
+        }
+
+        .skill-tree-viewer-btn:disabled {
+            background: #444;
+            color: #888;
+            border-color: #666;
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .skill-tree-viewer-btn:disabled:hover {
+            box-shadow: none;
+            transform: none;
+        }
         
     </style>
 </head>
@@ -692,7 +854,7 @@
                     </div>
                     <div id="pilotPanel" class="panel hide">
                         <div class="matrix-container"></div>
-                        <button id="storyBtn" type="button">i</button>
+                        <!-- <button id="storyBtn" type="button">i</button> -->
                         <h2 style="font-family:'Orbitron';color:var(--accent)">Choose Genomic Upgrade</h2>
                         <div id="pilotsGrid" class="grid" style="grid-template-columns: repeat(3, 1fr);">
                             <div class="skill-card" data-genome="beef">
@@ -775,7 +937,6 @@
                         <div class="matrix-container"></div>
                         <button type="button" class="close-btn" id="closeShopTopBtn">×</button>
                         <h2 style="font-family:'Orbitron';color:var(--accent)">⚡ MECH FORGE ⚡</h2>
-                        <button id="skillTreeBtn" class="btn skill-tree-button" type="button" style="margin:10px auto; display:block; font-size:12px; opacity:0.5; pointer-events:none;" disabled>🌳 SKILL TREE</button>
                         <p style="color:#ffddff">Available gold: <span id="shopgold">0</span></p>
                         <div id="shopGrid" class="grid"></div>
                         <div class="row" style="justify-content:center;margin-top:10px">
@@ -832,10 +993,21 @@
 
     <button id="fsEnterBtn" class="fixed-btn" type="button">FULLSCREEN</button>
     <div id="bottom-right-controls">
-        <button id="shopBtn" class="fixed-btn" type="button">⚡ MECH FORGE</button>
+        <button id="shopBtn" class="fixed-btn" type="button">⚡ MECH FORGE 💰</button>
         <button id="menuBtn" class="fixed-btn" type="button">🏆 TOP PILOTS</button>
     </div>
     <button id="pauseBtn" class="fixed-btn hide" type="button">PAUSE</button>
+
+    <div id="joystick-container" class="mobile-control">
+        <div id="joystick-base">
+            <div id="joystick-stick"></div>
+        </div>
+    </div>
+    <div id="ability-button-container" class="mobile-control">
+        <div id="ability-button">
+            <div id="ability-icon"></div>
+        </div>
+    </div>
 
 <script>
 (() => {
@@ -866,6 +1038,129 @@
         const cy = touch.clientY;
         return { x: (cx - r.left) * (W / r.width), y: (cy - r.top) * (H / r.height) };
     };
+
+    // --- MOBILE JOYSTICK & ABILITY BUTTON SETUP ---
+    const joystick = {
+        base: q('joystick-base'),
+        stick: q('joystick-stick'),
+        container: q('joystick-container'),
+        abilityButton: q('ability-button'),
+        abilityIcon: q('ability-icon')
+    };
+
+    const joystickState = {
+        active: false,
+        touchId: null,
+        baseRect: null,
+        input: { x: 0, y: 0 } // Normalized vector for player movement
+    };
+
+    function setupMobileControls() {
+        // Joystick Listeners
+        joystick.base.addEventListener('touchstart', handleJoystickStart, { passive: false });
+        document.addEventListener('touchmove', handleJoystickMove, { passive: false });
+        document.addEventListener('touchend', handleJoystickEnd, { passive: false });
+        document.addEventListener('touchcancel', handleJoystickEnd, { passive: false });
+
+        // Ability Button Listener
+        joystick.abilityButton.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            handleAbilityPress();
+        }, { passive: false });
+
+        // Load saved mobile controls preference
+        if (localStorage.getItem('mobileControlsEnabled') === 'true') {
+            document.body.classList.add('mobile-controls-active');
+        }
+    }
+
+    function handleJoystickStart(e) {
+        e.preventDefault();
+        if (joystickState.active) return;
+        const touch = e.changedTouches[0];
+        joystickState.active = true;
+        joystickState.touchId = touch.identifier;
+        joystickState.baseRect = joystick.base.getBoundingClientRect();
+        handleJoystickMove(e); // Process initial position
+    }
+
+    function handleJoystickMove(e) {
+        if (!joystickState.active) return;
+        const touch = Array.from(e.changedTouches).find(t => t.identifier === joystickState.touchId);
+        if (!touch) return;
+
+        const baseCenterX = joystickState.baseRect.left + joystickState.baseRect.width / 2;
+        const baseCenterY = joystickState.baseRect.top + joystickState.baseRect.height / 2;
+        
+        let dx = touch.clientX - baseCenterX;
+        let dy = touch.clientY - baseCenterY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const maxDist = joystickState.baseRect.width / 4; // Stick can move 1/4 of the base width from center
+
+        if (dist > maxDist) {
+            dx = (dx / dist) * maxDist;
+            dy = (dy / dist) * maxDist;
+        }
+
+        joystick.stick.style.transform = `translate(${dx}px, ${dy}px)`;
+        joystickState.input.x = dx / maxDist;
+        joystickState.input.y = dy / maxDist;
+    }
+
+    function handleJoystickEnd(e) {
+        const touch = Array.from(e.changedTouches).find(t => t.identifier === joystickState.touchId);
+        if (!touch) return;
+
+        joystickState.active = false;
+        joystickState.touchId = null;
+        joystick.stick.style.transform = `translate(0, 0)`;
+        joystickState.input = { x: 0, y: 0 };
+    }
+
+    function handleAbilityPress() {
+        if (store.isPaused || store.isGameOver) return;
+        const p = store.player;
+
+        switch(p.pilotGenome) {
+            case 'voidmancer':
+                // Blink in the direction of joystick input, or straight ahead if idle
+                const targetAngle = Math.atan2(joystickState.input.y, joystickState.input.x);
+                const targetDist = 200; // Blink distance
+                const target = {
+                    x: p.x + (joystickState.input.x !== 0 ? Math.cos(targetAngle) * targetDist : 0),
+                    y: p.y + (joystickState.input.y !== 0 ? Math.sin(targetAngle) * targetDist : p.y - targetDist)
+                };
+                tryVoidStep(p, target);
+                break;
+            case 'beef':
+                // Manually trigger the charge ability
+                p.isRequestingCharge = true; // A flag for the stepPlayer function
+                break;
+            default:
+                // Default to grenade for other classes
+                useGrenade();
+                break;
+        }
+    }
+
+    function updateAbilityButtonIcon() {
+        const p = store.player;
+        let iconUrl = '';
+
+        // Determine icon based on class and subclass
+        switch(p.pilotGenome) {
+            case 'beef':
+                iconUrl = p.subclass === 'marauder' ? 'marauder.png' : 'jug2.png';
+                break;
+            case 'voidmancer':
+                iconUrl = p.subclass === 'phasestriker' ? 'phase.png' : 'storm.png';
+                break;
+            default:
+                iconUrl = 'https://i.imgur.com/example.png'; // Placeholder for Grenade Icon
+                break;
+        }
+        joystick.abilityIcon.style.backgroundImage = `url('${iconUrl}')`;
+    }
 
 
     // --- NEW FLAME PARTICLE CLASS ---
@@ -1496,9 +1791,19 @@ class FlameParticle {
                 }
             }
         } else {
-            const vx = mouse.x - p.x, vy = mouse.y - p.y;
-            p.x += (vx * p.speed * dt * 0.005); p.y += (vy * p.speed * dt * 0.005);
-            p.x = clamp(p.x, 20, W - 20); p.y = clamp(p.y, 20, H - 20);
+            // MOVEMENT LOGIC
+            if (document.body.classList.contains('mobile-controls-active')) {
+                // Joystick Movement
+                const moveSpeed = p.speed;
+                p.x += joystickState.input.x * moveSpeed * dt;
+                p.y += joystickState.input.y * moveSpeed * dt;
+                p.x = clamp(p.x, 20, W - 20); p.y = clamp(p.y, 20, H - 20);
+            } else {
+                // Mouse Movement (Original Logic)
+                const vx = mouse.x - p.x, vy = mouse.y - p.y;
+                p.x += (vx * p.speed * dt * 0.005); p.y += (vy * p.speed * dt * 0.005);
+                p.x = clamp(p.x, 20, W - 20); p.y = clamp(p.y, 20, H - 20);
+            }
         }
         if (p.pilotGenome === 'beef' && p.beefMaxCharges > 0) {
             if (p.beefCharges < p.beefMaxCharges) {
@@ -1512,7 +1817,11 @@ class FlameParticle {
                     }
                 }
             }
-            if (p.beefChargeState === 'ready' && p.beefCharges > 0) {
+            // The charge is triggered either by the button OR automatically by proximity
+            const shouldCharge = p.isRequestingCharge || !document.body.classList.contains('mobile-controls-active');
+
+            if (p.beefChargeState === 'ready' && p.beefCharges > 0 && shouldCharge) {
+                p.isRequestingCharge = false; // Reset the flag
                 const chargeRadius = 120; let closestEnemy = null; let closestDistSq = chargeRadius * chargeRadius;
                 const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
                 potentialTargets.forEach(e => {
@@ -3702,7 +4011,7 @@ function render(dt) {
     let entropyPercent = 0;
     let entropyText = "";
     
-    q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • gold <b>${store.world.gold}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${beefShieldPercent}%;background:linear-gradient(90deg,#ff8c00,#ff4500)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${beefShieldText}</div>` : ""}${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } 
+    q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • Gold 💰 <b style="color:#FFD700;font-size:1.2em">${store.world.gold}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${beefShieldPercent}%;background:linear-gradient(90deg,#ff8c00,#ff4500)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${beefShieldText}</div>` : ""}${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } 
         
         // Update FPS counter
         if (!store.fpsLastTime) {
@@ -6337,6 +6646,46 @@ function render(dt) {
             goldEl = q("shopgold");
         goldEl.textContent = store.world.gold;
 
+        // Add the mobile controls toggle if it doesn't exist
+        if (!q('mobileControlsToggle')) {
+            const toggleHTML = `
+                <div class="mobile-toggle-container">
+                    <span>Mobile Controls</span>
+                    <label class="switch">
+                        <input type="checkbox" id="mobileControlsToggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>`;
+            panel.insertAdjacentHTML('afterbegin', toggleHTML);
+            
+            const toggle = q('mobileControlsToggle');
+            toggle.checked = document.body.classList.contains('mobile-controls-active');
+
+            toggle.addEventListener('change', () => {
+                if (toggle.checked) {
+                    document.body.classList.add('mobile-controls-active');
+                    localStorage.setItem('mobileControlsEnabled', 'true');
+                } else {
+                    document.body.classList.remove('mobile-controls-active');
+                    localStorage.setItem('mobileControlsEnabled', 'false');
+                }
+            });
+        }
+
+        // Add the skill tree viewer button if it doesn't exist
+        if (!q('skillTreeViewerBtn')) {
+            const skillTreeBtnHTML = `
+                <div class="skill-tree-btn-container">
+                    <button id="skillTreeViewerBtn" class="skill-tree-viewer-btn">View Skill Tree</button>
+                </div>`;
+            q('mobileControlsToggle').closest('.mobile-toggle-container').insertAdjacentHTML('afterend', skillTreeBtnHTML);
+            
+            const skillTreeBtn = q('skillTreeViewerBtn');
+            skillTreeBtn.addEventListener('click', () => {
+                viewCurrentSkillTree();
+            });
+        }
+
         const currentItems = Object.keys(SHOP_UPGRADES).map(key => {
             const u = SHOP_UPGRADES[key];
             let currentLevel = store.player.upgradeLevels[key] || 0,
@@ -6477,6 +6826,7 @@ function render(dt) {
             })
         });
 
+        /* Commented out - old skill tree button logic (button removed)
         // Update skill tree button state
         const skillTreeBtn = q('skillTreeBtn');
         const bossCount = (store.world.bosses || 0) + 1;
@@ -6512,6 +6862,7 @@ function render(dt) {
             skillTreeBtn.style.opacity = '0.5';
             skillTreeBtn.style.pointerEvents = 'none';
         }
+        */
 
         // Initialize matrix
         const matrixContainer = panel.querySelector('.matrix-container');
@@ -7883,6 +8234,9 @@ function tryVoidStep(player, target, now = performance.now()){
             panel.classList.add('hide');
             applyGenomeBonus(genome);
             
+            // Update mobile controls ability button icon
+            updateAbilityButtonIcon();
+            
             // Resume game for all genomes (removed teleport tutorial popup)
             // ◢◣ ACTIVATE ENTROPY REDUCTION ENGINE FOR ALL PILOTS ◣◢ [DISABLED FOR STABILITY]
             // activateEntropyEngine(); // Now works for voidmancer, beef, and rocketman
@@ -8156,6 +8510,10 @@ function tryVoidStep(player, target, now = performance.now()){
                 const subclassId = card.dataset.subclass;
                 store.player.subclass = subclassId;
                 applySubclassBonus(subclassId);
+                
+                // Update mobile controls ability button icon
+                updateAbilityButtonIcon();
+                
                 panel.classList.add('hide');
                 resumeGame();
             }, { once: true });
@@ -8229,6 +8587,63 @@ function tryVoidStep(player, target, now = performance.now()){
             resumeGame();
             return;
         }
+    }
+
+    function viewCurrentSkillTree() {
+        // Check if player has selected a subclass
+        if (!store.player.subclass) {
+            console.log('No subclass selected - cannot view skill tree');
+            return;
+        }
+
+        // Close shop panel first
+        const shopPanel = q("shopPanel");
+        shopPanel.classList.add('hide');
+
+        // Show the skill tree modal
+        const panel = q('subclassPanel');
+        const grid = q('subclassGrid');
+        const skillTree = q('skillTree');
+
+        // Initialize matrix
+        const matrixContainer = panel.querySelector('.matrix-container');
+        if (matrixContainer.matrix) {
+            matrixContainer.matrix.init();
+        }
+
+        // Hide grid, show skill tree
+        grid.classList.add('hide');
+        skillTree.classList.remove('hide');
+        panel.classList.add('skill-tree-active'); // Expand panel for skill tree
+        panel.classList.remove('hide');
+
+        // Hide the h2 since skill tree has its own title
+        panel.querySelector('h2').style.display = 'none';
+
+        // Generate dynamic skill tree based on current pilot type
+        generateDynamicSkillTree();
+        
+        // Set up close button handlers AFTER generating the tree
+        const closeBtn = q('skillTreeCloseBtn');
+        const closeBottomBtn = q('skillTreeCloseBottomBtn');
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                closeSkillTree();
+            };
+        }
+        if (closeBottomBtn) {
+            closeBottomBtn.onclick = () => {
+                closeSkillTree();
+            };
+        }
+
+        // Update UI to reflect current skills (no awarding points)
+        updateSkillTreeUI();
+        
+        // Don't set up click handlers for skill buttons since this is view-only
+        // setupSkillTreeHandlers();
+
+        // Don't award skill points or play sound for viewing - just show the tree
     }
 
 
@@ -9452,6 +9867,7 @@ function tryVoidStep(player, target, now = performance.now()){
     
     q('grenadeBtnUI').addEventListener('click',useGrenade);
 
+    /* Commented out for future implementation
     q('storyBtn').addEventListener('click', (e) => {
         e.stopPropagation();
         pauseGame();
@@ -9471,6 +9887,7 @@ function tryVoidStep(player, target, now = performance.now()){
             resumeGame();
         }
     });
+    */
     
     q("nameInput").addEventListener("keydown",(e)=>{if(e.key==="Enter"){const t=(q("nameInput").value||"").slice(0,16).trim();if(t){store.name=t;q("namePanel").classList.add("hide");if(store.player.pilotGenome === null) { initWave(); resumeGame(); } else { resumeGame(); }}}});
 
@@ -9900,6 +10317,9 @@ function tryVoidStep(player, target, now = performance.now()){
         matrixContainers.forEach(container => {
             new OptimizedMatrixRain(container);
         });
+        
+        // Initialize mobile controls
+        setupMobileControls();
     });
 
 })();
