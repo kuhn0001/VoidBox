@@ -1386,7 +1386,7 @@ class FlameParticle {
         const types = [
             { name: 'VOID SENTINEL', baseHp: 1700, r: 55, behavior: 'sentinel', color: '#8B4A9C' },
             { name: 'NEXUS PHANTOM', baseHp: 2200, r: 50, behavior: 'hex', color: '#66aaff'},
-            { name: 'NEURAL CORE', baseHp: 2800, r: 60, behavior: 'malignus', color: '#2E8B57' },
+            { name: 'NEURAL CORE', baseHp: 3200, r: 60, behavior: 'malignus', color: '#2E8B57' },
             { name: 'DEATH ENGINE', baseHp: 9000, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true },
             { name: 'HIVE SOVEREIGN', baseHp: 8500, r: 85, behavior: 'broodlord', color: '#2d5016' }
         ];
@@ -1840,8 +1840,16 @@ class FlameParticle {
                 const dx = p.x - powerup.x;
                 const dy = p.y - powerup.y;
                 const distSq = dx * dx + dy * dy;
+                const dist = Math.sqrt(distSq);
+                
+                // Auto-collect if very close to prevent vibration
+                if (dist < p.r + powerup.r + 5) {
+                    powerup.dead = true;
+                    applyPowerup(powerup.type);
+                    return;
+                }
+                
                 if (distSq < p.magnetRadius * p.magnetRadius) {
-                    const dist = Math.sqrt(distSq);
                     const pullSpeed = 350;
                     powerup.x += (dx / dist) * pullSpeed * dt;
                     powerup.y += (dy / dist) * pullSpeed * dt;
@@ -2716,32 +2724,8 @@ class FlameParticle {
             store.world.isLowHealth = false;
         }
 
-        // OPTIMIZED dead object cleanup - only filter when needed and batch operations
-        if (!store.lastCleanupTime) store.lastCleanupTime = performance.now();
-        const shouldCleanup = performance.now() - store.lastCleanupTime > 100; // Only every 100ms
-        
-        if (shouldCleanup) {
-            // Only filter arrays that likely have dead objects (high-activity arrays)
-            const highActivityArrays = ['bullets', 'eBullets', 'enemies', 'flameParticles'];
-            const lowActivityArrays = ['powerups', 'mines', 'missiles', 'lasers', 'lightningBolts', 'empNovas'];
-            
-            // Always clean high-activity arrays
-            highActivityArrays.forEach(key => {
-                if (store[key].length > 0) {
-                    store[key] = store[key].filter(i => !i.dead);
-                }
-            });
-            
-            // Only clean low-activity arrays if they have reasonable size
-            lowActivityArrays.forEach(key => {
-                if (store[key].length > 10) {
-                    store[key] = store[key].filter(i => !i.dead);
-                }
-            });
-            
-            store.activeEffects = store.activeEffects.filter(e => e.isActive !== false);
-            store.lastCleanupTime = performance.now();
-        }
+        ['bullets', 'eBullets', 'enemies', 'powerups', 'mines', 'missiles', 'lasers', 'flameParticles', 'lightningBolts', 'empNovas'].forEach(key => store[key] = store[key].filter(i => !i.dead));
+        store.activeEffects = store.activeEffects.filter(e => e.isActive !== false);
 
         if (!store.boss && store.enemies.length === 0) {
             // Add some delay before starting next wave to prevent rapid cycling
@@ -3055,10 +3039,16 @@ class FlameParticle {
         levelUpPulse();
         setTimeout(levelUpPulse, 250);
 
-        setTimeout(() => {
+        // Store timeout ID to prevent multiple level-ups causing permanent bonuses
+        if (store.levelUpTimeoutId) {
+            clearTimeout(store.levelUpTimeoutId);
+        }
+        
+        store.levelUpTimeoutId = setTimeout(() => {
             store.player.isInvincible = false;
             store.player.speed -= speedBoost;
             store.player.fireRate += fireRateBoost;
+            store.levelUpTimeoutId = null;
         }, 3000);
 
         const panel = q('levelPanel'), grid = q('skillsGrid');
@@ -3149,72 +3139,30 @@ class FlameParticle {
 
     // --- RENDER & DRAW FUNCTIONS ---
     const starCountA = 100, starCountB = 80;
-    const starsA = Array.from({ length: starCountA }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5, pulse: Math.random() * 10, pulseCache: 0, pulseCacheTime: 0 }));
-    const starsB = Array.from({ length: starCountB }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 2, pulse: Math.random() * 10, pulseCache: 0, pulseCacheTime: 0, rCache: 0 }));
+    const starsA = Array.from({ length: starCountA }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5, pulse: Math.random() * 10 }));
+    const starsB = Array.from({ length: starCountB }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 2, pulse: Math.random() * 10 }));
 
 function render(dt) {
     ctx.fillStyle = '#050008'; ctx.fillRect(0, 0, W, H);
     const time = performance.now() / 1000;
     
-    // OPTIMIZED star rendering - cache trig calculations and update less frequently
-    ctx.globalAlpha = 0.8; 
-    for (const s of starsA) { 
-        s.y += 30 * dt; 
-        if (s.y > H) s.y -= H; 
-        
-        // Update pulse cache only every 50ms to reduce sin() calls
-        if (time - s.pulseCacheTime > 0.05) {
-            s.pulseCache = 0.5 + 0.5 * Math.sin(time * 2 + s.pulse);
-            s.pulseCacheTime = time;
-        }
-        
-        ctx.fillStyle = `rgba(255,0,255,${s.pulseCache})`; 
-        ctx.beginPath(); 
-        ctx.arc(s.x, s.y, s.r, 0, 2 * Math.PI); 
-        ctx.fill(); 
-    }
-    
-    ctx.globalAlpha = 0.6; 
-    for (const s of starsB) { 
-        s.y += 60 * dt; 
-        if (s.y > H) s.y -= H; 
-        
-        // Update pulse and radius cache only every 50ms
-        if (time - s.pulseCacheTime > 0.05) {
-            const pulseSin = Math.sin(time * 1.5 + s.pulse);
-            s.pulseCache = 0.4 + 0.6 * pulseSin;
-            s.rCache = Math.max(0.1, s.r * (0.4 + 0.6 * pulseSin));
-            s.pulseCacheTime = time;
-        }
-        
-        ctx.fillStyle = `rgba(204,0,255,${s.pulseCache})`; 
-        ctx.beginPath(); 
-        ctx.arc(s.x, s.y, s.rCache, 0, 2 * Math.PI); 
-        ctx.fill(); 
-    }
+    ctx.globalAlpha = 0.8; for (const s of starsA) { s.y += 30 * dt; if (s.y > H) s.y -= H; ctx.fillStyle = `rgba(255,0,255,${0.5 + 0.5 * Math.sin(time * 2 + s.pulse)})`; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 2 * Math.PI); ctx.fill(); }
+    ctx.globalAlpha = 0.6; for (const s of starsB) { s.y += 60 * dt; if (s.y > H) s.y -= H; ctx.fillStyle = `rgba(204,0,255,${0.4 + 0.6 * Math.sin(time * 1.5 + s.pulse)})`; ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(0.1, s.r * (0.4 + 0.6 * Math.sin(time * 1.5 + s.pulse))), 0, 2 * Math.PI); ctx.fill(); }
     ctx.globalAlpha = 1;
 
-    // OPTIMIZED bullet proximity - only calculate when bullet count is high, cache player position
     const closeBullets = [];
     const farBullets = [];
     const proximityThreshold = 110;
-    const proximityThresholdSq = proximityThreshold * proximityThreshold; // Pre-calculate square
     const playerPos = store.player;
 
-    // Only do proximity sorting if there are many bullets, otherwise just render all normally
-    if (store.eBullets.length > 50) {
-        store.eBullets.forEach(b => {
-            const distSq = (b.x - playerPos.x)**2 + (b.y - playerPos.y)**2; 
-            if (distSq < proximityThresholdSq) {
-                closeBullets.push({ bullet: b, dist: Math.sqrt(distSq) });
-            } else {
-                farBullets.push(b);
-            }
-        });
-    } else {
-        // Low bullet count - skip expensive proximity calculations
-        farBullets.push(...store.eBullets);
-    }
+    store.eBullets.forEach(b => {
+        const distSq = (b.x - playerPos.x)**2 + (b.y - playerPos.y)**2; 
+        if (distSq < proximityThreshold**2) {
+            closeBullets.push({ bullet: b, dist: Math.sqrt(distSq) });
+        } else {
+            farBullets.push(b);
+        }
+    });
     
     store.powerups.forEach(p => drawPowerup(p));
     store.missiles.forEach(m => drawMissile(m));
@@ -8045,34 +7993,10 @@ function tryVoidStep(player, target, now = performance.now()){
         
         switch(genome) {
             case 'beef':
-                // Beef shield system - balanced progression to prevent one-shots while maintaining meaningful damage
-                let baseShield = 10; // Start low to allow meaningful damage early game
-                
-                // Only scale shield after 3rd boss (bosses defeated >= 3)
-                if (store.world.bosses >= 3) {
-                    // Gentle scaling after boss 3: +3 per wave beyond boss unlock
-                    const wavesAfterBoss3 = Math.max(0, store.world.wave - 15); // Assume boss 3 around wave 15
-                    baseShield = 10 + (wavesAfterBoss3 * 3);
-                    
-                    // More aggressive scaling only after wave 25 to match late game damage
-                    if (store.world.wave > 25) {
-                        const lateWaves = store.world.wave - 25;
-                        baseShield = 40 + (lateWaves * 5); // +5 per wave after 25
-                    }
-                }
-                p.beefShieldMax = baseShield;
-                p.beefShield = Math.max(5, p.beefShieldMax * 0.75); // Start with 75% shield, minimum 5
-                p.beefShieldDamageDealt = 0; // Track damage dealt for shield charging
-                p.beefShieldDamageTaken = 0; // Track damage taken for shield depletion
-                p.beefShieldCooldown = 0; // Cooldown after depletion before shield can absorb again
-                console.log('BEEF: Initialized dynamic shield system - wave:', store.world.wave, 'max:', p.beefShieldMax, 'starting:', p.beefShield);
+                // Base beef no longer gets abilities by default - subclasses must unlock them via skill trees
                 break;
             case 'wizard':
-                // Base wizard gets blink by default (subclasses will override with their own abilities)
-                p.hasBlink = true;
-                p.blinkRange = 250;
-                p.blinkCooldown = 4;
-                p.blinkDamage = 75;
+                // Base wizard no longer gets abilities by default - subclasses must unlock them via skill trees
                 break;
             case 'rocketman':
                 break;
@@ -8738,18 +8662,60 @@ function tryVoidStep(player, target, now = performance.now()){
         switch(skill) {
             case 'juggernaut':
                 p.subclass = 'juggernaut';
+                // Give beef shield system when selecting juggernaut
+                let baseShield = 10; // Start low to allow meaningful damage early game
+                
+                // Only scale shield after 3rd boss (bosses defeated >= 3)
+                if (store.world.bosses >= 3) {
+                    // Gentle scaling after boss 3: +3 per wave beyond boss unlock
+                    const wavesAfterBoss3 = Math.max(0, store.world.wave - 15); // Assume boss 3 around wave 15
+                    baseShield = 10 + (wavesAfterBoss3 * 3);
+                    
+                    // More aggressive scaling only after wave 25 to match late game damage
+                    if (store.world.wave > 25) {
+                        const lateWaves = store.world.wave - 25;
+                        baseShield = 40 + (lateWaves * 5); // +5 per wave after 25
+                    }
+                }
+                p.beefShieldMax = baseShield;
+                p.beefShield = Math.max(5, p.beefShieldMax * 0.75); // Start with 75% shield, minimum 5
+                p.beefShieldDamageDealt = 0; // Track damage dealt for shield charging
+                p.beefShieldDamageTaken = 0; // Track damage taken for shield depletion
+                p.beefShieldCooldown = 0; // Cooldown after depletion before shield can absorb again
+                
                 // Give 2 charges like marauder originally gave
                 p.beefMaxCharges = Math.max(p.beefMaxCharges, 2);
                 p.beefCharges = Math.max(p.beefCharges, 2);
-                announce('JUGGERNAUT ACTIVATED - Larger Impact!');
+                announce('JUGGERNAUT ACTIVATED - Shield & Charges!');
                 break;
             case 'marauder':
                 p.subclass = 'marauder';
+                // Give beef shield system when selecting marauder
+                let baseShieldM = 10; // Start low to allow meaningful damage early game
+                
+                // Only scale shield after 3rd boss (bosses defeated >= 3)
+                if (store.world.bosses >= 3) {
+                    // Gentle scaling after boss 3: +3 per wave beyond boss unlock
+                    const wavesAfterBoss3M = Math.max(0, store.world.wave - 15); // Assume boss 3 around wave 15
+                    baseShieldM = 10 + (wavesAfterBoss3M * 3);
+                    
+                    // More aggressive scaling only after wave 25 to match late game damage
+                    if (store.world.wave > 25) {
+                        const lateWaves = store.world.wave - 25;
+                        baseShieldM = 40 + (lateWaves * 5); // +5 per wave after 25
+                    }
+                }
+                p.beefShieldMax = baseShieldM;
+                p.beefShield = Math.max(5, p.beefShieldMax * 0.75); // Start with 75% shield, minimum 5
+                p.beefShieldDamageDealt = 0; // Track damage dealt for shield charging
+                p.beefShieldDamageTaken = 0; // Track damage taken for shield depletion
+                p.beefShieldCooldown = 0; // Cooldown after depletion before shield can absorb again
+                
                 // Give 2 charges and enable chain jumping
                 p.beefMaxCharges = Math.max(p.beefMaxCharges, 2);  
                 p.beefCharges = Math.max(p.beefCharges, 2);
                 p.beefChainMode = true; // Enable chain jumping for marauder
-                announce('MARAUDER ACTIVATED - Chain Jumping!');
+                announce('MARAUDER ACTIVATED - Shield & Chain Jumping!');
                 break;
                 
             // Tier 2 Enhanced Skills
@@ -8796,16 +8762,46 @@ function tryVoidStep(player, target, now = performance.now()){
                 announce('MEGA CLUSTERS ACTIVATED - Devastating Explosions!');
                 break;
                 
-            // Wizard skills
+            // Wizard skills  
             case 'phasestriker':
                 p.subclass = 'phasestriker';
-                // Abilities unlocked through tier 1 skill tree progression
-                announce('PHASESTRIKER SUBCLASS SELECTED!');
+                // Phasestriker already gets full distance void laser from applySubclassBonus
+                announce('PHASESTRIKER SUBCLASS SELECTED - Full Distance Void Laser!');
                 break;
             case 'stormcaller':
                 p.subclass = 'stormcaller';
-                // Abilities unlocked through tier 1 skill tree progression
-                announce('STORMCALLER SUBCLASS SELECTED!');
+                // Give basic chain lightning ability
+                p.hasChainLightning = true;
+                p.chainLightningCooldown = 0;
+                announce('STORMCALLER ACTIVATED - Chain Lightning!');
+                break;
+            case 'voidmancer':
+                p.subclass = 'voidmancer';
+                // Give basic blink ability
+                p.hasBlink = true;
+                p.blinkRange = 250;
+                p.blinkCooldown = 4;
+                p.blinkDamage = 75;
+                announce('VOIDMANCER ACTIVATED - Teleportation Blink!');
+                break;
+            case 'railgunner':
+                p.subclass = 'railgunner';
+                // Give flame barrier ability
+                p.flameBarrierActive = false;
+                p.flameBarrierCooldown = 0;
+                p.flameBarrierDuration = 8; // 8 seconds
+                p.flameBarrierRecharge = 15; // 15 second cooldown
+                announce('RAILGUNNER ACTIVATED - Flame Barrier Defense!');
+                break;
+            case 'demolitionist':
+                p.subclass = 'demolitionist';
+                // Give enhanced flame barrier ability
+                p.flameBarrierActive = false;
+                p.flameBarrierCooldown = 0;
+                p.flameBarrierDuration = 12; // Longer duration than railgunner
+                p.flameBarrierRecharge = 10; // Faster cooldown than railgunner
+                p.flameBarrierExplosive = true; // Explosive reactive damage
+                announce('DEMOLITIONIST ACTIVATED - Explosive Flame Wall!');
                 break;
                 
             // Wizard Tier 2 Enhanced Skills
@@ -9157,39 +9153,36 @@ function tryVoidStep(player, target, now = performance.now()){
         switch(subclass) {
             case 'railgunner': 
                 p.subclass = 'railgunner';
-                p.missilePierce = true; // Basic pierce ability
+                // No abilities by default - must unlock via skill tree
                 break;
             case 'demolitionist': 
                 p.subclass = 'demolitionist';
-                p.missileCluster = true; // Basic cluster ability
+                // No abilities by default - must unlock via skill tree
                 break;
             case 'juggernaut': 
                 p.subclass = 'juggernaut';
-                // Beef already has charge by default
+                // No abilities by default - must unlock via skill tree
                 break;
             case 'marauder': 
                 p.subclass = 'marauder';
-                // Beef already has charge by default
+                // No abilities by default - must unlock via skill tree
                 break;
             case 'phasestriker': 
                 p.subclass = 'phasestriker';
-                // Remove blink and give void laser instead
-                p.hasBlink = false;
-                p.hasVoidLaser = true; // Basic void laser ability
+                // Give FULL DISTANCE void laser as first upgrade
+                p.hasVoidLaser = true;
                 p.voidLaserTarget = null;
                 p.voidLaserDamageTimer = 0;
                 p.voidLaserRetargetTimer = 0;
+                p.voidLaserRange = 999999; // Full screen distance
                 break;
             case 'stormcaller':
                 p.subclass = 'stormcaller';
-                // Remove blink and give chain lightning instead  
-                p.hasBlink = false;
-                p.hasChainLightning = true; // Basic chain lightning ability
-                p.chainLightningCooldown = 0;
+                // No abilities by default - must unlock via skill tree
                 break;
             case 'voidmancer':
                 p.subclass = 'voidmancer';
-                // Keep blink (already has it from wizard genome)
+                // No abilities by default - must unlock blink via skill tree
                 break;
         }
         store.world.enemyHealthBonus *= 1.10;
@@ -9665,6 +9658,8 @@ function tryVoidStep(player, target, now = performance.now()){
             tryVoidStep(store.player, p);
         }
     });
+
+
     function frame(now) {
         const rawDt = Math.min((now - store.last) / 1000, 0.07);
         const speedMultiplier = window.gameSpeedMultiplier || 1;
