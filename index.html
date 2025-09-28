@@ -1318,7 +1318,7 @@ class FlameParticle {
         beefChargeState: 'ready', beefChargeCooldown: 0, beefChargeOrigin: null, beefChargeTarget: null, beefChargeT: 0, beefCharges: 1, beefMaxCharges: 1,
         beefDoubleCharge: false, beefBigExplosion: false, // New skill tree abilities
         beefChainTargets: [], beefChainIndex: 0, beefChainMode: false, // Chain jumping system for marauder
-        hasChainLightning: false, chainLightningCooldown: 0, stormstrikerLevel: 0, lightningAlternate: false,
+        hasChainLightning: false, chainLightningCooldown: 0, stormstrikerLevel: 0, lightningAlternate: false, lightningCycleIndex: 0, chainLightningDamage: 1.0,
         phasestRikerLevel: 0, voidLaserRampTime: 0, voidLaserLastTarget: null,
         subclass: null, missilePierce: 0, missileCluster: false, blinkDamage: false,
         enhancedClusters: false, enhancedPierce: false, hasStormcaller: false, hasPhasestriker: false,
@@ -6682,8 +6682,8 @@ function render(dt) {
             });
         }
 
-        // Add the skill tree viewer button if it doesn't exist
-        if (!q('skillTreeViewerBtn')) {
+        // Add the skill tree viewer button if it doesn't exist AND player has a subclass
+        if (!q('skillTreeViewerBtn') && store.player.subclass) {
             const skillTreeBtnHTML = `
                 <div class="skill-tree-btn-container">
                     <button id="skillTreeViewerBtn" class="skill-tree-viewer-btn">View Skill Tree</button>
@@ -6694,6 +6694,16 @@ function render(dt) {
             skillTreeBtn.addEventListener('click', () => {
                 viewCurrentSkillTree();
             });
+        }
+
+        // Hide the skill tree button if player doesn't have a subclass
+        const existingBtn = q('skillTreeViewerBtn');
+        if (existingBtn) {
+            if (store.player.subclass) {
+                existingBtn.style.display = 'block';
+            } else {
+                existingBtn.style.display = 'none';
+            }
         }
 
         const currentItems = Object.keys(SHOP_UPGRADES).map(key => {
@@ -8378,6 +8388,9 @@ function tryVoidStep(player, target, now = performance.now()){
         p.blinkDamage = false;
         p.hasChainLightning = false;
         p.stormstrikerLevel = 0;
+        p.lightningAlternate = false;
+        p.lightningCycleIndex = 0;
+        p.chainLightningDamage = 1.0;
         p.phasestRikerLevel = 0;
         p.voidLaserRampTime = 0;
         p.voidLaserLastTarget = null;
@@ -8544,6 +8557,12 @@ function tryVoidStep(player, target, now = performance.now()){
     }
 
     function showSkillTreeModal() {
+        // Check if player has selected a subclass first
+        if (!store.player.subclass) {
+            console.log('No subclass selected - cannot view skill tree');
+            return;
+        }
+
         playSound('epicHorn');
         pauseGame();
         const panel = q('subclassPanel');
@@ -9631,16 +9650,18 @@ function tryVoidStep(player, target, now = performance.now()){
                 break;
             case 'phasestriker': 
                 p.subclass = 'phasestriker';
-                // Give FULL DISTANCE void laser as first upgrade
+                // Give basic SHORT RANGE void laser as first upgrade
                 p.hasVoidLaser = true;
                 p.voidLaserTarget = null;
                 p.voidLaserDamageTimer = 0;
                 p.voidLaserRetargetTimer = 0;
-                p.voidLaserRange = 999999; // Full screen distance
+                p.voidLaserRange = 200; // Short range initially - like a basic laser
                 break;
             case 'stormcaller':
                 p.subclass = 'stormcaller';
-                // No abilities by default - must unlock via skill tree
+                // Give basic chain lightning ability
+                p.hasChainLightning = true;
+                p.chainLightningCooldown = 0;
                 break;
             case 'voidmancer':
                 p.subclass = 'voidmancer';
