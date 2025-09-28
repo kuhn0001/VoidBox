@@ -3484,12 +3484,50 @@ class FlameParticle {
     const starsA = Array.from({ length: starCountA }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5, pulse: Math.random() * 10 }));
     const starsB = Array.from({ length: starCountB }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 2, pulse: Math.random() * 10 }));
 
+// Cache for gradient objects to avoid recreation
+let poisonGradientCache = new Map();
+let mechGradientCache = new Map();
+let frameTime = 0;
+let frameCount = 0;
+
+// Clear caches periodically to prevent memory buildup
+function clearGradientCaches() {
+    if (frameCount % 1000 === 0) { // Clear every ~17 seconds at 60fps
+        poisonGradientCache.clear();
+        mechGradientCache.clear();
+    }
+}
+
 function render(dt) {
-    ctx.fillStyle = '#050008'; ctx.fillRect(0, 0, W, H);
-    const time = performance.now() / 1000;
+    frameCount++;
+    clearGradientCaches();
     
-    ctx.globalAlpha = 0.8; for (const s of starsA) { s.y += 30 * dt; if (s.y > H) s.y -= H; ctx.fillStyle = `rgba(255,0,255,${0.5 + 0.5 * Math.sin(time * 2 + s.pulse)})`; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 2 * Math.PI); ctx.fill(); }
-    ctx.globalAlpha = 0.6; for (const s of starsB) { s.y += 60 * dt; if (s.y > H) s.y -= H; ctx.fillStyle = `rgba(204,0,255,${0.4 + 0.6 * Math.sin(time * 1.5 + s.pulse)})`; ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(0.1, s.r * (0.4 + 0.6 * Math.sin(time * 1.5 + s.pulse))), 0, 2 * Math.PI); ctx.fill(); }
+    ctx.fillStyle = '#050008'; ctx.fillRect(0, 0, W, H);
+    // Cache time calculation once per frame instead of multiple calls
+    frameTime = performance.now() / 1000;
+    
+    // Optimize star rendering by reducing trigonometric calculations
+    ctx.globalAlpha = 0.8; 
+    for (const s of starsA) { 
+        s.y += 30 * dt; 
+        if (s.y > H) s.y -= H; 
+        const alpha = 0.5 + 0.5 * Math.sin(frameTime * 2 + s.pulse);
+        ctx.fillStyle = `rgba(255,0,255,${alpha})`; 
+        ctx.beginPath(); 
+        ctx.arc(s.x, s.y, s.r, 0, 2 * Math.PI); 
+        ctx.fill(); 
+    }
+    ctx.globalAlpha = 0.6; 
+    for (const s of starsB) { 
+        s.y += 60 * dt; 
+        if (s.y > H) s.y -= H; 
+        const pulse = Math.sin(frameTime * 1.5 + s.pulse);
+        const alpha = 0.4 + 0.6 * pulse;
+        ctx.fillStyle = `rgba(204,0,255,${alpha})`;
+        ctx.beginPath(); 
+        ctx.arc(s.x, s.y, Math.max(0.1, s.r * (0.4 + 0.6 * pulse)), 0, 2 * Math.PI); 
+        ctx.fill(); 
+    }
     ctx.globalAlpha = 1;
 
     const closeBullets = [];
@@ -3570,33 +3608,39 @@ function render(dt) {
 
     store.lasers.forEach(l => drawLaser(l));
     store.mines.forEach(m => drawMine(m));
-    if (store.boss && store.boss.mines) store.boss.mines.forEach(mine => { ctx.save(); ctx.translate(mine.x, mine.y); ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fillStyle = `rgba(255, 128, 128, ${0.7 + 0.3 * Math.sin(performance.now() / 200)})`; ctx.fill(); ctx.restore(); });
+    if (store.boss && store.boss.mines) store.boss.mines.forEach(mine => { ctx.save(); ctx.translate(mine.x, mine.y); ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fillStyle = `rgba(255, 128, 128, ${0.7 + 0.3 * Math.sin(frameTime * 5)})`; ctx.fill(); ctx.restore(); });
     
-    // Draw poison puddles
+    // Draw poison puddles - optimized
     if (store.poisonPuddles) {
         store.poisonPuddles.forEach(puddle => {
-            const time = performance.now() / 1000;
-            const age = (performance.now() - puddle.created) / 1000;
+            const age = (frameTime * 1000 - puddle.created) / 1000;
             const maxAge = puddle.life + (15 - puddle.life); // Total possible age
             
             ctx.save();
             ctx.translate(puddle.x, puddle.y);
             
-            // Animate puddle bubbling
-            const bubbleOffset = Math.sin(time * 3 + puddle.x * 0.01) * 2;
+            // Animate puddle bubbling - cache sin calculation
+            const bubbleOffset = Math.sin(frameTime * 3 + puddle.x * 0.01) * 2;
             
-            // Create toxic glow effect
+            // Create toxic glow effect - cache gradient by radius
             const glowRadius = puddle.r * 1.5;
-            const glowAlpha = 0.3 * (puddle.life / 15) + 0.2 * Math.sin(time * 4);
-            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, glowRadius);
-            gradient.addColorStop(0, `rgba(124, 252, 0, ${glowAlpha})`);
-            gradient.addColorStop(0.7, `rgba(173, 255, 47, ${glowAlpha * 0.5})`);
-            gradient.addColorStop(1, 'rgba(124, 252, 0, 0)');
+            const radiusKey = Math.round(glowRadius);
+            let gradient = poisonGradientCache.get(radiusKey);
+            if (!gradient) {
+                gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, glowRadius);
+                gradient.addColorStop(0, 'rgba(124, 252, 0, 1)');
+                gradient.addColorStop(0.7, 'rgba(173, 255, 47, 0.5)');
+                gradient.addColorStop(1, 'rgba(124, 252, 0, 0)');
+                poisonGradientCache.set(radiusKey, gradient);
+            }
             
+            const glowAlpha = 0.3 * (puddle.life / 15) + 0.2 * Math.sin(frameTime * 4);
+            ctx.globalAlpha = glowAlpha;
             ctx.fillStyle = gradient;
             ctx.beginPath();
             ctx.arc(0, bubbleOffset, glowRadius, 0, Math.PI * 2);
             ctx.fill();
+            ctx.globalAlpha = 1;
             
             // Draw the puddle itself
             const puddleAlpha = Math.max(0.4, puddle.life / 15);
@@ -3618,13 +3662,14 @@ function render(dt) {
             ctx.stroke();
             ctx.globalAlpha = 1;
             
-            // Add occasional toxic bubbles
-            if (Math.random() < 0.1) {
-                const bubbleX = (Math.random() - 0.5) * puddle.r;
-                const bubbleY = (Math.random() - 0.5) * puddle.r + bubbleOffset;
-                const bubbleSize = 2 + Math.random() * 3;
+            // Add occasional toxic bubbles - use time-based approach to reduce randomness
+            if (Math.sin(frameTime * 8 + puddle.x * 0.1) > 0.8) {
+                const bubbleX = Math.sin(frameTime * 3 + puddle.x) * puddle.r * 0.3;
+                const bubbleY = Math.cos(frameTime * 2.5 + puddle.y) * puddle.r * 0.3 + bubbleOffset;
+                const bubbleSize = 2 + Math.abs(Math.sin(frameTime * 4 + puddle.x)) * 3;
                 
-                ctx.fillStyle = `rgba(124, 252, 0, ${0.6 + Math.random() * 0.4})`;
+                const bubbleAlpha = 0.6 + Math.abs(Math.cos(frameTime * 5 + puddle.y)) * 0.4;
+                ctx.fillStyle = `rgba(124, 252, 0, ${bubbleAlpha})`;
                 ctx.beginPath();
                 ctx.arc(bubbleX, bubbleY, bubbleSize, 0, Math.PI * 2);
                 ctx.fill();
@@ -3634,29 +3679,34 @@ function render(dt) {
         });
     }
     
-    // Draw mech oil/fuel puddles with aqua color scheme
+    // Draw mech oil/fuel puddles with aqua color scheme - optimized
     if (store.mechPuddles) {
         store.mechPuddles.forEach(puddle => {
-            const time = performance.now() / 1000;
-            
             ctx.save();
             ctx.translate(puddle.x, puddle.y);
             
-            // Create flickering aqua energy effect
-            const flicker = 0.8 + Math.sin(time * 6) * 0.2;
-            const pulseOffset = Math.sin(time * 4 + puddle.x * 0.02) * 1.5;
+            // Create flickering aqua energy effect - use cached time
+            const flicker = 0.8 + Math.sin(frameTime * 6) * 0.2;
+            const pulseOffset = Math.sin(frameTime * 4 + puddle.x * 0.02) * 1.5;
             
             // Calculate shrinking effect as puddle disappears
             const lifePercent = Math.max(0, puddle.life) / puddle.maxLife; // Ensure life is never negative
             const currentRadius = puddle.r * Math.max(0.3, lifePercent); // Shrink to 30% min size
             
-            // Create aqua hazardous glow effect (matching mech color scheme)
+            // Create aqua hazardous glow effect - cache gradient by radius
             const glowRadius = currentRadius * 1.4;
+            const radiusKey = Math.round(glowRadius);
+            let gradient = mechGradientCache.get(radiusKey);
+            if (!gradient) {
+                gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, glowRadius);
+                gradient.addColorStop(0, 'rgba(0, 255, 255, 1)'); // Bright cyan
+                gradient.addColorStop(0.6, 'rgba(32, 178, 170, 0.7)'); // Light sea green
+                gradient.addColorStop(1, 'rgba(0, 139, 139, 0)'); // Dark cyan fade
+                mechGradientCache.set(radiusKey, gradient);
+            }
+            
             const glowAlpha = 0.4 * lifePercent * flicker;
-            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, glowRadius);
-            gradient.addColorStop(0, `rgba(0, 255, 255, ${glowAlpha})`); // Bright cyan
-            gradient.addColorStop(0.6, `rgba(32, 178, 170, ${glowAlpha * 0.7})`); // Light sea green
-            gradient.addColorStop(1, 'rgba(0, 139, 139, 0)'); // Dark cyan fade
+            ctx.globalAlpha = glowAlpha;
             
             ctx.fillStyle = gradient;
             ctx.beginPath();
@@ -9665,7 +9715,9 @@ function tryVoidStep(player, target, now = performance.now()){
                 break;
             case 'voidmancer':
                 p.subclass = 'voidmancer';
-                // No abilities by default - must unlock blink via skill tree
+                // Give +2 multishot base and ship speed boost
+                p.multishot = (p.multishot || 2) + 2; // Base 2 + 2 = 4 bullets total
+                p.speed = (p.speed || 2.5) * 1.4; // 40% speed boost
                 break;
         }
         store.world.enemyHealthBonus *= 1.10;
