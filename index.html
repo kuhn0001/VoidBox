@@ -1255,12 +1255,20 @@ class FlameParticle {
         let types = Object.keys(POWERUP_TYPES);
         let bonusType = null;
         if (p.pilotGenome === 'beef') {
-            if (Math.random() < 0.25) bonusType = 'shield';
-            else if (Math.random() < 0.15) bonusType = 'repair';
+            // Enhanced drop rates for beef - additional powerups, not replacing existing ones
+            if (Math.random() < 0.4) bonusType = 'shield'; // Increased from 0.25 to 0.4
+            else if (Math.random() < 0.3) bonusType = 'repair'; // Increased from 0.15 to 0.3
+            // Also boost the base chance for beef pilots
+            finalChance *= 1.3; // 30% higher overall powerup drop rate
         }
-        if (p.pilotGenome === 'rocketman' && Math.random() < 0.2) {
-            finalChance *= 1.5;
-            bonusType = 'missile';
+        if (p.pilotGenome === 'rocketman') {
+            // Significantly boost missile powerup rates for rocketman
+            if (Math.random() < 0.5) bonusType = 'missile'; // 50% chance for missile powerups
+            finalChance *= 2.0; // Double overall powerup drop rate
+            // Extra chance if rocketman doesn't currently have missiles active
+            if (!p.powerupTimers.missile || p.powerupTimers.missile.remaining <= 3) {
+                if (Math.random() < 0.3) bonusType = 'missile'; // Extra 30% chance when missiles are low/inactive
+            }
         }
         const roll = Math.random();
         if (roll > finalChance && !bonusType) return;
@@ -2770,9 +2778,14 @@ class FlameParticle {
                     collarStacksToAdd = 1;
                     announce("⚡ COLLAR TIGHTENS +1 ⚡");
                 } else if (waveClearTime > 20) {
-                    // Very slow clear: reset collar stacks
-                    store.world.collarStacks = Math.max(0, store.world.collarStacks - 2);
-                    announce("🐌 SLOW CLEAR - COLLAR LOOSENS");
+                    // Very slow clear: reset collar stacks (except during Death Engine fight)
+                    const isDeathEngineFight = store.world.boss && store.world.boss.name === 'DEATH ENGINE';
+                    if (!isDeathEngineFight) {
+                        store.world.collarStacks = Math.max(0, store.world.collarStacks - 2);
+                        announce("🐌 SLOW CLEAR - COLLAR LOOSENS");
+                    } else {
+                        announce("THE DEATH ENGINE'S CURSE MAINTAINS THE COLLAR!");
+                    }
                 }
                 
                 // Add collar stacks immediately to ensure they're always applied
@@ -2810,17 +2823,23 @@ class FlameParticle {
         }
         store.world.collarDecayTimer += dt;
         
-        // Apply gradual collar decay every 10 seconds if stacks are high
+        // Apply gradual collar decay every 10 seconds if stacks are high (except during Death Engine fight)
         if (store.world.collarDecayTimer >= 10) {
             store.world.collarDecayTimer = 0;
-            if (store.world.collarStacks > 20) {
-                // Decay faster when collar stacks are very high
-                const decay = Math.max(0.5, store.world.collarStacks * 0.02);
-                store.world.collarStacks = Math.max(0, store.world.collarStacks - decay);
-                // High collar stacks decay applied
-            } else if (store.world.collarStacks > 5) {
-                // Gentle decay for moderate stacks
-                store.world.collarStacks = Math.max(0, store.world.collarStacks - 0.3);
+            
+            // Don't decay collar stacks during Death Engine fight due to its intermission phases
+            const isDeathEngineFight = store.world.boss && store.world.boss.name === 'DEATH ENGINE';
+            
+            if (!isDeathEngineFight) {
+                if (store.world.collarStacks > 20) {
+                    // Decay faster when collar stacks are very high
+                    const decay = Math.max(0.5, store.world.collarStacks * 0.02);
+                    store.world.collarStacks = Math.max(0, store.world.collarStacks - decay);
+                    // High collar stacks decay applied
+                } else if (store.world.collarStacks > 5) {
+                    // Gentle decay for moderate stacks
+                    store.world.collarStacks = Math.max(0, store.world.collarStacks - 0.3);
+                }
             }
         }
 
@@ -8097,7 +8116,8 @@ function tryVoidStep(player, target, now = performance.now()){
         ],
         wizard: [
             { id: 'phasestriker', name: 'Phase Striker', desc: 'Laser can target enemies anywhere on screen with unlimited range.', icon: 'phase.png' },
-            { id: 'stormcaller', name: 'Stormcaller', desc: 'Chain lightning that jumps between enemies with 50% chance per jump.', icon: 'storm.png' }
+            { id: 'stormcaller', name: 'Stormcaller', desc: 'Chain lightning that jumps between enemies with 50% chance per jump.', icon: 'storm.png' },
+            { id: 'voidmancer', name: 'Voidmancer', desc: 'Enhanced multishot capability and increased ship speed for tactical advantage.', icon: 'goggles.png' }
         ]
     };
 
@@ -8765,8 +8785,13 @@ function tryVoidStep(player, target, now = performance.now()){
             // Wizard skills  
             case 'phasestriker':
                 p.subclass = 'phasestriker';
-                // Phasestriker already gets full distance void laser from applySubclassBonus
-                announce('PHASESTRIKER SUBCLASS SELECTED - Full Distance Void Laser!');
+                // Give FULL SCREEN distance void laser as first upgrade
+                p.hasVoidLaser = true;
+                p.voidLaserTarget = null;
+                p.voidLaserDamageTimer = 0;
+                p.voidLaserRetargetTimer = 0;
+                p.voidLaserRange = 999999; // Full screen distance - unlimited range
+                announce('PHASESTRIKER ACTIVATED - Full Screen Distance Void Laser!');
                 break;
             case 'stormcaller':
                 p.subclass = 'stormcaller';
@@ -8777,12 +8802,10 @@ function tryVoidStep(player, target, now = performance.now()){
                 break;
             case 'voidmancer':
                 p.subclass = 'voidmancer';
-                // Give basic blink ability
-                p.hasBlink = true;
-                p.blinkRange = 250;
-                p.blinkCooldown = 4;
-                p.blinkDamage = 75;
-                announce('VOIDMANCER ACTIVATED - Teleportation Blink!');
+                // Give +2 multishot base and ship speed boost
+                p.multishot = Math.max(p.multishot || 0, p.multishot + 2);
+                p.speed = (p.speed || 2.5) * 1.4; // 40% speed boost
+                announce('VOIDMANCER ACTIVATED - Enhanced Multishot & Speed!');
                 break;
             case 'railgunner':
                 p.subclass = 'railgunner';
