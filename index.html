@@ -2681,7 +2681,14 @@ class FlameParticle {
                         });
                     }
                     
-                    takeDamage(b.dmg || 10);
+                    // Calculate fade-in damage multiplier for Death Engine bullet rain
+                    let damageMultiplier = 1.0;
+                    if (b.fadeInTime && b.spawnTime) {
+                        const timeAlive = (performance.now() - b.spawnTime) / 1000;
+                        damageMultiplier = Math.min(1.0, timeAlive / b.fadeInTime);
+                    }
+                    
+                    takeDamage((b.dmg || 10) * damageMultiplier);
                     b.dead = true;
                 }
             }
@@ -3562,10 +3569,20 @@ function render(dt) {
 
 
     farBullets.forEach(b => {
+        // Apply visual fade-in for Death Engine bullet rain
+        let alpha = 1.0;
+        if (b.fadeInTime && b.spawnTime) {
+            const timeAlive = (performance.now() - b.spawnTime) / 1000;
+            alpha = Math.min(1.0, timeAlive / b.fadeInTime);
+        }
+        
+        ctx.save();
+        ctx.globalAlpha = alpha;
         ctx.fillStyle = b.col;
         ctx.beginPath();
         ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
         ctx.fill();
+        ctx.restore();
     });
     
     store.bullets.forEach(b => {
@@ -3920,11 +3937,18 @@ function render(dt) {
         const b = item.bullet;
         const dist = item.dist;
         
+        // Apply fade-in for Death Engine bullet rain
+        let fadeAlpha = 1.0;
+        if (b.fadeInTime && b.spawnTime) {
+            const timeAlive = (performance.now() - b.spawnTime) / 1000;
+            fadeAlpha = Math.min(1.0, timeAlive / b.fadeInTime);
+        }
+        
         const proxFactor = 1.0 - (dist / proximityThreshold);
 
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = proxFactor; 
+        ctx.globalAlpha = proxFactor * fadeAlpha; 
         const glowRadius = b.r * 2;
         const gradient = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, glowRadius);
         gradient.addColorStop(0.3, b.col);
@@ -3935,15 +3959,18 @@ function render(dt) {
         ctx.fill();
         ctx.restore();
 
+        ctx.save();
+        ctx.globalAlpha = fadeAlpha;
         ctx.fillStyle = b.col;
         ctx.beginPath();
         ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.fillStyle = `rgba(255, 255, 255, ${proxFactor * 0.8})`;
+        ctx.fillStyle = `rgba(255, 255, 255, ${proxFactor * 0.8 * fadeAlpha})`;
         ctx.beginPath();
         ctx.arc(b.x, b.y, b.r * 0.5, 0, Math.PI * 2);
         ctx.fill();
+        ctx.restore();
     });
     
     store.activeEffects.forEach(e => e.draw && e.draw());
@@ -4556,7 +4583,9 @@ function render(dt) {
                                 vx: bulletSpeed, vy: 0,
                                 r: 6, col: '#FF0000',
                                 dmg: 25 * dmgScale,
-                                life: (W + 20) / bulletSpeed + 1
+                                life: (W + 20) / bulletSpeed + 1,
+                                fadeInTime: 2.0, // 2 second fade-in
+                                spawnTime: performance.now()
                             });
                         }
                     }
@@ -4570,7 +4599,9 @@ function render(dt) {
                                 vx: -bulletSpeed, vy: 0,
                                 r: 6, col: '#FF0000',
                                 dmg: 25 * dmgScale,
-                                life: (W + 20) / bulletSpeed + 1
+                                life: (W + 20) / bulletSpeed + 1,
+                                fadeInTime: 2.0, // 2 second fade-in
+                                spawnTime: performance.now()
                             });
                         }
                     }
@@ -4623,7 +4654,9 @@ function render(dt) {
                                     vx: bulletSpeed, vy: 0,
                                     r: 5, col: '#FF0000',
                                     dmg: 30 * dmgScale, // Higher damage
-                                    life: (W + 20) / bulletSpeed + 1
+                                    life: (W + 20) / bulletSpeed + 1,
+                                    fadeInTime: 2.0, // 2 second fade-in
+                                    spawnTime: performance.now()
                                 });
                             }
                         }
@@ -4639,7 +4672,9 @@ function render(dt) {
                                     vx: -bulletSpeed, vy: 0,
                                     r: 5, col: '#FF0000',
                                     dmg: 30 * dmgScale, // Higher damage
-                                    life: (W + 20) / bulletSpeed + 1
+                                    life: (W + 20) / bulletSpeed + 1,
+                                    fadeInTime: 2.0, // 2 second fade-in
+                                    spawnTime: performance.now()
                                 });
                             }
                         }
@@ -4733,7 +4768,9 @@ function render(dt) {
                                 vx: bulletSpeed, vy: 0,
                                 r: 6, col: '#FF0000',
                                 dmg: 25 * dmgScale,
-                                life: (W + 20) / bulletSpeed + 1
+                                life: (W + 20) / bulletSpeed + 1,
+                                fadeInTime: 2.0, // 2 second fade-in
+                                spawnTime: performance.now()
                             });
                         }
                         
@@ -4744,7 +4781,9 @@ function render(dt) {
                                 vx: -bulletSpeed, vy: 0,
                                 r: 6, col: '#FF0000',
                                 dmg: 25 * dmgScale,
-                                life: (W + 20) / bulletSpeed + 1
+                                life: (W + 20) / bulletSpeed + 1,
+                                fadeInTime: 2.0, // 2 second fade-in
+                                spawnTime: performance.now()
                             });
                         }
                     }
@@ -5992,59 +6031,174 @@ function render(dt) {
     }
     function drawEnemy(e) { const{x:t,y:o,r:a,type:r,color:n,hp:l,hpMax:s,t:c}=e;ctx.save();ctx.translate(t,o);l<s&&l>0&&(ctx.fillStyle='rgba(0,0,0,0.5)',ctx.fillRect(-a,-a-8,2*a,3),ctx.fillStyle="#b266ff",ctx.fillRect(-a,-a-8,2*a*(l/s),3));ctx.lineWidth=2;ctx.beginPath();switch(r){case"avian_hatchling":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a*1.2);ctx.lineTo(a,-a*0.5);ctx.lineTo(a,a*0.5);ctx.lineTo(0,a*1.2);ctx.lineTo(-a,a*0.5);ctx.lineTo(-a,-a*0.5);ctx.closePath();ctx.fill();ctx.stroke();break;case"construct_gold":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a);ctx.lineTo(a,0);ctx.lineTo(0,a);ctx.lineTo(-a,0);ctx.closePath();ctx.fill();ctx.stroke();break;case"trap_king_add":case"drone":const e=ctx.createLinearGradient(-a,-a,a,a);e.addColorStop(0,"#E0E0E0");e.addColorStop(1,"#A0A0A0");ctx.fillStyle=e;ctx.strokeStyle="#808080";ctx.beginPath();ctx.moveTo(-1.2*a,0);ctx.quadraticCurveTo(0,-a,1.2*a,0);ctx.quadraticCurveTo(0,.6*a,-1.2*a,0);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#aaddff";ctx.strokeStyle="#FFFFFF";ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-.2*a,.6*a,Math.PI,0);ctx.fill();ctx.stroke();ctx.fillStyle=r==="trap_king_add"?"#ffc83d":"#32CD32";ctx.beginPath();ctx.ellipse(0,-.2*a,.3*a,.4*a,0,0,2*Math.PI);ctx.fill();ctx.fillStyle="#000000";ctx.beginPath();ctx.ellipse(-.1*a,-.25*a,.08*a,.15*a,-.5,0,2*Math.PI);ctx.ellipse(.1*a,-.25*a,.08*a,.15*a,.5,0,2*Math.PI);ctx.fill();break;
         case "hunter":
-            ctx.strokeStyle = '#BE2545';
-            ctx.fillStyle = n + "cc";
-            ctx.lineWidth = 2;
-            ctx.shadowColor = n;
-            ctx.shadowBlur = 15;
-
-            const segments = 12;
-            const length = a * 1.8;
-            const amplitude = a * 0.5; 
+            // Holographic Cyber-Serpent: Robotic/Organic Hybrid
+            const hunterTime = performance.now() / 1000;
+            const holoFlicker = 0.7 + 0.3 * Math.sin(hunterTime * 8 + c * 3);
+            const holoGlow = 0.5 + 0.5 * Math.sin(hunterTime * 12 + c * 2);
+            const segments = 14;
+            const length = a * 2.0;
+            const amplitude = a * 0.6;
             
+            // Scary cybernetic colors
+            const baseRed = '#8B0000'; // Dark blood red
+            const cyberRed = '#FF0040'; // Bright cyber red
+            const organicRed = '#DC143C'; // Original red but enhanced
+            const holoBlue = '#00FFFF'; // Holographic cyan accent
+            
+            // Outer holographic aura
+            ctx.save();
+            ctx.globalAlpha = holoGlow * 0.4;
+            ctx.shadowColor = holoBlue;
+            ctx.shadowBlur = 25;
+            ctx.strokeStyle = holoBlue;
+            ctx.lineWidth = 3;
+            ctx.setLineDash([5, 3]);
+            ctx.lineDashOffset = -hunterTime * 10;
+            
+            // Draw holographic outline
             ctx.beginPath();
-            
-            const points1 = [];
             for (let i = 0; i <= segments; i++) {
                 const progress = i / segments;
-                const segmentWidth = a * Math.sin(progress * Math.PI) * 0.5;
-                const x = Math.sin(progress * 2.5 * Math.PI + c * 5) * amplitude;
+                const segmentWidth = a * Math.sin(progress * Math.PI) * 0.6;
+                const x = Math.sin(progress * 3 * Math.PI + c * 6) * amplitude;
                 const y = (progress - 0.5) * length;
-                points1.push({ x: x + segmentWidth, y: y });
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
             }
-
-            const points2 = [];
-            for (let i = segments; i >= 0; i--) {
+            ctx.stroke();
+            ctx.restore();
+            
+            // Main serpent body with robotic segments
+            ctx.globalAlpha = holoFlicker;
+            ctx.setLineDash([]);
+            
+            const bodyPoints1 = [];
+            const bodyPoints2 = [];
+            
+            for (let i = 0; i <= segments; i++) {
                 const progress = i / segments;
-                const segmentWidth = a * Math.sin(progress * Math.PI) * 0.5;
-                const x = Math.sin(progress * 2.5 * Math.PI + c * 5) * amplitude;
+                // Robotic segmentation with organic curves
+                const roboticPulse = 1 + 0.1 * Math.sin(progress * 8 * Math.PI + hunterTime * 4);
+                const segmentWidth = a * Math.sin(progress * Math.PI) * 0.5 * roboticPulse;
+                const x = Math.sin(progress * 3 * Math.PI + c * 6) * amplitude;
                 const y = (progress - 0.5) * length;
-                points2.push({ x: x - segmentWidth, y: y });
+                
+                bodyPoints1.push({ x: x + segmentWidth, y: y });
+                bodyPoints2.push({ x: x - segmentWidth, y: y });
             }
-
-            ctx.moveTo(points1[0].x, points1[0].y);
-            for(let i = 1; i < points1.length; i++) {
-                ctx.lineTo(points1[i].x, points1[i].y);
+            
+            // Draw main body with gradient
+            const bodyGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, a * 2);
+            bodyGradient.addColorStop(0, cyberRed + 'CC');
+            bodyGradient.addColorStop(0.5, baseRed + 'AA');
+            bodyGradient.addColorStop(1, organicRed + '88');
+            
+            ctx.fillStyle = bodyGradient;
+            ctx.strokeStyle = cyberRed;
+            ctx.lineWidth = 2;
+            ctx.shadowColor = cyberRed;
+            ctx.shadowBlur = 15;
+            
+            ctx.beginPath();
+            ctx.moveTo(bodyPoints1[0].x, bodyPoints1[0].y);
+            for(let i = 1; i < bodyPoints1.length; i++) {
+                ctx.lineTo(bodyPoints1[i].x, bodyPoints1[i].y);
             }
-            ctx.lineTo(points2[0].x, points2[0].y);
-             for(let i = 1; i < points2.length; i++) {
-                ctx.lineTo(points2[i].x, points2[i].y);
+            for(let i = bodyPoints2.length - 1; i >= 0; i--) {
+                ctx.lineTo(bodyPoints2[i].x, bodyPoints2[i].y);
             }
             ctx.closePath();
             ctx.fill();
             ctx.stroke();
-
-            const headX = Math.sin(c * 5) * amplitude;
+            
+            // Robotic spine segments
+            ctx.strokeStyle = holoBlue;
+            ctx.lineWidth = 1;
+            ctx.shadowBlur = 8;
+            for (let i = 1; i < segments; i++) {
+                const progress = i / segments;
+                const x = Math.sin(progress * 3 * Math.PI + c * 6) * amplitude;
+                const y = (progress - 0.5) * length;
+                const segmentGlow = 0.8 + 0.2 * Math.sin(hunterTime * 6 + i);
+                
+                ctx.globalAlpha = segmentGlow * holoFlicker;
+                ctx.beginPath();
+                ctx.moveTo(x - a * 0.3, y);
+                ctx.lineTo(x + a * 0.3, y);
+                ctx.stroke();
+                
+                // Cyber nodes
+                ctx.fillStyle = holoBlue;
+                ctx.beginPath();
+                ctx.arc(x, y, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Cybernetic head with organic horror
+            const headX = Math.sin(c * 6) * amplitude;
             const headY = -0.5 * length;
-            ctx.fillStyle = 'white';
+            const headPulse = 1 + 0.15 * Math.sin(hunterTime * 10);
+            
+            ctx.globalAlpha = holoFlicker;
+            
+            // Head shell - metallic organic hybrid
+            const headGradient = ctx.createRadialGradient(headX, headY, 0, headX, headY, a * 0.8);
+            headGradient.addColorStop(0, '#FF4444');
+            headGradient.addColorStop(0.4, baseRed);
+            headGradient.addColorStop(1, '#330000');
+            
+            ctx.fillStyle = headGradient;
+            ctx.strokeStyle = cyberRed;
+            ctx.lineWidth = 2;
+            ctx.shadowBlur = 20;
+            
             ctx.beginPath();
-            ctx.arc(headX - a*0.2, headY, a * 0.1, 0, 2*Math.PI);
+            ctx.ellipse(headX, headY, a * 0.6 * headPulse, a * 0.4 * headPulse, 0, 0, Math.PI * 2);
             ctx.fill();
+            ctx.stroke();
+            
+            // Cybernetic eye scanners (scarier)
+            const eyeGlow = 0.8 + 0.2 * Math.sin(hunterTime * 15);
+            ctx.fillStyle = '#FF0000';
+            ctx.shadowColor = '#FF0000';
+            ctx.shadowBlur = 12;
+            ctx.globalAlpha = eyeGlow;
+            
+            // Left scanner eye
             ctx.beginPath();
-            ctx.arc(headX + a*0.2, headY, a * 0.1, 0, 2*Math.PI);
+            ctx.arc(headX - a*0.2, headY - a*0.1, a * 0.12 * headPulse, 0, 2*Math.PI);
             ctx.fill();
-
-
+            
+            // Right scanner eye  
+            ctx.beginPath();
+            ctx.arc(headX + a*0.2, headY - a*0.1, a * 0.12 * headPulse, 0, 2*Math.PI);
+            ctx.fill();
+            
+            // Laser scanner lines
+            ctx.strokeStyle = '#FF0000';
+            ctx.lineWidth = 1;
+            ctx.globalAlpha = eyeGlow * 0.6;
+            ctx.beginPath();
+            ctx.moveTo(headX - a*0.2, headY - a*0.1);
+            ctx.lineTo(headX - a*0.8, headY + a*0.5);
+            ctx.moveTo(headX + a*0.2, headY - a*0.1);
+            ctx.lineTo(headX + a*0.8, headY + a*0.5);
+            ctx.stroke();
+            
+            // Mechanical mandibles
+            ctx.strokeStyle = '#888888';
+            ctx.lineWidth = 2;
+            ctx.globalAlpha = holoFlicker * 0.9;
+            const jawAngle = Math.sin(hunterTime * 6) * 0.3;
+            
+            ctx.beginPath();
+            ctx.moveTo(headX - a*0.1, headY + a*0.2);
+            ctx.lineTo(headX - a*0.4, headY + a*0.5 + jawAngle);
+            ctx.moveTo(headX + a*0.1, headY + a*0.2);
+            ctx.lineTo(headX + a*0.4, headY + a*0.5 - jawAngle);
+            ctx.stroke();
+            
+            ctx.globalAlpha = 1;
             ctx.shadowBlur = 0;
             break;
         case "phantom":
@@ -8553,10 +8707,10 @@ function tryVoidStep(player, target, now = performance.now()){
             path: {
                 name: 'RAILGUN PATH',
                 nodes: [
-                    { id: 'railgunner_super_pierce', name: 'Super Pierce', desc: 'Missiles pierce 5 enemies with +30% pierce damage', icon: 'rocket.png', tier: 1 },
-                    { id: 'railgunner_perfect_aim', name: 'Perfect Aim', desc: '+25% critical hit chance with +50% accuracy', icon: 'rocket.png', tier: 2 },
-                    { id: 'railgunner_advanced_ballistics', name: 'Advanced Ballistics', desc: 'Pierce 8 enemies with +80% velocity and homing', icon: 'rocket.png', tier: 3 },
-                    { id: 'railgunner_precision_master', name: 'Precision Master', desc: 'Pierce 12 enemies with +100% critical damage', icon: 'rocket.png', tier: 4 }
+                    { id: 'railgunner_super_pierce', name: 'Super Pierce', desc: 'Missiles pierce 5 enemies with +30% pierce damage', icon: 'one.png', tier: 1 },
+                    { id: 'railgunner_perfect_aim', name: 'Perfect Aim', desc: '+25% critical hit chance with +50% accuracy', icon: 'two.png', tier: 2 },
+                    { id: 'railgunner_advanced_ballistics', name: 'Advanced Ballistics', desc: 'Pierce 8 enemies with +80% velocity and homing', icon: 'three.png', tier: 3 },
+                    { id: 'railgunner_precision_master', name: 'Precision Master', desc: 'Pierce 12 enemies with +100% critical damage', icon: 'four.png', tier: 4 }
                 ]
             },
             classAbility: { id: 'firewall_unlock', name: 'FIREWALL', desc: 'UNLOCK: Deployable burning barrier for area control', icon: 'firewall.png', tier: 5 }
