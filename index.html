@@ -848,13 +848,38 @@
         <div>
             <div class="stage" id="stage">
                 <div id="topBar">
-                    <div id="hudPowerup" class="hud-card hide"></div>
-                    <div id="hud">
-                        <div id="hudWaveContent" class="hud-card"></div>
-                        <div id="hudPilotContent" class="hud-card"></div>
-                        <div id="hudBossContent" class="hud-card hide"></div>
+                    <div id="hudPowerup" class="hud-card hide">
+                        <div class="hud-title">◢ SYSTEMS ONLINE ◣</div>
+                        <div id="powerupList"></div>
                     </div>
-                    <div id="hudEquipment" class="hud-card hide"></div>
+                    <div id="hud">
+                        <div id="hudWaveContent" class="hud-card">
+                            <div class="hud-title">◢ VOID SKIES ◣</div>
+                            <div style="text-align:center">
+                                SECTOR <b id="waveNum">1</b> • KILLS <b id="killsNum">0</b> • LVL <b id="levelNum">1</b>
+                            </div>
+                        </div>
+                        <div id="hudPilotContent" class="hud-card">
+                            <div class="hud-title" id="pilotTitle">◢ UNIDENTIFIED ◣</div>
+                            <div style="text-align:center">
+                                SCORE <b id="scoreNum">0</b> • Gold 💰 <b id="goldNum" style="color:#FFD700;font-size:1.2em">0</b>
+                            </div>
+                            <div class="bar" id="hpBar"><span id="hpBarFill" style="width:100%"></span></div>
+                            <div style="font-size: 9px; text-align: center; line-height: 1;" id="hpText">HP: 100 / 100</div>
+                            <div class="bar" id="beefShieldBar" style="margin-top:2px;display:none"><span id="beefShieldBarFill" style="background:linear-gradient(90deg,#ff8c00,#ff4500)"></span></div>
+                            <div style="font-size: 9px; text-align: center; line-height: 1;" id="beefShieldText"></div>
+                            <div class="bar" id="shieldBar" style="margin-top:2px;display:none"><span id="shieldBarFill" style="background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div>
+                            <div style="font-size: 9px; text-align: center; line-height: 1;" id="shieldText"></div>
+                        </div>
+                        <div id="hudBossContent" class="hud-card hide">
+                            <div class="hud-title" id="bossTitle">⚡ BOSS ⚡</div>
+                            <div class="bar"><span id="bossBarFill" style="width:100%"></span></div>
+                        </div>
+                    </div>
+                    <div id="hudEquipment" class="hud-card hide">
+                        <div class="hud-title">◢ EQUIPMENT ◣</div>
+                        <div id="equipmentList"></div>
+                    </div>
                     <div id="announce" class="hide" aria-live="polite"></div>
                 </div>
                 <canvas id="game" width="960" height="540"></canvas>
@@ -965,6 +990,7 @@
                         <p style="color:#ffddff">Gold 💰 <span id="shopgold" style="color:#FFD700;font-size:1.2em">0</span></p>
                         <div id="shopGrid" class="grid"></div>
                         <div class="row" style="justify-content:center;margin-top:10px">
+                            <button id="skillTreeBtn" class="btn" type="button">SKILL TREE</button>
                             <button id="closeShop" class="btn" type="button">CLOSE</button>
                         </div>
                     </div>
@@ -1406,12 +1432,75 @@ class FlameParticle {
         empNovas: [],
         mechPuddles: [], // Hazardous puddles left by mech tank attacks
         iceman: null,
+        // Object pools for performance optimization
+        bulletPool: [],
+        eBulletPool: [],
         _startTs: performance.now(),
         cheatInvincibilityCooldown: 0,
         cheatDogHealCooldown: 0,
         heartbeatT: 0,
         cheatsUsed: false
     };
+
+    // --- OBJECT POOLING SYSTEM ---
+    function getBulletFromPool(props = {}) {
+        let bullet;
+        if (store.bulletPool.length > 0) {
+            bullet = store.bulletPool.pop();
+            // Reset all properties to default
+            Object.assign(bullet, {
+                x: 0, y: 0, vx: 0, vy: 0, r: 3, col: "#b266ff", 
+                dmg: 0, pierce: false, explosive: false, dead: false,
+                life: undefined, isSwirl: false, isFlame: false,
+                isIceman: false, isDrone: false, isLevelUpPulse: false,
+                fadeInTime: undefined, spawnTime: undefined
+            });
+        } else {
+            bullet = {
+                x: 0, y: 0, vx: 0, vy: 0, r: 3, col: "#b266ff",
+                dmg: 0, pierce: false, explosive: false, dead: false
+            };
+        }
+        
+        // Apply custom properties
+        Object.assign(bullet, props);
+        return bullet;
+    }
+    
+    function getEBulletFromPool(props = {}) {
+        let bullet;
+        if (store.eBulletPool.length > 0) {
+            bullet = store.eBulletPool.pop();
+            // Reset all properties to default
+            Object.assign(bullet, {
+                x: 0, y: 0, vx: 0, vy: 0, r: 4, col: "#FF0000",
+                dmg: 0, dead: false, life: undefined,
+                fadeInTime: undefined, spawnTime: undefined,
+                bounceCount: 0, maxBounces: 0, type: undefined
+            });
+        } else {
+            bullet = {
+                x: 0, y: 0, vx: 0, vy: 0, r: 4, col: "#FF0000",
+                dmg: 0, dead: false
+            };
+        }
+        
+        // Apply custom properties
+        Object.assign(bullet, props);
+        return bullet;
+    }
+    
+    function returnBulletToPool(bullet) {
+        if (store.bulletPool.length < 1000) { // Cap pool size
+            store.bulletPool.push(bullet);
+        }
+    }
+    
+    function returnEBulletToPool(bullet) {
+        if (store.eBulletPool.length < 1000) { // Cap pool size
+            store.eBulletPool.push(bullet);
+        }
+    }
 
     const LEVEL_UPGRADES = [
         { id: 'dmg', name: 'PLASMA CORE', icon: '💥', desc: '+6% damage', apply: () => { store.player.dmgMult *= 1.06; } },
@@ -2864,8 +2953,17 @@ class FlameParticle {
             if (e.fireT > 0) e.fireT -= dt;
             if (e.fireT <= 0 && e.y > 0 && Math.random() < e.fireRateChance) {
                 switch (e.type) {
-                    case 'hunter': { const a=Math.atan2(store.player.y-e.y,store.player.x-e.x); store.eBullets.push({x:e.x,y:e.y,vx:Math.cos(a)*180,vy:Math.sin(a)*180,r:3,col:e.color,dmg:6*dmgScale}); e.fireT=1; break; }
-                    case 'phantom': { store.eBullets.push({x:e.x,y:e.y,vx:0,vy:180,r:3,col:e.color,dmg:5*dmgScale}); e.fireT=e.fireCooldown; break; }
+                    case 'hunter': { 
+                        const a=Math.atan2(store.player.y-e.y,store.player.x-e.x); 
+                        const bullet = getEBulletFromPool({x:e.x,y:e.y,vx:Math.cos(a)*180,vy:Math.sin(a)*180,r:3,col:e.color,dmg:6*dmgScale});
+                        store.eBullets.push(bullet); 
+                        e.fireT=1; break; 
+                    }
+                    case 'phantom': { 
+                        const bullet = getEBulletFromPool({x:e.x,y:e.y,vx:0,vy:180,r:3,col:e.color,dmg:5*dmgScale});
+                        store.eBullets.push(bullet); 
+                        e.fireT=e.fireCooldown; break; 
+                    }
                     case 'mech': {
                         e.attackPhase = (e.attackPhase || 0) + 1;
                         // Changed from 50/50 to 85% lob attacks, 15% shoulder cannons for more frequent lobs
@@ -3136,7 +3234,18 @@ class FlameParticle {
             store.world.isLowHealth = false;
         }
 
-        ['bullets', 'eBullets', 'enemies', 'powerups', 'mines', 'missiles', 'lasers', 'flameParticles', 'lightningBolts', 'empNovas'].forEach(key => store[key] = store[key].filter(i => !i.dead));
+        // Optimized cleanup with object pooling
+        const deadBullets = store.bullets.filter(b => b.dead);
+        const deadEBullets = store.eBullets.filter(b => b.dead);
+        
+        // Return dead bullets to pools
+        deadBullets.forEach(returnBulletToPool);
+        deadEBullets.forEach(returnEBulletToPool);
+        
+        // Filter out dead objects
+        store.bullets = store.bullets.filter(i => !i.dead);
+        store.eBullets = store.eBullets.filter(i => !i.dead);
+        ['enemies', 'powerups', 'mines', 'missiles', 'lasers', 'flameParticles', 'lightningBolts', 'empNovas'].forEach(key => store[key] = store[key].filter(i => !i.dead));
         store.activeEffects = store.activeEffects.filter(e => e.isActive !== false);
 
         if (!store.boss && store.enemies.length === 0) {
@@ -3276,8 +3385,8 @@ class FlameParticle {
             // 2nd boss defeated - show subclass selection
             console.log(`2nd boss defeated - showing subclass selection for ${store.player.pilotGenome}`);
             setTimeout(showSubclassSelect, 1500);
-        } else if (bossCount >= 3 && store.player.pilotGenome && store.player.pilotGenome !== 'pending' && store.player.subclass) {
-            // 3rd+ boss defeated - show skill tree for selected subclass
+        } else if (bossCount >= 3 && store.player.pilotGenome && store.player.pilotGenome !== 'pending') {
+            // 3rd+ boss defeated - show skill tree (subclass will be defaulted if not selected)
             
             // Don't award points or show tree if already fully capped OR if 5 skill points have been spent
             const skillPointsSpent = store.player.skillPointsSpent || 0;
@@ -3293,7 +3402,7 @@ class FlameParticle {
                 }
                 store.player.skillTreeProgress.bossesDefeated = bossCount;
                 store.player.skillPoints = (store.player.skillPoints || 0) + 1;
-                console.log(`${bossCount}${bossCount === 3 ? 'rd' : bossCount === 4 ? 'th' : 'th'} boss defeated - showing skill tree for ${store.player.subclass} with`, store.player.skillPoints, 'points');
+                console.log(`${bossCount}${bossCount === 3 ? 'rd' : bossCount === 4 ? 'th' : 'th'} boss defeated - showing skill tree for ${store.player.pilotGenome} with`, store.player.skillPoints, 'points');
                 setTimeout(showSkillTreeModal, 1500);
             }
         }
@@ -3577,6 +3686,45 @@ class FlameParticle {
     const starsA = Array.from({ length: starCountA }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5, pulse: Math.random() * 10 }));
     const starsB = Array.from({ length: starCountB }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 2, pulse: Math.random() * 10 }));
 
+    // Optimized background star rendering
+    function renderBackgroundStars(dt) {
+        // Batch star operations to reduce context state changes
+        ctx.globalAlpha = 0.8;
+        
+        // Render starsA in a single pass
+        for (let i = 0; i < starsA.length; i++) {
+            const s = starsA[i];
+            s.y += 30 * dt; 
+            if (s.y > H) s.y -= H;
+            
+            const alpha = 0.5 + 0.5 * Math.sin(frameTime * 2 + s.pulse);
+            ctx.fillStyle = `rgba(255,0,255,${alpha})`;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, s.r, 0, 6.283185307179586); // Use constant instead of Math.PI * 2
+            ctx.fill();
+        }
+        
+        ctx.globalAlpha = 0.6;
+        
+        // Render starsB in a single pass
+        for (let i = 0; i < starsB.length; i++) {
+            const s = starsB[i];
+            s.y += 60 * dt; 
+            if (s.y > H) s.y -= H;
+            
+            const pulse = Math.sin(frameTime * 1.5 + s.pulse);
+            const alpha = 0.4 + 0.6 * pulse;
+            const radius = Math.max(0.1, s.r * (0.4 + 0.6 * pulse));
+            
+            ctx.fillStyle = `rgba(204,0,255,${alpha})`;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, radius, 0, 6.283185307179586);
+            ctx.fill();
+        }
+        
+        ctx.globalAlpha = 1;
+    }
+
 // Cache for gradient objects to avoid recreation
 let poisonGradientCache = new Map();
 let mechGradientCache = new Map();
@@ -3595,33 +3743,15 @@ function render(dt) {
     frameCount++;
     clearGradientCaches();
     
-    ctx.fillStyle = '#050008'; ctx.fillRect(0, 0, W, H);
-    // Cache time calculation once per frame instead of multiple calls
+    // Performance optimization: Use faster fill method and cache time calculation
+    ctx.fillStyle = '#050008'; 
+    ctx.fillRect(0, 0, W, H);
     frameTime = performance.now() / 1000;
     
-    // Optimize star rendering by reducing trigonometric calculations
-    ctx.globalAlpha = 0.8; 
-    for (const s of starsA) { 
-        s.y += 30 * dt; 
-        if (s.y > H) s.y -= H; 
-        const alpha = 0.5 + 0.5 * Math.sin(frameTime * 2 + s.pulse);
-        ctx.fillStyle = `rgba(255,0,255,${alpha})`; 
-        ctx.beginPath(); 
-        ctx.arc(s.x, s.y, s.r, 0, 2 * Math.PI); 
-        ctx.fill(); 
-    }
-    ctx.globalAlpha = 0.6; 
-    for (const s of starsB) { 
-        s.y += 60 * dt; 
-        if (s.y > H) s.y -= H; 
-        const pulse = Math.sin(frameTime * 1.5 + s.pulse);
-        const alpha = 0.4 + 0.6 * pulse;
-        ctx.fillStyle = `rgba(204,0,255,${alpha})`;
-        ctx.beginPath(); 
-        ctx.arc(s.x, s.y, Math.max(0.1, s.r * (0.4 + 0.6 * pulse)), 0, 2 * Math.PI); 
-        ctx.fill(); 
-    }
-    ctx.globalAlpha = 1;
+    // Render background stars with optimized drawing
+    renderBackgroundStars(dt);
+    
+
 
     const closeBullets = [];
     const farBullets = [];
@@ -3643,7 +3773,10 @@ function render(dt) {
     store.empNovas.forEach(n => drawEmpNova(n));
 
 
-    farBullets.forEach(b => {
+    // Optimized far bullets rendering with batched operations
+    for (let i = 0; i < farBullets.length; i++) {
+        const b = farBullets[i];
+        
         // Apply visual fade-in for Death Engine bullet rain
         let alpha = 1.0;
         if (b.fadeInTime && b.spawnTime) {
@@ -3651,14 +3784,20 @@ function render(dt) {
             alpha = Math.min(1.0, timeAlive / b.fadeInTime);
         }
         
-        ctx.save();
-        ctx.globalAlpha = alpha;
+        if (alpha < 1.0) {
+            ctx.save();
+            ctx.globalAlpha = alpha;
+        }
+        
         ctx.fillStyle = b.col;
         ctx.beginPath();
-        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+        ctx.arc(b.x, b.y, b.r, 0, 6.283185307179586); // Use constant
         ctx.fill();
-        ctx.restore();
-    });
+        
+        if (alpha < 1.0) {
+            ctx.restore();
+        }
+    }
     
     store.bullets.forEach(b => {
         ctx.save();
@@ -4145,44 +4284,99 @@ function render(dt) {
     
     function escapeHtml(s) { s = String(s ?? ''); return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
     function announce(text) { const el = q('announce'); el.textContent = text; el.classList.remove('hide'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('hide'), 2500); }
-    function updateHUD() { const t = store.player, e = Math.round(t.hp / t.hpMax * 100), o = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0; const healthText = `HP: ${Math.round(t.hp)} / ${t.hpMax}`; const shieldText = t.shieldMax > 0 ? `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}` : ""; const beefShieldPercent = t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? Math.round(t.beefShield / t.beefShieldMax * 100) : 0; const beefShieldText = t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? `BEEF SHIELD: ${Math.round(t.beefShield)} / ${t.beefShieldMax}` : ""; 
-    
-    // ◢◣ ENTROPY REDUCTION ENGINE HUD DISPLAY - MULTI-PILOT ◣◢ [DISABLED FOR STABILITY]
-    /*
-    let entropyPercent = 0;
-    let entropyText = "";
-    
-    if (ENTROPY_ENGINE.active) {
-        // Ensure stellarFusionRate is valid
-        const fusionRate = isNaN(ENTROPY_ENGINE.stellarFusionRate) ? 1.0 : ENTROPY_ENGINE.stellarFusionRate;
+    function updateHUD() { 
+        const t = store.player;
+        const hpPercent = Math.round(t.hp / t.hpMax * 100);
+        const shieldPercent = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0;
+        const beefShieldPercent = t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? Math.round(t.beefShield / t.beefShieldMax * 100) : 0;
         
-        if (t.pilotGenome === 'voidmancer') {
-            // Void pilot - quantum entropy
-            const quantumValue = Math.abs(ENTROPY_ENGINE.quantumEntropy || 0);
-            entropyPercent = Math.min(100, Math.max(1, quantumValue * 1e20));
-            const displayValue = (quantumValue * 1e18);
-            entropyText = `QUANTUM: -${isNaN(displayValue) ? '0.00' : displayValue.toFixed(2)} J/K • FUSION: ${fusionRate.toFixed(1)}x`;
-        } else if (t.pilotGenome === 'beef') {
-            // Beef pilot - kinetic entropy
-            const kineticValue = Math.abs(ENTROPY_ENGINE.kineticEntropy || 0);
-            entropyPercent = Math.min(100, Math.max(1, kineticValue * 1e18));
-            const displayValue = (kineticValue * 1e16);
-            entropyText = `KINETIC: -${isNaN(displayValue) ? '0.00' : displayValue.toFixed(2)} J/K • FUSION: ${fusionRate.toFixed(1)}x`;
-        } else if (t.pilotGenome === 'rocketman') {
-            // Rocketman pilot - explosive entropy
-            const explosiveValue = Math.abs(ENTROPY_ENGINE.explosiveEntropy || 0);
-            entropyPercent = Math.min(100, Math.max(1, explosiveValue * 1e19));
-            const displayValue = (explosiveValue * 1e17);
-            entropyText = `EXPLOSIVE: -${isNaN(displayValue) ? '0.00' : displayValue.toFixed(2)} J/K • FUSION: ${fusionRate.toFixed(1)}x`;
+        // Update pilot info with textContent (no DOM parsing)
+        q("pilotTitle").textContent = store.name ? `◢ ${store.name} ◣` : "◢ UNIDENTIFIED ◣";
+        q("scoreNum").textContent = store.world.score;
+        q("goldNum").textContent = store.world.gold;
+        
+        // Update health bar and text
+        q("hpBarFill").style.width = hpPercent + "%";
+        q("hpText").textContent = `HP: ${Math.round(t.hp)} / ${t.hpMax}`;
+        
+        // Handle beef shield
+        const beefShieldBar = q("beefShieldBar");
+        const beefShieldText = q("beefShieldText");
+        if (t.pilotGenome === 'beef' && t.beefShieldMax > 0) {
+            beefShieldBar.style.display = "block";
+            q("beefShieldBarFill").style.width = beefShieldPercent + "%";
+            beefShieldText.textContent = `BEEF SHIELD: ${Math.round(t.beefShield)} / ${t.beefShieldMax}`;
+        } else {
+            beefShieldBar.style.display = "none";
+            beefShieldText.textContent = "";
         }
-    }
-    */
-    
-    // Disable entropy display for stability
-    let entropyPercent = 0;
-    let entropyText = "";
-    
-    q("hudPilotContent").innerHTML = `<div class="hud-title">${store.name ? `◢ ${escapeHtml(store.name)} ◣` : "◢ UNIDENTIFIED ◣"}</div><div style="text-align:center">SCORE <b>${store.world.score}</b> • Gold 💰 <b style="color:#FFD700;font-size:1.2em">${store.world.gold}</b></div><div class="bar"><span style="width:${e}%"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${healthText}</div>${t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${beefShieldPercent}%;background:linear-gradient(90deg,#ff8c00,#ff4500)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${beefShieldText}</div>` : ""}${t.shieldMax > 0 ? `<div class="bar" style="margin-top:2px;"><span style="width:${o}%;background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div><div style="font-size: 9px; text-align: center; line-height: 1;">${shieldText}</div>` : ""}`; q("hudWaveContent").innerHTML = `<div class="hud-title">◢ VOID SKIES ◣</div><div style="text-align:center">SECTOR <b>${store.world.wave}</b> • KILLS <b>${store.world.kills}</b> • LVL <b>${store.world.level}</b></div>`; if (store.boss) { q("hudBossContent").classList.remove("hide"); q("hudBossContent").innerHTML = `<div class="hud-title">⚡ ${store.boss.name} ⚡</div><div class="bar"><span style="width:${Math.round(store.boss.hp / store.boss.hpMax * 100)}%"></span></div>`; } else { q("hudBossContent").classList.add("hide"); } const powerupEl = q("hudPowerup"); const timedPowerups = Object.keys(store.player.powerupTimers); let timedContent = ''; if (timedPowerups.length > 0) { timedPowerups.forEach(key => { const timer = store.player.powerupTimers[key]; const percent = Math.min(100, (timer.remaining / timer.max) * 100); timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`; }); } powerupEl.innerHTML = `<div class="hud-title">◢ SYSTEMS ONLINE ◣</div>${timedContent}`; powerupEl.classList.toggle('hide', !timedContent); const equipEl = q("hudEquipment"); let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0; if (hasEquipment) { equipEl.classList.remove('hide'); let content = `<div class="hud-title">◢ EQUIPMENT ◣</div>`; if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`; if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`; if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`; equipEl.innerHTML = content; } else { equipEl.classList.add('hide'); } const grenadeBtn = q('grenadeBtnUI'); if (store.player.grenades > 0) { grenadeBtn.classList.remove('hide'); grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`; grenadeBtn.disabled = false; } else { grenadeBtn.classList.add('hide'); } 
+        
+        // Handle regular shield
+        const shieldBar = q("shieldBar");
+        const shieldTextEl = q("shieldText");
+        if (t.shieldMax > 0) {
+            shieldBar.style.display = "block";
+            q("shieldBarFill").style.width = shieldPercent + "%";
+            shieldTextEl.textContent = `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}`;
+        } else {
+            shieldBar.style.display = "none";
+            shieldTextEl.textContent = "";
+        }
+        
+        // Update wave info
+        q("waveNum").textContent = store.world.wave;
+        q("killsNum").textContent = store.world.kills;
+        q("levelNum").textContent = store.world.level;
+        
+        // Update boss info
+        const bossContent = q("hudBossContent");
+        if (store.boss) {
+            bossContent.classList.remove("hide");
+            q("bossTitle").textContent = `⚡ ${store.boss.name} ⚡`;
+            q("bossBarFill").style.width = Math.round(store.boss.hp / store.boss.hpMax * 100) + "%";
+        } else {
+            bossContent.classList.add("hide");
+        }
+        
+        // Update powerups (still needs some innerHTML for dynamic content)
+        const powerupEl = q("hudPowerup");
+        const timedPowerups = Object.keys(store.player.powerupTimers);
+        if (timedPowerups.length > 0) {
+            let timedContent = '';
+            timedPowerups.forEach(key => {
+                const timer = store.player.powerupTimers[key];
+                const percent = Math.min(100, (timer.remaining / timer.max) * 100);
+                timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`;
+            });
+            q("powerupList").innerHTML = timedContent;
+            powerupEl.classList.remove('hide');
+        } else {
+            powerupEl.classList.add('hide');
+        }
+        
+        // Update equipment (still needs some innerHTML for dynamic content)
+        const equipEl = q("hudEquipment");
+        let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0;
+        if (hasEquipment) {
+            let content = '';
+            if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`;
+            if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`;
+            if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`;
+            q("equipmentList").innerHTML = content;
+            equipEl.classList.remove('hide');
+        } else {
+            equipEl.classList.add('hide');
+        }
+        
+        // Update grenade button
+        const grenadeBtn = q('grenadeBtnUI');
+        if (store.player.grenades > 0) {
+            grenadeBtn.classList.remove('hide');
+            grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`;
+            grenadeBtn.disabled = false;
+        } else {
+            grenadeBtn.classList.add('hide');
+        } 
         
         // Update FPS counter
         if (!store.fpsLastTime) {
@@ -4300,7 +4494,19 @@ function render(dt) {
             console.warn("Score submission failed, game continues offline:", err.message); 
         } 
     }
-    function fireBullet(x, y, vx, vy, props = {}) { const p = store.player; store.bullets.push({ x, y, vx, vy, r: p.explosive ? 5 : 3, col: p.explosive ? "#ED2F32" : "#b266ff", dmg: 15 * p.dmgMult, pierce: p.piercing, explosive: p.explosive, ...props }); }
+    function fireBullet(x, y, vx, vy, props = {}) { 
+        const p = store.player; 
+        const bullet = getBulletFromPool({
+            x, y, vx, vy, 
+            r: p.explosive ? 5 : 3, 
+            col: p.explosive ? "#ED2F32" : "#b266ff", 
+            dmg: 15 * p.dmgMult, 
+            pierce: p.piercing, 
+            explosive: p.explosive, 
+            ...props
+        });
+        store.bullets.push(bullet);
+    }
     function firePlayer() {
         const p = store.player;
         if (p.beefChargeState && p.beefChargeState !== 'ready') return;
@@ -4308,7 +4514,21 @@ function render(dt) {
         const bulletSpeed = baseBulletSpeed * (p.temporalSpeedBoost || 1); // Chrono Blast speed boost
         const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0);
         const angleSpread = 10;
-        for (let i = 0; i < totalMultishot; i++) { const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: p.x + 10 * Math.sin(angle), y: p.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: p.explosive ? "#cc99ff" : "#b266ff", dmg: 15 * p.dmgMult, pierce: p.piercing, explosive: p.explosive }); }
+        for (let i = 0; i < totalMultishot; i++) { 
+            const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180; 
+            const bullet = getBulletFromPool({
+                x: p.x + 10 * Math.sin(angle), 
+                y: p.y - 12, 
+                vx: Math.sin(angle) * bulletSpeed, 
+                vy: -Math.cos(angle) * bulletSpeed, 
+                r: p.explosive ? 5 : 3, 
+                col: p.explosive ? "#cc99ff" : "#b266ff", 
+                dmg: 15 * p.dmgMult, 
+                pierce: p.piercing, 
+                explosive: p.explosive
+            });
+            store.bullets.push(bullet);
+        }
         if (p.hasIceman && store.iceman) { for (let i = 0; i < totalMultishot; i++) { const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: store.iceman.x + 10 * Math.sin(angle), y: store.iceman.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: "#66aaff", dmg: 15 * p.dmgMult * 0.35, pierce: p.piercing, explosive: p.explosive, isIceman: true }); } }
         if (p.rearMultishot > 0) { const rearAngleSpread = 15; for (let i = 0; i < p.rearMultishot; i++) { const angle = (i - (p.rearMultishot - 1) / 2) * rearAngleSpread; const radAngle = angle * Math.PI / 180; store.bullets.push({ x: p.x + 10 * Math.sin(radAngle), y: p.y + 12, vx: Math.sin(radAngle) * bulletSpeed, vy: Math.cos(radAngle) * bulletSpeed, r: 3, col: "#ffddff", dmg: 11.25 * p.dmgMult, pierce: p.piercing > 0 ? p.piercing - 1 : 0 }); } }
         store.drones.forEach(drone => store.bullets.push({ x: p.x + drone.offset, y: p.y + 20, vx: 0, vy: -bulletSpeed, r: 3, col: "#66aaff", dmg: 15 * p.dmgMult * 0.4, isDrone: true }));
@@ -7134,23 +7354,9 @@ function render(dt) {
             })
         });
 
-        /* Commented out - old skill tree button logic (button removed)
         // Update skill tree button state
         const skillTreeBtn = q('skillTreeBtn');
-        const bossCount = (store.world.bosses || 0) + 1;
-        const hasSkillTreeAccess = store.player.pilotGenome && store.player.pilotGenome !== 'pending';
-        const hasSkillPoints = (store.player.skillPoints || 0) > 0;
-        const isTreeCapped = isSkillTreeFullyCapped();
-        const skillPointsSpent = store.player.skillPointsSpent || 0;
-        const reachedMaxPoints = skillPointsSpent >= 4;
-        
-        // Enable if: 2nd boss defeated AND (beef, rocketman, or voidmancer pilot) AND (has skill points OR not reached 4 points spent)
-        const shouldEnable = bossCount >= 2 && hasSkillTreeAccess && (hasSkillPoints || !reachedMaxPoints);
-        
-        if (shouldEnable) {
-            skillTreeBtn.disabled = false;
-            skillTreeBtn.style.opacity = '1';
-            skillTreeBtn.style.pointerEvents = 'auto';
+        if (skillTreeBtn) {
             skillTreeBtn.onclick = () => {
                 const subclassPanel = q('subclassPanel');
                 // Check if skill tree is already open
@@ -7160,17 +7366,12 @@ function render(dt) {
                     subclassPanel.classList.remove('skill-tree-active');
                     resumeGame();
                 } else {
-                    // Open the skill tree
+                    // Open the progressive skill tree system
                     q('shopPanel').classList.add('hide');
-                    showSkillTreeModal();
+                    showProgressiveSkillTree();
                 }
             };
-        } else {
-            skillTreeBtn.disabled = true;
-            skillTreeBtn.style.opacity = '0.5';
-            skillTreeBtn.style.pointerEvents = 'none';
         }
-        */
 
         // Initialize matrix
         const matrixContainer = panel.querySelector('.matrix-container');
@@ -8890,10 +9091,28 @@ function tryVoidStep(player, target, now = performance.now()){
         panel.classList.remove('hide');
     }
 
-    function showSkillTreeModal() {
-        // Check if player has selected a subclass first
+    function showProgressiveSkillTree() {
+        // Progressive skill tree access based on player state
+        if (!store.player.pilotGenome || store.player.pilotGenome === 'pending') {
+            // Show class selection
+            showPilotSelect();
+            return;
+        }
+        
         if (!store.player.subclass) {
-            console.log('No subclass selected - cannot view skill tree');
+            // Show subclass selection
+            showSubclassSelect();
+            return;
+        }
+        
+        // Show actual skill tree
+        showSkillTreeModal();
+    }
+
+    function showSkillTreeModal() {
+        // Check if player has selected a pilot genome first
+        if (!store.player.pilotGenome || store.player.pilotGenome === 'pending') {
+            console.log('No pilot genome selected - cannot view skill tree');
             return;
         }
 
@@ -9035,15 +9254,27 @@ function tryVoidStep(player, target, now = performance.now()){
 
     function generateDynamicSkillTree() {
         const skillTreeElement = q('skillTree');
-        const subclass = store.player.subclass;
+        const genome = store.player.pilotGenome;
         
-        // Debug: Check subclass and genome alignment
+        // Map pilot genome to default subclass for skill tree display
+        let subclass = store.player.subclass;
+        if (!subclass) {
+            // Default subclass based on genome if none selected
+            switch (genome) {
+                case 'rocketman': subclass = 'railgunner'; break;
+                case 'beef': subclass = 'marauder'; break;
+                case 'voidmancer': subclass = 'phasestriker'; break;
+                default: 
+                    console.error('Unknown pilot genome:', genome);
+                    return;
+            }
+        }
         
         // Get the skill tree data for the current subclass
         const treeData = SKILL_TREE_DATA[subclass];
         if (!treeData) {
             console.error('No skill tree data found for subclass:', subclass);
-            // Available subclasses in SKILL_TREE_DATA
+            console.log('Available subclasses:', Object.keys(SKILL_TREE_DATA));
             return;
         }
         
@@ -9215,7 +9446,19 @@ function tryVoidStep(player, target, now = performance.now()){
     
     function initializeSkillTree() {
         const p = store.player;
-        const subclass = p.subclass;
+        let subclass = p.subclass;
+        
+        // Default subclass based on genome if none selected
+        if (!subclass) {
+            switch (p.pilotGenome) {
+                case 'rocketman': subclass = 'railgunner'; break;
+                case 'beef': subclass = 'marauder'; break;
+                case 'voidmancer': subclass = 'phasestriker'; break;
+                default: 
+                    console.error('Unknown pilot genome:', p.pilotGenome);
+                    return;
+            }
+        }
         
         // Initialize skill tree properties if needed
         if (!p.skillTree) {
