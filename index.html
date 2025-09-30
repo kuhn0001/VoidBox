@@ -1813,7 +1813,7 @@ class FlameParticle {
         const collarBonus = 1 + (store.world.collarStacks * 0.08); // 8% increase per collar stack
         hp *= collarBonus;
         
-        const boss = { ...type, x: W / 2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, patternPhase: 0, isEnraged: false, attackPhase: 0, phaseTimer: 0 };
+    const boss = { ...type, x: W / 2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, patternPhase: 0, isEnraged: false, attackPhase: 0, phaseTimer: 0, dashTimer: 0 };
         
         // console.log(`🏆 Boss Created: ${boss.name} | Wave: ${store.world.wave} | HP: ${hp} | Scale: ${scale} | CollarStacks: ${store.world.collarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x`);
         
@@ -4640,10 +4640,23 @@ function render(dt) {
     }
     function stepBossCoreMalignus(dt, b, dmgScale) { if (b.hp / b.hpMax <= 0.07 && !b.isEnraged) { b.isEnraged = true; playSound('horn'); } if (b.y >= 100) { b.moveT += dt; b.x = W / 2 + (W / 2 - 100) * Math.sin(b.moveT * 0.5); } b.fireT -= dt; if (b.fireT <= 0) { b.fireT = b.isEnraged ? 0.6 : 0.8; const n = 12, g = 3, s = Math.floor(Math.random() * (n - g)); for (let i = 0; i < n; i++) { if (i >= s && i < s + g) continue; const p = (W / (n + 1)) * (i + 1); store.eBullets.push({ x: p, y: b.y, vx: 0, vy: 180, r: 6, col: b.color, dmg: 20 * dmgScale }); } } }
     function stepBossTheHex(dt, b, dmgScale) { 
-        if (b.y >= 100) { 
-            b.moveT += dt; 
-            b.x = W * 0.2 + (W * 0.6) * Math.abs(Math.sin(b.moveT * 0.4)); 
-        } 
+        if (b.y >= 100) {
+            b.moveT += dt;
+            if (b.dashTimer && b.dashTimer > 0) {
+                b.dashTimer -= dt;
+                b.x += b.vx * dt;
+                b.x = clamp(b.x, b.r, W - b.r);
+                if (b.dashTimer <= 0) {
+                    b.dashTimer = 0;
+                    b.vx = 0;
+                }
+            } else {
+                const desiredX = W * 0.2 + (W * 0.6) * Math.abs(Math.sin(b.moveT * 0.4));
+                const followSpeed = 6;
+                b.x += (desiredX - b.x) * Math.min(1, followSpeed * dt);
+            }
+        }
+
         b.fireT -= dt; 
         if (b.hp / b.hpMax < 0.5 && !b.isEnraged) { 
             b.isEnraged = true; 
@@ -4713,15 +4726,13 @@ function render(dt) {
                     const targetX = store.player.x; 
                     const dx = targetX - b.x; 
                     const dashSpeed = 800; 
-                    b.vx = Math.sign(dx) * dashSpeed; 
-                    setTimeout(() => { 
-                        b.vx = 0; 
-                    }, 500); 
+                    const direction = dx === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(dx);
+                    b.vx = direction * dashSpeed; 
+                    b.dashTimer = 0.5; 
                     break; 
             } 
         } 
-        if(b.vx) { 
-            b.x += b.vx * dt; 
+        if (b.dashTimer && b.dashTimer > 0) { 
             store.eBullets.push({ 
                 x: b.x, 
                 y: b.y, 
