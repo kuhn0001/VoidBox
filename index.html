@@ -100,7 +100,7 @@
             font-size: 12px;
             color: #fff;
         }
-        #diagBox{position:absolute;left:8px;top:8px;display:grid;gap:4px;pointer-events:none}
+    #diagBox{position:absolute;left:8px;top:8px;display:grid;gap:4px;pointer-events:none}
         .chip{pointer-events:auto;background:rgba(0,0,0,.7);border:1px solid var(--edge);padding:4px 8px;border-radius:8px;font-size:10px;letter-spacing:.3px;font-family:'Orbitron','Audiowide',ui-sans-serif;text-align:left;color:#c49cff}
         .btn{background:#330044;color:#ffddff;border:1px solid var(--accent);border-radius:12px;padding:var(--btn-pad-y) var(--btn-pad-x);font-size:var(--btn-text);cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none;transition:all .2s; font-family: 'Orbitron', 'Audiowide', ui-sans-serif;}
         .btn:hover{background:#4c0e72;box-shadow:0 0 15px rgba(178,102,255,.5)}
@@ -2096,7 +2096,15 @@ class FlameParticle {
             } else {
                 // Mouse Movement (Original Logic)
                 const vx = mouse.x - p.x, vy = mouse.y - p.y;
-                p.x += (vx * p.speed * dt * 0.005); p.y += (vy * p.speed * dt * 0.005);
+                const dist = Math.sqrt(vx * vx + vy * vy);
+                if (dist < 15) {
+                    p.x = mouse.x;
+                    p.y = mouse.y;
+                } else {
+                    const accelFactor = 0.0125;
+                    p.x += vx * p.speed * dt * accelFactor;
+                    p.y += vy * p.speed * dt * accelFactor;
+                }
                 p.x = clamp(p.x, 20, W - 20); p.y = clamp(p.y, 20, H - 20);
             }
         }
@@ -5573,11 +5581,75 @@ function render(dt) {
             store.poisonPuddles = [];
         }
         
-        // Broodlord movement - slower, more menacing
+        // Broodlord skittering movement
         b.moveT += dt;
-        if (b.y >= 100) {
-            b.x = W/2 + (W/2 - 150) * Math.sin(b.moveT * 0.4);
-            b.y = 120 + Math.sin(b.moveT * 0.8) * 15;
+        if (!b.spiderInit) {
+            b.spiderInit = true;
+            b.spiderVX = (Math.random() < 0.5 ? -1 : 1) * (120 + Math.random() * 40);
+            b.spiderVY = 90 + Math.random() * 50;
+            b.webRetargetT = 1.4;
+            b.poisonTrailT = 1.2;
+        }
+
+        const speedScale = 1 + Math.min(0.75, Math.max(0, store.world.wave - 10) * 0.02);
+        b.x += b.spiderVX * speedScale * dt;
+        b.y += b.spiderVY * speedScale * dt;
+
+        const minX = 90;
+        const maxX = W - 90;
+        const minY = 90;
+        const maxY = Math.min(H - 170, H * 0.78);
+
+        if (b.x <= minX && b.spiderVX < 0) {
+            b.x = minX;
+            b.spiderVX = Math.abs(b.spiderVX) * (0.9 + Math.random() * 0.25);
+            b.spiderVY += (Math.random() - 0.5) * 140;
+        } else if (b.x >= maxX && b.spiderVX > 0) {
+            b.x = maxX;
+            b.spiderVX = -Math.abs(b.spiderVX) * (0.9 + Math.random() * 0.25);
+            b.spiderVY += (Math.random() - 0.5) * 140;
+        }
+
+        if (b.y <= minY && b.spiderVY < 0) {
+            b.y = minY;
+            b.spiderVY = Math.abs(b.spiderVY) * (0.9 + Math.random() * 0.25);
+            b.spiderVX += (Math.random() - 0.5) * 110;
+        } else if (b.y >= maxY && b.spiderVY > 0) {
+            b.y = maxY;
+            b.spiderVY = -Math.abs(b.spiderVY) * (0.9 + Math.random() * 0.25);
+            b.spiderVX += (Math.random() - 0.5) * 110;
+        }
+
+        b.spiderVX = clamp(b.spiderVX, -260, 260);
+        b.spiderVY = clamp(b.spiderVY, -240, 240);
+
+        b.webRetargetT -= dt;
+        if (b.webRetargetT <= 0) {
+            const player = store.player;
+            const dx = player.x - b.x;
+            const dy = (player.y - 40) - b.y;
+            const dist = Math.max(120, Math.hypot(dx, dy));
+            const chaseStrengthX = 180 + Math.random() * 60;
+            const chaseStrengthY = 170 + Math.random() * 60;
+            b.spiderVX = clamp(b.spiderVX * 0.5 + (dx / dist) * chaseStrengthX, -260, 260);
+            b.spiderVY = clamp(b.spiderVY * 0.5 + (dy / dist) * chaseStrengthY, -240, 240);
+            b.webRetargetT = 1.3 + Math.random() * 0.9;
+        }
+
+        b.poisonTrailT -= dt;
+        if (b.poisonTrailT <= 0) {
+            const puddleX = clamp(b.x + (Math.random() - 0.5) * 120, 40, W - 40);
+            const puddleY = clamp(b.y + Math.random() * 120, 80, H - 80);
+            store.poisonPuddles.push({
+                x: puddleX,
+                y: puddleY,
+                r: 18 + Math.random() * 12,
+                life: 8 + Math.random() * 6,
+                damage: 10 * dmgScale,
+                created: performance.now()
+            });
+            const trailReset = 2.4 - Math.min(1.4, store.world.wave * 0.035);
+            b.poisonTrailT = Math.max(0.9, trailReset);
         }
         
         // Attack phases
@@ -5631,25 +5703,29 @@ function render(dt) {
                     break;
                     
                 case 3:
-                    // Toxic ground slam - creates multiple puddles
-                    b.fireT = 3.0;
+                    // Toxic ground slam - saturate arena with dangerous puddles
+                    b.fireT = 2.6;
+                    const playerPos = store.player;
+                    const webSpots = [
+                        { x: clamp(playerPos.x, 80, W - 80), y: clamp(playerPos.y + 40, 120, H - 90) },
+                        { x: clamp(playerPos.x + 180, 80, W - 80), y: clamp(playerPos.y - 20, 120, H - 90) },
+                        { x: clamp(playerPos.x - 180, 80, W - 80), y: clamp(playerPos.y + 80, 120, H - 90) },
+                        { x: W * 0.25 + (Math.random() - 0.5) * 120, y: H * 0.35 + Math.random() * H * 0.35 },
+                        { x: W * 0.75 + (Math.random() - 0.5) * 120, y: H * 0.35 + Math.random() * H * 0.35 },
+                        { x: W * 0.5 + (Math.random() - 0.5) * 220, y: H * 0.55 + (Math.random() - 0.5) * 140 }
+                    ];
                     for (let i = 0; i < 6; i++) {
-                        const angle = Math.random() * Math.PI * 2;
-                        const distance = 60 + Math.random() * 100;
-                        const puddleX = b.x + Math.cos(angle) * distance;
-                        const puddleY = b.y + Math.sin(angle) * distance;
-                        
-                        // Create poison puddle directly
-                        if (puddleX > 20 && puddleX < W - 20 && puddleY > 20 && puddleY < H - 20) {
-                            store.poisonPuddles.push({
-                                x: puddleX,
-                                y: puddleY,
-                                r: 25 + Math.random() * 15,
-                                life: 15 + Math.random() * 10,
-                                damage: 15 * dmgScale,
-                                created: performance.now()
-                            });
-                        }
+                        const node = webSpots[i % webSpots.length];
+                        const puddleX = clamp(node.x + (Math.random() - 0.5) * 70, 40, W - 40);
+                        const puddleY = clamp(node.y + (Math.random() - 0.5) * 70, 80, H - 70);
+                        store.poisonPuddles.push({
+                            x: puddleX,
+                            y: puddleY,
+                            r: 28 + Math.random() * 18,
+                            life: 14 + Math.random() * 8,
+                            damage: 15 * dmgScale,
+                            created: performance.now()
+                        });
                     }
                     break;
             }
@@ -6717,7 +6793,7 @@ function render(dt) {
             break;
         case "phantom":
             ctx.globalAlpha=.6+.4*Math.sin(5*c);ctx.strokeStyle=n;ctx.fillStyle=n+"99";ctx.moveTo(0,-.8*a);ctx.quadraticCurveTo(a,-.5*a,.8*a,.8*a);ctx.quadraticCurveTo(0,.5*a,-.8*a,.8*a);ctx.quadraticCurveTo(-a,-.5*a,0,-.8*a);ctx.closePath();ctx.fill();ctx.stroke();for(let e=-1;e<=1;e++)ctx.beginPath(),ctx.moveTo(e*.4*a,.6*a),ctx.quadraticCurveTo(e*.5*a,a,e*.3*a+2*Math.sin(4*c+e),1.2*a),ctx.stroke();break;
-        case "mech": 
+    case "mech": 
             // Enhanced mechanical tank enemy with Aquaman aqua blue theme
             const time = performance.now() / 1000;
             const pulseFactor = 1 + 0.05 * Math.sin(time * 4);
@@ -6889,6 +6965,68 @@ function render(dt) {
             }
             ctx.shadowBlur = 0;
             break;
+        case "void_champion": {
+            const time = performance.now() / 1000;
+            const pulse = 0.65 + 0.35 * Math.sin(time * 5 + c * 2.5);
+            const auraRadius = a * (1.1 + 0.08 * Math.sin(time * 4 + c));
+            const ringRadius = auraRadius * (1.18 + 0.05 * Math.sin(time * 3 - c));
+
+            // Radiant core
+            const aura = ctx.createRadialGradient(0, 0, 0, 0, 0, auraRadius);
+            aura.addColorStop(0, '#FFFFFF');
+            aura.addColorStop(0.35, n + 'dd');
+            aura.addColorStop(1, n + '11');
+            ctx.globalAlpha = 0.92;
+            ctx.fillStyle = aura;
+            ctx.beginPath();
+            ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.globalAlpha = 1;
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#F7E1FF';
+            ctx.beginPath();
+            ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Central diamond chassis
+            ctx.fillStyle = '#2C0E57';
+            ctx.strokeStyle = '#CBA9FF';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, -a * 0.9);
+            ctx.lineTo(a * 0.7, 0);
+            ctx.lineTo(0, a * 0.9);
+            ctx.lineTo(-a * 0.7, 0);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Rotating blades
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 1.5;
+            ctx.shadowColor = n;
+            ctx.shadowBlur = 10 * pulse;
+            for (let i = 0; i < 4; i++) {
+                const angle = time * 4 + i * (Math.PI / 2);
+                const inner = a * 0.45;
+                const outer = a * 1.3;
+                ctx.beginPath();
+                ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+                ctx.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
+                ctx.stroke();
+            }
+
+            // Pulsing inner core
+            ctx.shadowBlur = 18 * pulse;
+            ctx.fillStyle = '#FFE8FF';
+            ctx.beginPath();
+            ctx.arc(0, 0, a * (0.35 + 0.1 * Math.sin(time * 6 + c)), 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.shadowBlur = 0;
+            break;
+        }
         case "angler": {
             const scale = a / 20;
             ctx.save(); ctx.scale(scale, scale);
@@ -9073,7 +9211,8 @@ function tryVoidStep(player, target, now = performance.now()){
         // Update button states first, regardless of whether tree will close
         iconButtons.forEach(button => {
             const skill = button.dataset.skill;
-            const tier = parseInt(button.dataset.tier);
+            const tierRaw = button.dataset.tier;
+            const tier = tierRaw === 'class' ? 'class' : parseInt(tierRaw, 10);
             const parent = button.dataset.parent;
             
             // Remove all state classes
@@ -9155,33 +9294,33 @@ function tryVoidStep(player, target, now = performance.now()){
         // Initialize progression tracking
         initializeProgressionTracking();
         
-        const totalUnspentPts = p.unspentProgressionPoints;
-        const totalSpentPts = p.skillPointsSpent;
+        const totalUnspentPts = p.unspentProgressionPoints || 0;
+        const totalSpentPts = p.skillPointsSpent || 0;
         
         // NEW PROGRESSION SYSTEM:
         if (tier === 'class') {
-            // Signature abilities: Available if totalUnspentPts > 0 AND not already learned
+            // Signature abilities: Available if a progression point is free and the signature isn't already unlocked
             return totalUnspentPts > 0 && !p.signatureAbility;
         }
-        
+
         if (tier === 1) {
-            // Tier 1 skills: Available if totalSpentPts >= 2
-            return totalSpentPts >= 2;
+            // Tier 1 skills: First unlock once a progression point is available
+            return totalUnspentPts > 0;
         }
-        
+
         if (tier === 2) {
-            // Tier 2 skills: Available if totalSpentPts >= 3 AND tier 1 parent is learned
-            return totalSpentPts >= 3 && p.skillTree && p.skillTree[parent];
+            // Tier 2 skills: Need one prior spend and the tier 1 parent
+            return totalUnspentPts > 0 && totalSpentPts >= 1 && p.skillTree && p.skillTree[parent];
         }
-        
+
         if (tier === 3) {
-            // Tier 3 skills: Available if totalSpentPts >= 4 AND tier 2 parent is learned
-            return totalSpentPts >= 4 && p.skillTree && p.skillTree[parent];
+            // Tier 3 skills: Need two prior spends and the tier 2 parent
+            return totalUnspentPts > 0 && totalSpentPts >= 2 && p.skillTree && p.skillTree[parent];
         }
-        
+
         if (tier === 4) {
-            // Tier 4 skills: Available if totalSpentPts >= 5 AND tier 3 parent is learned
-            return totalSpentPts >= 5 && p.skillTree && p.skillTree[parent];
+            // Tier 4 skills: Need three prior spends and the tier 3 parent
+            return totalUnspentPts > 0 && totalSpentPts >= 3 && p.skillTree && p.skillTree[parent];
         }
         
         return false;
@@ -9266,16 +9405,26 @@ function tryVoidStep(player, target, now = performance.now()){
         try {
             const p = store.player;
             const skillButton = document.querySelector(`[data-skill="${skill}"]`);
-            const tier = parseInt(skillButton.dataset.tier);
-            
-            if (!canLearnSkill(skill, tier, skillButton.dataset.parent)) {
+            if (!skillButton) {
+                console.warn(`Skill button for ${skill} not found.`);
+                isLearningSkill = false;
+                return;
+            }
+
+            const tierRaw = skillButton.dataset.tier;
+            const tier = tierRaw === 'class' ? 'class' : parseInt(tierRaw, 10);
+            const parentId = skillButton.dataset.parent;
+
+            if (!canLearnSkill(skill, tier, parentId)) {
                 isLearningSkill = false;
                 return;
             }
             
             if (!p.skillTree) p.skillTree = {};
             p.skillTree[skill] = true;
-            p.skillPoints--; // Spend the skill point
+            if (p.skillPoints > 0) {
+                p.skillPoints--;
+            }
             p.skillPointsSpent = (p.skillPointsSpent || 0) + 1; // Track total spent
             
             // Handle signature ability flag for class tier skills
