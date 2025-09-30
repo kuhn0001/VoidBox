@@ -1618,6 +1618,17 @@ class FlameParticle {
         stormcaller: ['lightning', 'magic']
     };
 
+    const MARAUDER_VULNERABILITY_ALLOWED_SOURCES = new Set([
+        'beefCharge',
+        'beefChargeCombo',
+        'missileImpact',
+        'pierceMissile',
+        'clusterMissile',
+        'clusterDetonation',
+        'voidLaser',
+        'chainLightning'
+    ]);
+
     function triggerJuggernautVulnerability(enemy, context) {
         enemy.jugFearTimer = Math.max(enemy.jugFearTimer || 0, 2.6);
         enemy.jugBurnTimer = Math.max(enemy.jugBurnTimer || 0, 3.5);
@@ -1815,12 +1826,21 @@ class FlameParticle {
             return { damage: baseDamage, triggered: false };
         }
 
+        const allowTriggerOverride = context.allowVulnerabilityTrigger;
+        let allowTrigger = allowTriggerOverride !== undefined ? !!allowTriggerOverride : true;
+        if (allowTrigger && subclass === 'marauder') {
+            const source = context.source;
+            if (!MARAUDER_VULNERABILITY_ALLOWED_SOURCES.has(source) && !context.forceVulnerabilityTrigger) {
+                allowTrigger = false;
+            }
+        }
+
         enemy._lastVulnerabilityTrigger = enemy._lastVulnerabilityTrigger || {};
         const now = performance.now();
         const cooldown = subclassConfig.cooldownMs ?? 350;
         const lastTrigger = enemy._lastVulnerabilityTrigger[subclass] || 0;
         let triggered = false;
-        if (now - lastTrigger >= cooldown) {
+        if (allowTrigger && now - lastTrigger >= cooldown) {
             enemy._lastVulnerabilityTrigger[subclass] = now;
             triggered = true;
             if (subclassConfig.onTrigger) {
