@@ -2649,6 +2649,22 @@ class FlameParticle {
         enemy.hitPulseDuration = duration;
         enemy.hitPulseTimer = duration;
 
+        const shakeIntensity = impact.shakeIntensity ?? 0;
+        if (shakeIntensity > 0) {
+            const shakeDuration = Math.max(impact.shakeDuration ?? 0.16, 0);
+            enemy.hitShakeDuration = Math.max(enemy.hitShakeDuration || 0, shakeDuration);
+            enemy.hitShakeTimer = Math.max(enemy.hitShakeTimer || 0, shakeDuration);
+            enemy.hitShakeIntensity = Math.max(enemy.hitShakeIntensity || 0, shakeIntensity);
+        }
+
+        if (impact.slowFactor !== undefined && impact.slowFactor < 1) {
+            const slowDuration = Math.max(impact.slowDuration ?? 0.12, 0);
+            if (slowDuration > 0) {
+                enemy.hitSlowFactor = Math.min(enemy.hitSlowFactor || 1, impact.slowFactor);
+                enemy.hitSlowTimer = Math.max(enemy.hitSlowTimer || 0, slowDuration);
+            }
+        }
+
         const strength = impact.knockbackStrength ?? 140;
         if (strength > 0) {
             const angle = impact.angle ?? 0;
@@ -2668,6 +2684,8 @@ class FlameParticle {
                 enemy.knockback.vy += vy * 0.35;
                 enemy.knockback.duration = Math.max(enemy.knockback.duration || 0, knockDuration * 0.8);
             }
+        } else if (strength === 0 && enemy.knockback && enemy.knockback.type === 'hitReaction') {
+            enemy.knockback = null;
         }
 
         if (impact.effect !== false) {
@@ -3834,6 +3852,13 @@ class FlameParticle {
                 e.hitPulseTimer = Math.max(0, e.hitPulseTimer - dt);
             }
 
+            if (e.hitShakeTimer && e.hitShakeTimer > 0) {
+                e.hitShakeTimer = Math.max(0, e.hitShakeTimer - dt);
+                if (e.hitShakeTimer <= 0) {
+                    e.hitShakeIntensity = 0;
+                }
+            }
+
             if (e.topClampDelay !== undefined && e.topClampDelay > 0) {
                 e.topClampDelay = Math.max(0, e.topClampDelay - dt);
             }
@@ -3950,6 +3975,16 @@ class FlameParticle {
                 e.stunTimer -= dt;
             } else {
                 let speedMultiplier = (e.slowTimer > 0) ? 0.3 : 1.0;
+                if (e.hitSlowTimer && e.hitSlowTimer > 0) {
+                    const slowFactor = e.hitSlowFactor !== undefined ? e.hitSlowFactor : 0.85;
+                    speedMultiplier *= Math.max(0.3, Math.min(1, slowFactor));
+                    e.hitSlowTimer = Math.max(0, e.hitSlowTimer - dt);
+                    if (e.hitSlowTimer <= 0) {
+                        e.hitSlowFactor = 1;
+                    }
+                } else if (e.hitSlowFactor && e.hitSlowFactor !== 1 && (!e.hitSlowTimer || e.hitSlowTimer <= 0)) {
+                    e.hitSlowFactor = 1;
+                }
                 if (e.slowTimer > 0) e.slowTimer -= dt;
                 if (e.phaseLockTimer > 0) {
                     speedMultiplier *= e.phaseLockSlowFactor || 0.4;
@@ -4325,9 +4360,13 @@ class FlameParticle {
                     const impactStrength = b.knockbackStrength ?? (b.explosive ? 220 : 130);
                     registerEnemyHit(e, {
                         angle: impactAngle,
-                        knockbackStrength: impactStrength,
-                        knockbackDuration: b.explosive ? 0.18 : 0.1,
-                        crit: didCrit
+                        knockbackStrength: 0,
+                        shakeIntensity: b.explosive ? 6 : 3.5,
+                        shakeDuration: b.explosive ? 0.22 : 0.14,
+                        slowFactor: b.explosive ? 0.8 : 0.9,
+                        slowDuration: b.explosive ? 0.22 : 0.12,
+                        crit: didCrit,
+                        effect: false
                     });
                     
                     // Track damage dealt for beef shield system
@@ -7842,7 +7881,21 @@ function render(dt) {
 
         ctx.restore();
     }
-    function drawEnemy(e) { const{x:t,y:o,r:a,type:r,color:n,hp:l,hpMax:s,t:c}=e;ctx.save();ctx.translate(t,o);
+    function drawEnemy(e) {
+        const { x: t, y: o, r: a, type: r, color: n, hp: l, hpMax: s, t: c } = e;
+        ctx.save();
+        let drawX = t;
+        let drawY = o;
+        if (e.hitShakeTimer && e.hitShakeTimer > 0 && e.hitShakeIntensity) {
+            const baseDuration = e.hitShakeDuration || 0.16;
+            const ratio = baseDuration > 0 ? Math.max(0, Math.min(1, e.hitShakeTimer / baseDuration)) : 0;
+            const intensity = e.hitShakeIntensity * Math.pow(ratio, 0.6);
+            const phaseSeed = (e.id || 0) * 13.37;
+            const time = performance.now() * 0.006 + phaseSeed;
+            drawX += Math.sin(time) * intensity;
+            drawY += Math.cos(time * 1.6) * intensity * 0.7;
+        }
+        ctx.translate(drawX, drawY);
         const spawnAlpha = e.spawnOpacity !== undefined ? Math.max(0.2, Math.min(1, e.spawnOpacity)) : 1;
         ctx.globalAlpha *= spawnAlpha;
         if (e.spawnPhase === 'teleport') {
