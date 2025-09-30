@@ -3572,19 +3572,21 @@ class FlameParticle {
         }
 
         // Optimized cleanup with object pooling
-        const deadBullets = store.bullets.filter(b => b.dead);
-        const deadEBullets = store.eBullets.filter(b => b.dead);
-        
-        // PERFORMANCE: Efficient dead object removal using reverse iteration
-        // This is 300-500% faster than filter() and reduces GC pressure dramatically
-        
-        // Handle bullets (already pooled efficiently)
-        store.bullets = store.bullets.filter(i => !i.dead);
-        store.eBullets = store.eBullets.filter(i => !i.dead);
-        
-        // Return dead bullets to pools after arrays are compacted
-        deadBullets.forEach(bullet => bulletPool.release(bullet));
-        deadEBullets.forEach(returnEBulletToPool);
+        for (let i = store.bullets.length - 1; i >= 0; i--) {
+            const bullet = store.bullets[i];
+            if (bullet.dead) {
+                store.bullets.splice(i, 1);
+                bulletPool.release(bullet);
+            }
+        }
+
+        for (let i = store.eBullets.length - 1; i >= 0; i--) {
+            const bullet = store.eBullets[i];
+            if (bullet.dead) {
+                store.eBullets.splice(i, 1);
+                returnEBulletToPool(bullet);
+            }
+        }
         
         // Efficient removal for other arrays
         removeDeadObjects(store.enemies);
