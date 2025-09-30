@@ -863,6 +863,7 @@
                         <tr><td>Collar:</td><td colspan="2"><span id="collar">0 (0%)</span></td></tr>
                         <tr><td>Dmg/Bullet:</td><td colspan="2"><span id="damagePerBullet">—</span></td></tr>
                         <tr><td>Avg Enemy HP:</td><td colspan="2"><span id="avgEnemyHp">—</span></td></tr>
+                        <tr><td>Spawn:</td><td colspan="3"><span id="spawnDebug">—</span></td></tr>
                         <tr><td>Enemy Base:</td><td><span id="enemyBaseHp">-</span></td><td>Current:</td><td><span id="enemyCurrentHp">-</span></td></tr>
                         <tr><td>Boss Base:</td><td><span id="bossBaseHp">-</span></td><td>Current:</td><td><span id="bossCurrentHp">-</span></td></tr>
                     </table>
@@ -1372,11 +1373,12 @@ class FlameParticle {
         x: W / 2, y: H * 0.8, r: 14, hp: 50, hpMax: 50, fireT: 0, speed: 380, dmgMult: 1.2, fireRate: 0.16,
         vampirism: 0, shield: 50, shieldMax: 50, multishot: 2, isInvincible: false, piercing: 0, explosive: false,
         hasShieldBubble: false, powerupTimers: {},
-        upgradeLevels: { dmg: 0, speed: 0, hp: 0, max_shield: 0, crit_chance: 0, ghost_hounds: 0, launcher: 0, lazarus_beam: 0, gravity_well: 0 },
+    upgradeLevels: { dmg: 0, speed: 0, hp: 0, max_shield: 0, crit_chance: 0, ghost_hounds: 0, launcher: 0, lazarus_beam: 0, gravity_well: 0, star_cannon: 0 },
         grenades: 0, hasVoidBeam: false, voidBeamCooldown: 0,
         hasLazarusBeam: false, lazarusBeamCooldown: 0,
         hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 0, vampirismLevel: 0, flamethrowerLevel: 0,
         flamethrowerT: 0, // Separate timer for lava chunks, unaffected by overclock
+    starCannonLevel: 0, starCannonTimer: 0,
         luckBoost: 0, magnetRadius: 0, hasIceman: false, critChance: 0.02, critDamage: 1.85,
         pilotGenome: null, missileVolley: 2,
         hasRearGuard: false, rearGuardCooldown: 0, rearGuardReady: true,
@@ -1459,6 +1461,11 @@ class FlameParticle {
     const bulletPool = new Pool(createBullet, resetBulletState);
     bulletPool.prefill(100);
 
+    const STAR_CANNON_COOLDOWN = 7;
+    const STAR_CANNON_SPEED = 420;
+    const STAR_CANNON_DAMAGE = 220;
+    const STAR_CANNON_SIZE = 20;
+
     const store = {
         frame: 0, last: performance.now(), isGameOver: false, isPaused: false,
         isDamageOff: false,
@@ -1485,15 +1492,25 @@ class FlameParticle {
             lateGameDamageScaling: 1,
             consecutiveFastKills: 0, 
             fastKillBonus: 0,
-            isLowHealth: false
+            isLowHealth: false,
+            lastThreatScale: 1,
+            lastSpawnOverflow: 0,
+            lastPlannedSpawnCount: 0,
+            lastSpawnCount: 0,
+            lastSpawnFallback: false,
+            lastSpawnQueueLength: 0,
+            lastSpawnTempo: 0
         },
         player: { ...player_initial_state },
-    boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [],
+    boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [], starProjectiles: [],
         flameParticles: [],
         lightningBolts: [],
         empNovas: [],
         mechPuddles: [], // Hazardous puddles left by mech tank attacks
-        iceman: null,
+            iceman: null,
+        waveSpawnQueue: [],
+            pendingSpawnCount: 0,
+        vulnerabilityEvents: [],
     // Object pools for performance optimization
     bulletPool: null,
         eBulletPool: [],
@@ -1590,6 +1607,229 @@ class FlameParticle {
             flame.dead = true;
             store.tempFlamePool.push(flame);
         }
+    }
+
+    const CLASS_DAMAGE_TAGS = {
+        juggernaut: ['fire', 'explosive'],
+        marauder: ['kinetic', 'concussive'],
+        railgunner: ['kinetic', 'explosive'],
+        demolitionist: ['fire', 'explosive'],
+        phasestriker: ['void', 'magic'],
+        stormcaller: ['lightning', 'magic']
+    };
+
+    function triggerJuggernautVulnerability(enemy, context) {
+        enemy.jugFearTimer = Math.max(enemy.jugFearTimer || 0, 2.6);
+        enemy.jugBurnTimer = Math.max(enemy.jugBurnTimer || 0, 3.5);
+        enemy.jugBurnTick = 0;
+        enemy.jugPulseTimer = Math.max(enemy.jugPulseTimer || 0, 3.0);
+        enemy.jugPulsePhase = enemy.jugPulsePhase || 0;
+        enemy.vulnerabilityPulseColor = '#ff3b3b';
+        enemy.vulnerabilityPulseStrength = 1;
+        store.activeEffects.push(createEffect('jugFearIgnite', enemy.x, enemy.y, enemy.r * 1.1));
+    }
+
+    function triggerMarauderVulnerability(enemy, context) {
+        const angle = context.knockbackAngle ?? Math.atan2(enemy.y - store.player.y, enemy.x - store.player.x);
+        const smashSpeed = 1100;
+        const smashDuration = 0.55;
+        enemy.knockback = {
+            vx: Math.cos(angle) * smashSpeed,
+            vy: Math.sin(angle) * smashSpeed,
+            duration: smashDuration,
+            type: 'maraLaunch'
+        };
+        enemy.maraLaunchTimer = smashDuration;
+        enemy.maraImpactTriggered = false;
+        enemy.vulnerabilityPulseColor = '#aad1ff';
+        enemy.vulnerabilityPulseStrength = 0.8;
+    store.activeEffects.push(createEffect('marauderLaunchTrail', enemy.x, enemy.y, { duration: smashDuration, enemy }));
+    }
+
+    function triggerRailgunnerVulnerability(enemy) {
+        enemy.railgunArmorTimer = Math.max(enemy.railgunArmorTimer || 0, 4.0);
+        enemy.railgunCrackLevel = Math.min((enemy.railgunCrackLevel || 0) + 1, 3);
+        enemy.stunTimer = Math.max(enemy.stunTimer || 0, 0.35);
+        enemy.vulnerabilityPulseColor = '#d7f0ff';
+        enemy.vulnerabilityPulseStrength = 0.6;
+        store.activeEffects.push(createEffect('armorCrackFlash', enemy.x, enemy.y, enemy.railgunCrackLevel));
+    }
+
+    function triggerDemolitionistVulnerability(enemy, context) {
+        const fallbackPos = { x: enemy.x, y: enemy.y };
+        const sourcePlayer = context.player || store.player;
+        scheduleVulnerabilityEvent(0.7, () => {
+            const ref = enemy.dead ? fallbackPos : { x: enemy.x, y: enemy.y };
+            spawnFlamePulse(ref.x, ref.y, 95, context.baseDamage * 0.8, { player: sourcePlayer });
+        });
+        enemy.demolitionPulseWarmup = Math.max(enemy.demolitionPulseWarmup || 0, 0.7);
+        enemy.vulnerabilityPulseColor = '#ffae5b';
+        enemy.vulnerabilityPulseStrength = 0.7;
+        store.activeEffects.push(createEffect('demolitionPulseCharge', enemy.x, enemy.y, enemy.r * 1.4));
+    }
+
+    function triggerPhaseStrikerVulnerability(enemy) {
+        enemy.phaseLockTimer = Math.max(enemy.phaseLockTimer || 0, 2.4);
+        enemy.phaseLockSlowFactor = 0.35;
+        enemy.stunTimer = Math.max(enemy.stunTimer || 0, 0.5);
+        enemy.vulnerabilityPulseColor = '#8f6bff';
+        enemy.vulnerabilityPulseStrength = 0.9;
+        store.activeEffects.push(createEffect('voidLockChains', enemy.x, enemy.y, enemy.r * 1.2));
+    }
+
+    function triggerStormcallerVulnerability(enemy, context) {
+        enemy.stormShockTimer = Math.max(enemy.stormShockTimer || 0, 2.2);
+        enemy.stormShockIntensity = 1;
+        enemy.vulnerabilityPulseColor = '#6fd2ff';
+        enemy.vulnerabilityPulseStrength = 1;
+        store.activeEffects.push(createEffect('stormDischarge', enemy.x, enemy.y, enemy.r * 1.5));
+        const targets = store.enemies.filter(en => !en.dead && en !== enemy);
+        const arcTargets = targets.sort((a, b) => ((a.x - enemy.x) ** 2 + (a.y - enemy.y) ** 2) - ((b.x - enemy.x) ** 2 + (b.y - enemy.y) ** 2)).slice(0, 3);
+        arcTargets.forEach(target => {
+            store.activeEffects.push(createEffect('stormArc', enemy.x, enemy.y, { x: target.x, y: target.y }));
+            target.stunTimer = Math.max(target.stunTimer || 0, 0.3);
+        });
+    }
+
+    const ENEMY_VULNERABILITIES = {
+        mech: {
+            juggernaut: {
+                multiplier: 1.6,
+                damageTags: ['fire', 'explosive'],
+                cooldownMs: 500,
+                onTrigger: triggerJuggernautVulnerability
+            }
+        },
+        manta: {
+            marauder: {
+                multiplier: 1.45,
+                damageTags: ['kinetic', 'concussive'],
+                cooldownMs: 400,
+                onTrigger: triggerMarauderVulnerability
+            }
+        },
+        phantom: {
+            railgunner: {
+                multiplier: 1.4,
+                damageTags: ['kinetic', 'explosive'],
+                cooldownMs: 350,
+                onTrigger: triggerRailgunnerVulnerability
+            }
+        },
+        void_champion_orb: {
+            demolitionist: {
+                multiplier: 1.35,
+                damageTags: ['fire', 'explosive'],
+                cooldownMs: 650,
+                onTrigger: triggerDemolitionistVulnerability
+            }
+        },
+        void_champion: {
+            phasestriker: {
+                multiplier: 1.5,
+                damageTags: ['void', 'magic'],
+                cooldownMs: 500,
+                onTrigger: triggerPhaseStrikerVulnerability
+            }
+        },
+        angler: {
+            stormcaller: {
+                multiplier: 1.4,
+                damageTags: ['lightning', 'magic'],
+                cooldownMs: 450,
+                onTrigger: triggerStormcallerVulnerability
+            }
+        }
+    };
+
+    function scheduleVulnerabilityEvent(delay, action) {
+        store.vulnerabilityEvents.push({ timer: delay, action });
+    }
+
+    function processVulnerabilityEvents(dt) {
+        for (let i = store.vulnerabilityEvents.length - 1; i >= 0; i--) {
+            const evt = store.vulnerabilityEvents[i];
+            evt.timer -= dt;
+            if (evt.timer <= 0) {
+                try {
+                    evt.action?.();
+                } catch (err) {
+                    console.warn('Vulnerability event error', err);
+                }
+                store.vulnerabilityEvents.splice(i, 1);
+            }
+        }
+    }
+
+    function spawnFlamePulse(x, y, radius = 90, damage = 40, context = {}) {
+        store.activeEffects.push(createEffect('delayedFlamePulse', x, y, radius));
+        const targets = store.boss ? [...store.enemies, store.boss] : store.enemies;
+        targets.forEach(enemy => {
+            if (!enemy || enemy.dead) return;
+            const distSq = (enemy.x - x) * (enemy.x - x) + (enemy.y - y) * (enemy.y - y);
+            if (distSq <= radius * radius) {
+                let dmg = damage;
+                if (enemy === store.boss) dmg *= 0.35;
+                const result = applySubclassVulnerability(enemy, dmg, {
+                    subclass: 'demolitionist',
+                    damageTags: ['fire', 'explosive'],
+                    player: context.player,
+                    source: 'demolitionPulse',
+                    disableVulnerability: true
+                });
+                enemy.hp -= result.damage;
+                for (let i = 0; i < 4; i++) {
+                    store.flameParticles.push(new FlameParticle(
+                        x + (Math.random() - 0.5) * radius * 0.6,
+                        y + (Math.random() - 0.5) * radius * 0.6
+                    ));
+                }
+            }
+        });
+    }
+
+    function applySubclassVulnerability(enemy, baseDamage, context = {}) {
+        if (context.disableVulnerability) {
+            return { damage: baseDamage, triggered: false };
+        }
+
+        const player = context.player || store.player;
+        if (!player) {
+            return { damage: baseDamage, triggered: false };
+        }
+
+        const subclass = context.subclass || player.subclass;
+        if (!subclass) {
+            return { damage: baseDamage, triggered: false };
+        }
+
+        const config = ENEMY_VULNERABILITIES[enemy.type];
+        const subclassConfig = config && config[subclass];
+        if (!subclassConfig) {
+            return { damage: baseDamage, triggered: false };
+        }
+
+        const appliedTags = context.damageTags || CLASS_DAMAGE_TAGS[subclass] || [];
+        const matchesTag = appliedTags.some(tag => subclassConfig.damageTags.includes(tag));
+        if (!matchesTag) {
+            return { damage: baseDamage, triggered: false };
+        }
+
+        enemy._lastVulnerabilityTrigger = enemy._lastVulnerabilityTrigger || {};
+        const now = performance.now();
+        const cooldown = subclassConfig.cooldownMs ?? 350;
+        const lastTrigger = enemy._lastVulnerabilityTrigger[subclass] || 0;
+        let triggered = false;
+        if (now - lastTrigger >= cooldown) {
+            enemy._lastVulnerabilityTrigger[subclass] = now;
+            triggered = true;
+            if (subclassConfig.onTrigger) {
+                subclassConfig.onTrigger(enemy, { ...context, baseDamage, player });
+            }
+        }
+
+        const damage = baseDamage * (subclassConfig.multiplier || 1);
+        return { damage, triggered };
     }
 
     const LEVEL_UPGRADES = [
@@ -1695,6 +1935,31 @@ class FlameParticle {
                     return "Max projectiles reached.";
                 }
             },
+        'star_cannon': {
+            name: 'STAR CANNON',
+            icon: '🌠',
+            baseCost: 180,
+            scale: 2.2,
+            maxLevel: 2,
+            category: 'attack',
+            effect: level => {
+                const p = store.player;
+                if (level === 0) {
+                    p.starCannonLevel = 1;
+                    p.starCannonTimer = 0;
+                    announce('STAR CANNON ONLINE!');
+                } else if (level === 1) {
+                    p.starCannonLevel = 2;
+                    p.starCannonTimer = Math.min(p.starCannonTimer, 0);
+                    announce('STAR CANNON MKII - DUAL ARTILLERY!');
+                }
+            },
+            desc: level => {
+                if (level === 0) return 'Left-side artillery star cannon (7s reload).';
+                if (level === 1) return 'Add right-side cannon for twin strikes.';
+                return 'Max Level';
+            }
+        },
         'iceman': { name: "THE ICEMAN", icon: '❄️', cost: 118, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.hasIceman) { store.player.hasIceman = true; store.iceman = { x: store.player.x, y: store.player.y + 50, t: 0 }; return true; } return false; }, desc: () => `A clone mirrors your attacks.` },
         'lazarus_beam': { name: "LORD LAZARUS", icon: '☢️☄️☢️', baseCost: 200, scale: 3, maxLevel: 2, category: 'attack', effect: (level) => { if (level === 0) { store.player.hasLazarusBeam = true; store.player.lazarusBeamCooldown = 15; } }, desc: level => { if (level === 0) return 'Lazarus smites foes twice as often.'; if (level === 1) return 'Lazarus fires two beams at once.'; return 'Max Level'; }},
         'magnet_pull': { name: "GRAV-PULSE", icon: '🧲', cost: 90, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (store.player.magnetRadius <= 0) { store.player.magnetRadius = 150; return true; } return false; }, desc: () => `Pulls in nearby powerups.` },
@@ -1719,7 +1984,7 @@ class FlameParticle {
         const wave = store.world.wave;
         const waveReductionFactor = 0.0025;
         let finalChance = Math.max(0.025, baseChance - (wave - 1) * waveReductionFactor);
-        let types = Object.keys(POWERUP_TYPES);
+    let types = Object.keys(POWERUP_TYPES).filter(key => key !== 'void_core');
         let bonusType = null;
         if (p.pilotGenome === 'beef') {
             // Enhanced drop rates for beef - additional powerups, not replacing existing ones
@@ -1807,6 +2072,18 @@ class FlameParticle {
         announce(powerup.name);
     }
 
+    function sanitizeCollarStacks() {
+        if (!Number.isFinite(store.world.collarStacks)) {
+            console.warn('Invalid collar stack value detected, resetting.', store.world.collarStacks);
+            store.world.collarStacks = 0;
+        }
+        return store.world.collarStacks;
+    }
+
+    function ensureFiniteNumber(value, fallback = 0) {
+        return Number.isFinite(value) ? value : fallback;
+    }
+
     function initWave() {
         const isBossWave = store.world.wave % 5 === 0;
         
@@ -1832,11 +2109,18 @@ class FlameParticle {
             
             store.boss = createBoss(bossHpScale);
             store.world.bossSpawnTime = performance.now();
+            store.world.lastPlannedSpawnCount = 0;
+            store.world.lastSpawnCount = 0;
+            store.world.lastSpawnOverflow = 0;
+            store.world.lastThreatScale = 1;
+            store.world.lastSpawnFallback = false;
             if (store.boss.name === 'VOID SENTINEL') playSound('trap');
             else if (store.boss.name === 'NEURAL CORE') playSound('horn');
             announce(`⚡ GUARDIAN: ${store.boss.name} ⚡`);
         } else {
             store.enemies = [];
+            store.waveSpawnQueue = [];
+            store.pendingSpawnCount = 0;
             
             // NEW SCALING SYSTEM: After wave 35, stop increasing spawn count and increase enemy stats instead
             let baseSpawnCount, spawnCount, lateGameScaling = 1;
@@ -1858,20 +2142,87 @@ class FlameParticle {
             // Store late-game scaling factor globally for damage calculations
             store.world.lateGameDamageScaling = lateGameScaling;
             
-            // Apply collar bonus to spawn count
-            const collarBonus = 1 + (store.world.collarStacks * 0.08);
-            spawnCount = Math.floor(spawnCount * collarBonus);
-            
-            // console.log(`Wave ${store.world.wave}: Spawning ${spawnCount} enemies (base: ${baseSpawnCount}, lateGameScaling: ${lateGameScaling.toFixed(2)}x)`);
-            
-            const enemyCap = store.world.enemyCap || 36;
-            const plannedSpawnCount = spawnCount;
-            const cappedSpawnCount = Math.max(1, Math.min(enemyCap, plannedSpawnCount));
-            const threatScale = plannedSpawnCount > 0 ? plannedSpawnCount / cappedSpawnCount : 1;
-            store.world.lastThreatScale = threatScale;
-            store.world.lastSpawnOverflow = Math.max(0, plannedSpawnCount - cappedSpawnCount);
+            // Apply collar bonus to spawn count with defensive guards
+            const collarStacks = sanitizeCollarStacks();
+            const collarBonus = 1 + collarStacks * 0.08;
+            const plannedSpawnCountRaw = spawnCount * collarBonus;
+            const plannedSpawnCount = Math.max(0, ensureFiniteNumber(Math.floor(plannedSpawnCountRaw), 0));
 
-            spawnCount = cappedSpawnCount;
+            const rawEnemyCap = ensureFiniteNumber(store.world.enemyCap, 36);
+            const enemyCap = rawEnemyCap > 0 ? rawEnemyCap : 36;
+
+            let cappedSpawnCount = Math.min(enemyCap, plannedSpawnCount);
+            if (!Number.isFinite(cappedSpawnCount) || cappedSpawnCount <= 0) {
+                cappedSpawnCount = 1;
+                store.world.lastSpawnFallback = true;
+            } else {
+                store.world.lastSpawnFallback = false;
+            }
+
+            const spawnIterations = Math.max(1, Math.floor(cappedSpawnCount));
+            const threatScaleRaw = spawnIterations > 0 && plannedSpawnCount > 0 ? plannedSpawnCount / spawnIterations : 1;
+            const threatScale = ensureFiniteNumber(threatScaleRaw, 1);
+
+            store.world.lastThreatScale = threatScale;
+            store.world.lastSpawnOverflow = Math.max(0, plannedSpawnCount - spawnIterations);
+            store.world.lastPlannedSpawnCount = plannedSpawnCount;
+            store.world.lastSpawnCount = 0;
+
+            spawnCount = spawnIterations;
+
+            const teleportAuraByType = {
+                drone: '#7fd5ff',
+                hunter: '#ff6e84',
+                phantom: '#d9a7ff',
+                mech: '#4ef0ff',
+                angler: '#8cf8f8',
+                manta: '#7acbff',
+                void_champion: '#d7b5ff'
+            };
+            const spawnDurationByType = {
+                phantom: 0.7,
+                mech: 0.8,
+                angler: 0.7,
+                manta: 0.85,
+                void_champion: 1.05
+            };
+            const dropDistanceByType = {
+                mech: 200,
+                angler: 170,
+                manta: 180,
+                void_champion: 220
+            };
+
+            // Check if we should spawn a champion this wave (only one per wave)
+            let championSpawned = false;
+            if (store.world.wave > 12) {
+                const championChance = Math.min(0.3, 0.06 + (store.world.wave - 12) * 0.015);
+                if (Math.random() < championChance) {
+                    const champion = spawnEnemy('void_champion', { hpScale: threatScale, damageMult: threatScale });
+                    if (champion) {
+                        applySpawnSpecToEnemy(champion, { lateGameScaling });
+                        activateSpawnIntro(champion, {
+                            duration: spawnDurationByType.void_champion,
+                            dropDistance: dropDistanceByType.void_champion,
+                            clusterIndex: -1,
+                            effectColor: teleportAuraByType.void_champion,
+                            topClampBuffer: 1.2,
+                            fireDelayBuffer: 0.6
+                        });
+                        store.activeEffects.push(createEffect('spawnTeleport', champion.x, champion.spawnTargetY ?? champion.y, champion.r || 28, {
+                            duration: (champion.spawnDuration || 1) + 0.35,
+                            color: teleportAuraByType.void_champion,
+                            clusterIndex: -1,
+                            isChampion: true
+                        }));
+                        store.enemies.push(champion);
+                        championSpawned = true;
+                        spawnCount = Math.max(1, spawnCount - 1); // Reduce normal enemy count by 1
+                    }
+                }
+            }
+
+            const spawnSpecs = [];
 
             for (let i = 0; i < spawnCount; i++) {
                 const types = ['drone', 'drone', 'hunter'];
@@ -1880,31 +2231,51 @@ class FlameParticle {
                 if (store.world.wave > 7) types.push('angler');
                 if (store.world.wave > 9) types.push('manta');
 
-                let selectedType = types[Math.floor(Math.random() * types.length)];
-                if (store.world.wave > 12) {
-                    const championChance = Math.min(0.3, 0.06 + (store.world.wave - 12) * 0.015);
-                    if (Math.random() < championChance) {
-                        selectedType = 'void_champion';
-                    }
-                }
-
-                const enemy = spawnEnemy(selectedType, { hpScale: threatScale, damageMult: threatScale });
-                if (!enemy) continue;
-                
-                // Apply late-game scaling to health and damage
-                if (lateGameScaling > 1) {
-                    enemy.hp *= lateGameScaling;
-                    enemy.hpMax *= lateGameScaling;
-                    enemy.damageMult = (enemy.damageMult || 1) * lateGameScaling;
-                }
-                enemy.baseContactDamage = enemy.baseContactDamage || enemy.contactDamage || 8;
-                enemy.contactDamage = enemy.baseContactDamage * (enemy.damageMult || 1);
-                
-                // console.log(`Spawned ${enemy.type} at (${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)}) with ${enemy.hp} HP`);
-                store.enemies.push(enemy);
+                const selectedType = types[Math.floor(Math.random() * types.length)];
+                spawnSpecs.push({
+                    type: selectedType,
+                    props: { hpScale: threatScale, damageMult: threatScale },
+                    lateGameScaling,
+                    spawnDuration: spawnDurationByType[selectedType],
+                    spawnDropDistance: dropDistanceByType[selectedType],
+                    effectColor: teleportAuraByType[selectedType]
+                });
             }
-            
-            // console.log(`Total enemies spawned: ${store.enemies.length}`);
+
+            if (spawnSpecs.length === 0) {
+                console.warn('Enemy spawn pipeline produced zero entities; applying fallback spawn.', {
+                    wave: store.world.wave,
+                    plannedSpawnCount,
+                    enemyCap,
+                    collarStacks,
+                    threatScale
+                });
+                spawnSpecs.push({
+                    type: 'drone',
+                    props: { hpScale: threatScale, damageMult: threatScale },
+                    lateGameScaling,
+                    spawnDuration: 0.6,
+                    spawnDropDistance: 120,
+                    effectColor: teleportAuraByType.drone
+                });
+                store.world.lastSpawnFallback = true;
+            }
+
+            const plannedClusters = Math.max(1, Math.ceil(spawnSpecs.length / 4));
+            const clusterCount = Math.min(6, plannedClusters);
+            const spawnTempo = Math.max(0.2, 0.55 - Math.min(store.world.wave, 25) * 0.015);
+
+            store.pendingSpawnCount = spawnSpecs.length;
+            store.world.lastSpawnQueueLength = spawnSpecs.length;
+            store.world.lastSpawnTempo = spawnTempo;
+            store.world.lastSpawnCount = store.enemies.length;
+
+            scheduleWaveSpawnClusters(spawnSpecs, {
+                clusterCount,
+                baseDelay: spawnTempo,
+                jitter: spawnTempo * 0.6
+            });
+
             store.world.waveStartTime = performance.now();
             announce(`◢ SECTOR ${store.world.wave} ◣`);
         }
@@ -2082,6 +2453,153 @@ class FlameParticle {
         return e;
     }
 
+    function scheduleWaveSpawnClusters(spawnSpecs, options = {}) {
+        const clustersRequested = options.clusterCount ?? 3;
+        const clusterCount = Math.max(1, Math.min(clustersRequested, spawnSpecs.length || 1));
+        const clusters = Array.from({ length: clusterCount }, () => []);
+
+        spawnSpecs.forEach((spec, index) => {
+            clusters[index % clusterCount].push(spec);
+        });
+
+        const baseDelay = options.baseDelay ?? 0.35; // seconds between clusters
+        const jitterAmplitude = options.jitter ?? baseDelay * 0.35;
+        const queue = store.waveSpawnQueue;
+
+        clusters.forEach((cluster, idx) => {
+            if (!cluster.length) return;
+            const stagger = idx === 0 ? 0 : (Math.random() - 0.5) * jitterAmplitude;
+            const timer = Math.max(0, idx * baseDelay + stagger);
+            queue.push({
+                timer,
+                enemies: cluster,
+                clusterIndex: idx,
+                clusterSize: cluster.length,
+                totalClusters: clusterCount,
+                baseDelay
+            });
+        });
+    }
+
+    function processWaveSpawnQueue(dt) {
+        if (!store.waveSpawnQueue.length) return;
+        for (let i = store.waveSpawnQueue.length - 1; i >= 0; i--) {
+            const evt = store.waveSpawnQueue[i];
+            evt.timer -= dt;
+            if (evt.timer <= 0) {
+                spawnClusterEnemies(evt);
+                store.waveSpawnQueue.splice(i, 1);
+            }
+        }
+    }
+
+    function spawnClusterEnemies(event) {
+        const clusterSize = event.enemies.length;
+        const centerX = Math.max(80, Math.min(W - 80, 80 + Math.random() * (W - 160)));
+        const spacing = Math.max(40, 140 - clusterSize * 10);
+        let spawnedThisCluster = 0;
+
+        event.enemies.forEach((spec, idx) => {
+            const lateralOffset = (idx - (clusterSize - 1) / 2) * spacing + (Math.random() - 0.5) * 35;
+            const spawnX = Math.max(40, Math.min(W - 40, centerX + lateralOffset));
+            const spawnY = -160 - Math.random() * 120;
+            const props = { ...(spec.props || {}), x: spawnX, y: spawnY };
+            const enemy = spawnEnemy(spec.type, props);
+            store.pendingSpawnCount = Math.max(0, (store.pendingSpawnCount || 0) - 1);
+            if (!enemy) {
+                store.world.lastSpawnFallback = true;
+                return;
+            }
+
+            applySpawnSpecToEnemy(enemy, spec);
+            activateSpawnIntro(enemy, {
+                duration: spec.spawnDuration,
+                dropDistance: spec.spawnDropDistance,
+                clusterIndex: event.clusterIndex,
+                effectColor: spec.effectColor,
+                topClampBuffer: 0.75,
+                clusterSize
+            });
+
+            store.enemies.push(enemy);
+            store.world.lastSpawnCount = (store.world.lastSpawnCount || 0) + 1;
+            spawnedThisCluster++;
+
+            store.activeEffects.push(createEffect('spawnTeleport', enemy.x, enemy.spawnTargetY ?? enemy.y, enemy.r || 18, {
+                duration: (enemy.spawnDuration || 0.6) + 0.25,
+                color: spec.effectColor,
+                clusterIndex: event.clusterIndex,
+                clusterSize
+            }));
+        });
+
+        if (spawnedThisCluster === 0) {
+            const fallback = spawnEnemy('drone', { x: centerX, y: -140 });
+            if (fallback) {
+                applySpawnSpecToEnemy(fallback, { lateGameScaling: 1 });
+                activateSpawnIntro(fallback, {
+                    duration: 0.6,
+                    dropDistance: 110,
+                    clusterIndex: event.clusterIndex,
+                    effectColor: '#7fd5ff',
+                    topClampBuffer: 0.75,
+                    clusterSize
+                });
+                store.enemies.push(fallback);
+                store.world.lastSpawnCount = (store.world.lastSpawnCount || 0) + 1;
+                store.world.lastSpawnFallback = true;
+                store.activeEffects.push(createEffect('spawnTeleport', fallback.x, fallback.spawnTargetY ?? fallback.y, fallback.r || 14, {
+                    duration: (fallback.spawnDuration || 0.6) + 0.25,
+                    color: '#7fd5ff',
+                    clusterIndex: event.clusterIndex,
+                    clusterSize,
+                    fallback: true
+                }));
+            }
+        }
+    }
+
+    function applySpawnSpecToEnemy(enemy, spec) {
+        if (spec.lateGameScaling && spec.lateGameScaling > 1) {
+            enemy.hp *= spec.lateGameScaling;
+            enemy.hpMax *= spec.lateGameScaling;
+            enemy.damageMult = (enemy.damageMult || 1) * spec.lateGameScaling;
+        }
+        if (spec.props && spec.props.damageMult !== undefined) {
+            enemy.damageMult = spec.props.damageMult;
+        }
+        enemy.baseContactDamage = spec.baseContactDamage ?? enemy.baseContactDamage ?? enemy.contactDamage ?? 8;
+        enemy.contactDamage = enemy.baseContactDamage * (enemy.damageMult || 1);
+        if (typeof spec.onSpawn === 'function') {
+            try {
+                spec.onSpawn(enemy);
+            } catch (err) {
+                console.warn('Spawn spec hook failed', err);
+            }
+        }
+    }
+
+    function activateSpawnIntro(enemy, opts = {}) {
+        const duration = opts.duration ?? enemy.spawnDuration ?? (0.6 + Math.random() * 0.2);
+        const dropDistance = opts.dropDistance ?? enemy.spawnDropDistance ?? (80 + Math.random() * 70);
+        const targetY = opts.targetY ?? enemy.spawnTargetY ?? enemy.y;
+        const startY = targetY - dropDistance;
+
+        enemy.spawnPhase = 'teleport';
+        enemy.spawnDuration = duration;
+        enemy.spawnTimer = duration;
+        enemy.spawnTargetY = targetY;
+        enemy.spawnStartY = startY;
+        enemy.spawnOpacity = 0;
+        enemy.spawnEffectColor = opts.effectColor ?? enemy.spawnEffectColor;
+        enemy.spawnClusterIndex = opts.clusterIndex ?? enemy.spawnClusterIndex ?? 0;
+        enemy.spawnClusterSize = opts.clusterSize ?? enemy.spawnClusterSize ?? 1;
+        enemy.spawnIntroGlow = opts.glowStrength ?? enemy.spawnIntroGlow ?? 1;
+        enemy.topClampDelay = Math.max(enemy.topClampDelay || 0, duration + (opts.topClampBuffer ?? 0.5));
+        enemy.fireT = Math.max(enemy.fireT || 0, duration + (opts.fireDelayBuffer ?? 0.25));
+        enemy.y = startY;
+    }
+
     function stepPlayer(dt) {
         const p = store.player;
         if (p.pilotGenome === 'beef' && p.beefChargeState !== 'ready' && p.beefMaxCharges > 0) {
@@ -2246,6 +2764,11 @@ class FlameParticle {
                     if (p.skillTree && p.skillTree.juggernaut) impactRadius = 120;
                     if (p.beefBigExplosion || (p.skillTree && p.skillTree.juggernaut_enhanced)) impactRadius = 160; // Big explosion
                     
+                    // Apply Juggernaut Unstoppable Force radius multiplier
+                    if (p.beefExplosionRadius) {
+                        impactRadius *= p.beefExplosionRadius;
+                    }
+                    
                     // Skill tree compatibility - check subclass for existing players
                     if (p.subclass === 'juggernaut') impactRadius = Math.max(impactRadius, 120);
                     
@@ -2260,13 +2783,78 @@ class FlameParticle {
                     let baseDamage = 80;
                     if (p.beefBigExplosion || (p.skillTree && p.skillTree.juggernaut_enhanced)) baseDamage = 150; // Big explosion damage
                     
+                    // Apply Juggernaut skill multipliers
+                    if (p.beefChargeDamage) {
+                        baseDamage *= p.beefChargeDamage; // Charge Power skill
+                    }
+                    if (p.beefExplosionDamage) {
+                        baseDamage *= p.beefExplosionDamage; // Unstoppable Force skill
+                    }
+                    
+                    // Track enemies hit for marauder double-hit bonus
+                    if (!p.marauderHitTargets) p.marauderHitTargets = new Set();
+                    
                     potentialTargets.forEach(e => {
                         if (e.dead) return;
                         const dx = e.x - closestEnemy.x; const dy = e.y - closestEnemy.y; const distSq = dx * dx + dy * dy;
                         if (distSq < impactRadius * impactRadius) {
-                            const chargeDmg = baseDamage * p.dmgMult;
+                            let chargeDmg = baseDamage * p.dmgMult;
+                            
+                            // Marauder double-hit bonus system
+                            const enemyId = e.id || `${e.x}_${e.y}_${e.type}`;
+                            let isDoubleHit = false;
+                            if (p.subclass === 'marauder' && p.marauderHitTargets.has(enemyId)) {
+                                const doubleHitMultiplier = p.marauderDoubleHitBonus || 2.0;
+                                isDoubleHit = true;
+                                
+                                // Special effects based on enemy type
+                                if (e === store.boss || e.type === 'void_champion') {
+                                    // Boss/Champion: Major damage + long stun, but no flatten
+                                    chargeDmg *= doubleHitMultiplier * 1.5; // Extra multiplier for tough enemies
+                                    e.stunTimer = 8.0; // Extended stun
+                                    e.marauderMarked = true; // Mark for visual effect
+                                    announce('CHAMPION DEVASTATION!');
+                                } else {
+                                    // Regular enemy: Flatten effect - disable but leave for cleanup
+                                    e.isFlattened = true;
+                                    e.flattenedTime = performance.now();
+                                    e.v = 0; // Stop movement
+                                    e.vx = 0;
+                                    e.vy = 0;
+                                    e.hp = 1; // Leave at 1 HP for cleanup
+                                    e.stunTimer = 999; // Effectively permanent stun
+                                    e.fireRateChance = 0; // Can't fire anymore
+                                    
+                                    // Add special flattened visual scaling
+                                    e.flattenScale = { x: 2.0, y: 0.1 }; // Wide and very flat
+                                    
+                                    const bonusText = doubleHitMultiplier >= 3.0 ? 'ELITE FLATTEN!' : 'MARAUDER FLATTEN!';
+                                    announce(bonusText);
+                                }
+                                
+                                // Reset the tracking for this enemy after the bonus
+                                setTimeout(() => p.marauderHitTargets.delete(enemyId), 100);
+                            } else if (p.subclass === 'marauder') {
+                                // First hit - track this enemy for potential double hit
+                                p.marauderHitTargets.add(enemyId);
+                                // Clear tracking after 3 seconds if not hit again
+                                setTimeout(() => p.marauderHitTargets.delete(enemyId), 3000);
+                            }
+                            
+                            const knockbackAngle = Math.atan2(e.y - p.y, e.x - p.x);
+                            const damageTags = p.subclass === 'juggernaut' ? ['fire', 'explosive'] : ['kinetic', 'concussive'];
+                            const vulnResult = applySubclassVulnerability(e, chargeDmg, {
+                                player: p,
+                                subclass: p.subclass,
+                                damageTags,
+                                source: 'beefCharge',
+                                knockbackAngle,
+                                baseDamage: chargeDmg
+                            });
+                            chargeDmg = vulnResult.damage;
+
                             e.hp -= chargeDmg; 
-                            e.stunTimer = 2.5;
+                            if (!isDoubleHit) e.stunTimer = 2.5; // Normal stun if not double hit
                             
                             // Apply vampirism healing for charge damage
                             if (store.player.vampirism > 0) {
@@ -2276,8 +2864,13 @@ class FlameParticle {
                                 store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
                             }
                             
-                            const knockbackForce = 250; const angle = Math.atan2(e.y - p.y, e.x - p.x);
-                            e.knockback = { vx: Math.cos(angle) * knockbackForce, vy: Math.sin(angle) * knockbackForce, duration: 0.3 };
+                            let knockbackForce = 250; 
+                            if (p.beefChargeKnockback) {
+                                knockbackForce *= p.beefChargeKnockback; // Apply Charge Power knockback multiplier
+                            }
+                            if (!e.knockback || e.knockback.type !== 'maraLaunch') {
+                                e.knockback = { vx: Math.cos(knockbackAngle) * knockbackForce, vy: Math.sin(knockbackAngle) * knockbackForce, duration: 0.3 };
+                            }
                         }
                     });
                     
@@ -2304,7 +2897,18 @@ class FlameParticle {
                                         // Use smaller radius for combo double charge
                                         const comboRadius = 60; 
                                         if (distSq < comboRadius * comboRadius) {
-                                            const secondChargeDmg = baseDamage * p.dmgMult * 0.7; // Reduced damage for second hit
+                                            let secondChargeDmg = baseDamage * p.dmgMult * 0.7; // Reduced damage for second hit
+                                            const comboAngle = Math.atan2(e.y - p.y, e.x - p.x);
+                                            const comboTags = p.subclass === 'juggernaut' ? ['fire', 'explosive'] : ['kinetic', 'concussive'];
+                                            const comboVuln = applySubclassVulnerability(e, secondChargeDmg, {
+                                                player: p,
+                                                subclass: p.subclass,
+                                                damageTags: comboTags,
+                                                source: 'beefChargeCombo',
+                                                knockbackAngle: comboAngle,
+                                                baseDamage: secondChargeDmg
+                                            });
+                                            secondChargeDmg = comboVuln.damage;
                                             e.hp -= secondChargeDmg;
                                             e.stunTimer = Math.max(e.stunTimer, 1.5);
                                             
@@ -2372,6 +2976,14 @@ class FlameParticle {
             if (p.flamethrowerT <= 0) {
                 fireFlamethrower();
                 p.flamethrowerT = 0.18; // Fixed fire rate for lava chunks
+            }
+        }
+
+        if (p.starCannonLevel > 0 && !p.empDisabled) {
+            p.starCannonTimer -= dt;
+            if (p.starCannonTimer <= 0) {
+                fireStarCannon();
+                p.starCannonTimer = STAR_CANNON_COOLDOWN;
             }
         }
         
@@ -2601,7 +3213,18 @@ class FlameParticle {
             if (!e.dead) {
                 const distSq = (e.x - m.x)**2 + (e.y - m.y)**2;
                 if (distSq < explosionRadius**2) {
-                    e.hp -= aoeDmg;
+                    let pulseDmg = aoeDmg;
+                    const explosionTags = store.player.subclass === 'demolitionist' ? ['fire', 'explosive'] : ['kinetic', 'explosive'];
+                    const vulnExplosion = applySubclassVulnerability(e, pulseDmg, {
+                        subclass: store.player.subclass,
+                        player: store.player,
+                        damageTags: explosionTags,
+                        source: 'clusterDetonation',
+                        projectile: m,
+                        baseDamage: pulseDmg
+                    });
+                    pulseDmg = vulnExplosion.damage;
+                    e.hp -= pulseDmg;
                     e.hp = Math.max(1, e.hp);
                     
                     // Apply vampirism healing for cluster damage
@@ -2672,6 +3295,16 @@ class FlameParticle {
                             store.activeEffects.push(createEffect('critText', e.x, e.y));
                             if (Math.random() < 0.05) { spawnPowerup(e.x, e.y); }
                         }
+                        const missileTags = store.player.subclass === 'demolitionist' ? ['fire', 'explosive'] : ['kinetic', 'explosive'];
+                        const vulResPierce = applySubclassVulnerability(e, dmg, {
+                            subclass: store.player.subclass,
+                            player: store.player,
+                            damageTags: missileTags,
+                            source: 'pierceMissile',
+                            projectile: m,
+                            baseDamage: dmg
+                        });
+                        dmg = vulResPierce.damage;
                         e.hp -= dmg;
                         
                         // Apply vampirism healing for missile damage
@@ -2719,6 +3352,16 @@ class FlameParticle {
                             store.activeEffects.push(createEffect('critText', e.x, e.y));
                             if (Math.random() < 0.05) { spawnPowerup(e.x, e.y); }
                         }
+                        const missileDamageTags = store.player.subclass === 'demolitionist' ? ['fire', 'explosive'] : ['kinetic', 'explosive'];
+                        const vulRes = applySubclassVulnerability(e, dmg, {
+                            subclass: store.player.subclass,
+                            player: store.player,
+                            damageTags: missileDamageTags,
+                            source: m.cluster ? 'clusterMissile' : 'missileImpact',
+                            projectile: m,
+                            baseDamage: dmg
+                        });
+                        dmg = vulRes.damage;
                         e.hp -= dmg;
                         
                         // Apply vampirism healing for missile damage
@@ -2945,6 +3588,8 @@ class FlameParticle {
         stepFlameParticles(dt);
         stepLightning(dt);
         stepEmpNovas(dt);
+        processWaveSpawnQueue(dt);
+        processVulnerabilityEvents(dt);
         
         // Update beef shield system
         updateBeefShield();
@@ -3093,6 +3738,57 @@ class FlameParticle {
         // CONSOLIDATED enemy processing - flame collision + movement in single loop for performance
         store.enemies.forEach(e => {
             if (e.dead) return;
+
+            if (e.topClampDelay !== undefined && e.topClampDelay > 0) {
+                e.topClampDelay = Math.max(0, e.topClampDelay - dt);
+            }
+
+            if (e.spawnPhase === 'teleport') {
+                const duration = Math.max(0.001, e.spawnDuration || 0.6);
+                e.spawnTimer = (e.spawnTimer ?? duration) - dt;
+                const timeRemaining = Math.max(0, e.spawnTimer);
+                const progress = Math.min(1, 1 - timeRemaining / duration);
+                const eased = 1 - Math.pow(1 - progress, 3);
+                const startY = e.spawnStartY ?? (e.spawnTargetY ?? e.y);
+                const targetY = e.spawnTargetY ?? e.y;
+                e.y = startY + (targetY - startY) * eased;
+                e.spawnOpacity = Math.min(1, Math.max(e.spawnOpacity ?? 0, eased * 1.1));
+                e.vulnLastKnownPos = { x: e.x, y: e.y };
+                if (e.spawnTimer <= 0) {
+                    e.spawnPhase = null;
+                    e.spawnOpacity = 1;
+                    e.y = targetY;
+                } else {
+                    return;
+                }
+            } else {
+                e.vulnLastKnownPos = { x: e.x, y: e.y };
+                if (e.spawnOpacity !== undefined && e.spawnOpacity < 1) {
+                    e.spawnOpacity = Math.min(1, e.spawnOpacity + dt * 2.2);
+                }
+            }
+
+            if (e.jugPulseTimer) e.jugPulseTimer = Math.max(0, e.jugPulseTimer - dt);
+            if (e.jugFearTimer) e.jugFearTimer = Math.max(0, e.jugFearTimer - dt);
+            if (e.jugBurnTimer) {
+                e.jugBurnTimer = Math.max(0, e.jugBurnTimer - dt);
+                e.jugBurnTick = (e.jugBurnTick || 0) - dt;
+                if (e.jugBurnTimer > 0 && e.jugBurnTick <= 0) {
+                    const burnDamage = 10 * (store.player?.dmgMult || 1);
+                    const appliedBurn = Math.min(burnDamage, Math.max(0, e.hp - 1));
+                    e.hp -= appliedBurn;
+                    e.jugBurnTick = 0.45;
+                    store.activeEffects.push(createEffect('jugFearEmber', e.x, e.y, e.r || 20));
+                }
+            }
+            if (e.railgunArmorTimer) e.railgunArmorTimer = Math.max(0, e.railgunArmorTimer - dt);
+            if (e.phaseLockTimer) e.phaseLockTimer = Math.max(0, e.phaseLockTimer - dt);
+            if (e.stormShockTimer) e.stormShockTimer = Math.max(0, e.stormShockTimer - dt);
+            if (e.demolitionPulseWarmup) e.demolitionPulseWarmup = Math.max(0, e.demolitionPulseWarmup - dt);
+            if (e.maraLaunchTimer) e.maraLaunchTimer = Math.max(0, e.maraLaunchTimer - dt);
+            if (e.vulnerabilityPulseStrength) {
+                e.vulnerabilityPulseStrength = Math.max(0, e.vulnerabilityPulseStrength - dt * 0.7);
+            }
             
             // OPTIMIZED FLAME PARTICLE COLLISION - batch processing with early exit
             if (flameCount > 0) {
@@ -3130,15 +3826,42 @@ class FlameParticle {
             
             // MOVEMENT AND AI UPDATES
             if (e.knockback) {
-                e.x += e.knockback.vx * dt;
-                e.y += e.knockback.vy * dt;
-                e.knockback.duration -= dt;
-                if (e.knockback.duration <= 0) e.knockback = null;
+                // Handle different knockback formats
+                if (e.knockback.vx !== undefined && e.knockback.vy !== undefined) {
+                    // Beef charge knockback format
+                    e.x += e.knockback.vx * dt;
+                    e.y += e.knockback.vy * dt;
+                    e.knockback.duration -= dt;
+                    if (e.knockback.duration <= 0) e.knockback = null;
+                } else if (e.knockback.x !== undefined && e.knockback.y !== undefined) {
+                    // Blink ability knockback format
+                    e.x += e.knockback.x * dt;
+                    e.y += e.knockback.y * dt;
+                    e.knockback.duration -= dt;
+                    if (e.knockback.duration <= 0) e.knockback = null;
+                }
+                
+                // Clamp enemies to screen boundaries so they don't get pushed off-screen
+                const margin = e.r || 15; // Use enemy radius for margin, default to 15
+                e.x = Math.max(margin, Math.min(W - margin, e.x));
+                e.y = Math.max(margin, Math.min(H - margin, e.y));
+                if (e.knockback && e.knockback.type === 'maraLaunch' && !e.maraImpactTriggered) {
+                    if (e.x <= margin + 1 || e.x >= W - margin - 1 || e.y <= margin + 1 || e.y >= H - margin - 1) {
+                        e.maraImpactTriggered = true;
+                        store.activeEffects.push(createEffect('maraImpactShockwave', e.x, e.y, (e.r || 20) * 1.8));
+                    }
+                }
             } else if (e.stunTimer && e.stunTimer > 0) {
                 e.stunTimer -= dt;
             } else {
                 let speedMultiplier = (e.slowTimer > 0) ? 0.3 : 1.0;
                 if (e.slowTimer > 0) e.slowTimer -= dt;
+                if (e.phaseLockTimer > 0) {
+                    speedMultiplier *= e.phaseLockSlowFactor || 0.4;
+                }
+                if (e.stormShockTimer > 0) {
+                    speedMultiplier *= 0.6;
+                }
 
                 if (e.type === 'construct_gold' || e.type === 'avian_hatchling') {
                     const dx = store.player.x - e.x, dy = store.player.y - e.y, dist = Math.sqrt(dx * dx + dy * dy);
@@ -3221,6 +3944,28 @@ class FlameParticle {
                     }
                 }
                 if (e.phase) e.x += Math.sin(e.t * 3) * 80 * dt;
+            }
+
+            if (e.jugFearTimer > 0) {
+                const dxFear = e.x - store.player.x;
+                const dyFear = e.y - store.player.y;
+                const distFear = Math.sqrt(dxFear * dxFear + dyFear * dyFear) || 1;
+                const fleeSpeed = Math.max(90, (e.v || 60) * 1.9);
+                e.x += (dxFear / distFear) * fleeSpeed * dt;
+                e.y += (dyFear / distFear) * fleeSpeed * dt * 0.6;
+            }
+
+            if (e.stormShockTimer > 0) {
+                e.x += (Math.random() - 0.5) * 35 * dt;
+                e.y += (Math.random() - 0.5) * 35 * dt;
+            }
+
+            const boundaryMargin = e.r || 15;
+            e.x = Math.max(boundaryMargin, Math.min(W - boundaryMargin, e.x));
+            if (!e.topClampDelay || e.topClampDelay <= 0) {
+                if (e.y < boundaryMargin) {
+                    e.y = boundaryMargin;
+                }
             }
 
             if (e.fireT > 0) e.fireT -= dt;
@@ -3444,6 +4189,39 @@ class FlameParticle {
                     }
                     
                     if (e === store.boss) playSound('hit');
+                    const subclass = store.player.subclass;
+                    let bulletTags;
+                    switch (subclass) {
+                        case 'juggernaut':
+                            bulletTags = ['fire', 'explosive'];
+                            break;
+                        case 'marauder':
+                            bulletTags = ['kinetic', 'concussive'];
+                            break;
+                        case 'railgunner':
+                            bulletTags = ['kinetic', 'explosive'];
+                            break;
+                        case 'demolitionist':
+                            bulletTags = ['fire', 'explosive'];
+                            break;
+                        case 'phasestriker':
+                            bulletTags = ['void', 'magic'];
+                            break;
+                        case 'stormcaller':
+                            bulletTags = ['lightning', 'magic'];
+                            break;
+                        default:
+                            bulletTags = b.explosive ? ['fire', 'explosive'] : ['kinetic'];
+                    }
+                    const vulnBullet = applySubclassVulnerability(e, dmg, {
+                        subclass,
+                        player: store.player,
+                        damageTags: bulletTags,
+                        source: b.explosive ? 'explosiveBullet' : 'bullet',
+                        projectile: b,
+                        baseDamage: dmg
+                    });
+                    dmg = vulnBullet.damage;
                     e.hp -= dmg;
                     
                     // Track damage dealt for beef shield system
@@ -3548,6 +4326,8 @@ class FlameParticle {
             }
         });
 
+        updateStarProjectiles(dt);
+
         const p = store.player;
         const healthRatio = p.hp / p.hpMax;
         const lowHealthThreshold = 0.35;
@@ -3624,6 +4404,7 @@ class FlameParticle {
                 
                 // Guaranteed minimum collar stacks for any reasonable clear
                 let collarStacksToAdd = 0;
+                sanitizeCollarStacks();
                 
                 if (waveClearTime < 2) {
                     // Ultra-instant clear: +9 collar stacks (addresses missing 9 stack issue)
@@ -3651,7 +4432,7 @@ class FlameParticle {
                     // Very slow clear: reset collar stacks (except during Death Engine fight)
                     const isDeathEngineFight = store.world.boss && store.world.boss.name === 'DEATH ENGINE';
                     if (!isDeathEngineFight) {
-                        store.world.collarStacks = Math.max(0, store.world.collarStacks - 2);
+                        store.world.collarStacks = Math.max(0, sanitizeCollarStacks() - 2);
                         announce("🐌 SLOW CLEAR - COLLAR LOOSENS");
                     } else {
                         announce("THE DEATH ENGINE'S CURSE MAINTAINS THE COLLAR!");
@@ -3659,8 +4440,9 @@ class FlameParticle {
                 }
                 
                 // Add collar stacks only after 2nd boss is defeated - let first two bosses play normally
+                collarStacksToAdd = ensureFiniteNumber(collarStacksToAdd, 0);
                 if (collarStacksToAdd > 0 && store.world.bosses >= 2) {
-                    store.world.collarStacks += collarStacksToAdd;
+                    store.world.collarStacks = sanitizeCollarStacks() + collarStacksToAdd;
                 }
             }
             
@@ -3697,14 +4479,15 @@ class FlameParticle {
             const isDeathEngineFight = store.world.boss && store.world.boss.name === 'DEATH ENGINE';
             
             if (!isDeathEngineFight) {
-                if (store.world.collarStacks > 20) {
+                const currentStacks = sanitizeCollarStacks();
+                if (currentStacks > 20) {
                     // Decay faster when collar stacks are very high
-                    const decay = Math.max(0.5, store.world.collarStacks * 0.02);
-                    store.world.collarStacks = Math.max(0, store.world.collarStacks - decay);
+                    const decay = Math.max(0.5, currentStacks * 0.02);
+                    store.world.collarStacks = Math.max(0, currentStacks - decay);
                     // High collar stacks decay applied
-                } else if (store.world.collarStacks > 5) {
+                } else if (currentStacks > 5) {
                     // Gentle decay for moderate stacks
-                    store.world.collarStacks = Math.max(0, store.world.collarStacks - 0.3);
+                    store.world.collarStacks = Math.max(0, currentStacks - 0.3);
                 }
             }
         }
@@ -3787,7 +4570,9 @@ class FlameParticle {
     }
 
     function handleBossDefeat() {
-        const fightDuration = (performance.now() - store.world.bossSpawnTime) / 1000;
+        const now = performance.now();
+        const bossSpawnTime = ensureFiniteNumber(store.world.bossSpawnTime, now);
+        const fightDuration = ensureFiniteNumber((now - bossSpawnTime) / 1000, 0);
         
         // Use progression logic with point award
         checkProgressionLogic(true);
@@ -3817,6 +4602,7 @@ class FlameParticle {
         let healthBonusMultiplier = 1.0, announcedAdaptation = false;
         // Calculate collar stacks to add based on boss kill speed (more generous)
         let collarStacksToAdd = 0;
+        sanitizeCollarStacks();
         
         if (fightDuration <= 2) {
             // Ultra-fast boss kill: massive collar bonus
@@ -3859,7 +4645,7 @@ class FlameParticle {
         } else {
             // Very slow kill: reduce collar stacks (except for DEATH ENGINE)
             if (bossName !== 'DEATH ENGINE') {
-                store.world.collarStacks = Math.max(0, store.world.collarStacks - 3); 
+                store.world.collarStacks = Math.max(0, sanitizeCollarStacks() - 3); 
                 announce("⚖️ COLLAR LOOSENS - ADAPTATION WEAKENS");
             } else {
                 announce("THE DEATH ENGINE'S CURSE PERSISTS!");
@@ -3871,13 +4657,14 @@ class FlameParticle {
         
         // Special handling for Death Engine - restore preserved collar stacks
         if (bossName === 'DEATH ENGINE' && store.world.deathEngineCollarStacks !== undefined) {
-            const originalStacks = store.world.deathEngineCollarStacks;
-            store.world.collarStacks = originalStacks + collarStacksToAdd; // Restore + add earned stacks
+            const originalStacks = ensureFiniteNumber(store.world.deathEngineCollarStacks, sanitizeCollarStacks());
+            store.world.collarStacks = Math.max(0, originalStacks + ensureFiniteNumber(collarStacksToAdd, 0)); // Restore + add earned stacks
             delete store.world.deathEngineCollarStacks; // Clean up
         } else {
             // Add collar stacks only after 2nd boss is defeated - collar system starts with 3rd boss
+            collarStacksToAdd = ensureFiniteNumber(collarStacksToAdd, 0);
             if (collarStacksToAdd > 0 && store.world.bosses >= 2) {
-                store.world.collarStacks += collarStacksToAdd;
+                store.world.collarStacks = sanitizeCollarStacks() + collarStacksToAdd;
             }
         }
         // FIXED: Don't permanently modify health bonuses - collar handles this dynamically
@@ -4039,10 +4826,18 @@ class FlameParticle {
             powerupCooldown: 0, 
             xpMultiplier: 1.0, 
             collarStacks: 0, 
+            lateGameDamageScaling: 1,
             consecutiveFastKills: 0, 
             fastKillBonus: 0,
             totalDamage: 0,
-            damageStartTime: performance.now()
+            damageStartTime: performance.now(),
+            lastThreatScale: 1,
+            lastSpawnOverflow: 0,
+            lastPlannedSpawnCount: 0,
+            lastSpawnCount: 0,
+            lastSpawnFallback: false,
+            lastSpawnQueueLength: 0,
+            lastSpawnTempo: 0
         };
         
         if (store.bullets && store.bullets.length) {
@@ -4051,10 +4846,12 @@ class FlameParticle {
         if (store.eBullets && store.eBullets.length) {
             store.eBullets.forEach(returnEBulletToPool);
         }
-        store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = [];
+    store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = []; store.starProjectiles = [];
         store.drones = []; store.hounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
         store.lightningBolts = []; store.empNovas = []; store.poisonPuddles = [];
         store.iceman = null;
+        store.waveSpawnQueue = [];
+        store.pendingSpawnCount = 0;
         store._startTs = performance.now(); store.isGameOver = false;
         store.cheatsUsed = false;
         store.cheatInvincibilityCooldown = 0;
@@ -4155,6 +4952,7 @@ function render(dt) {
     store.missiles.forEach(m => drawMissile(m));
     store.lightningBolts.forEach(l => drawLightningBolt(l));
     store.empNovas.forEach(n => drawEmpNova(n));
+    drawStarProjectiles();
 
 
     // Optimized far bullets rendering with batched operations
@@ -4497,28 +5295,33 @@ function render(dt) {
             glowLineWidth *= sizeMultiplier;
         }
         
-        // Draw main laser beam
-        ctx.strokeStyle = laserColor;
-        ctx.globalAlpha = pulseAlpha;
-        ctx.lineWidth = baseLineWidth;
-        ctx.beginPath();
-        ctx.moveTo(p.x, p.y - 12);
-        ctx.lineTo(target.x, target.y);
-        ctx.stroke();
+        // Draw laser beam(s) - double beam for level 4 phasestriker
+        const beamCount = (p.phasestRikerLevel >= 4 && p.doubleBeam) ? 2 : 1;
+        const beamOffsets = beamCount === 2 ? [-8, 8] : [0]; // Parallel beams offset left and right
         
-        // Draw laser glow effect
-        const gradient = ctx.createLinearGradient(p.x, p.y - 12, target.x, target.y);
-        gradient.addColorStop(0, laserColor + '80');
-        gradient.addColorStop(0.5, laserColor + 'FF');
-        gradient.addColorStop(1, laserColor + '80');
-        
-        ctx.strokeStyle = gradient;
-        ctx.globalAlpha = pulseAlpha * 0.5;
-        ctx.lineWidth = glowLineWidth;
-        ctx.beginPath();
-        ctx.moveTo(p.x, p.y - 12);
-        ctx.lineTo(target.x, target.y);
-        ctx.stroke();
+        for (let i = 0; i < beamCount; i++) {
+            const offsetX = beamOffsets[i];
+            
+            // Draw main laser beam
+            ctx.strokeStyle = laserColor;
+            ctx.globalAlpha = pulseAlpha;
+            ctx.lineWidth = baseLineWidth;
+            ctx.beginPath();
+            ctx.moveTo(p.x + offsetX, p.y - 12);
+            ctx.lineTo(target.x, target.y);
+            ctx.stroke();
+            
+            // Draw laser glow effect
+            gradient.addColorStop(1, laserColor + '80');
+            
+            ctx.strokeStyle = gradient;
+            ctx.globalAlpha = pulseAlpha * 0.5;
+            ctx.lineWidth = glowLineWidth;
+            ctx.beginPath();
+            ctx.moveTo(p.x + offsetX, p.y - 12);
+            ctx.lineTo(target.x, target.y);
+            ctx.stroke();
+        }
         
         // Add impact effect at target
         ctx.fillStyle = laserColor;
@@ -4796,6 +5599,21 @@ function render(dt) {
             const waveMultiplier = Math.pow(1.03, store.world.wave - 1);
             const avgCurrentHp = avgBaseHp * waveMultiplier * collarBonus;
             q('avgEnemyHp').textContent = `${avgCurrentHp.toFixed(0)}`;
+            const spawnDebugEl = q('spawnDebug');
+            if (spawnDebugEl) {
+                const planned = ensureFiniteNumber(store.world.lastPlannedSpawnCount, 0);
+                const actual = ensureFiniteNumber(store.world.lastSpawnCount, store.enemies.length);
+                const threat = ensureFiniteNumber(store.world.lastThreatScale, 1);
+                const overflow = Math.max(0, ensureFiniteNumber(store.world.lastSpawnOverflow, 0));
+                const queued = Math.max(0, ensureFiniteNumber(store.world.lastSpawnQueueLength, 0));
+                const pending = Math.max(0, ensureFiniteNumber(store.pendingSpawnCount, 0));
+                const tempo = ensureFiniteNumber(store.world.lastSpawnTempo, 0);
+                const fallbackNote = store.world.lastSpawnFallback ? ' • fallback' : '';
+                const queueNote = queued ? ` • queued ${queued}` : '';
+                const pendingNote = pending ? ` • pending ${pending}` : '';
+                const tempoNote = tempo ? ` • tempo ${tempo.toFixed(2)}s` : '';
+                spawnDebugEl.textContent = `${actual}/${planned} • threat ${threat.toFixed(2)}${overflow > 0 ? ` • overflow ${overflow}` : ''}${queueNote}${pendingNote}${tempoNote}${fallbackNote}`;
+            }
             
             store.fpsFrameCount = 0;
             store.fpsLastTime = now;
@@ -5001,6 +5819,187 @@ function render(dt) {
                 spawnBullet({ x: spawnX, y: spawnY, vx: Math.sin(angle) * currentSpeed + (sideOffset * 2), vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 2, col: `rgba(100, 150, 255, 0.7)`, dmg: 2 * p.dmgMult * 0.35, life: life, isFlame: true, isIceman: true, isLavaChunk: true, particles: [], particleSpawnT: 0 });
             }
         }
+    }
+
+    function launchStarProjectile(originX, originY, angle) {
+        const projectile = {
+            x: originX,
+            y: originY,
+            vx: Math.sin(angle) * STAR_CANNON_SPEED,
+            vy: -Math.cos(angle) * STAR_CANNON_SPEED,
+            size: STAR_CANNON_SIZE,
+            rotation: 0,
+            trail: [],
+            maxTrailLength: 28,
+            hitIds: new Set()
+        };
+        store.starProjectiles.push(projectile);
+    }
+
+    function fireStarCannon() {
+        const p = store.player;
+        playSound('thoomp');
+        const originY = p.y - 12;
+        const lateralOffset = 26;
+        if (p.starCannonLevel >= 1) {
+            launchStarProjectile(p.x - lateralOffset, originY, -Math.PI / 6);
+        }
+        if (p.starCannonLevel >= 2) {
+            launchStarProjectile(p.x + lateralOffset, originY, Math.PI / 6);
+        }
+    }
+
+    function updateStarProjectiles(dt) {
+        if (!store.starProjectiles.length) return;
+        const p = store.player;
+        const damage = STAR_CANNON_DAMAGE * p.dmgMult;
+        const targets = store.boss ? [store.boss, ...store.enemies] : store.enemies;
+
+        for (let i = store.starProjectiles.length - 1; i >= 0; i--) {
+            const star = store.starProjectiles[i];
+            star.x += star.vx * dt;
+            star.y += star.vy * dt;
+            star.rotation += dt * 2.4;
+
+            star.trail.push({ x: star.x, y: star.y, life: 1, size: star.size * 0.55 });
+            if (star.trail.length > star.maxTrailLength) star.trail.shift();
+            for (let t = star.trail.length - 1; t >= 0; t--) {
+                const particle = star.trail[t];
+                particle.life -= dt * 2.6;
+                particle.size *= 1 - dt * 1.6;
+                if (particle.life <= 0 || particle.size <= 0.2) star.trail.splice(t, 1);
+            }
+
+            const hitRadius = star.size * 0.55;
+            for (const target of targets) {
+                if (!target || target.dead || target.hp <= 0) continue;
+                if (target === store.boss && target.isInvincible) continue;
+                if (target.isHeatDeath) continue;
+
+                const targetRadius = target.r || target.radius || 18;
+                const dx = star.x - target.x;
+                const dy = star.y - target.y;
+                const combined = hitRadius + targetRadius;
+                if (dx * dx + dy * dy <= combined * combined) {
+                    const id = target.id || target.__starId || target;
+                    if (!star.hitIds.has(id)) {
+                        applyStarDamage(target, damage);
+                        star.hitIds.add(id);
+                    }
+                }
+            }
+
+            if (star.x < -80 || star.x > W + 80 || star.y < -120 || star.y > H + 120) {
+                store.starProjectiles.splice(i, 1);
+            }
+        }
+    }
+
+    function applyStarDamage(target, dmg) {
+        const p = store.player;
+        let damage = dmg;
+
+        if (Math.random() < p.critChance) {
+            damage *= p.critDamage;
+            store.activeEffects.push(createEffect('critText', target.x, target.y));
+            if (Math.random() < 0.05) spawnPowerup(target.x, target.y);
+        }
+
+        if (target === store.boss) playSound('hit');
+        target.hp -= damage;
+        store.world.totalDamage = (store.world.totalDamage || 0) + damage;
+
+        if (p.pilotGenome === 'beef') {
+            p.beefShieldDamageDealt = (p.beefShieldDamageDealt || 0) + damage;
+        }
+
+        if (p.vampirism > 0) {
+            let healAmount = damage * p.vampirism;
+            healAmount = Math.max(healAmount, 1);
+            healAmount = Math.min(healAmount, 5);
+            p.hp = Math.min(p.hpMax, p.hp + healAmount);
+        }
+
+        if (target.hp <= 0) {
+            target.dead = true;
+            if (target.type === 'void_champion') {
+                store.enemies.forEach(minion => {
+                    if (minion.orbitTargetId === target.id && !minion.dead) {
+                        spawnGibs(minion.x, minion.y, minion.color);
+                        minion.dead = true;
+                    }
+                });
+                spawnVoidCoreDrop(target.x, target.y - 10);
+            }
+
+            if (target === store.boss) {
+                handleBossDefeat();
+            } else {
+                spawnGibs(target.x, target.y, target.color);
+                store.world.score += target.score;
+                store.world.gold += target.gold;
+                store.world.xp += target.xp;
+                store.world.kills++;
+
+                spawnPowerup(target.x, target.y);
+                explode(target.x, target.y);
+            }
+        }
+    }
+
+    function drawStarProjectiles() {
+        if (!store.starProjectiles.length) return;
+        for (const star of store.starProjectiles) {
+            for (const particle of star.trail) {
+                ctx.fillStyle = `rgba(255, 255, 200, ${particle.life * 0.6})`;
+                ctx.shadowColor = `rgba(255, 240, 150, ${particle.life})`;
+                ctx.shadowBlur = 12;
+                ctx.beginPath();
+                ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.save();
+            ctx.translate(star.x, star.y);
+            ctx.rotate(star.rotation);
+
+            ctx.fillStyle = 'rgba(255, 255, 140, 0.85)';
+            ctx.shadowColor = 'rgba(255, 220, 120, 0.9)';
+            ctx.shadowBlur = 24;
+            drawStarShape(ctx, 0, 0, 5, star.size, star.size * 0.45);
+            ctx.fill();
+
+            ctx.fillStyle = '#fffbe6';
+            ctx.shadowBlur = 12;
+            drawStarShape(ctx, 0, 0, 5, star.size * 0.65, star.size * 0.28);
+            ctx.fill();
+
+            ctx.restore();
+            ctx.shadowBlur = 0;
+        }
+    }
+
+    function drawStarShape(ctx, cx, cy, spikes, outerRadius, innerRadius) {
+        let rot = Math.PI / 2 * 3;
+        let x = cx;
+        let y = cy;
+        const step = Math.PI / spikes;
+
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - outerRadius);
+        for (let i = 0; i < spikes; i++) {
+            x = cx + Math.cos(rot) * outerRadius;
+            y = cy + Math.sin(rot) * outerRadius;
+            ctx.lineTo(x, y);
+            rot += step;
+
+            x = cx + Math.cos(rot) * innerRadius;
+            y = cy + Math.sin(rot) * innerRadius;
+            ctx.lineTo(x, y);
+            rot += step;
+        }
+        ctx.lineTo(cx, cy - outerRadius);
+        ctx.closePath();
     }
     
     function stepBossOmegaSentinel(dt, b, dmgScale) {
@@ -6720,7 +7719,36 @@ function render(dt) {
 
         ctx.restore();
     }
-    function drawEnemy(e) { const{x:t,y:o,r:a,type:r,color:n,hp:l,hpMax:s,t:c}=e;ctx.save();ctx.translate(t,o);l<s&&l>0&&(ctx.fillStyle='rgba(0,0,0,0.5)',ctx.fillRect(-a,-a-8,2*a,3),ctx.fillStyle="#b266ff",ctx.fillRect(-a,-a-8,2*a*(l/s),3));ctx.lineWidth=2;ctx.beginPath();switch(r){case"avian_hatchling":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a*1.2);ctx.lineTo(a,-a*0.5);ctx.lineTo(a,a*0.5);ctx.lineTo(0,a*1.2);ctx.lineTo(-a,a*0.5);ctx.lineTo(-a,-a*0.5);ctx.closePath();ctx.fill();ctx.stroke();break;case"construct_gold":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a);ctx.lineTo(a,0);ctx.lineTo(0,a);ctx.lineTo(-a,0);ctx.closePath();ctx.fill();ctx.stroke();break;case"trap_king_add":case"drone":const e=ctx.createLinearGradient(-a,-a,a,a);e.addColorStop(0,"#E0E0E0");e.addColorStop(1,"#A0A0A0");ctx.fillStyle=e;ctx.strokeStyle="#808080";ctx.beginPath();ctx.moveTo(-1.2*a,0);ctx.quadraticCurveTo(0,-a,1.2*a,0);ctx.quadraticCurveTo(0,.6*a,-1.2*a,0);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#aaddff";ctx.strokeStyle="#FFFFFF";ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-.2*a,.6*a,Math.PI,0);ctx.fill();ctx.stroke();ctx.fillStyle=r==="trap_king_add"?"#ffc83d":"#32CD32";ctx.beginPath();ctx.ellipse(0,-.2*a,.3*a,.4*a,0,0,2*Math.PI);ctx.fill();ctx.fillStyle="#000000";ctx.beginPath();ctx.ellipse(-.1*a,-.25*a,.08*a,.15*a,-.5,0,2*Math.PI);ctx.ellipse(.1*a,-.25*a,.08*a,.15*a,.5,0,2*Math.PI);ctx.fill();break;
+    function drawEnemy(e) { const{x:t,y:o,r:a,type:r,color:n,hp:l,hpMax:s,t:c}=e;ctx.save();ctx.translate(t,o);
+        const spawnAlpha = e.spawnOpacity !== undefined ? Math.max(0.2, Math.min(1, e.spawnOpacity)) : 1;
+        ctx.globalAlpha *= spawnAlpha;
+        if (e.spawnPhase === 'teleport') {
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            const time = performance.now() / 200;
+            const ringRadius = (a + 8) * (0.9 + 0.05 * Math.sin(time + (e.spawnClusterIndex || 0)));
+            const ringAlpha = 0.35 + 0.25 * spawnAlpha;
+            ctx.globalAlpha = ringAlpha;
+            ctx.strokeStyle = e.spawnEffectColor || '#9ad7ff';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = ringAlpha * 0.7;
+            ctx.beginPath();
+            ctx.arc(0, 0, ringRadius * 0.65, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+        // Apply flattening effect if enemy has flattenScale property
+        if (e.flattenScale !== undefined) {
+            if (typeof e.flattenScale === 'number') {
+                ctx.scale(1, e.flattenScale);
+            } else {
+                ctx.scale(e.flattenScale.x || 1, e.flattenScale.y || 1);
+            }
+        }
+        l<s&&l>0&&(ctx.fillStyle='rgba(0,0,0,0.5)',ctx.fillRect(-a,-a-8,2*a,3),ctx.fillStyle="#b266ff",ctx.fillRect(-a,-a-8,2*a*(l/s),3));ctx.lineWidth=2;ctx.beginPath();switch(r){case"avian_hatchling":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a*1.2);ctx.lineTo(a,-a*0.5);ctx.lineTo(a,a*0.5);ctx.lineTo(0,a*1.2);ctx.lineTo(-a,a*0.5);ctx.lineTo(-a,-a*0.5);ctx.closePath();ctx.fill();ctx.stroke();break;case"construct_gold":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a);ctx.lineTo(a,0);ctx.lineTo(0,a);ctx.lineTo(-a,0);ctx.closePath();ctx.fill();ctx.stroke();break;case"trap_king_add":case"drone":const e=ctx.createLinearGradient(-a,-a,a,a);e.addColorStop(0,"#E0E0E0");e.addColorStop(1,"#A0A0A0");ctx.fillStyle=e;ctx.strokeStyle="#808080";ctx.beginPath();ctx.moveTo(-1.2*a,0);ctx.quadraticCurveTo(0,-a,1.2*a,0);ctx.quadraticCurveTo(0,.6*a,-1.2*a,0);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#aaddff";ctx.strokeStyle="#FFFFFF";ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-.2*a,.6*a,Math.PI,0);ctx.fill();ctx.stroke();ctx.fillStyle=r==="trap_king_add"?"#ffc83d":"#32CD32";ctx.beginPath();ctx.ellipse(0,-.2*a,.3*a,.4*a,0,0,2*Math.PI);ctx.fill();ctx.fillStyle="#000000";ctx.beginPath();ctx.ellipse(-.1*a,-.25*a,.08*a,.15*a,-.5,0,2*Math.PI);ctx.ellipse(.1*a,-.25*a,.08*a,.15*a,.5,0,2*Math.PI);ctx.fill();break;
         case "hunter": {
             const time = performance.now() / 1000;
             const segments = 8;
@@ -7068,10 +8096,77 @@ function render(dt) {
         ctx.textAlign = 'center';
         ctx.fillText('STUN', 0, -a - 12);
     }
+    if (e.vulnerabilityPulseStrength && e.vulnerabilityPulseColor) {
+        const pulse = (Math.sin(performance.now() / 120) + 1) * 0.5;
+        ctx.save();
+        ctx.globalAlpha = Math.min(0.9, e.vulnerabilityPulseStrength);
+        ctx.strokeStyle = e.vulnerabilityPulseColor;
+        ctx.lineWidth = 2.5 + pulse * 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, a * (1.05 + 0.2 * pulse), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+    }
+    if (e.railgunArmorTimer > 0) {
+        ctx.save();
+        ctx.strokeStyle = `rgba(215,240,255,${Math.min(0.8, e.railgunArmorTimer / 2)})`;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(-a * 0.6, -a * 0.3);
+        ctx.lineTo(0, 0);
+        ctx.lineTo(a * 0.5, -a * 0.2);
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-a * 0.2, a * 0.5);
+        ctx.stroke();
+        ctx.restore();
+    }
+    if (e.phaseLockTimer > 0) {
+        ctx.save();
+        ctx.globalAlpha = 0.4 + 0.2 * Math.sin(performance.now() / 60);
+        ctx.strokeStyle = '#9e7cff';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, a * 1.2, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-a * 1.2, 0);
+        ctx.lineTo(a * 1.2, 0);
+        ctx.moveTo(0, -a * 1.2);
+        ctx.lineTo(0, a * 1.2);
+        ctx.stroke();
+        ctx.restore();
+    }
+    if (e.stormShockTimer > 0) {
+        ctx.save();
+        ctx.globalAlpha = Math.min(0.8, 0.4 + e.stormShockTimer * 0.3);
+        ctx.strokeStyle = '#66d6ff';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 4; i++) {
+            const angle = (i / 4) * Math.PI * 2 + performance.now() / 250;
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(angle) * a * 0.4, Math.sin(angle) * a * 0.4);
+            ctx.lineTo(Math.cos(angle) * a * 1.3, Math.sin(angle) * a * 1.3);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+    if (e.demolitionPulseWarmup > 0) {
+        ctx.save();
+        ctx.globalAlpha = Math.min(0.6, e.demolitionPulseWarmup * 1.2);
+        const grad = ctx.createRadialGradient(0, 0, a * 0.2, 0, 0, a * 1.4);
+        grad.addColorStop(0, 'rgba(255, 170, 90, 0.7)');
+        grad.addColorStop(1, 'rgba(255, 90, 0, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(0, 0, a * (1 + (1 - e.demolitionPulseWarmup) * 0.4), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
     ctx.restore()
     }
-    function createEffect(type,x,y, radius){
-        let effect={isActive:!0,life:1,maxLife:1,x,y};
+    function createEffect(type,x,y, radius, options = {}){
+        const opts = options || {};
+        let effect={isActive:!0,life:1,maxLife:1,x,y,radius,opts};
         switch(type){
             case "heartbeatPulse":
                 effect.maxLife = 0.6;
@@ -7113,6 +8208,48 @@ function render(dt) {
                     ctx.beginPath();
                     ctx.moveTo(this.origin.x, this.origin.y);
                     ctx.lineTo(currentX, currentY);
+                    ctx.stroke();
+                    ctx.restore();
+                };
+                break;
+            case "spawnTeleport":
+                effect.maxLife = opts.duration ?? 0.85;
+                effect.life = effect.maxLife;
+                effect.radius = radius || 18;
+                effect.color = opts.color || '#9ad7ff';
+                effect.clusterIndex = opts.clusterIndex ?? 0;
+                effect.step = function(dt) {
+                    this.life -= dt;
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    const t = 1 - (this.life / this.maxLife);
+                    const eased = 1 - Math.pow(1 - t, 2.4);
+                    const alpha = Math.max(0, 0.75 * (1 - eased));
+                    const ringPulse = 0.8 + Math.sin(performance.now() / 140 + this.clusterIndex) * 0.15;
+                    const baseRadius = this.radius * (0.85 + eased * 0.55);
+                    ctx.save();
+                    ctx.translate(this.x, this.y + (opts.fallback ? 6 : 0));
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.globalAlpha = alpha;
+                    const gradient = ctx.createRadialGradient(0, 0, baseRadius * 0.2, 0, 0, baseRadius * 1.15);
+                    gradient.addColorStop(0, `${this.color}aa`);
+                    gradient.addColorStop(1, `${this.color}00`);
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, baseRadius * 1.15, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.strokeStyle = this.color;
+                    ctx.lineWidth = 2.5;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, baseRadius * ringPulse, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    ctx.lineWidth = 1.2;
+                    ctx.globalAlpha *= 0.8;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, baseRadius * (0.55 + Math.sin(performance.now() / 180 + this.clusterIndex) * 0.1), 0, Math.PI * 2);
                     ctx.stroke();
                     ctx.restore();
                 };
@@ -7308,6 +8445,221 @@ function render(dt) {
                     ctx.arc(0, 0, 40 * p, 0, 2 * Math.PI);
                     ctx.stroke();
                     ctx.fill();
+                    ctx.restore();
+                };
+                break;
+            case "jugFearIgnite":
+                effect.maxLife = 0.6;
+                effect.radius = radius || 40;
+                effect.step = function(dt) {
+                    this.life -= dt / this.maxLife;
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    const progress = 1 - this.life;
+                    ctx.globalAlpha = 0.5 + 0.4 * Math.sin(performance.now() / 60);
+                    ctx.fillStyle = 'rgba(255,80,40,0.6)';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius * (0.7 + progress * 0.6), 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 0.7;
+                    ctx.fillStyle = 'rgba(255,200,120,0.5)';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius * (0.4 + progress * 0.3), 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                };
+                break;
+            case "jugFearEmber":
+                effect.maxLife = 0.4;
+                effect.radius = radius || 20;
+                effect.step = function(dt) {
+                    this.life -= dt / this.maxLife;
+                    this.y -= 40 * dt;
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    ctx.globalAlpha = this.life;
+                    ctx.fillStyle = 'rgba(255,150,80,0.8)';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius * (0.4 + 0.6 * this.life), 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                };
+                break;
+            case "marauderLaunchTrail":
+                const trailCfg = radius || {};
+                effect.maxLife = trailCfg.duration || 0.5;
+                effect.life = effect.maxLife;
+                effect.followEnemy = trailCfg.enemy || null;
+                effect.step = function(dt) {
+                    this.life -= dt;
+                    if (this.followEnemy) {
+                        this.x = this.followEnemy.x;
+                        this.y = this.followEnemy.y;
+                    }
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    ctx.globalAlpha = Math.max(0, this.life / this.maxLife);
+                    ctx.strokeStyle = 'rgba(170, 209, 255, 0.7)';
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 30 * (1 + (1 - this.life / this.maxLife)), 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                };
+                break;
+            case "maraImpactShockwave":
+                effect.maxLife = 0.4;
+                effect.radius = radius || 45;
+                effect.step = function(dt) {
+                    this.life -= dt / this.maxLife;
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    ctx.globalAlpha = this.life;
+                    ctx.strokeStyle = 'rgba(150, 210, 255, 0.9)';
+                    ctx.lineWidth = 6 - (5 * (1 - this.life));
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius * (1.2 - this.life * 0.4), 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                };
+                break;
+            case "armorCrackFlash":
+                effect.maxLife = 0.5;
+                effect.level = radius || 1;
+                effect.step = function(dt) {
+                    this.life -= dt / this.maxLife;
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    ctx.globalAlpha = this.life;
+                    ctx.strokeStyle = 'rgba(210, 240, 255, 0.8)';
+                    ctx.lineWidth = 1.2;
+                    for (let i = 0; i < 3 + this.level; i++) {
+                        const angle = (i / (3 + this.level)) * Math.PI * 2;
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        ctx.lineTo(Math.cos(angle) * 35, Math.sin(angle) * 35);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                };
+                break;
+            case "demolitionPulseCharge":
+                effect.maxLife = 0.7;
+                effect.radius = radius || 40;
+                effect.step = function(dt) {
+                    this.life -= dt / this.maxLife;
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    ctx.globalAlpha = this.life;
+                    ctx.strokeStyle = 'rgba(255, 170, 90, 0.8)';
+                    ctx.lineWidth = 2 + (1 - this.life) * 3;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius * (1.2 - this.life * 0.4), 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                };
+                break;
+            case "voidLockChains":
+                effect.maxLife = 0.6;
+                effect.radius = radius || 45;
+                effect.step = function(dt) {
+                    this.life -= dt / this.maxLife;
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    const rotation = performance.now() / 200;
+                    ctx.globalAlpha = 0.5 + 0.3 * this.life;
+                    ctx.strokeStyle = 'rgba(140, 120, 255, 0.9)';
+                    ctx.lineWidth = 3;
+                    for (let i = 0; i < 4; i++) {
+                        const angle = rotation + (i / 4) * Math.PI * 2;
+                        ctx.beginPath();
+                        ctx.moveTo(Math.cos(angle) * this.radius, Math.sin(angle) * this.radius);
+                        ctx.lineTo(Math.cos(angle + Math.PI) * this.radius * 0.4, Math.sin(angle + Math.PI) * this.radius * 0.4);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                };
+                break;
+            case "stormDischarge":
+                effect.maxLife = 0.35;
+                effect.radius = radius || 60;
+                effect.step = function(dt) {
+                    this.life -= dt / this.maxLife;
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    ctx.globalAlpha = this.life * 0.8;
+                    ctx.strokeStyle = 'rgba(110, 210, 255, 1)';
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius * (1.1 - this.life * 0.4), 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                };
+                break;
+            case "stormArc":
+                const arcTarget = radius || { x, y };
+                effect.maxLife = 0.2;
+                effect.target = arcTarget;
+                effect.x = x;
+                effect.y = y;
+                effect.step = function(dt) {
+                    this.life -= dt / this.maxLife;
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    ctx.save();
+                    ctx.globalAlpha = this.life;
+                    ctx.strokeStyle = 'rgba(120, 220, 255, 0.9)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(this.x, this.y);
+                    const controlX = (this.x + this.target.x) / 2 + (Math.random() - 0.5) * 30;
+                    const controlY = (this.y + this.target.y) / 2 + (Math.random() - 0.5) * 30;
+                    ctx.quadraticCurveTo(controlX, controlY, this.target.x, this.target.y);
+                    ctx.stroke();
+                    ctx.restore();
+                };
+                break;
+            case "delayedFlamePulse":
+                effect.maxLife = 0.5;
+                effect.radius = radius || 90;
+                effect.step = function(dt) {
+                    this.life -= dt / this.maxLife;
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    ctx.globalAlpha = this.life;
+                    ctx.strokeStyle = 'rgba(255, 150, 60, 0.8)';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius * (1 + (1 - this.life) * 0.3), 0, Math.PI * 2);
+                    ctx.stroke();
                     ctx.restore();
                 };
                 break;
@@ -8169,8 +9521,27 @@ function render(dt) {
                         damage *= Math.min(rampMultiplier, 4.0); // Cap at 4x damage
                     }
                     
+                    // Level 4 phasestriker: Double Long Range Intensifying Beam - double damage with intensification
+                    if (p.phasestRikerLevel >= 4 && p.doubleBeam) {
+                        damage *= 2; // Double beam doubles the damage
+                        // Additional intensification over time
+                        if (p.beamIntensifyRate && p.voidLaserRampTime > 0) {
+                            const intensifyMultiplier = 1 + (p.voidLaserRampTime * p.beamIntensifyRate);
+                            damage *= Math.min(intensifyMultiplier, 2.0); // Cap at 2x additional intensification
+                        }
+                    }
+                    
                     if (p.voidLaserTarget === store.boss) damage *= 0.3; // Reduced damage to boss
                     
+                    const voidLaserVuln = applySubclassVulnerability(p.voidLaserTarget, damage, {
+                        subclass: p.subclass,
+                        player: p,
+                        damageTags: ['void', 'magic'],
+                        source: 'voidLaser',
+                        baseDamage: damage
+                    });
+                    damage = voidLaserVuln.damage;
+
                     p.voidLaserTarget.hp -= damage;
                     store.world.totalDamage += damage;
                     
@@ -8265,6 +9636,14 @@ function render(dt) {
 
             let dmg = currentDamage;
             if (currentTarget === store.boss) dmg *= 0.3;
+            const lightningResult = applySubclassVulnerability(currentTarget, dmg, {
+                subclass: store.player.subclass,
+                player: store.player,
+                damageTags: ['lightning', 'magic'],
+                source: 'chainLightning',
+                baseDamage: dmg
+            });
+            dmg = lightningResult.damage;
             currentTarget.hp -= dmg;
             store.world.totalDamage += dmg;
             
@@ -8814,7 +10193,7 @@ function tryVoidStep(player, target, now = performance.now()){
                     { id: 'phasestriker_unlimited_range', name: 'Unlimited Range', desc: 'Void laser can target enemies anywhere on screen - no range limitations', icon: 'phase1.png', tier: 1 },
                     { id: 'phasestriker_ramping_power', name: 'Ramping Power', desc: 'Laser increases in size and damage each millisecond on the same target', icon: 'phase2.png', tier: 2 },
                     { id: 'phasestriker_dimensional_control', name: 'Dimensional Control', desc: 'Void laser phases through reality with 2.5x damage', icon: 'phase3.png', tier: 3 },
-                    { id: 'phasestriker_void_lord', name: 'Void Lord', desc: '3x laser ramp multiplier - ultimate void energy mastery', icon: 'phase4.png', tier: 4 }
+                    { id: 'phasestriker_double_beam', name: 'Double Long Range Intensifying Beam', desc: 'Fires two parallel beams that intensify over time, dealing massive damage', icon: 'phase4.png', tier: 4 }
                 ]
             },
             classAbility: { id: 'blink_unlock', name: 'BLINK', desc: 'UNLOCK: Teleportation ability with tactical positioning', icon: 'blink.png', tier: 'class' }
@@ -9835,6 +11214,7 @@ function tryVoidStep(player, target, now = performance.now()){
                 p.beefMaxCharges = Math.max(p.beefMaxCharges || 3, 5);
                 p.beefCharges = Math.max(p.beefCharges, 5);
                 p.beefEliteCombat = true;
+                p.marauderDoubleHitBonus = 3.0; // Elite double-hit gives 3x damage instead of 2x
                 announce('ELITE WARRIOR ACTIVATED - Peak Marauder Prowess!');
                 break;
                 
@@ -9847,8 +11227,8 @@ function tryVoidStep(player, target, now = performance.now()){
                 announce('HEAVY ARMOR ACTIVATED - Superior Protection!');
                 break;
             case 'juggernaut_unstoppable':
-                p.beefExplosionRadius *= 2.5;
-                p.beefExplosionDamage *= 3.0;
+                p.beefExplosionRadius = (p.beefExplosionRadius || 1.0) * 2.5;
+                p.beefExplosionDamage = (p.beefExplosionDamage || 1.0) * 3.0;
                 p.beefUnstoppableForce = true;
                 announce('UNSTOPPABLE FORCE ACTIVATED - Maximum Impact Power!');
                 break;
@@ -9888,11 +11268,13 @@ function tryVoidStep(player, target, now = performance.now()){
                 p.dimensionalControl = true;
                 announce('DIMENSIONAL CONTROL ACTIVATED - Reality Manipulation!');
                 break;
-            case 'phasestriker_void_lord':
-                p.voidLaserMaxRamp *= 3.0;
-                p.voidMastery = true;
-                p.voidLordPower = true;
-                announce('VOID LORD ACTIVATED - Ultimate Phase Mastery!');
+            case 'phasestriker_double_beam':
+                // Double Long Range Intensifying Beam - fires two parallel beams with intensifying damage
+                p.phasestRikerLevel = Math.max(p.phasestRikerLevel, 4); // Level 4: Double beam
+                p.doubleBeam = true;
+                p.beamIntensifyRate = 0.1; // 10% damage increase per second of sustained fire
+                p.voidLaserMaxRamp *= 2.0; // Double the ramp potential
+                announce('DOUBLE LONG RANGE INTENSIFYING BEAM!');
                 break;
                 
             // Stormcaller Advanced Skills  
@@ -9967,6 +11349,7 @@ function tryVoidStep(player, target, now = performance.now()){
                 p.beefMaxCharges = Math.max(p.beefMaxCharges, 2);  
                 p.beefCharges = Math.max(p.beefCharges, 2);
                 p.beefChainMode = true; // Enable chain jumping for marauder
+                p.marauderHitTargets = new Set(); // Initialize double-hit tracking
                 announce('MARAUDER ACTIVATED - Chain Jumping!');
                 break;
             case 'phasestriker': 
