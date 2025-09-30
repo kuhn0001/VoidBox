@@ -1399,6 +1399,66 @@ class FlameParticle {
         empDisabled: false, empDisabledTimer: 0
     };
     
+    class Pool {
+        constructor(createFn, resetFn) {
+            this.createFn = createFn;
+            this.resetFn = resetFn;
+            this.available = [];
+        }
+
+        prefill(count) {
+            for (let i = 0; i < count; i++) {
+                this.available.push(this.createFn());
+            }
+        }
+
+        get() {
+            const item = this.available.pop() || this.createFn();
+            if (this.resetFn) this.resetFn(item);
+            return item;
+        }
+
+        release(item) {
+            if (this.resetFn) this.resetFn(item);
+            this.available.push(item);
+        }
+    }
+
+    function resetBulletState(bullet) {
+        bullet.x = 0;
+        bullet.y = 0;
+        bullet.vx = 0;
+        bullet.vy = 0;
+        bullet.r = 3;
+        bullet.col = "#b266ff";
+        bullet.dmg = 0;
+        bullet.pierce = 0;
+        bullet.explosive = false;
+        bullet.dead = false;
+        bullet.life = undefined;
+        bullet.fadeInTime = undefined;
+        bullet.spawnTime = undefined;
+        bullet.isSwirl = false;
+        bullet.isFlame = false;
+        bullet.isIceman = false;
+        bullet.isDrone = false;
+        bullet.isLavaChunk = false;
+        bullet.isLevelUpPulse = false;
+        bullet.gravity = undefined;
+        bullet.target = undefined;
+        bullet.particles = null;
+        bullet.particleSpawnT = 0;
+    }
+
+    function createBullet() {
+        const bullet = {};
+        resetBulletState(bullet);
+        return bullet;
+    }
+
+    const bulletPool = new Pool(createBullet, resetBulletState);
+    bulletPool.prefill(100);
+
     const store = {
         frame: 0, last: performance.now(), isGameOver: false, isPaused: false,
         isDamageOff: false,
@@ -1428,14 +1488,14 @@ class FlameParticle {
             isLowHealth: false
         },
         player: { ...player_initial_state },
-        boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [],
+    boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [],
         flameParticles: [],
         lightningBolts: [],
         empNovas: [],
         mechPuddles: [], // Hazardous puddles left by mech tank attacks
         iceman: null,
-        // Object pools for performance optimization
-        bulletPool: [],
+    // Object pools for performance optimization
+    bulletPool: null,
         eBulletPool: [],
         effectPool: [],
         tempFlamePool: [], // For simple flame particles
@@ -1447,30 +1507,19 @@ class FlameParticle {
     };
 
     // --- OBJECT POOLING SYSTEM ---
-    function getBulletFromPool(props = {}) {
-        let bullet;
-        if (store.bulletPool.length > 0) {
-            bullet = store.bulletPool.pop();
-            // Reset all properties to default
-            Object.assign(bullet, {
-                x: 0, y: 0, vx: 0, vy: 0, r: 3, col: "#b266ff", 
-                dmg: 0, pierce: false, explosive: false, dead: false,
-                life: undefined, isSwirl: false, isFlame: false,
-                isIceman: false, isDrone: false, isLevelUpPulse: false,
-                fadeInTime: undefined, spawnTime: undefined
-            });
-        } else {
-            bullet = {
-                x: 0, y: 0, vx: 0, vy: 0, r: 3, col: "#b266ff",
-                dmg: 0, pierce: false, explosive: false, dead: false
-            };
-        }
-        
-        // Apply custom properties
+    store.bulletPool = bulletPool;
+
+    function spawnBullet(props = {}) {
+        const bullet = bulletPool.get();
         Object.assign(bullet, props);
+        bullet.dead = false;
+        if (bullet.isFlame && !Array.isArray(bullet.particles)) {
+            bullet.particles = [];
+        }
+        store.bullets.push(bullet);
         return bullet;
     }
-    
+
     function getEBulletFromPool(props = {}) {
         let bullet;
         if (store.eBulletPool.length > 0) {
@@ -1492,12 +1541,6 @@ class FlameParticle {
         // Apply custom properties
         Object.assign(bullet, props);
         return bullet;
-    }
-    
-    function returnBulletToPool(bullet) {
-        if (store.bulletPool.length < 1000) { // Cap pool size
-            store.bulletPool.push(bullet);
-        }
     }
     
     function returnEBulletToPool(bullet) {
@@ -3532,16 +3575,16 @@ class FlameParticle {
         const deadBullets = store.bullets.filter(b => b.dead);
         const deadEBullets = store.eBullets.filter(b => b.dead);
         
-        // Return dead bullets to pools
-        deadBullets.forEach(returnBulletToPool);
-        deadEBullets.forEach(returnEBulletToPool);
-        
         // PERFORMANCE: Efficient dead object removal using reverse iteration
         // This is 300-500% faster than filter() and reduces GC pressure dramatically
         
         // Handle bullets (already pooled efficiently)
         store.bullets = store.bullets.filter(i => !i.dead);
         store.eBullets = store.eBullets.filter(i => !i.dead);
+        
+        // Return dead bullets to pools after arrays are compacted
+        deadBullets.forEach(bullet => bulletPool.release(bullet));
+        deadEBullets.forEach(returnEBulletToPool);
         
         // Efficient removal for other arrays
         removeDeadObjects(store.enemies);
@@ -3757,7 +3800,13 @@ class FlameParticle {
             store.poisonPuddles = [];
         }
         // Also clear poison blobs still in flight to prevent persistent puddles
-        store.bullets = store.bullets.filter(b => b.type !== 'poisonBlob');
+        store.bullets = store.bullets.filter(b => {
+            if (b.type === 'poisonBlob') {
+                bulletPool.release(b);
+                return false;
+            }
+            return true;
+        });
         
         store.boss = null;
         announce('⚡ GUARDIAN DEFEATED ⚡');
@@ -3898,12 +3947,17 @@ class FlameParticle {
             for (let i = 0; i < numBullets; i++) {
                 const angle = (i / numBullets) * 2 * Math.PI;
                 const bulletSpeed = 300;
-                store.bullets.push({
-                    x: p.x, y: p.y,
+                spawnBullet({
+                    x: p.x,
+                    y: p.y,
                     vx: Math.cos(angle) * bulletSpeed,
                     vy: Math.sin(angle) * bulletSpeed,
-                    r: 4, col: '#ffddff', dmg: 30 * p.dmgMult,
-                    pierce: true, life: 1.5, isLevelUpPulse: true
+                    r: 4,
+                    col: '#ffddff',
+                    dmg: 30 * p.dmgMult,
+                    pierce: true,
+                    life: 1.5,
+                    isLevelUpPulse: true
                 });
             }
         };
@@ -3989,6 +4043,12 @@ class FlameParticle {
             damageStartTime: performance.now()
         };
         
+        if (store.bullets && store.bullets.length) {
+            store.bullets.forEach(bullet => bulletPool.release(bullet));
+        }
+        if (store.eBullets && store.eBullets.length) {
+            store.eBullets.forEach(returnEBulletToPool);
+        }
         store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = [];
         store.drones = []; store.hounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
         store.lightningBolts = []; store.empNovas = []; store.poisonPuddles = [];
@@ -4818,16 +4878,15 @@ function render(dt) {
     }
     function fireBullet(x, y, vx, vy, props = {}) { 
         const p = store.player; 
-        const bullet = getBulletFromPool({
-            x, y, vx, vy, 
-            r: p.explosive ? 5 : 3, 
-            col: p.explosive ? "#ED2F32" : "#b266ff", 
-            dmg: 15 * p.dmgMult, 
-            pierce: p.piercing, 
-            explosive: p.explosive, 
+        spawnBullet({
+            x, y, vx, vy,
+            r: p.explosive ? 5 : 3,
+            col: p.explosive ? "#ED2F32" : "#b266ff",
+            dmg: 15 * p.dmgMult,
+            pierce: p.piercing,
+            explosive: p.explosive,
             ...props
         });
-        store.bullets.push(bullet);
     }
     function firePlayer() {
         const p = store.player;
@@ -4838,33 +4897,73 @@ function render(dt) {
         const angleSpread = 10;
         for (let i = 0; i < totalMultishot; i++) { 
             const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180; 
-            const bullet = getBulletFromPool({
-                x: p.x + 10 * Math.sin(angle), 
-                y: p.y - 12, 
-                vx: Math.sin(angle) * bulletSpeed, 
-                vy: -Math.cos(angle) * bulletSpeed, 
-                r: p.explosive ? 5 : 3, 
-                col: p.explosive ? "#cc99ff" : "#b266ff", 
-                dmg: 15 * p.dmgMult, 
-                pierce: p.piercing, 
+            spawnBullet({
+                x: p.x + 10 * Math.sin(angle),
+                y: p.y - 12,
+                vx: Math.sin(angle) * bulletSpeed,
+                vy: -Math.cos(angle) * bulletSpeed,
+                r: p.explosive ? 5 : 3,
+                col: p.explosive ? "#cc99ff" : "#b266ff",
+                dmg: 15 * p.dmgMult,
+                pierce: p.piercing,
                 explosive: p.explosive
             });
-            store.bullets.push(bullet);
         }
-        if (p.hasIceman && store.iceman) { for (let i = 0; i < totalMultishot; i++) { const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180; store.bullets.push({ x: store.iceman.x + 10 * Math.sin(angle), y: store.iceman.y - 12, vx: Math.sin(angle) * bulletSpeed, vy: -Math.cos(angle) * bulletSpeed, r: p.explosive ? 5 : 3, col: "#66aaff", dmg: 15 * p.dmgMult * 0.35, pierce: p.piercing, explosive: p.explosive, isIceman: true }); } }
-        if (p.rearMultishot > 0) { const rearAngleSpread = 15; for (let i = 0; i < p.rearMultishot; i++) { const angle = (i - (p.rearMultishot - 1) / 2) * rearAngleSpread; const radAngle = angle * Math.PI / 180; store.bullets.push({ x: p.x + 10 * Math.sin(radAngle), y: p.y + 12, vx: Math.sin(radAngle) * bulletSpeed, vy: Math.cos(radAngle) * bulletSpeed, r: 3, col: "#ffddff", dmg: 11.25 * p.dmgMult, pierce: p.piercing > 0 ? p.piercing - 1 : 0 }); } }
-        store.drones.forEach(drone => store.bullets.push({ x: p.x + drone.offset, y: p.y + 20, vx: 0, vy: -bulletSpeed, r: 3, col: "#66aaff", dmg: 15 * p.dmgMult * 0.4, isDrone: true }));
+        if (p.hasIceman && store.iceman) {
+            for (let i = 0; i < totalMultishot; i++) {
+                const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180;
+                spawnBullet({
+                    x: store.iceman.x + 10 * Math.sin(angle),
+                    y: store.iceman.y - 12,
+                    vx: Math.sin(angle) * bulletSpeed,
+                    vy: -Math.cos(angle) * bulletSpeed,
+                    r: p.explosive ? 5 : 3,
+                    col: "#66aaff",
+                    dmg: 15 * p.dmgMult * 0.35,
+                    pierce: p.piercing,
+                    explosive: p.explosive,
+                    isIceman: true
+                });
+            }
+        }
+        if (p.rearMultishot > 0) {
+            const rearAngleSpread = 15;
+            for (let i = 0; i < p.rearMultishot; i++) {
+                const angle = (i - (p.rearMultishot - 1) / 2) * rearAngleSpread;
+                const radAngle = angle * Math.PI / 180;
+                spawnBullet({
+                    x: p.x + 10 * Math.sin(radAngle),
+                    y: p.y + 12,
+                    vx: Math.sin(radAngle) * bulletSpeed,
+                    vy: Math.cos(radAngle) * bulletSpeed,
+                    r: 3,
+                    col: "#ffddff",
+                    dmg: 11.25 * p.dmgMult,
+                    pierce: p.piercing > 0 ? p.piercing - 1 : 0
+                });
+            }
+        }
+        store.drones.forEach(drone => spawnBullet({
+            x: p.x + drone.offset,
+            y: p.y + 20,
+            vx: 0,
+            vy: -bulletSpeed,
+            r: 3,
+            col: "#66aaff",
+            dmg: 15 * p.dmgMult * 0.4,
+            isDrone: true
+        }));
         if (p.hasLauncher) {
             const speed = 350;
             const numPairs = store.player.upgradeLevels.launcher || 1;
             for (let i = 0; i < numPairs; i++) {
                 const spread = 15 + i * 10;
                 const vx_offset = 50 + i * 20;
-                store.bullets.push({ x: p.x - spread, y: p.y, vx: -vx_offset, vy: -speed, r: 4, col: '#ff8080', dmg: 2 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true });
-                store.bullets.push({ x: p.x + spread, y: p.y, vx: vx_offset, vy: -speed, r: 4, col: '#ff8080', dmg: 2 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true });
+                spawnBullet({ x: p.x - spread, y: p.y, vx: -vx_offset, vy: -speed, r: 4, col: '#ff8080', dmg: 2 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true });
+                spawnBullet({ x: p.x + spread, y: p.y, vx: vx_offset, vy: -speed, r: 4, col: '#ff8080', dmg: 2 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true });
                 if (p.hasIceman && store.iceman) {
-                    store.bullets.push({ x: store.iceman.x - spread, y: store.iceman.y, vx: -vx_offset, vy: -speed, r: 4, col: '#66aaff', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true });
-                    store.bullets.push({ x: store.iceman.x + spread, y: store.iceman.y, vx: vx_offset, vy: -speed, r: 4, col: '#66aaff', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true });
+                    spawnBullet({ x: store.iceman.x - spread, y: store.iceman.y, vx: -vx_offset, vy: -speed, r: 4, col: '#66aaff', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true });
+                    spawnBullet({ x: store.iceman.x + spread, y: store.iceman.y, vx: vx_offset, vy: -speed, r: 4, col: '#66aaff', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true });
                 }
             }
         }
@@ -4887,7 +4986,7 @@ function render(dt) {
             const sideOffset = (i % 2 === 0) ? -15 : 15;
             const spawnX = p.x + sideOffset;
             const spawnY = p.y + 5;
-            store.bullets.push({ x: spawnX, y: spawnY, vx: Math.sin(angle) * currentSpeed + (sideOffset * 2), vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 3, col: `rgba(255, ${60 + Math.random() * 60}, 0, 0.9)`, dmg: 2 * p.dmgMult, life: life * 1.5, isFlame: true, isLavaChunk: true, particles: [], particleSpawnT: 0 });
+            spawnBullet({ x: spawnX, y: spawnY, vx: Math.sin(angle) * currentSpeed + (sideOffset * 2), vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 3, col: `rgba(255, ${60 + Math.random() * 60}, 0, 0.9)`, dmg: 2 * p.dmgMult, life: life * 1.5, isFlame: true, isLavaChunk: true, particles: [], particleSpawnT: 0 });
         }
         
         if (p.hasIceman && store.iceman) {
@@ -4897,7 +4996,7 @@ function render(dt) {
                 const sideOffset = (i % 2 === 0) ? -15 : 15;
                 const spawnX = store.iceman.x + sideOffset;
                 const spawnY = store.iceman.y + 5;
-                store.bullets.push({ x: spawnX, y: spawnY, vx: Math.sin(angle) * currentSpeed + (sideOffset * 2), vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 2, col: `rgba(100, 150, 255, 0.7)`, dmg: 2 * p.dmgMult * 0.35, life: life, isFlame: true, isIceman: true, isLavaChunk: true, particles: [], particleSpawnT: 0 });
+                spawnBullet({ x: spawnX, y: spawnY, vx: Math.sin(angle) * currentSpeed + (sideOffset * 2), vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 2, col: `rgba(100, 150, 255, 0.7)`, dmg: 2 * p.dmgMult * 0.35, life: life, isFlame: true, isIceman: true, isLavaChunk: true, particles: [], particleSpawnT: 0 });
             }
         }
     }
@@ -6620,177 +6719,67 @@ function render(dt) {
         ctx.restore();
     }
     function drawEnemy(e) { const{x:t,y:o,r:a,type:r,color:n,hp:l,hpMax:s,t:c}=e;ctx.save();ctx.translate(t,o);l<s&&l>0&&(ctx.fillStyle='rgba(0,0,0,0.5)',ctx.fillRect(-a,-a-8,2*a,3),ctx.fillStyle="#b266ff",ctx.fillRect(-a,-a-8,2*a*(l/s),3));ctx.lineWidth=2;ctx.beginPath();switch(r){case"avian_hatchling":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a*1.2);ctx.lineTo(a,-a*0.5);ctx.lineTo(a,a*0.5);ctx.lineTo(0,a*1.2);ctx.lineTo(-a,a*0.5);ctx.lineTo(-a,-a*0.5);ctx.closePath();ctx.fill();ctx.stroke();break;case"construct_gold":ctx.fillStyle=n+"aa";ctx.strokeStyle=n;ctx.lineWidth=2;ctx.moveTo(0,-a);ctx.lineTo(a,0);ctx.lineTo(0,a);ctx.lineTo(-a,0);ctx.closePath();ctx.fill();ctx.stroke();break;case"trap_king_add":case"drone":const e=ctx.createLinearGradient(-a,-a,a,a);e.addColorStop(0,"#E0E0E0");e.addColorStop(1,"#A0A0A0");ctx.fillStyle=e;ctx.strokeStyle="#808080";ctx.beginPath();ctx.moveTo(-1.2*a,0);ctx.quadraticCurveTo(0,-a,1.2*a,0);ctx.quadraticCurveTo(0,.6*a,-1.2*a,0);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle="#aaddff";ctx.strokeStyle="#FFFFFF";ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-.2*a,.6*a,Math.PI,0);ctx.fill();ctx.stroke();ctx.fillStyle=r==="trap_king_add"?"#ffc83d":"#32CD32";ctx.beginPath();ctx.ellipse(0,-.2*a,.3*a,.4*a,0,0,2*Math.PI);ctx.fill();ctx.fillStyle="#000000";ctx.beginPath();ctx.ellipse(-.1*a,-.25*a,.08*a,.15*a,-.5,0,2*Math.PI);ctx.ellipse(.1*a,-.25*a,.08*a,.15*a,.5,0,2*Math.PI);ctx.fill();break;
-        case "hunter":
-            // Holographic Cyber-Serpent: Robotic/Organic Hybrid
-            const hunterTime = performance.now() / 1000;
-            const holoFlicker = 0.7 + 0.3 * Math.sin(hunterTime * 8 + c * 3);
-            const holoGlow = 0.5 + 0.5 * Math.sin(hunterTime * 12 + c * 2);
-            const segments = 14;
-            const length = a * 2.0;
-            const amplitude = a * 0.6;
-            
-            // Scary cybernetic colors
-            const baseRed = '#8B0000'; // Dark blood red
-            const cyberRed = '#FF0040'; // Bright cyber red
-            const organicRed = '#DC143C'; // Original red but enhanced
-            const holoBlue = '#00FFFF'; // Holographic cyan accent
-            
-            // Outer holographic aura
-            ctx.save();
-            ctx.globalAlpha = holoGlow * 0.4;
-            ctx.shadowColor = holoBlue;
-            ctx.shadowBlur = 25;
-            ctx.strokeStyle = holoBlue;
-            ctx.lineWidth = 3;
-            ctx.setLineDash([5, 3]);
-            ctx.lineDashOffset = -hunterTime * 10;
-            
-            // Draw holographic outline
-            ctx.beginPath();
-            for (let i = 0; i <= segments; i++) {
-                const progress = i / segments;
-                const segmentWidth = a * Math.sin(progress * Math.PI) * 0.6;
-                const x = Math.sin(progress * 3 * Math.PI + c * 6) * amplitude;
-                const y = (progress - 0.5) * length;
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
-            }
-            ctx.stroke();
-            ctx.restore();
-            
-            // Main serpent body with robotic segments
-            ctx.globalAlpha = holoFlicker;
+        case "hunter": {
+            const time = performance.now() / 1000;
+            const segments = 8;
+            const length = a * 2;
+            const amplitude = a * 0.5;
+
+            ctx.globalAlpha = 1;
+            ctx.shadowBlur = 0;
             ctx.setLineDash([]);
-            
-            const bodyPoints1 = [];
-            const bodyPoints2 = [];
-            
+
+            const top = [];
+            const bottom = [];
+
             for (let i = 0; i <= segments; i++) {
                 const progress = i / segments;
-                // Robotic segmentation with organic curves
-                const roboticPulse = 1 + 0.1 * Math.sin(progress * 8 * Math.PI + hunterTime * 4);
-                const segmentWidth = a * Math.sin(progress * Math.PI) * 0.5 * roboticPulse;
-                const x = Math.sin(progress * 3 * Math.PI + c * 6) * amplitude;
+                const width = a * Math.sin(progress * Math.PI) * 0.4;
+                const x = Math.sin(progress * 2 * Math.PI + c * 4) * amplitude;
                 const y = (progress - 0.5) * length;
-                
-                bodyPoints1.push({ x: x + segmentWidth, y: y });
-                bodyPoints2.push({ x: x - segmentWidth, y: y });
+                top.push({ x: x + width, y });
+                bottom.push({ x: x - width, y });
             }
-            
-            // Draw main body with gradient
-            const bodyGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, a * 2);
-            bodyGradient.addColorStop(0, cyberRed + 'CC');
-            bodyGradient.addColorStop(0.5, baseRed + 'AA');
-            bodyGradient.addColorStop(1, organicRed + '88');
-            
-            ctx.fillStyle = bodyGradient;
-            ctx.strokeStyle = cyberRed;
+
+            ctx.fillStyle = '#cc3344';
+            ctx.strokeStyle = '#7a1b24';
             ctx.lineWidth = 2;
-            ctx.shadowColor = cyberRed;
-            ctx.shadowBlur = 15;
-            
             ctx.beginPath();
-            ctx.moveTo(bodyPoints1[0].x, bodyPoints1[0].y);
-            for(let i = 1; i < bodyPoints1.length; i++) {
-                ctx.lineTo(bodyPoints1[i].x, bodyPoints1[i].y);
-            }
-            for(let i = bodyPoints2.length - 1; i >= 0; i--) {
-                ctx.lineTo(bodyPoints2[i].x, bodyPoints2[i].y);
-            }
+            ctx.moveTo(top[0].x, top[0].y);
+            for (let i = 1; i < top.length; i++) ctx.lineTo(top[i].x, top[i].y);
+            for (let i = bottom.length - 1; i >= 0; i--) ctx.lineTo(bottom[i].x, bottom[i].y);
             ctx.closePath();
             ctx.fill();
             ctx.stroke();
-            
-            // Robotic spine segments
-            ctx.strokeStyle = holoBlue;
-            ctx.lineWidth = 1;
-            ctx.shadowBlur = 8;
-            for (let i = 1; i < segments; i++) {
-                const progress = i / segments;
-                const x = Math.sin(progress * 3 * Math.PI + c * 6) * amplitude;
-                const y = (progress - 0.5) * length;
-                const segmentGlow = 0.8 + 0.2 * Math.sin(hunterTime * 6 + i);
-                
-                ctx.globalAlpha = segmentGlow * holoFlicker;
-                ctx.beginPath();
-                ctx.moveTo(x - a * 0.3, y);
-                ctx.lineTo(x + a * 0.3, y);
-                ctx.stroke();
-                
-                // Cyber nodes
-                ctx.fillStyle = holoBlue;
-                ctx.beginPath();
-                ctx.arc(x, y, 2, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            
-            // Cybernetic head with organic horror
-            const headX = Math.sin(c * 6) * amplitude;
+
+            const headX = Math.sin(c * 4) * amplitude;
             const headY = -0.5 * length;
-            const headPulse = 1 + 0.15 * Math.sin(hunterTime * 10);
-            
-            ctx.globalAlpha = holoFlicker;
-            
-            // Head shell - metallic organic hybrid
-            const headGradient = ctx.createRadialGradient(headX, headY, 0, headX, headY, a * 0.8);
-            headGradient.addColorStop(0, '#FF4444');
-            headGradient.addColorStop(0.4, baseRed);
-            headGradient.addColorStop(1, '#330000');
-            
-            ctx.fillStyle = headGradient;
-            ctx.strokeStyle = cyberRed;
-            ctx.lineWidth = 2;
-            ctx.shadowBlur = 20;
-            
+
+            ctx.fillStyle = '#e47777';
+            ctx.strokeStyle = '#7a1b24';
             ctx.beginPath();
-            ctx.ellipse(headX, headY, a * 0.6 * headPulse, a * 0.4 * headPulse, 0, 0, Math.PI * 2);
+            ctx.arc(headX, headY, a * 0.35, 0, Math.PI * 2);
             ctx.fill();
             ctx.stroke();
-            
-            // Cybernetic eye scanners (scarier)
-            const eyeGlow = 0.8 + 0.2 * Math.sin(hunterTime * 15);
-            ctx.fillStyle = '#FF0000';
-            ctx.shadowColor = '#FF0000';
-            ctx.shadowBlur = 12;
-            ctx.globalAlpha = eyeGlow;
-            
-            // Left scanner eye
+
+            ctx.fillStyle = '#250b0b';
+            const eyeOffsetX = a * 0.12;
+            const eyeOffsetY = a * 0.05;
+            const eyeRadius = a * 0.08;
             ctx.beginPath();
-            ctx.arc(headX - a*0.2, headY - a*0.1, a * 0.12 * headPulse, 0, 2*Math.PI);
+            ctx.arc(headX - eyeOffsetX, headY - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
+            ctx.arc(headX + eyeOffsetX, headY - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
             ctx.fill();
-            
-            // Right scanner eye  
+
+            ctx.strokeStyle = '#7a1b24';
+            ctx.lineWidth = 1.5;
             ctx.beginPath();
-            ctx.arc(headX + a*0.2, headY - a*0.1, a * 0.12 * headPulse, 0, 2*Math.PI);
-            ctx.fill();
-            
-            // Laser scanner lines
-            ctx.strokeStyle = '#FF0000';
-            ctx.lineWidth = 1;
-            ctx.globalAlpha = eyeGlow * 0.6;
-            ctx.beginPath();
-            ctx.moveTo(headX - a*0.2, headY - a*0.1);
-            ctx.lineTo(headX - a*0.8, headY + a*0.5);
-            ctx.moveTo(headX + a*0.2, headY - a*0.1);
-            ctx.lineTo(headX + a*0.8, headY + a*0.5);
+            ctx.moveTo(headX, headY + a * 0.1);
+            ctx.lineTo(headX, headY + a * 0.4);
             ctx.stroke();
-            
-            // Mechanical mandibles
-            ctx.strokeStyle = '#888888';
-            ctx.lineWidth = 2;
-            ctx.globalAlpha = holoFlicker * 0.9;
-            const jawAngle = Math.sin(hunterTime * 6) * 0.3;
-            
-            ctx.beginPath();
-            ctx.moveTo(headX - a*0.1, headY + a*0.2);
-            ctx.lineTo(headX - a*0.4, headY + a*0.5 + jawAngle);
-            ctx.moveTo(headX + a*0.1, headY + a*0.2);
-            ctx.lineTo(headX + a*0.4, headY + a*0.5 - jawAngle);
-            ctx.stroke();
-            
-            ctx.globalAlpha = 1;
-            ctx.shadowBlur = 0;
+
             break;
+        }
         case "phantom":
             ctx.globalAlpha=.6+.4*Math.sin(5*c);ctx.strokeStyle=n;ctx.fillStyle=n+"99";ctx.moveTo(0,-.8*a);ctx.quadraticCurveTo(a,-.5*a,.8*a,.8*a);ctx.quadraticCurveTo(0,.5*a,-.8*a,.8*a);ctx.quadraticCurveTo(-a,-.5*a,0,-.8*a);ctx.closePath();ctx.fill();ctx.stroke();for(let e=-1;e<=1;e++)ctx.beginPath(),ctx.moveTo(e*.4*a,.6*a),ctx.quadraticCurveTo(e*.5*a,a,e*.3*a+2*Math.sin(4*c+e),1.2*a),ctx.stroke();break;
     case "mech": 
@@ -7475,12 +7464,16 @@ function render(dt) {
         for (let i = 0; i < numBullets; i++) {
             const angle = (i / numBullets) * 2 * Math.PI;
             const bulletSpeed = 300;
-            store.bullets.push({
-                x: mine.x, y: mine.y,
+            spawnBullet({
+                x: mine.x,
+                y: mine.y,
                 vx: Math.cos(angle) * bulletSpeed,
                 vy: Math.sin(angle) * bulletSpeed,
-                r: 3, col: '#ff9966', dmg: 20 * p.dmgMult,
-                pierce: false, life: 0.28
+                r: 3,
+                col: '#ff9966',
+                dmg: 20 * p.dmgMult,
+                pierce: false,
+                life: 0.28
             });
         }
 
@@ -7488,11 +7481,16 @@ function render(dt) {
         for (let i = 0; i < numFlames; i++) {
             const angle = (Math.random() - 0.5) * 120 * Math.PI / 180;
             const speed = 250 + Math.random() * 50;
-            store.bullets.push({
-                x: mine.x, y: mine.y,
-                vx: Math.sin(angle) * speed, vy: -Math.cos(angle) * speed,
-                r: 3 + Math.random() * 2, col: `rgba(255, ${100 + Math.random() * 100}, 0, 0.7)`,
-                dmg: 2 * p.dmgMult, life: 0.3, isFlame: true
+            spawnBullet({
+                x: mine.x,
+                y: mine.y,
+                vx: Math.sin(angle) * speed,
+                vy: -Math.cos(angle) * speed,
+                r: 3 + Math.random() * 2,
+                col: `rgba(255, ${100 + Math.random() * 100}, 0, 0.7)`,
+                dmg: 2 * p.dmgMult,
+                life: 0.3,
+                isFlame: true
             });
         }
 
@@ -8086,12 +8084,16 @@ function render(dt) {
             for (let i = 0; i < numBullets; i++) {
                 const angle = (i / numBullets) * 2 * Math.PI;
                 const bulletSpeed = 400;
-                store.bullets.push({
-                    x: p.x, y: p.y,
+                spawnBullet({
+                    x: p.x,
+                    y: p.y,
                     vx: Math.cos(angle) * bulletSpeed,
                     vy: Math.sin(angle) * bulletSpeed,
-                    r: 5, col: '#ff8080', dmg: 40 * p.dmgMult,
-                    pierce: true, life: 0.8
+                    r: 5,
+                    col: '#ff8080',
+                    dmg: 40 * p.dmgMult,
+                    pierce: true,
+                    life: 0.8
                 });
             }
             store.activeEffects.push(createEffect("shieldBreak", p.x, p.y));
