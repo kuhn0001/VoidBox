@@ -1468,6 +1468,14 @@ class FlameParticle {
     const STAR_CANNON_DAMAGE = 220;
     const STAR_CANNON_SIZE = 20;
 
+    const initialTelemetryEnabled = (() => {
+        try {
+            return !!(window.localStorage && window.localStorage.getItem('voidTelemetry') === '1');
+        } catch (err) {
+            return false;
+        }
+    })();
+
     const store = {
         frame: 0, last: performance.now(), isGameOver: false, isPaused: false,
         isDamageOff: false,
@@ -1509,6 +1517,11 @@ class FlameParticle {
         lightningBolts: [],
         empNovas: [],
         mechPuddles: [], // Hazardous puddles left by mech tank attacks
+        _enemySpatial: {
+            cellSize: 160,
+            buckets: new Map(),
+            usedKeys: []
+        },
             iceman: null,
         waveSpawnQueue: [],
             pendingSpawnCount: 0,
@@ -1522,7 +1535,8 @@ class FlameParticle {
         cheatInvincibilityCooldown: 0,
         cheatDogHealCooldown: 0,
         heartbeatT: 0,
-        cheatsUsed: false
+        cheatsUsed: false,
+        telemetryEnabled: initialTelemetryEnabled
     };
 
     // --- OBJECT POOLING SYSTEM ---
@@ -1609,6 +1623,201 @@ class FlameParticle {
             flame.dead = true;
             store.tempFlamePool.push(flame);
         }
+    }
+
+    const ENEMY_SPATIAL_KEY_MASK = 0xffff;
+
+    function computeEnemySpatialKey(cellX, cellY) {
+        return ((cellX & ENEMY_SPATIAL_KEY_MASK) << 16) | (cellY & ENEMY_SPATIAL_KEY_MASK);
+    }
+
+    function rebuildEnemySpatialIndex() {
+        const spatial = store._enemySpatial;
+        if (!spatial) return;
+
+        const { buckets, usedKeys, cellSize } = spatial;
+
+        for (let i = 0; i < usedKeys.length; i++) {
+            const key = usedKeys[i];
+            const bucket = buckets.get(key);
+            if (bucket) {
+                bucket.length = 0;
+            }
+        }
+        usedKeys.length = 0;
+
+        const enemies = store.enemies;
+        for (let i = 0; i < enemies.length; i++) {
+            const enemy = enemies[i];
+            if (!enemy || enemy.dead) continue;
+            const cellX = Math.floor(enemy.x / cellSize);
+            const cellY = Math.floor(enemy.y / cellSize);
+            const key = computeEnemySpatialKey(cellX, cellY);
+            let bucket = buckets.get(key);
+            if (!bucket) {
+                bucket = [];
+                buckets.set(key, bucket);
+            }
+            bucket.push(enemy);
+            if (bucket.length === 1) {
+                usedKeys.push(key);
+            }
+        }
+    }
+
+    function forEachEnemyNearby(x, y, radius, iterator) {
+        const spatial = store._enemySpatial;
+        if (!spatial) return;
+
+        const { buckets, cellSize } = spatial;
+        const minCellX = Math.floor((x - radius) / cellSize);
+        const maxCellX = Math.floor((x + radius) / cellSize);
+        const minCellY = Math.floor((y - radius) / cellSize);
+        const maxCellY = Math.floor((y + radius) / cellSize);
+
+        for (let cellX = minCellX; cellX <= maxCellX; cellX++) {
+            for (let cellY = minCellY; cellY <= maxCellY; cellY++) {
+                const key = computeEnemySpatialKey(cellX, cellY);
+                const bucket = buckets.get(key);
+                if (!bucket || bucket.length === 0) continue;
+                for (let i = 0; i < bucket.length; i++) {
+                    const enemy = bucket[i];
+                    if (!enemy || enemy.dead) continue;
+                    if (iterator(enemy) === true) {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    function getBulletSearchRadius(bullet) {
+        if (bullet.collisionSearchRadius != null) {
+            return bullet.collisionSearchRadius;
+        }
+
+        let radius = 140;
+        if (bullet.r) radius += bullet.r;
+        if (bullet.explosive) radius = Math.max(radius, 230);
+        if (bullet.isLevelUpPulse) radius = Math.max(radius, 260);
+        if (bullet.isFlame) radius = Math.max(radius, 220);
+        if (bullet.isDrone) radius = Math.max(radius, 200);
+
+        return Math.max(120, Math.min(radius, 320));
+    }
+
+    function handleBulletImpact(b, e) {
+        if (b.isFlame) e.slowTimer = 1.0;
+
+        if (e.isHeatDeath) {
+            b.dead = true;
+            return;
+        }
+
+        if (e === store.boss && e.isInvincible) {
+            b.dead = true;
+            return;
+        }
+
+        let dmg = b.dmg || 15;
+        let didCrit = false;
+        if (e === store.boss && b.isDrone) dmg *= 0.4;
+
+        if (Math.random() < store.player.critChance) {
+            dmg *= store.player.critDamage;
+            didCrit = true;
+            store.activeEffects.push(createEffect('critText', e.x, e.y));
+            if (Math.random() < 0.05) spawnPowerup(e.x, e.y);
+        }
+
+        if (e === store.boss) playSound('hit');
+        const subclass = store.player.subclass;
+        let bulletTags;
+        switch (subclass) {
+            case 'juggernaut':
+                bulletTags = ['fire', 'explosive'];
+                break;
+            case 'marauder':
+                bulletTags = ['kinetic', 'concussive'];
+                break;
+            case 'railgunner':
+                bulletTags = ['kinetic', 'explosive'];
+                break;
+            case 'demolitionist':
+                bulletTags = ['fire', 'explosive'];
+                break;
+            case 'phasestriker':
+                bulletTags = ['void', 'magic'];
+                break;
+            case 'stormcaller':
+                bulletTags = ['lightning', 'magic'];
+                break;
+            default:
+                bulletTags = b.explosive ? ['fire', 'explosive'] : ['kinetic'];
+        }
+        const vulnBullet = applySubclassVulnerability(e, dmg, {
+            subclass,
+            player: store.player,
+            damageTags: bulletTags,
+            source: b.explosive ? 'explosiveBullet' : 'bullet',
+            projectile: b,
+            baseDamage: dmg
+        });
+        dmg = vulnBullet.damage;
+        e.hp -= dmg;
+
+        const impactAngle = Math.atan2(e.y - b.y, e.x - b.x);
+        registerEnemyHit(e, {
+            angle: impactAngle,
+            knockbackStrength: 0,
+            shakeIntensity: b.explosive ? 6 : 3.5,
+            shakeDuration: b.explosive ? 0.22 : 0.14,
+            slowFactor: b.explosive ? 0.8 : 0.9,
+            slowDuration: b.explosive ? 0.22 : 0.12,
+            crit: didCrit,
+            effect: false
+        });
+
+        if (store.player.pilotGenome === 'beef') {
+            store.player.beefShieldDamageDealt += dmg;
+        }
+
+        if (store.player.vampirism > 0) {
+            let healAmount = dmg * store.player.vampirism;
+            healAmount = Math.max(healAmount, 1);
+            healAmount = Math.min(healAmount, 5);
+            store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+        }
+
+        if (e.hp <= 0) {
+            e.dead = true;
+            if (e.type === 'void_champion') {
+                store.enemies.forEach(minion => {
+                    if (minion.orbitTargetId === e.id && !minion.dead) {
+                        spawnGibs(minion.x, minion.y, minion.color);
+                        minion.dead = true;
+                    }
+                });
+                spawnVoidCoreDrop(e.x, e.y - 10);
+            }
+
+            if (e === store.boss) {
+                handleBossDefeat();
+            } else {
+                spawnGibs(e.x, e.y, e.color);
+                const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
+                store.world.score += Math.floor(e.score * collarBonus);
+                store.world.gold += Math.floor(e.gold * collarBonus);
+                store.world.xp += Math.floor(e.xp * collarBonus);
+                store.world.kills++;
+
+                spawnPowerup(e.x, e.y);
+                explode(e.x, e.y);
+            }
+        }
+
+        if (b.explosive) explode(b.x, b.y, false, true);
+        if (!b.pierce) b.dead = true;
     }
 
     const CLASS_DAMAGE_TAGS = {
@@ -3656,8 +3865,12 @@ class FlameParticle {
     }
     
     function stepFlameParticles(dt) {
+        const activeCache = store._activeFlamesCache || (store._activeFlamesCache = []);
+        activeCache.length = 0;
+
         for (let i = store.flameParticles.length - 1; i >= 0; i--) {
             const p = store.flameParticles[i];
+            let alive = true;
             if (p.attachedEnemy) {
                 if (p.attachedEnemy.dead) {
                     p.attachedEnemy = null;
@@ -3679,18 +3892,26 @@ class FlameParticle {
             }
             if (p.update && !p.update(dt)) {
                 store.flameParticles.splice(i, 1);
+                alive = false;
             } else if (!p.update) {
                 // Handle legacy flame particles without update function
                 p.life -= dt;
                 if (p.life <= 0) {
                     store.flameParticles.splice(i, 1);
+                    alive = false;
                 }
+            }
+
+            if (alive) {
+                activeCache.push(p);
             }
         }
     }
 
 
 
+
+    const EMPTY_FLAME_CACHE = Object.freeze([]);
 
     function stepWorld(dt) {
         stepPlayer(dt);
@@ -3851,9 +4072,8 @@ class FlameParticle {
         }
 
 
-        // PERFORMANCE OPTIMIZED: Pre-filter active flames to avoid repeated checks
-        const activeFlames = store.flameParticles.filter(flame => flame.life > 0);
-        const flameCount = activeFlames.length;
+    const activeFlames = store._activeFlamesCache && store._activeFlamesCache.length ? store._activeFlamesCache : EMPTY_FLAME_CACHE;
+    const flameCount = activeFlames.length;
         
         // CONSOLIDATED enemy processing - flame collision + movement in single loop for performance
         store.enemies.forEach(e => {
@@ -4275,7 +4495,11 @@ class FlameParticle {
             }
         }
 
-        store.bullets.forEach(b => {
+        rebuildEnemySpatialIndex();
+        const bossTarget = store.boss && !store.boss.dead ? store.boss : null;
+
+        for (let bi = 0; bi < store.bullets.length; bi++) {
+            const b = store.bullets[bi];
             b.x += b.vx * dt;
             b.y += b.vy * dt;
             if (b.isSwirl) {
@@ -4302,129 +4526,18 @@ class FlameParticle {
 
             if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true;
 
-            const targets = store.boss ? [store.boss, ...store.enemies] : store.enemies;
-            for (const e of targets) {
-                if (b.dead || e.dead) continue;
-                if (collide(b, e)) {
-                    if (b.isFlame) e.slowTimer = 1.0;
-                    
-                    // Skip damage to Heat Death boss - it's just atmospheric
-                    if (e.isHeatDeath) {
-                        b.dead = true;
-                        continue;
-                    }
-                    
-                    // Skip damage to invincible bosses during phase transitions
-                    if (e === store.boss && e.isInvincible) {
-                        b.dead = true;
-                        continue;
-                    }
-                    
-                    let dmg = b.dmg || 15;
-                    let didCrit = false;
-                    if (e === store.boss && b.isDrone) dmg *= 0.4;
-                    
-                    if (Math.random() < store.player.critChance) {
-                        dmg *= store.player.critDamage;
-                        didCrit = true;
-                        store.activeEffects.push(createEffect('critText', e.x, e.y));
-                        if (Math.random() < 0.05) spawnPowerup(e.x, e.y);
-                    }
-                    
-                    if (e === store.boss) playSound('hit');
-                    const subclass = store.player.subclass;
-                    let bulletTags;
-                    switch (subclass) {
-                        case 'juggernaut':
-                            bulletTags = ['fire', 'explosive'];
-                            break;
-                        case 'marauder':
-                            bulletTags = ['kinetic', 'concussive'];
-                            break;
-                        case 'railgunner':
-                            bulletTags = ['kinetic', 'explosive'];
-                            break;
-                        case 'demolitionist':
-                            bulletTags = ['fire', 'explosive'];
-                            break;
-                        case 'phasestriker':
-                            bulletTags = ['void', 'magic'];
-                            break;
-                        case 'stormcaller':
-                            bulletTags = ['lightning', 'magic'];
-                            break;
-                        default:
-                            bulletTags = b.explosive ? ['fire', 'explosive'] : ['kinetic'];
-                    }
-                    const vulnBullet = applySubclassVulnerability(e, dmg, {
-                        subclass,
-                        player: store.player,
-                        damageTags: bulletTags,
-                        source: b.explosive ? 'explosiveBullet' : 'bullet',
-                        projectile: b,
-                        baseDamage: dmg
-                    });
-                    dmg = vulnBullet.damage;
-                    e.hp -= dmg;
+            if (!b.dead && bossTarget && !bossTarget.dead && collide(b, bossTarget)) {
+                handleBulletImpact(b, bossTarget);
+            }
 
-                    const impactAngle = Math.atan2(e.y - b.y, e.x - b.x);
-                    const impactStrength = b.knockbackStrength ?? (b.explosive ? 220 : 130);
-                    registerEnemyHit(e, {
-                        angle: impactAngle,
-                        knockbackStrength: 0,
-                        shakeIntensity: b.explosive ? 6 : 3.5,
-                        shakeDuration: b.explosive ? 0.22 : 0.14,
-                        slowFactor: b.explosive ? 0.8 : 0.9,
-                        slowDuration: b.explosive ? 0.22 : 0.12,
-                        crit: didCrit,
-                        effect: false
-                    });
-                    
-                    // Track damage dealt for beef shield system
-                    if (store.player.pilotGenome === 'beef') {
-                        store.player.beefShieldDamageDealt += dmg;
-                    }
-                    
-                    // Apply vampirism healing on damage dealt (not just kills)
-                    if (store.player.vampirism > 0) {
-                        let healAmount = dmg * store.player.vampirism;
-                        // Ensure minimum healing of 1 HP per shot if vampirism is active
-                        healAmount = Math.max(healAmount, 1);
-                        // Cap healing to prevent overpowered early game
-                        healAmount = Math.min(healAmount, 5);
-                        store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
-                    }
-
-                    if (e.hp <= 0) {
-                        e.dead = true;
-                        if (e.type === 'void_champion') {
-                            store.enemies.forEach(minion => {
-                                if (minion.orbitTargetId === e.id && !minion.dead) {
-                                    spawnGibs(minion.x, minion.y, minion.color);
-                                    minion.dead = true;
-                                }
-                            });
-                            spawnVoidCoreDrop(e.x, e.y - 10);
-                        }
-                        
-                        if (e === store.boss) {
-                            handleBossDefeat();
-                        } else {
-                            spawnGibs(e.x, e.y, e.color);
-                            const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
-                            store.world.score += Math.floor(e.score * collarBonus);
-                            store.world.gold += Math.floor(e.gold * collarBonus);
-                            store.world.xp += Math.floor(e.xp * collarBonus);
-                            store.world.kills++;
-                            
-                            spawnPowerup(e.x, e.y);
-                            explode(e.x, e.y);
-                        }
-                    }
-
-                    if (b.explosive) explode(b.x, b.y, false, true);
-                    if (!b.pierce) b.dead = true;
-                }
+            if (!b.dead && store.enemies.length) {
+                const searchRadius = getBulletSearchRadius(b);
+                forEachEnemyNearby(b.x, b.y, searchRadius, enemy => {
+                    if (enemy === bossTarget) return false;
+                    if (!collide(b, enemy)) return false;
+                    handleBulletImpact(b, enemy);
+                    return b.dead && !b.pierce;
+                });
             }
             
             // Check bullet collision with mech puddles (make puddles killable)
@@ -4481,7 +4594,7 @@ class FlameParticle {
                     }
                 }
             }
-        });
+        }
 
         updateStarProjectiles(dt);
 
@@ -4509,21 +4622,8 @@ class FlameParticle {
         }
 
         // Optimized cleanup with object pooling
-        for (let i = store.bullets.length - 1; i >= 0; i--) {
-            const bullet = store.bullets[i];
-            if (bullet.dead) {
-                store.bullets.splice(i, 1);
-                bulletPool.release(bullet);
-            }
-        }
-
-        for (let i = store.eBullets.length - 1; i >= 0; i--) {
-            const bullet = store.eBullets[i];
-            if (bullet.dead) {
-                store.eBullets.splice(i, 1);
-                returnEBulletToPool(bullet);
-            }
-        }
+        removeDeadObjects(store.bullets, bullet => bulletPool.release(bullet));
+        removeDeadObjects(store.eBullets, bullet => returnEBulletToPool(bullet));
         
         // Efficient removal for other arrays
         removeDeadObjects(store.enemies);
@@ -4536,11 +4636,7 @@ class FlameParticle {
         removeDeadObjects(store.empNovas);
         
         // Handle active effects separately (different property name)
-        for (let i = store.activeEffects.length - 1; i >= 0; i--) {
-            if (store.activeEffects[i].isActive === false) {
-                store.activeEffects.splice(i, 1);
-            }
-        }
+        compactInactiveEffects(store.activeEffects);
 
         if (!store.boss && store.enemies.length === 0) {
             // Add some delay before starting next wave to prevent rapid cycling
@@ -4659,11 +4755,42 @@ class FlameParticle {
 
 
     // PERFORMANCE: Efficient dead object removal (300-500% faster than filter)
-    function removeDeadObjects(array) {
-        for (let i = array.length - 1; i >= 0; i--) {
-            if (array[i].dead) {
-                array.splice(i, 1);
+    function removeDeadObjects(array, disposer) {
+        let writeIndex = 0;
+        for (let readIndex = 0; readIndex < array.length; readIndex++) {
+            const item = array[readIndex];
+            if (!item || item.dead) {
+                if (item && disposer) {
+                    disposer(item);
+                }
+                continue;
             }
+
+            if (writeIndex !== readIndex) {
+                array[writeIndex] = item;
+            }
+            writeIndex++;
+        }
+
+        if (writeIndex < array.length) {
+            array.length = writeIndex;
+        }
+    }
+
+    function compactInactiveEffects(effects) {
+        let writeIndex = 0;
+        for (let readIndex = 0; readIndex < effects.length; readIndex++) {
+            const effect = effects[readIndex];
+            if (effect && effect.isActive !== false) {
+                if (writeIndex !== readIndex) {
+                    effects[writeIndex] = effect;
+                }
+                writeIndex++;
+            }
+        }
+
+        if (writeIndex < effects.length) {
+            effects.length = writeIndex;
         }
     }
 
@@ -5815,6 +5942,44 @@ function render(dt) {
             }
         }
     }
+    function normalizeLeaderboardEntries(source) {
+        if (!source) return null;
+
+        if (Array.isArray(source)) {
+            return source;
+        }
+
+        if (Array.isArray(source.entries)) {
+            return source.entries;
+        }
+
+        if (Array.isArray(source.top50)) {
+            return source.top50;
+        }
+
+        if (Array.isArray(source.top10)) {
+            return source.top10;
+        }
+
+        if (source.top50 && Array.isArray(source.top50.entries)) {
+            return source.top50.entries;
+        }
+
+        if (source.top10 && Array.isArray(source.top10.entries)) {
+            return source.top10.entries;
+        }
+
+        if (Array.isArray(source.data)) {
+            return source.data;
+        }
+
+        if (source.data && Array.isArray(source.data.entries)) {
+            return source.data.entries;
+        }
+
+        return null;
+    }
+
     function updateLeaderboard(leaderboardData) { 
         const fallbackData = [
             { name: "ACE PILOT", score: 50000, waves: 10 },
@@ -5824,18 +5989,21 @@ function render(dt) {
             { name: "COSMIC GUARD", score: 12000, waves: 4 }
         ]; 
         
-        // Handle both old format (array) and new format (object with entries)
-        let data;
-        if (leaderboardData && leaderboardData.entries) {
-            data = leaderboardData.entries;
-        } else if (leaderboardData && Array.isArray(leaderboardData)) {
-            data = leaderboardData;
-        } else {
-            data = fallbackData;
+        const entries = normalizeLeaderboardEntries(leaderboardData) ?? fallbackData;
+
+        if (entries === fallbackData && leaderboardData) {
+            console.warn("Leaderboard payload had unexpected shape, using fallback:", leaderboardData);
         }
         
-        q("hsList").innerHTML = data.map(s => `<li>${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves ?? "?"})</li>`).join(""); 
-        q("hsListPopup").innerHTML = data.map((s, i) => `<li>#${i + 1} ${escapeHtml(s.name)} — ${s.score} (Wave ${s.waves ?? "?"})</li>`).join(""); 
+        const safeEntries = entries.filter(entry => entry && typeof entry === "object");
+        
+        const listHtml = safeEntries.map(s => `<li>${escapeHtml(s.name ?? "UNKNOWN PILOT")} — ${s.score ?? 0} (Wave ${s.waves ?? "?"})</li>`).join("");
+        const popupHtml = safeEntries.map((s, i) => `<li>#${i + 1} ${escapeHtml(s.name ?? "UNKNOWN PILOT")} — ${s.score ?? 0} (Wave ${s.waves ?? "?"})</li>`).join("");
+        
+        const hsList = q("hsList");
+        const hsListPopup = q("hsListPopup");
+        if (hsList) hsList.innerHTML = listHtml;
+        if (hsListPopup) hsListPopup.innerHTML = popupHtml;
     }
     
     async function refreshScoreList() { 
@@ -5865,7 +6033,7 @@ function render(dt) {
             if (!res.ok) throw new Error(`Submit failed: ${res.status}`); 
             const data = await res.json(); 
             if (data.ok) { 
-                updateLeaderboard(data.top50 || data.top10); 
+                updateLeaderboard(data); 
             } else { 
                 console.warn("Score rejected:", data.err); 
                 announce(`Score rejected: ${data.err}`); 
@@ -7010,12 +7178,38 @@ function render(dt) {
             }
         }
         
-        // Update poison puddles
+        const now = performance.now();
+        const bossRadius = b.r || 80;
+        const puddleDamageInterval = 600; // ms between damage ticks while boss is in the acid
+
         for (let i = store.poisonPuddles.length - 1; i >= 0; i--) {
             const puddle = store.poisonPuddles[i];
             puddle.life -= dt;
             if (puddle.life <= 0) {
                 store.poisonPuddles.splice(i, 1);
+                continue;
+            }
+
+            const dx = b.x - puddle.x;
+            const dy = b.y - puddle.y;
+            const dist = Math.hypot(dx, dy);
+            const effectiveRadius = puddle.r + bossRadius * 0.55;
+
+            if (dist < effectiveRadius) {
+                // Standing in the acid slows and harms the Hive Sovereign
+                b.slowTimer = Math.max(b.slowTimer || 0, 0.45);
+
+                if (!b.lastPuddleDamageTime || now - b.lastPuddleDamageTime >= puddleDamageInterval) {
+                    const puddleDamage = Math.max(8, puddle.damage * 0.9);
+                    b.hp -= puddleDamage;
+                    store.world.totalDamage += puddleDamage;
+                    b.lastPuddleDamageTime = now;
+
+                    if (b.hp <= 0) {
+                        handleBossDefeat();
+                        return;
+                    }
+                }
             }
         }
     }
@@ -12151,12 +12345,12 @@ function tryVoidStep(player, target, now = performance.now()){
         initializeProgressionTracking();
 
         const pointsGranted = 7;
-        store.player.totalProgressionPoints += pointsGranted;
-        store.player.unspentProgressionPoints += pointsGranted;
+        for (let i = 0; i < pointsGranted; i++) {
+            checkProgressionLogic(true);
+        }
 
         announce(`CHEAT: +${pointsGranted} PROGRESSION POINTS`);
         updateSkillTreeUI();
-        checkProgressionLogic();
         cheatCodeBuffer = "";
     }
 
@@ -12194,6 +12388,15 @@ function tryVoidStep(player, target, now = performance.now()){
                 cheatCodeBuffer = "";
             } else if (cheatCodeBuffer.endsWith('fast')) {
                 activateSpeedCheat();
+                cheatCodeBuffer = "";
+            } else if (cheatCodeBuffer.endsWith('class')) {
+                activateClassCheat();
+                cheatCodeBuffer = "";
+            } else if (cheatCodeBuffer.endsWith('sub')) {
+                activateSubclassCheat();
+                cheatCodeBuffer = "";
+            } else if (cheatCodeBuffer.endsWith('spec2')) {
+                activateSpec2Cheat();
                 cheatCodeBuffer = "";
             } else {
                 const subclassCode = Object.keys(SUBCLASS_CHEAT_CODES).find(code => cheatCodeBuffer.endsWith(code));
@@ -12250,19 +12453,28 @@ function tryVoidStep(player, target, now = performance.now()){
     let perfLastFPSUpdate = 0;
     let perfFPS = 0;
     let perfWorstFrameTime = 0;
-    let performanceMetrics = {
-        stepWorldTime: 0,
-        renderTime: 0,
-        frameTime: 0,
-        // New detailed metrics
-        hudUpdateTime: 0,
-        bulletUpdateTime: 0,
-        enemyUpdateTime: 0,
-        collisionTime: 0,
-        drawCallTime: 0,
-        memoryUsage: 0,
-        slowFrameCount: 0
-    };
+
+    function createPerformanceMetrics() {
+        return {
+            stepWorldTime: 0,
+            renderTime: 0,
+            frameTime: 0,
+            // New detailed metrics
+            hudUpdateTime: 0,
+            bulletUpdateTime: 0,
+            enemyUpdateTime: 0,
+            collisionTime: 0,
+            drawCallTime: 0,
+            memoryUsage: 0,
+            slowFrameCount: 0,
+            lastSlowLog: 0,
+            activeEnemies: 0,
+            activeBullets: 0,
+            activeFlames: 0
+        };
+    }
+
+    let performanceMetrics = createPerformanceMetrics();
     
     // Performance budget alerts
     const PERFORMANCE_BUDGETS = {
@@ -12272,10 +12484,42 @@ function tryVoidStep(player, target, now = performance.now()){
         hudUpdate: 1      // HUD should be very fast
     };
     
-    let perfLogTimer = 0;
+    function setTelemetryEnabled(enabled, forceReset = false) {
+        const normalized = !!enabled;
+        if (!forceReset && normalized === store.telemetryEnabled) {
+            return normalized;
+        }
+
+        store.telemetryEnabled = normalized;
+
+        try {
+            if (window.localStorage) {
+                window.localStorage.setItem('voidTelemetry', normalized ? '1' : '0');
+            }
+        } catch (err) {
+            // Ignore storage access issues
+        }
+
+        if (normalized) {
+            performanceMetrics = createPerformanceMetrics();
+            perfFrameCount = 0;
+            perfLastFPSUpdate = performance.now();
+            perfWorstFrameTime = 0;
+        }
+
+        console.info(`[PERF] Telemetry ${normalized ? 'enabled' : 'disabled'}`);
+        return normalized;
+    }
+
+    window.enableTelemetry = () => setTelemetryEnabled(true);
+    window.disableTelemetry = () => setTelemetryEnabled(false);
+    window.toggleTelemetry = () => setTelemetryEnabled(!store.telemetryEnabled);
+
+    setTelemetryEnabled(store.telemetryEnabled, true);
 
     function frame(now) {
-        const frameStart = performance.now();
+        const telemetryActive = !!store.telemetryEnabled;
+        const frameStart = telemetryActive ? performance.now() : 0;
         
         const rawDt = Math.min((now - store.last) / 1000, 0.07);
         const speedMultiplier = window.gameSpeedMultiplier || 1;
@@ -12284,46 +12528,62 @@ function tryVoidStep(player, target, now = performance.now()){
         
         store.last = now;
         
-        // PERFORMANCE: Time stepWorld execution with detailed breakdown
-        const stepStart = performance.now();
+        let stepStart;
+        if (telemetryActive) {
+            stepStart = performance.now();
+        }
         if (!store.isPaused && !store.isGameOver) {
             stepWorld(dt);
         }
-        performanceMetrics.stepWorldTime = performance.now() - stepStart;
+        if (telemetryActive && stepStart !== undefined) {
+            performanceMetrics.stepWorldTime = performance.now() - stepStart;
+        }
         
-        // PERFORMANCE: Time render execution
-        const renderStart = performance.now();
+        let renderStart;
+        if (telemetryActive) {
+            renderStart = performance.now();
+        }
         render(rawDt); // Use original dt for rendering to avoid visual issues
-        performanceMetrics.renderTime = performance.now() - renderStart;
-        
-        // PERFORMANCE: Check for performance budget violations
-        const currentFrameTime = performance.now() - frameStart;
-        if (currentFrameTime > PERFORMANCE_BUDGETS.frameTime) {
-            performanceMetrics.slowFrameCount++;
+        if (telemetryActive && renderStart !== undefined) {
+            performanceMetrics.renderTime = performance.now() - renderStart;
         }
-        
-        // PERFORMANCE: Track frame metrics
-        const frameEnd = performance.now();
-        const frameTime = frameEnd - frameStart;
-        performanceMetrics.frameTime = frameTime;
-        
-        if (frameTime > perfWorstFrameTime) {
-            perfWorstFrameTime = frameTime;
-        }
-        
-        // FPS Counter and enhanced performance logging
-        perfFrameCount++;
-        if (now - perfLastFPSUpdate > 3000) { // Log every 3 seconds
-            perfFPS = Math.round(perfFrameCount / 3);
-            perfFrameCount = 0;
-            perfLastFPSUpdate = now;
-            
-            // Calculate memory usage if available
-            if (performance.memory) {
-                performanceMetrics.memoryUsage = performance.memory.usedJSHeapSize / 1024 / 1024;
-            }
-            
 
+        if (telemetryActive) {
+            const currentFrameTime = performance.now() - frameStart;
+            if (currentFrameTime > PERFORMANCE_BUDGETS.frameTime) {
+                performanceMetrics.slowFrameCount++;
+            }
+
+            const frameTime = currentFrameTime;
+            performanceMetrics.frameTime = frameTime;
+            performanceMetrics.activeEnemies = store.enemies ? store.enemies.length : 0;
+            performanceMetrics.activeBullets = store.bullets ? store.bullets.length : 0;
+            performanceMetrics.activeFlames = store._activeFlamesCache ? store._activeFlamesCache.length : 0;
+
+            if (frameTime > perfWorstFrameTime) {
+                perfWorstFrameTime = frameTime;
+            }
+
+            if (frameTime > 33 && (!performanceMetrics.lastSlowLog || now - performanceMetrics.lastSlowLog > 1500)) {
+                console.warn(
+                    `[PERF] Slow frame ${frameTime.toFixed(1)}ms (logic ${performanceMetrics.stepWorldTime.toFixed(1)}ms, ` +
+                    `render ${performanceMetrics.renderTime.toFixed(1)}ms, enemies ${performanceMetrics.activeEnemies}, ` +
+                    `bullets ${performanceMetrics.activeBullets}, flames ${performanceMetrics.activeFlames})`
+                );
+                performanceMetrics.lastSlowLog = now;
+            }
+
+            perfFrameCount++;
+            if (now - perfLastFPSUpdate > 3000) { // Log every 3 seconds
+                perfFPS = Math.round(perfFrameCount / 3);
+                perfFrameCount = 0;
+                perfLastFPSUpdate = now;
+
+                // Calculate memory usage if available
+                if (performance.memory) {
+                    performanceMetrics.memoryUsage = performance.memory.usedJSHeapSize / 1024 / 1024;
+                }
+            }
         }
         
         requestAnimationFrame(frame);
