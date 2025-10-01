@@ -12058,6 +12058,108 @@ function tryVoidStep(player, target, now = performance.now()){
         store.cheatsUsed = true;
     }
 
+    const SUBCLASS_CHEAT_CODES = {
+        jug: { subclass: 'juggernaut', genome: 'beef', label: 'JUGGERNAUT' },
+        mar: { subclass: 'marauder', genome: 'beef', label: 'MARAUDER' },
+        dem: { subclass: 'demolitionist', genome: 'rocketman', label: 'DEMOLITIONIST' },
+        rai: { subclass: 'railgunner', genome: 'rocketman', label: 'RAILGUNNER' },
+        pha: { subclass: 'phasestriker', genome: 'voidmancer', label: 'PHASESTRIKER' },
+        sto: { subclass: 'stormcaller', genome: 'voidmancer', label: 'STORMCALLER' }
+    };
+
+    function clearSubclassEffects() {
+        const p = store.player;
+        if (!p || !p.subclass) return;
+
+        switch (p.subclass) {
+            case 'railgunner':
+                p.missilePierce = player_initial_state.missilePierce || 0;
+                break;
+            case 'demolitionist':
+                p.missileCluster = player_initial_state.missileCluster || false;
+                break;
+            case 'marauder':
+                p.beefChainMode = false;
+                if (p.marauderHitTargets && typeof p.marauderHitTargets.clear === 'function') {
+                    p.marauderHitTargets.clear();
+                }
+                break;
+            case 'phasestriker':
+                if (!p.hasPhasestriker) {
+                    p.hasVoidLaser = false;
+                }
+                p.voidLaserTarget = null;
+                p.voidLaserDamageTimer = 0;
+                p.voidLaserRetargetTimer = 0;
+                p.voidLaserRange = 0;
+                break;
+            case 'stormcaller':
+                if (!p.hasStormcaller) {
+                    p.hasChainLightning = false;
+                }
+                p.chainLightningCooldown = 0;
+                break;
+        }
+
+        p.subclass = null;
+    }
+
+    function activateSubclassOverrideCheat(targetSubclass, requiredGenome, label) {
+        const p = store.player;
+        if (!p || !p.pilotGenome) {
+            announce('CHEAT FAILED: Choose a Pilot first.');
+            cheatCodeBuffer = "";
+            return;
+        }
+
+        if (requiredGenome && p.pilotGenome !== requiredGenome) {
+            announce(`CHEAT FAILED: Requires ${requiredGenome.toUpperCase()} pilot.`);
+            cheatCodeBuffer = "";
+            return;
+        }
+
+        store.cheatsUsed = true;
+
+        if (p.subclass === targetSubclass) {
+            updateAbilityButtonIcon();
+            announce(`CHEAT: ${targetSubclass.toUpperCase()} ALREADY ACTIVE`);
+            cheatCodeBuffer = "";
+            return;
+        }
+
+        clearSubclassEffects();
+
+        const originalEnemyBonus = store.world ? store.world.enemyHealthBonus : null;
+        if (label) {
+            announce(`CHEAT: ${label} READY`);
+        }
+        applySubclassBonus(targetSubclass);
+        if (store.world && originalEnemyBonus !== null && originalEnemyBonus !== undefined) {
+            store.world.enemyHealthBonus = originalEnemyBonus;
+        }
+
+        if (targetSubclass === 'marauder' && (!p.marauderHitTargets || typeof p.marauderHitTargets.clear !== 'function')) {
+            p.marauderHitTargets = new Set();
+        }
+
+        updateAbilityButtonIcon();
+        cheatCodeBuffer = "";
+    }
+
+    function activateSevenCheat() {
+        store.cheatsUsed = true;
+        initializeProgressionTracking();
+
+        const pointsGranted = 7;
+        store.player.totalProgressionPoints += pointsGranted;
+        store.player.unspentProgressionPoints += pointsGranted;
+
+        announce(`CHEAT: +${pointsGranted} PROGRESSION POINTS`);
+        updateSkillTreeUI();
+        checkProgressionLogic();
+        cheatCodeBuffer = "";
+    }
+
     q('diagBox').children[0].addEventListener('click', () => {
         const now = performance.now();
         if (now - lastCheatTap > 500) {
@@ -12093,6 +12195,14 @@ function tryVoidStep(player, target, now = performance.now()){
             } else if (cheatCodeBuffer.endsWith('fast')) {
                 activateSpeedCheat();
                 cheatCodeBuffer = "";
+            } else {
+                const subclassCode = Object.keys(SUBCLASS_CHEAT_CODES).find(code => cheatCodeBuffer.endsWith(code));
+                if (subclassCode) {
+                    const { subclass, genome, label } = SUBCLASS_CHEAT_CODES[subclassCode];
+                    activateSubclassOverrideCheat(subclass, genome, label);
+                } else if (cheatCodeBuffer.endsWith('seven')) {
+                    activateSevenCheat();
+                }
             }
         } else {
             if (key !== ' ' && key !== 'b') {
