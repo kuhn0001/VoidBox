@@ -9872,8 +9872,7 @@ function render(dt) {
         const p = store.player;
         
         if (p.stormstrikerLevel >= 3) {
-            // Level 3: Fire four chain lightning bolts alternating in sequence (Thunder Lord)
-            // Cycle through positions: far left -> left wing -> right wing -> far right -> repeat
+            // Level 3: Fire four simultaneous chain lightning bolts from all positions (Thunder Lord)
             const positions = [
                 { x: p.x - 25, y: p.y - 15 }, // Far left
                 { x: p.x - 8, y: p.y - 8 },  // Left wing
@@ -9881,10 +9880,10 @@ function render(dt) {
                 { x: p.x + 25, y: p.y - 15 } // Far right
             ];
             
-            if (!p.lightningCycleIndex) p.lightningCycleIndex = 0;
-            const position = positions[p.lightningCycleIndex];
-            fireChainLightningBolt(1.0, position);
-            p.lightningCycleIndex = (p.lightningCycleIndex + 1) % 4;
+            // Fire all four bolts simultaneously
+            positions.forEach(pos => {
+                fireChainLightningBolt(1.0, pos);
+            });
         } else if (p.stormstrikerLevel >= 2) {
             // Level 2: Fire simultaneous twin lightning from both wing guns
             const leftWing = { x: p.x - 18, y: p.y - 8 };
@@ -10504,7 +10503,7 @@ function tryVoidStep(player, target, now = performance.now()){
                 nodes: [
                     { id: 'stormcaller_chain_boost', name: 'Twin Lightning', desc: 'Alternating left/right wing lightning at double fire rate', icon: 'storm1.png', tier: 1 },
                     { id: 'stormcaller_storm_mastery', name: 'Storm Mastery', desc: '+50% jump range and +80% chain lightning damage', icon: 'storm2.png', tier: 2 },
-                    { id: 'stormcaller_thunder_lord', name: 'Thunder Lord', desc: '4-position rotating lightning sequence at quadruple fire rate', icon: 'storm3.png', tier: 3 },
+                    { id: 'stormcaller_thunder_lord', name: 'Thunder Lord', desc: '4 simultaneous lightning bolts from all positions - devastating coverage', icon: 'storm3.png', tier: 3 },
                     { id: 'stormcaller_storm_god', name: 'Storm God', desc: '3x lightning damage multiplier - omnipotent electrical dominance', icon: 'storm4.png', tier: 4 }
                 ]
             },
@@ -11595,7 +11594,7 @@ function tryVoidStep(player, target, now = performance.now()){
                 p.stormstrikerLevel = 3; // 4-bolt lightning storm
                 p.lightningStorm = true;
                 p.thunderLordPower = true;
-                announce('THUNDER LORD ACTIVATED - 4-Bolt Storm!');
+                announce('THUNDER LORD ACTIVATED - 4 Simultaneous Bolts!');
                 break;
             case 'stormcaller_storm_god':
                 p.chainLightningDamage *= 3.0;
