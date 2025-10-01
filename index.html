@@ -4411,9 +4411,10 @@ class FlameParticle {
                             handleBossDefeat();
                         } else {
                             spawnGibs(e.x, e.y, e.color);
-                            store.world.score += e.score;
-                            store.world.gold += e.gold;
-                            store.world.xp += e.xp;
+                            const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
+                            store.world.score += Math.floor(e.score * collarBonus);
+                            store.world.gold += Math.floor(e.gold * collarBonus);
+                            store.world.xp += Math.floor(e.xp * collarBonus);
                             store.world.kills++;
                             
                             spawnPowerup(e.x, e.y);
@@ -4736,7 +4737,8 @@ class FlameParticle {
         // Use progression logic with point award
         checkProgressionLogic(true);
         
-        store.world.score += 2000; store.world.gold += 25; store.world.xp += 100; store.world.bosses++;
+        const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
+        store.world.score += Math.floor(2000 * collarBonus); store.world.gold += Math.floor(25 * collarBonus); store.world.xp += Math.floor(100 * collarBonus); store.world.bosses++;
         const bossX = store.boss.x;
         const bossY = store.boss.y;
         const bossName = store.boss.name; // Store boss name before nulling
