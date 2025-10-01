@@ -1277,19 +1277,19 @@ class FlameParticle {
         ctx.globalCompositeOperation = 'lighter';
         
         // Outer glow - simple and clean
-        ctx.fillStyle = `rgba(60, 30, 100, ${alpha * 0.2})`;
+    ctx.fillStyle = `rgba(255, 140, 20, ${alpha * 0.18})`;
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.size * 1.2, 0, 6.283185);
         ctx.fill();
         
         // Middle flame
-        ctx.fillStyle = `rgba(100, 50, 150, ${alpha * 0.4})`;
+    ctx.fillStyle = `rgba(255, 100, 30, ${alpha * 0.38})`;
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.size * 0.7, 0, 6.283185);
         ctx.fill();
         
         // Core flame
-        ctx.fillStyle = `rgba(140, 70, 190, ${alpha * 0.6})`;
+    ctx.fillStyle = `rgba(255, 215, 120, ${alpha * 0.55})`;
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.size * 0.3, 0, 6.283185);
         ctx.fill();
@@ -1380,7 +1380,7 @@ class FlameParticle {
         hasLazarusBeam: false, lazarusBeamCooldown: 0,
         hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 0, vampirismLevel: 0, flamethrowerLevel: 0,
         flamethrowerT: 0, // Separate timer for lava chunks, unaffected by overclock
-    starCannonLevel: 0, starCannonTimer: 0,
+    starCannonLevel: 0, starCannonTimer: 0, starCannonIcemanSupport: false,
         luckBoost: 0, magnetRadius: 0, hasIceman: false, critChance: 0.02, critDamage: 1.85,
         pilotGenome: null, missileVolley: 2,
         hasRearGuard: false, rearGuardCooldown: 0, rearGuardReady: true,
@@ -1467,6 +1467,9 @@ class FlameParticle {
     const STAR_CANNON_SPEED = 420;
     const STAR_CANNON_DAMAGE = 220;
     const STAR_CANNON_SIZE = 20;
+    const STAR_CANNON_HITBOX_SCALE = 1.0;
+    const STAR_CANNON_CLONE_DELAY = 0.35;
+    const STAR_CANNON_ICEMAN_DAMAGE_SCALE = 0.3;
 
     const initialTelemetryEnabled = (() => {
         try {
@@ -1512,7 +1515,7 @@ class FlameParticle {
             lastSpawnTempo: 0
         },
         player: { ...player_initial_state },
-    boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [], starProjectiles: [],
+    boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [], starProjectiles: [], pendingStarClones: [],
         flameParticles: [],
         lightningBolts: [],
         empNovas: [],
@@ -2171,7 +2174,7 @@ class FlameParticle {
             icon: '🌠',
             baseCost: 180,
             scale: 2.2,
-            maxLevel: 2,
+            maxLevel: 3,
             category: 'attack',
             effect: level => {
                 const p = store.player;
@@ -2183,11 +2186,16 @@ class FlameParticle {
                     p.starCannonLevel = 2;
                     p.starCannonTimer = Math.min(p.starCannonTimer, 0);
                     announce('STAR CANNON MKII - DUAL ARTILLERY!');
+                } else if (level === 2) {
+                    p.starCannonLevel = Math.max(p.starCannonLevel, 2);
+                    p.starCannonIcemanSupport = true;
+                    announce('STAR CANNON MKIII - BLIZZARD SYNC!');
                 }
             },
             desc: level => {
                 if (level === 0) return 'Left-side artillery star cannon (7s reload).';
                 if (level === 1) return 'Add right-side cannon for twin strikes.';
+                if (level === 2) return 'Iceman mirrors your salvo with frosty stars.';
                 return 'Max Level';
             }
         },
@@ -2533,8 +2541,8 @@ class FlameParticle {
             { name: 'VOID SENTINEL', baseHp: 1700, r: 55, behavior: 'sentinel', color: '#8B4A9C' },
             { name: 'NEXUS PHANTOM', baseHp: 2200, r: 50, behavior: 'hex', color: '#66aaff'},
             { name: 'NEURAL CORE', baseHp: 3200, r: 60, behavior: 'malignus', color: '#2E8B57' },
-            { name: 'DEATH ENGINE', baseHp: 9000, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true },
-            { name: 'HIVE SOVEREIGN', baseHp: 8500, r: 85, behavior: 'broodlord', color: '#2d5016' }
+            { name: 'HIVE SOVEREIGN', baseHp: 8500, r: 85, behavior: 'broodlord', color: '#2d5016' },
+            { name: 'DEATH ENGINE', baseHp: 9000, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true }
         ];
         const type = types[bossCycle];
         let hp = type.baseHp * scale * store.world.bossHealthBonus;
@@ -3240,7 +3248,7 @@ class FlameParticle {
                                     });
                                 }, 400); // Second impact timing
                             }
-                        }, 800); // Delay before second charge
+                        }, 400); // Delay before second charge
                     }
                 }
             }
@@ -5134,7 +5142,7 @@ class FlameParticle {
         if (store.eBullets && store.eBullets.length) {
             store.eBullets.forEach(returnEBulletToPool);
         }
-    store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = []; store.starProjectiles = [];
+    store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = []; store.starProjectiles = []; store.pendingStarClones = [];
         store.drones = []; store.hounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
         store.lightningBolts = []; store.empNovas = []; store.poisonPuddles = [];
         store.iceman = null;
@@ -6168,17 +6176,25 @@ function render(dt) {
         }
     }
 
-    function launchStarProjectile(originX, originY, angle) {
+    function launchStarProjectile(originX, originY, angle, options = {}) {
+        const speedMultiplier = options.speedMultiplier ?? 1;
         const projectile = {
             x: originX,
             y: originY,
-            vx: Math.sin(angle) * STAR_CANNON_SPEED,
-            vy: -Math.cos(angle) * STAR_CANNON_SPEED,
+            vx: Math.sin(angle) * STAR_CANNON_SPEED * speedMultiplier,
+            vy: -Math.cos(angle) * STAR_CANNON_SPEED * speedMultiplier,
             size: STAR_CANNON_SIZE,
             rotation: 0,
             trail: [],
             maxTrailLength: 28,
-            hitIds: new Set()
+            hitIds: new Set(),
+            damageScale: options.damageScale ?? 1,
+            isIceman: options.isIceman || false,
+            hitboxScale: options.hitboxScale ?? STAR_CANNON_HITBOX_SCALE,
+            trailColor: options.trailColor || null,
+            primaryColor: options.primaryColor || null,
+            coreColor: options.coreColor || null,
+            shadowColor: options.shadowColor || null
         };
         store.starProjectiles.push(projectile);
     }
@@ -6188,18 +6204,58 @@ function render(dt) {
         playSound('stargun');
         const originY = p.y - 12;
         const lateralOffset = 26;
+        const shots = [];
         if (p.starCannonLevel >= 1) {
-            launchStarProjectile(p.x - lateralOffset, originY, -Math.PI / 6);
+            shots.push({ originX: p.x - lateralOffset, angle: -Math.PI / 6, offset: -lateralOffset });
         }
         if (p.starCannonLevel >= 2) {
-            launchStarProjectile(p.x + lateralOffset, originY, Math.PI / 6);
+            shots.push({ originX: p.x + lateralOffset, angle: Math.PI / 6, offset: lateralOffset });
+        }
+
+        for (const shot of shots) {
+            launchStarProjectile(shot.originX, originY, shot.angle, {
+                hitboxScale: STAR_CANNON_HITBOX_SCALE
+            });
+        }
+
+        if (p.starCannonIcemanSupport && p.hasIceman && store.iceman) {
+            const icemanOriginY = store.iceman.y - 12;
+            for (let i = 0; i < shots.length; i++) {
+                const shot = shots[i];
+                store.pendingStarClones.push({
+                    delay: STAR_CANNON_CLONE_DELAY,
+                    originX: store.iceman.x + shot.offset,
+                    originY: icemanOriginY,
+                    angle: shot.angle,
+                    damageScale: STAR_CANNON_ICEMAN_DAMAGE_SCALE,
+                    playSound: true
+                });
+            }
         }
     }
 
     function updateStarProjectiles(dt) {
+        if (store.pendingStarClones.length) {
+            for (let i = store.pendingStarClones.length - 1; i >= 0; i--) {
+                const pending = store.pendingStarClones[i];
+                pending.delay -= dt;
+                if (pending.delay <= 0) {
+                    launchStarProjectile(pending.originX, pending.originY, pending.angle, {
+                        damageScale: pending.damageScale,
+                        isIceman: true,
+                        hitboxScale: STAR_CANNON_HITBOX_SCALE
+                    });
+                    if (pending.playSound) {
+                        playSound('stargun');
+                    }
+                    store.pendingStarClones.splice(i, 1);
+                }
+            }
+        }
+
         if (!store.starProjectiles.length) return;
         const p = store.player;
-        const damage = STAR_CANNON_DAMAGE * p.dmgMult;
+        const baseDamage = STAR_CANNON_DAMAGE * p.dmgMult;
         const targets = store.boss ? [store.boss, ...store.enemies] : store.enemies;
 
         for (let i = store.starProjectiles.length - 1; i >= 0; i--) {
@@ -6217,7 +6273,7 @@ function render(dt) {
                 if (particle.life <= 0 || particle.size <= 0.2) star.trail.splice(t, 1);
             }
 
-            const hitRadius = star.size * 0.55;
+            const hitRadius = star.size * (star.hitboxScale || STAR_CANNON_HITBOX_SCALE);
             for (const target of targets) {
                 if (!target || target.dead || target.hp <= 0) continue;
                 if (target === store.boss && target.isInvincible) continue;
@@ -6230,7 +6286,8 @@ function render(dt) {
                 if (dx * dx + dy * dy <= combined * combined) {
                     const id = target.id || target.__starId || target;
                     if (!star.hitIds.has(id)) {
-                        applyStarDamage(target, damage);
+                        const starDamage = baseDamage * (star.damageScale ?? 1);
+                        applyStarDamage(target, starDamage);
                         star.hitIds.add(id);
                     }
                 }
@@ -6297,9 +6354,13 @@ function render(dt) {
     function drawStarProjectiles() {
         if (!store.starProjectiles.length) return;
         for (const star of store.starProjectiles) {
+            const trailFillBase = star.isIceman ? 'rgba(190, 225, 255, ' : 'rgba(255, 255, 200, ';
+            const trailShadowBase = star.isIceman ? 'rgba(140, 200, 255, ' : 'rgba(255, 240, 150, ';
             for (const particle of star.trail) {
-                ctx.fillStyle = `rgba(255, 255, 200, ${particle.life * 0.6})`;
-                ctx.shadowColor = `rgba(255, 240, 150, ${particle.life})`;
+                const trailAlpha = Math.max(0, Math.min(1, particle.life * 0.6));
+                const shadowAlpha = Math.max(0, Math.min(1, particle.life));
+                ctx.fillStyle = `${trailFillBase}${trailAlpha})`;
+                ctx.shadowColor = `${trailShadowBase}${shadowAlpha})`;
                 ctx.shadowBlur = 12;
                 ctx.beginPath();
                 ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
@@ -6310,13 +6371,13 @@ function render(dt) {
             ctx.translate(star.x, star.y);
             ctx.rotate(star.rotation);
 
-            ctx.fillStyle = 'rgba(255, 255, 140, 0.85)';
-            ctx.shadowColor = 'rgba(255, 220, 120, 0.9)';
+            ctx.fillStyle = star.isIceman ? 'rgba(180, 215, 255, 0.85)' : 'rgba(255, 255, 140, 0.85)';
+            ctx.shadowColor = star.isIceman ? 'rgba(140, 200, 255, 0.9)' : 'rgba(255, 220, 120, 0.9)';
             ctx.shadowBlur = 24;
             drawStarShape(ctx, 0, 0, 5, star.size, star.size * 0.45);
             ctx.fill();
 
-            ctx.fillStyle = '#fffbe6';
+            ctx.fillStyle = star.isIceman ? '#eef7ff' : '#fffbe6';
             ctx.shadowBlur = 12;
             drawStarShape(ctx, 0, 0, 5, star.size * 0.65, star.size * 0.28);
             ctx.fill();
@@ -10618,8 +10679,8 @@ function tryVoidStep(player, target, now = performance.now()){
                 p.speed = (p.speed || 2.5) * 1.05; // 5% speed boost
                 break;
             case 'rocketman':
-                // Give basic missile launcher ability - required for missiles to work
-                p.hasLauncher = true;
+                // Rocketman no longer auto-gains the frag launcher; keep any previously unlocked state
+                p.hasLauncher = !!p.hasLauncher;
                 break;
         }
     }
@@ -10925,7 +10986,7 @@ function tryVoidStep(player, target, now = performance.now()){
                 </div>
             </div>
             <div class="skill-description" id="skillDescription">
-                Master your ${subclass} specialization through focused training. Your signature ability is available immediately!
+                Master your ${subclass} specialization through focused training. Spend progression points to unlock path upgrades and your signature ability.
             </div>
             <button class="btn" id="skillTreeCloseBottomBtn" type="button" style="margin-top: 15px;">Close</button>`;
         
@@ -11307,6 +11368,12 @@ function tryVoidStep(player, target, now = performance.now()){
                 return;
             }
             
+            const spentPoint = spendProgressionPoint();
+            if (!spentPoint) {
+                isLearningSkill = false;
+                return;
+            }
+
             if (!p.skillTree) p.skillTree = {};
             p.skillTree[skill] = true;
             if (p.skillPoints > 0) {
@@ -11322,9 +11389,6 @@ function tryVoidStep(player, target, now = performance.now()){
                 p.signatureAbilities[skill] = true;
                 p.signatureAbility = true;
             }
-            
-            // Spend progression point for successful skill selection
-            spendProgressionPoint();
             
             // Apply the skill effects
             applySkillBonus(skill);
@@ -12209,8 +12273,8 @@ function tryVoidStep(player, target, now = performance.now()){
         store.cheatsUsed = true;
         announce('CHEAT: POWER UP!');
         resetGame();
-        store.world.gold = 800;
-        store.player.multishot = 10;
+        store.world.gold = 2000;
+        store.player.multishot = 5;
         initWave();
         cheatCodeBuffer = "";
     }
