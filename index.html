@@ -860,12 +860,7 @@
                 <div id="diagBox">
                     <table style="font-size:10px; color:var(--fg); background:rgba(0,0,0,0.7); padding:8px; border-radius:8px; border-spacing:8px 2px;">
                         <tr><td>v3.8.0</td><td>FPS:</td><td><span id="fps">—</span></td></tr>
-                        <tr><td>Collar:</td><td colspan="2"><span id="collar">0 (0%)</span></td></tr>
-                        <tr><td>Dmg/Bullet:</td><td colspan="2"><span id="damagePerBullet">—</span></td></tr>
-                        <tr><td>Avg Enemy HP:</td><td colspan="2"><span id="avgEnemyHp">—</span></td></tr>
-                        <tr><td>Spawn:</td><td colspan="3"><span id="spawnDebug">—</span></td></tr>
-                        <tr><td>Enemy Base:</td><td><span id="enemyBaseHp">-</span></td><td>Current:</td><td><span id="enemyCurrentHp">-</span></td></tr>
-                        <tr><td>Boss Base:</td><td><span id="bossBaseHp">-</span></td><td>Current:</td><td><span id="bossCurrentHp">-</span></td></tr>
+
                     </table>
                 </div>
                 
@@ -6047,8 +6042,6 @@ function render(dt) {
         if (timedPowerups.length > 0) {
             let timedContent = '';
             timedPowerups.forEach(key => {
-                const timer = store.player.powerupTimers[key];
-                const percent = Math.min(100, (timer.remaining / timer.max) * 100);
                 timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`;
             });
             q("powerupList").innerHTML = timedContent;
@@ -6091,65 +6084,53 @@ function render(dt) {
         if (now - store.fpsLastTime >= 1000) {
             const fps = Math.round((store.fpsFrameCount * 1000) / (now - store.fpsLastTime));
             q('fps').textContent = fps;
-            // Enhanced collar display with better feedback
+            
+            // COMMENTED OUT: Enhanced collar display with better feedback
+            /*
             const collarStacks = sanitizeCollarStacks();
             const collarBonus = calculateCollarBonus(collarStacks);
             const collarPercent = (collarBonus - 1) * 100;
             const collarStatus = collarStacks === 0 ? 'LOOSE' : 
-                                collarStacks < 5 ? 'SNUG' :
-                                collarStacks < 15 ? 'TIGHT' :
                                 collarStacks < 25 ? 'CRUSHING' : 'MAXIMUM';
             q('collar').textContent = `${collarStacks.toFixed(1)} (${collarPercent.toFixed(0)}%) ${collarStatus}`;
+            */
             
-            // Calculate damage per bullet and average enemy HP
+            // COMMENTED OUT: Calculate damage per bullet and average enemy HP
+            /*
             const baseDamage = 15; // Updated from 20 to 15 (75% of original)
             const actualDamage = baseDamage * store.player.dmgMult;
             q('damagePerBullet').textContent = `${actualDamage.toFixed(1)}`;
             
             // Calculate average enemy HP across all enemy types
             const enemyTypes = [
-                { hp: 20, name: 'drone' }, { hp: 15, name: 'hunter' }, { hp: 30, name: 'phantom' },
-                { hp: 80, name: 'mech' }, { hp: 120, name: 'angler' }, { hp: 150, name: 'manta' }
             ];
             const avgBaseHp = enemyTypes.reduce((sum, type) => sum + type.hp, 0) / enemyTypes.length;
             const waveMultiplier = Math.pow(1.03, store.world.wave - 1);
             const avgCurrentHp = avgBaseHp * waveMultiplier * collarBonus;
             q('avgEnemyHp').textContent = `${avgCurrentHp.toFixed(0)}`;
+            */
+            
             const spawnDebugEl = q('spawnDebug');
             if (spawnDebugEl) {
-                const planned = ensureFiniteNumber(store.world.lastPlannedSpawnCount, 0);
-                const actual = ensureFiniteNumber(store.world.lastSpawnCount, store.enemies.length);
-                const threat = ensureFiniteNumber(store.world.lastThreatScale, 1);
-                const overflow = Math.max(0, ensureFiniteNumber(store.world.lastSpawnOverflow, 0));
-                const queued = Math.max(0, ensureFiniteNumber(store.world.lastSpawnQueueLength, 0));
-                const pending = Math.max(0, ensureFiniteNumber(store.pendingSpawnCount, 0));
-                const tempo = ensureFiniteNumber(store.world.lastSpawnTempo, 0);
-                const fallbackNote = store.world.lastSpawnFallback ? ' • fallback' : '';
-                const queueNote = queued ? ` • queued ${queued}` : '';
-                const pendingNote = pending ? ` • pending ${pending}` : '';
-                const tempoNote = tempo ? ` • tempo ${tempo.toFixed(2)}s` : '';
-                spawnDebugEl.textContent = `${actual}/${planned} • threat ${threat.toFixed(2)}${overflow > 0 ? ` • overflow ${overflow}` : ''}${queueNote}${pendingNote}${tempoNote}${fallbackNote}`;
+                // Spawn debug info can stay if needed for development
             }
             
             store.fpsFrameCount = 0;
             store.fpsLastTime = now;
             
-            // Update health table
+            // COMMENTED OUT: Update health table
+            /*
             if (store.enemies.length > 0) {
-                const enemy = store.enemies[0];
-                q('enemyBaseHp').textContent = Math.round(enemy.hpMax / collarBonus);
                 q('enemyCurrentHp').textContent = Math.round(enemy.hp);
             } else {
-                q('enemyBaseHp').textContent = '-';
-                q('enemyCurrentHp').textContent = '-';
+                q('enemyCurrentHp').textContent = '0';
             }
             if (store.boss) {
-                q('bossBaseHp').textContent = Math.round(store.boss.hpMax / collarBonus);
                 q('bossCurrentHp').textContent = Math.round(store.boss.hp);
             } else {
-                q('bossBaseHp').textContent = '-';
-                q('bossCurrentHp').textContent = '-';
+                q('bossCurrentHp').textContent = '0';
             }
+            */
         }
     }
     function normalizeLeaderboardEntries(source) {
