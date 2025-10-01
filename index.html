@@ -1501,7 +1501,9 @@ class FlameParticle {
             enemyDensityBonus: 1.0, 
             powerupCooldown: 0, 
             xpMultiplier: 1.0, 
-            collarStacks: 0, 
+            collarStacks: 0,
+            collarTargetStacks: 0,
+            collarTargetStacks: 0,
             lateGameDamageScaling: 1,
             consecutiveFastKills: 0, 
             fastKillBonus: 0,
@@ -1512,7 +1514,8 @@ class FlameParticle {
             lastSpawnCount: 0,
             lastSpawnFallback: false,
             lastSpawnQueueLength: 0,
-            lastSpawnTempo: 0
+            lastSpawnTempo: 0,
+            firstBossOrbsGifted: false
         },
         player: { ...player_initial_state },
     boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [], starProjectiles: [], pendingStarClones: [],
@@ -1520,6 +1523,8 @@ class FlameParticle {
         lightningBolts: [],
         empNovas: [],
         mechPuddles: [], // Hazardous puddles left by mech tank attacks
+        poisonPuddles: [],
+        goldenOrbs: [],
         _enemySpatial: {
             cellSize: 160,
             buckets: new Map(),
@@ -2316,6 +2321,9 @@ class FlameParticle {
             console.warn('Invalid collar stack value detected, resetting.', store.world.collarStacks);
             store.world.collarStacks = 0;
         }
+        if (!Number.isFinite(store.world.collarTargetStacks)) {
+            store.world.collarTargetStacks = store.world.collarStacks;
+        }
         return store.world.collarStacks;
     }
 
@@ -2328,11 +2336,54 @@ class FlameParticle {
         return 1 + bonus;
     }
 
+    const MAX_COLLAR_STACKS = 25;
+
+    function setCollarStacks(value) {
+        const clamped = Math.max(0, Math.min(MAX_COLLAR_STACKS, ensureFiniteNumber(value, 0)));
+        store.world.collarStacks = clamped;
+        store.world.collarTargetStacks = clamped;
+        return clamped;
+    }
+
+    function approachCollarTarget() {
+        const currentStacks = sanitizeCollarStacks();
+        if (!Number.isFinite(store.world.collarTargetStacks)) {
+            store.world.collarTargetStacks = currentStacks;
+        }
+        const targetStacks = Math.min(MAX_COLLAR_STACKS, store.world.collarTargetStacks);
+        const stackGap = targetStacks - currentStacks;
+        if (stackGap > 0) {
+            const maxIncrease = 1 + Math.min(2, currentStacks * 0.05);
+            const appliedIncrease = Math.min(stackGap, maxIncrease);
+            store.world.collarStacks = Math.min(MAX_COLLAR_STACKS, currentStacks + appliedIncrease);
+        } else if (stackGap < 0) {
+            setCollarStacks(targetStacks);
+        }
+    }
+
+    function scheduleCollarIncrease(amount) {
+        const delta = ensureFiniteNumber(amount, 0);
+        if (delta <= 0) {
+            approachCollarTarget();
+            return;
+        }
+
+        const currentStacks = sanitizeCollarStacks();
+        if (!Number.isFinite(store.world.collarTargetStacks)) {
+            store.world.collarTargetStacks = currentStacks;
+        }
+        store.world.collarTargetStacks = Math.min(MAX_COLLAR_STACKS, store.world.collarTargetStacks + delta);
+        approachCollarTarget();
+    }
+
     function ensureFiniteNumber(value, fallback = 0) {
         return Number.isFinite(value) ? value : fallback;
     }
 
     function initWave() {
+        if (store.goldenOrbs) {
+            store.goldenOrbs.length = 0;
+        }
         const isBossWave = store.world.wave % 5 === 0;
         
         // Clear poison puddles at start of each wave for clean slate
@@ -2365,6 +2416,11 @@ class FlameParticle {
             if (store.boss.name === 'VOID SENTINEL') playSound('trap');
             else if (store.boss.name === 'NEURAL CORE') playSound('horn');
             announce(`⚡ GUARDIAN: ${store.boss.name} ⚡`);
+            if (!store.world.firstBossOrbsGifted && store.world.bosses === 0 && store.boss.name === 'VOID SENTINEL') {
+                spawnGoldenSentinelOrbs(3);
+                store.world.firstBossOrbsGifted = true;
+                setTimeout(() => announce('Collect GOLDEN ORBS to shatter the guardian!'), 750);
+            }
         } else {
             store.enemies = [];
             store.waveSpawnQueue = [];
@@ -2558,6 +2614,7 @@ class FlameParticle {
             boss.skullRenderer = new Boss(ctx, boss.x, boss.y, boss.color);
             // Store collar stacks before Death Engine fight to restore them after
             store.world.deathEngineCollarStacks = store.world.collarStacks;
+            store.world.deathEngineCollarTargetStacks = store.world.collarTargetStacks;
         }
         
         return boss;
@@ -3921,6 +3978,141 @@ class FlameParticle {
 
     const EMPTY_FLAME_CACHE = Object.freeze([]);
 
+    function getHivePuddleLifetime(base, variance, options = {}) {
+        const { min = 4, waveBonusPer = 0.35, maxWaveBonus = 5 } = options;
+        const wave = (store && store.world && typeof store.world.wave === 'number') ? store.world.wave : 1;
+        const waveBonus = Math.min(Math.max(wave - 1, 0) * waveBonusPer, maxWaveBonus);
+        const randomized = variance > 0 ? Math.random() * variance : 0;
+        return Math.max(min, base + randomized + waveBonus);
+    }
+
+    const GOLDEN_ORB_CONFIG = Object.freeze({
+        radius: 22,
+        pickupRadius: 30,
+        floatAmplitude: 12,
+        floatSpeed: 2.4,
+        homingSpeed: 430,
+        homingAcceleration: 6.5,
+        maxTrail: 16,
+        trailLife: 0.32
+    });
+
+    function spawnGoldenSentinelOrbs(count = 3) {
+        if (!store || !store.player) return;
+        if (!store.goldenOrbs) store.goldenOrbs = [];
+
+        const spawnPositions = [
+            {
+                x: clamp(W * 0.23, 80, W - 80),
+                y: clamp(H - 170, 120, H - 110)
+            },
+            {
+                x: clamp(W * 0.5, 80, W - 80),
+                y: clamp(H - 135, 120, H - 105)
+            },
+            {
+                x: clamp(W * 0.77, 80, W - 80),
+                y: clamp(H - 190, 120, H - 115)
+            }
+        ];
+
+        for (let i = 0; i < Math.min(count, spawnPositions.length); i++) {
+            const pos = spawnPositions[i];
+            const orb = {
+                x: pos.x,
+                y: pos.y,
+                baseY: pos.y,
+                r: GOLDEN_ORB_CONFIG.radius,
+                pickupRadius: GOLDEN_ORB_CONFIG.pickupRadius,
+                state: 'idle',
+                floatPhase: Math.random() * Math.PI * 2,
+                floatSpeed: GOLDEN_ORB_CONFIG.floatSpeed * (0.85 + Math.random() * 0.3),
+                floatAmplitude: GOLDEN_ORB_CONFIG.floatAmplitude * (0.85 + Math.random() * 0.25),
+                pulseOffset: Math.random() * Math.PI * 2,
+                created: performance.now(),
+                trail: [],
+                speed: GOLDEN_ORB_CONFIG.homingSpeed
+            };
+            store.goldenOrbs.push(orb);
+            store.activeEffects.push(createEffect('goldenOrbSpawn', orb.x, orb.y, orb.r * 2.2));
+        }
+    }
+
+    function stepGoldenOrbs(dt) {
+        const orbs = store.goldenOrbs;
+        if (!orbs || orbs.length === 0) {
+            return;
+        }
+
+        if (!store.boss) {
+            orbs.length = 0;
+            return;
+        }
+
+        const player = store.player;
+        for (let i = orbs.length - 1; i >= 0; i--) {
+            const orb = orbs[i];
+            orb.floatPhase += orb.floatSpeed * dt;
+
+            if (orb.state === 'idle') {
+                orb.y = orb.baseY + Math.sin(orb.floatPhase) * orb.floatAmplitude;
+                const dx = player.x - orb.x;
+                const dy = player.y - orb.y;
+                if ((dx * dx + dy * dy) <= orb.pickupRadius * orb.pickupRadius) {
+                    orb.state = 'homing';
+                    orb.vx = 0;
+                    orb.vy = 0;
+                    orb.trail.length = 0;
+                    orb.heading = -Math.PI / 2;
+                    playSound('stargun');
+                }
+            } else if (orb.state === 'homing') {
+                const boss = store.boss;
+                if (!boss) {
+                    orbs.splice(i, 1);
+                    continue;
+                }
+
+                const dx = boss.x - orb.x;
+                const dy = boss.y - orb.y;
+                const dist = Math.max(0.001, Math.hypot(dx, dy));
+                const desiredVx = (dx / dist) * orb.speed;
+                const desiredVy = (dy / dist) * orb.speed;
+                const accel = GOLDEN_ORB_CONFIG.homingAcceleration;
+                orb.vx = (orb.vx || 0) + (desiredVx - (orb.vx || 0)) * Math.min(1, accel * dt);
+                orb.vy = (orb.vy || 0) + (desiredVy - (orb.vy || 0)) * Math.min(1, accel * dt);
+                orb.x += orb.vx * dt;
+                orb.y += orb.vy * dt;
+                orb.heading = Math.atan2(orb.vy, orb.vx);
+
+                if (!orb.trail) orb.trail = [];
+                orb.trail.unshift({ x: orb.x, y: orb.y, life: GOLDEN_ORB_CONFIG.trailLife });
+                if (orb.trail.length > GOLDEN_ORB_CONFIG.maxTrail) {
+                    orb.trail.pop();
+                }
+                for (let t = orb.trail.length - 1; t >= 0; t--) {
+                    orb.trail[t].life -= dt;
+                    if (orb.trail[t].life <= 0) {
+                        orb.trail.splice(t, 1);
+                    }
+                }
+
+                if (dist <= (boss.r || 70) + 12) {
+                    const damage = boss.hpMax * 0.25;
+                    boss.hp = Math.max(0, boss.hp - damage);
+                    store.world.totalDamage += damage;
+                    store.activeEffects.push(createEffect('goldenOrbDetonation', orb.x, orb.y, 140));
+                    playSound('explosion');
+                    orbs.splice(i, 1);
+                    if (boss.hp <= 0) {
+                        handleBossDefeat();
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     function stepWorld(dt) {
         stepPlayer(dt);
         if (store.boss) {
@@ -3954,6 +4146,7 @@ class FlameParticle {
         
         updateVoidStepSystems(store.enemies);
         updateImpactSystem();
+    stepGoldenOrbs(dt);
 
         store.activeEffects.forEach(e => { if (e.step) e.step(dt); });
         if (store.world.powerupCooldown > 0) {
@@ -3991,7 +4184,7 @@ class FlameParticle {
                     x: b.x,
                     y: H - 20,
                     r: 20 + Math.random() * 10,
-                    life: 12 + Math.random() * 8,
+                    life: getHivePuddleLifetime(5.5, 4.5, { min: 4.5, maxWaveBonus: 5.5 }),
                     damage: (b.dmg || 15) * 0.5,
                     created: performance.now()
                 });
@@ -4045,7 +4238,7 @@ class FlameParticle {
                             x: b.x,
                             y: b.y,
                             r: 25,
-                            life: 10,
+                            life: getHivePuddleLifetime(5, 3, { min: 4.5, maxWaveBonus: 4 }),
                             damage: (b.dmg || 15) * 0.3,
                             created: performance.now()
                         });
@@ -4693,7 +4886,8 @@ class FlameParticle {
                     // Very slow clear: reset collar stacks (except during Death Engine fight)
                     const isDeathEngineFight = store.world.boss && store.world.boss.name === 'DEATH ENGINE';
                     if (!isDeathEngineFight) {
-                        store.world.collarStacks = Math.max(0, sanitizeCollarStacks() - 2);
+                        const loosenedStacks = Math.max(0, sanitizeCollarStacks() - 2);
+                        setCollarStacks(loosenedStacks);
                         announce("🐌 SLOW CLEAR - COLLAR LOOSENS");
                     } else {
                         announce("THE DEATH ENGINE'S CURSE MAINTAINS THE COLLAR!");
@@ -4702,8 +4896,12 @@ class FlameParticle {
                 
                 // Add collar stacks only after 2nd boss is defeated - let first two bosses play normally
                 collarStacksToAdd = ensureFiniteNumber(collarStacksToAdd, 0);
-                if (collarStacksToAdd > 0 && store.world.bosses >= 2) {
-                    store.world.collarStacks = sanitizeCollarStacks() + collarStacksToAdd;
+                if (store.world.bosses >= 2) {
+                    if (collarStacksToAdd > 0) {
+                        scheduleCollarIncrease(collarStacksToAdd);
+                    } else {
+                        approachCollarTarget();
+                    }
                 }
             }
             
@@ -4744,11 +4942,13 @@ class FlameParticle {
                 if (currentStacks > 20) {
                     // Decay faster when collar stacks are very high
                     const decay = Math.max(0.5, currentStacks * 0.02);
-                    store.world.collarStacks = Math.max(0, currentStacks - decay);
+                    const newStacks = Math.max(0, currentStacks - decay);
+                    setCollarStacks(newStacks);
                     // High collar stacks decay applied
                 } else if (currentStacks > 5) {
                     // Gentle decay for moderate stacks
-                    store.world.collarStacks = Math.max(0, currentStacks - 0.3);
+                    const newStacks = Math.max(0, currentStacks - 0.3);
+                    setCollarStacks(newStacks);
                 }
             }
         }
@@ -4877,6 +5077,9 @@ class FlameParticle {
         const bossX = store.boss.x;
         const bossY = store.boss.y;
         const bossName = store.boss.name; // Store boss name before nulling
+        if (store.goldenOrbs) {
+            store.goldenOrbs.length = 0;
+        }
         
         // Clear any poison puddles and poison blobs from HIVE SOVEREIGN when boss is defeated
         if (store.poisonPuddles) {
@@ -4941,7 +5144,8 @@ class FlameParticle {
         } else {
             // Very slow kill: reduce collar stacks (except for DEATH ENGINE)
             if (bossName !== 'DEATH ENGINE') {
-                store.world.collarStacks = Math.max(0, sanitizeCollarStacks() - 3); 
+                const loosened = Math.max(0, sanitizeCollarStacks() - 3);
+                setCollarStacks(loosened);
                 announce("⚖️ COLLAR LOOSENS - ADAPTATION WEAKENS");
             } else {
                 announce("THE DEATH ENGINE'S CURSE PERSISTS!");
@@ -4954,13 +5158,26 @@ class FlameParticle {
         // Special handling for Death Engine - restore preserved collar stacks
         if (bossName === 'DEATH ENGINE' && store.world.deathEngineCollarStacks !== undefined) {
             const originalStacks = ensureFiniteNumber(store.world.deathEngineCollarStacks, sanitizeCollarStacks());
-            store.world.collarStacks = Math.max(0, originalStacks + ensureFiniteNumber(collarStacksToAdd, 0)); // Restore + add earned stacks
+            const originalTarget = ensureFiniteNumber(store.world.deathEngineCollarTargetStacks, originalStacks);
+            setCollarStacks(Math.max(0, originalStacks));
+            store.world.collarTargetStacks = Math.min(MAX_COLLAR_STACKS, Math.max(store.world.collarStacks, originalTarget));
+            const addAfterRestore = ensureFiniteNumber(collarStacksToAdd, 0);
+            if (addAfterRestore > 0) {
+                scheduleCollarIncrease(addAfterRestore);
+            } else {
+                approachCollarTarget();
+            }
             delete store.world.deathEngineCollarStacks; // Clean up
+            delete store.world.deathEngineCollarTargetStacks;
         } else {
             // Add collar stacks only after 2nd boss is defeated - collar system starts with 3rd boss
             collarStacksToAdd = ensureFiniteNumber(collarStacksToAdd, 0);
-            if (collarStacksToAdd > 0 && store.world.bosses >= 2) {
-                store.world.collarStacks = sanitizeCollarStacks() + collarStacksToAdd;
+            if (store.world.bosses >= 2) {
+                if (collarStacksToAdd > 0) {
+                    scheduleCollarIncrease(collarStacksToAdd);
+                } else {
+                    approachCollarTarget();
+                }
             }
         }
         // FIXED: Don't permanently modify health bonuses - collar handles this dynamically
@@ -5133,7 +5350,8 @@ class FlameParticle {
             lastSpawnCount: 0,
             lastSpawnFallback: false,
             lastSpawnQueueLength: 0,
-            lastSpawnTempo: 0
+            lastSpawnTempo: 0,
+            firstBossOrbsGifted: false
         };
         
         if (store.bullets && store.bullets.length) {
@@ -5144,7 +5362,7 @@ class FlameParticle {
         }
     store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = []; store.starProjectiles = []; store.pendingStarClones = [];
         store.drones = []; store.hounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
-        store.lightningBolts = []; store.empNovas = []; store.poisonPuddles = [];
+        store.lightningBolts = []; store.empNovas = []; store.poisonPuddles = []; store.goldenOrbs = [];
         store.iceman = null;
         store.waveSpawnQueue = [];
         store.pendingSpawnCount = 0;
@@ -5245,6 +5463,7 @@ function render(dt) {
     });
     
     store.powerups.forEach(p => drawPowerup(p));
+    drawGoldenOrbs();
     store.missiles.forEach(m => drawMissile(m));
     store.lightningBolts.forEach(l => drawLightningBolt(l));
     store.empNovas.forEach(n => drawEmpNova(n));
@@ -5515,23 +5734,6 @@ function render(dt) {
         ctx.arc(0, 0, store.player.r * 1.2, 0, Math.PI * 2);
         ctx.fill();
         
-        if (e.hitPulseTimer && e.hitPulseTimer > 0 && (e.hp > 0 || e.dead)) {
-            const pulseRatio = Math.max(0, Math.min(1, e.hitPulseTimer / (e.hitPulseDuration || 0.22)));
-            const intensity = Math.pow(pulseRatio, 0.6);
-            ctx.save();
-            ctx.globalCompositeOperation = 'lighter';
-            ctx.globalAlpha = 0.55 * intensity;
-            const flashRadius = (e.r || 18) * (1.1 + intensity * 0.35);
-            const gradient = ctx.createRadialGradient(0, 0, flashRadius * 0.2, 0, 0, flashRadius);
-            gradient.addColorStop(0, 'rgba(255, 140, 220, 0.95)');
-            gradient.addColorStop(1, 'rgba(255, 80, 160, 0)');
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(0, 0, flashRadius, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
-        }
-
         ctx.restore();
     }
     
@@ -6409,6 +6611,83 @@ function render(dt) {
         ctx.lineTo(cx, cy - outerRadius);
         ctx.closePath();
     }
+
+    function drawGoldenOrbs() {
+        if (!store.goldenOrbs || store.goldenOrbs.length === 0) {
+            return;
+        }
+        const time = performance.now() / 1000;
+
+        for (const orb of store.goldenOrbs) {
+            if (orb.trail && orb.trail.length) {
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                for (const node of orb.trail) {
+                    const lifeRatio = Math.max(0, node.life / GOLDEN_ORB_CONFIG.trailLife);
+                    if (lifeRatio <= 0) continue;
+                    ctx.globalAlpha = lifeRatio * 0.45;
+                    ctx.fillStyle = `rgba(255, 210, 120, ${lifeRatio * 0.5})`;
+                    ctx.beginPath();
+                    ctx.arc(node.x, node.y, 9 * lifeRatio, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            ctx.save();
+            ctx.translate(orb.x, orb.y);
+            if (orb.state === 'homing') {
+                ctx.rotate(orb.heading || 0);
+            }
+            ctx.globalCompositeOperation = 'lighter';
+
+            const pulse = 0.85 + Math.sin(time * 6 + (orb.pulseOffset || 0)) * 0.15;
+            const outerGlowRadius = orb.r * (1.4 + pulse * 0.25);
+            const glowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, outerGlowRadius);
+            glowGradient.addColorStop(0, 'rgba(255, 255, 220, 0.18)');
+            glowGradient.addColorStop(0.5, 'rgba(255, 210, 100, 0.4)');
+            glowGradient.addColorStop(1, 'rgba(255, 100, 0, 0)');
+            ctx.fillStyle = glowGradient;
+            ctx.globalAlpha = 0.9;
+            ctx.beginPath();
+            ctx.arc(0, 0, outerGlowRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            const ringOuter = orb.r * (0.95 + pulse * 0.12);
+            const ringInner = ringOuter * 0.55;
+            const ringGradient = ctx.createRadialGradient(0, 0, ringInner * 0.75, 0, 0, ringOuter);
+            ringGradient.addColorStop(0, 'rgba(255, 250, 210, 0.85)');
+            ringGradient.addColorStop(0.45, 'rgba(255, 210, 90, 0.75)');
+            ringGradient.addColorStop(0.9, 'rgba(255, 130, 20, 0.35)');
+            ringGradient.addColorStop(1, 'rgba(255, 90, 0, 0)');
+            ctx.fillStyle = ringGradient;
+            ctx.globalAlpha = 1;
+            ctx.beginPath();
+            ctx.arc(0, 0, ringOuter, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = 'rgba(255, 225, 140, 0.95)';
+            ctx.lineWidth = Math.max(3, orb.r * 0.18);
+            ctx.beginPath();
+            ctx.arc(0, 0, ringOuter, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.strokeStyle = 'rgba(255, 255, 220, 0.5)';
+            ctx.lineWidth = Math.max(2, orb.r * 0.12);
+            ctx.beginPath();
+            ctx.arc(0, 0, ringInner, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.globalAlpha = 0.6 + 0.3 * Math.sin(time * 8 + (orb.pulseOffset || 0));
+            ctx.fillStyle = 'rgba(255, 255, 200, 0.9)';
+            ctx.beginPath();
+            ctx.arc(0, 0, ringInner * 0.45, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+        ctx.globalAlpha = 1;
+    }
     
     function stepBossOmegaSentinel(dt, b, dmgScale) {
         // Movement behavior
@@ -7152,7 +7431,7 @@ function render(dt) {
                 x: puddleX,
                 y: puddleY,
                 r: 18 + Math.random() * 12,
-                life: 8 + Math.random() * 6,
+                life: getHivePuddleLifetime(4.8, 3.2, { min: 4.2, maxWaveBonus: 4.5 }),
                 damage: 10 * dmgScale,
                 created: performance.now()
             });
@@ -7230,7 +7509,7 @@ function render(dt) {
                             x: puddleX,
                             y: puddleY,
                             r: 28 + Math.random() * 18,
-                            life: 14 + Math.random() * 8,
+                            life: getHivePuddleLifetime(7.5, 4.5, { min: 6.5, waveBonusPer: 0.4, maxWaveBonus: 6.5 }),
                             damage: 15 * dmgScale,
                             created: performance.now()
                         });
@@ -8768,6 +9047,71 @@ function render(dt) {
                     ctx.globalAlpha *= 0.8;
                     ctx.beginPath();
                     ctx.arc(0, 0, baseRadius * (0.55 + Math.sin(performance.now() / 180 + this.clusterIndex) * 0.1), 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                };
+                break;
+            case "goldenOrbSpawn":
+                effect.maxLife = 0.65;
+                effect.life = effect.maxLife;
+                effect.radius = radius || 70;
+                effect.step = function(dt) {
+                    this.life -= dt;
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    const progress = 1 - (this.life / this.maxLife);
+                    const currentRadius = this.radius * (0.55 + progress * 0.7);
+                    const time = performance.now() / 1000;
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    ctx.globalCompositeOperation = 'lighter';
+                    const glow = ctx.createRadialGradient(0, 0, currentRadius * 0.25, 0, 0, currentRadius);
+                    glow.addColorStop(0, 'rgba(255, 245, 200, 0.75)');
+                    glow.addColorStop(0.6, 'rgba(255, 210, 90, 0.55)');
+                    glow.addColorStop(1, 'rgba(255, 110, 20, 0)');
+                    ctx.globalAlpha = 0.85 - progress * 0.5;
+                    ctx.fillStyle = glow;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, currentRadius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.strokeStyle = `rgba(255, 220, 120, ${0.9 - progress})`;
+                    ctx.lineWidth = 3 + 4 * (1 - progress);
+                    ctx.beginPath();
+                    ctx.arc(0, 0, currentRadius * (0.7 + Math.sin(time * 12) * 0.08), 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                };
+                break;
+            case "goldenOrbDetonation":
+                effect.maxLife = 0.6;
+                effect.life = effect.maxLife;
+                effect.radius = radius || 150;
+                effect.step = function(dt) {
+                    this.life -= dt;
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    const t = 1 - (this.life / this.maxLife);
+                    const ringRadius = this.radius * t;
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    ctx.globalCompositeOperation = 'lighter';
+                    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, ringRadius);
+                    gradient.addColorStop(0, 'rgba(255, 255, 200, 0.75)');
+                    gradient.addColorStop(0.35, 'rgba(255, 210, 90, 0.55)');
+                    gradient.addColorStop(0.8, 'rgba(255, 120, 0, 0.15)');
+                    gradient.addColorStop(1, 'rgba(255, 90, 0, 0)');
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.strokeStyle = `rgba(255, 200, 80, ${1 - t})`;
+                    ctx.lineWidth = 6 * (1 - t);
+                    ctx.beginPath();
+                    ctx.arc(0, 0, ringRadius * 0.72, 0, Math.PI * 2);
                     ctx.stroke();
                     ctx.restore();
                 };
