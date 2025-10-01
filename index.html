@@ -2102,6 +2102,15 @@ class FlameParticle {
         return store.world.collarStacks;
     }
 
+    function calculateCollarBonus(stacks) {
+        const safeStacks = Math.max(0, Number.isFinite(stacks) ? stacks : 0);
+        const tierOne = Math.min(safeStacks, 5); // First 5 stacks at 6% each
+        const tierTwo = Math.min(Math.max(safeStacks - 5, 0), 5); // Next 5 stacks at 4% each
+        const tierThree = Math.max(Math.min(safeStacks, 25) - 10, 0); // Remaining stacks (capped at 25) at 2% each
+        const bonus = tierOne * 0.06 + tierTwo * 0.04 + tierThree * 0.02;
+        return 1 + bonus;
+    }
+
     function ensureFiniteNumber(value, fallback = 0) {
         return Number.isFinite(value) ? value : fallback;
     }
@@ -2166,7 +2175,7 @@ class FlameParticle {
             
             // Apply collar bonus to spawn count with defensive guards
             const collarStacks = sanitizeCollarStacks();
-            const collarBonus = 1 + collarStacks * 0.08;
+            const collarBonus = calculateCollarBonus(collarStacks);
             const plannedSpawnCountRaw = spawnCount * collarBonus;
             const plannedSpawnCount = Math.max(0, ensureFiniteNumber(Math.floor(plannedSpawnCountRaw), 0));
 
@@ -2320,7 +2329,7 @@ class FlameParticle {
         ];
         const type = types[bossCycle];
         let hp = type.baseHp * scale * store.world.bossHealthBonus;
-        const collarBonus = 1 + (store.world.collarStacks * 0.08); // 8% increase per collar stack
+    const collarBonus = calculateCollarBonus(sanitizeCollarStacks()); // Diminishing scaling per collar stack
         hp *= collarBonus;
         
     const boss = { ...type, x: W / 2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, patternPhase: 0, isEnraged: false, attackPhase: 0, phaseTimer: 0, dashTimer: 0, dashTrailCooldown: 0, rainEvent: null };
@@ -2369,7 +2378,7 @@ class FlameParticle {
         }
         
         c.hp *= waveMultiplier * store.world.enemyHealthBonus;
-        const collarBonus = 1 + (store.world.collarStacks * 0.08); // 8% increase per collar stack
+    const collarBonus = calculateCollarBonus(sanitizeCollarStacks()); // Diminishing scaling per collar stack
         c.hp *= collarBonus;
         
         // console.log(`🔍 Enemy Health Debug | Type: ${type} | Base: ${cfgs[type].hp} | Wave: ${wave} | WaveMult: ${waveMultiplier.toFixed(2)} | EnemyBonus: ${store.world.enemyHealthBonus.toFixed(2)} | CollarBonus: ${collarBonus.toFixed(2)} | Final HP: ${c.hp.toFixed(1)}`);
@@ -3735,7 +3744,7 @@ class FlameParticle {
             dmgScale = wave10Scale * (1 + veryGentleGrowth);
         }
         // Apply collar bonus and late-game scaling to enemy damage
-        const collarBonus = 1 + (store.world.collarStacks * 0.08); // 8% increase per collar stack
+    const collarBonus = calculateCollarBonus(sanitizeCollarStacks()); // Diminishing scaling per collar stack
         const lateGameBonus = store.world.lateGameDamageScaling || 1;
         dmgScale *= collarBonus * lateGameBonus;
         // console.log(`Wave ${store.world.wave}: Damage scale = ${dmgScale.toFixed(2)} | CollarStacks: ${store.world.collarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x | LateGameBonus: ${lateGameBonus.toFixed(2)}x`);
@@ -4663,7 +4672,10 @@ class FlameParticle {
         if (!p.totalProgressionPoints) p.totalProgressionPoints = 0;
         if (!p.unspentProgressionPoints) p.unspentProgressionPoints = 0;
         if (!p.skillPointsSpent) p.skillPointsSpent = 0;
-        if (p.signatureAbility === undefined) p.signatureAbility = false;
+        if (!p.signatureAbilities || typeof p.signatureAbilities !== 'object') {
+            p.signatureAbilities = {};
+        }
+        p.signatureAbility = Object.keys(p.signatureAbilities).length > 0;
         
         // Ensure player always has skill points available for purchases (controlled by progression logic)
         if (!p.skillPoints || p.skillPoints <= 0) {
@@ -5582,9 +5594,10 @@ function render(dt) {
         
         // Check for nano save BEFORE applying damage
         const hpAfterDamage = p.hp - dmg;
-        if (hpAfterDamage <= 0 && hpAfterDamage > -p.hpMax * 0.75 && p.nanoSaves > 0) {
+        if (hpAfterDamage <= 0 && p.nanoSaves > 0) {
             p.nanoSaves--;
-            p.hp = Math.min(p.hpMax, p.hp + p.hpMax * 0.25);
+            const revivedHp = Math.max(p.hpMax * 0.3, hpAfterDamage + p.hpMax * 0.35);
+            p.hp = Math.max(1, Math.min(p.hpMax, revivedHp));
             store.activeEffects.push(createEffect("nanoHeal"));
             announce('NANO SAVE ACTIVATED!');
             return; // Don't apply the lethal damage
@@ -5740,8 +5753,9 @@ function render(dt) {
             const fps = Math.round((store.fpsFrameCount * 1000) / (now - store.fpsLastTime));
             q('fps').textContent = fps;
             // Enhanced collar display with better feedback
-            const collarStacks = store.world.collarStacks || 0;
-            const collarPercent = (collarStacks * 0.08) * 100;
+            const collarStacks = sanitizeCollarStacks();
+            const collarBonus = calculateCollarBonus(collarStacks);
+            const collarPercent = (collarBonus - 1) * 100;
             const collarStatus = collarStacks === 0 ? 'LOOSE' : 
                                 collarStacks < 5 ? 'SNUG' :
                                 collarStacks < 15 ? 'TIGHT' :
@@ -5758,7 +5772,6 @@ function render(dt) {
                 { hp: 20, name: 'drone' }, { hp: 15, name: 'hunter' }, { hp: 30, name: 'phantom' },
                 { hp: 80, name: 'mech' }, { hp: 120, name: 'angler' }, { hp: 150, name: 'manta' }
             ];
-            const collarBonus = 1 + (store.world.collarStacks * 0.08);
             const avgBaseHp = enemyTypes.reduce((sum, type) => sum + type.hp, 0) / enemyTypes.length;
             const waveMultiplier = Math.pow(1.03, store.world.wave - 1);
             const avgCurrentHp = avgBaseHp * waveMultiplier * collarBonus;
@@ -9873,13 +9886,11 @@ function render(dt) {
             fireChainLightningBolt(1.0, position);
             p.lightningCycleIndex = (p.lightningCycleIndex + 1) % 4;
         } else if (p.stormstrikerLevel >= 2) {
-            // Level 2: Alternate between left and right wing guns (Twin Lightning)
-            if (p.lightningAlternate) {
-                fireChainLightningBolt(1.0, { x: p.x + 18, y: p.y - 8 }); // Right wing gun
-            } else {
-                fireChainLightningBolt(1.0, { x: p.x - 18, y: p.y - 8 }); // Left wing gun
-            }
-            p.lightningAlternate = !p.lightningAlternate; // Toggle for next shot
+            // Level 2: Fire simultaneous twin lightning from both wing guns
+            const leftWing = { x: p.x - 18, y: p.y - 8 };
+            const rightWing = { x: p.x + 18, y: p.y - 8 };
+            fireChainLightningBolt(1.0, leftWing);
+            fireChainLightningBolt(1.0, rightWing);
         } else if (p.hasHybridVoid) {
             // Fire single lightning bolt (reduced power for hybrid)
             fireChainLightningBolt(0.7); // 70% damage for hybrid mode
@@ -10673,7 +10684,7 @@ function tryVoidStep(player, target, now = performance.now()){
                     <div class="skill-track">
                         <div class="track-title">${path.name}</div>
                         <!-- Tier 1 -->
-                        <div class="skill-icon-button available" data-skill="${path.nodes[0].id}" data-tier="1">
+                        <div class="skill-icon-button locked" data-skill="${path.nodes[0].id}" data-tier="1">
                             <img src="${path.nodes[0].icon}" alt="${path.nodes[0].name}" class="skill-icon-image">
                             <div class="skill-info-overlay">
                                 <div class="skill-overlay-title">${path.nodes[0].name}</div>
@@ -10708,7 +10719,7 @@ function tryVoidStep(player, target, now = performance.now()){
                     <!-- Separate class ability track (always available) -->
                     <div class="skill-track class-ability-track">
                         <div class="track-title" style="color: #FFD700;">SIGNATURE ABILITY</div>
-                        <div class="skill-icon-button available class-ability-solo" data-skill="${classAbility.id}" data-tier="class">
+                        <div class="skill-icon-button locked class-ability-solo" data-skill="${classAbility.id}" data-tier="class">
                             <img src="${classAbility.icon}" alt="${classAbility.name}" class="skill-icon-image class-ability">
                             <div class="skill-info-overlay">
                                 <div class="skill-overlay-title">${classAbility.name}</div>
@@ -10842,20 +10853,26 @@ function tryVoidStep(player, target, now = performance.now()){
             }
         }
         
+        const treeData = SKILL_TREE_DATA[subclass];
+        if (!treeData) {
+            console.error('Missing skill tree data for subclass:', subclass);
+            return;
+        }
+
         // Initialize skill tree properties if needed
         if (!p.skillTree) {
             p.skillTree = {};
-            
-            // Initialize all skills as false for the current subclass
-            const treeData = SKILL_TREE_DATA[subclass];
-            if (treeData) {
-                // Add path skills (4 nodes)
-                treeData.path.nodes.forEach(node => {
-                    p.skillTree[node.id] = false;
-                });
-                // Add class ability (5th node)
-                p.skillTree[treeData.classAbility.id] = false;
+        }
+
+        // Ensure current subclass nodes exist on the player's skill tree map
+        treeData.path.nodes.forEach(node => {
+            if (p.skillTree[node.id] === undefined) {
+                p.skillTree[node.id] = false;
             }
+        });
+
+        if (p.skillTree[treeData.classAbility.id] === undefined) {
+            p.skillTree[treeData.classAbility.id] = false;
         }
         
         if (!p.skillTreeProgress) p.skillTreeProgress = { bossesDefeated: 0, tier1Choice: null, tier2Choice: null };
@@ -10902,11 +10919,13 @@ function tryVoidStep(player, target, now = performance.now()){
         });
         
         // Update skill description based on progression state
-        const skillDescription = document.getElementById('skillDescription');
-        const unspentProgPts = p.unspentProgressionPoints || 0;
-        const skillPointsSpent = p.skillPointsSpent || 0;
-        const hasSignature = p.signatureAbility;
-        const canProgress = unspentProgPts > 0 || (!hasSignature && unspentProgPts > 0) || (skillPointsSpent >= 2 && skillPointsSpent < 5);
+    const skillDescription = document.getElementById('skillDescription');
+    const unspentProgPts = p.unspentProgressionPoints || 0;
+    const skillPointsSpent = p.skillPointsSpent || 0;
+    const signatureAbilities = p.signatureAbilities || {};
+    const signatureCount = Object.keys(signatureAbilities).length;
+    const hasSignature = signatureCount > 0;
+    const canProgress = unspentProgPts > 0 || (skillPointsSpent >= 2 && skillPointsSpent < 5);
         
         if (skillDescription) {
             if (unspentProgPts === 0) {
@@ -10914,13 +10933,14 @@ function tryVoidStep(player, target, now = performance.now()){
                     <div style="color: #ffaa00; margin-bottom: 10px;">📖 READ-ONLY MODE</div>
                     <div style="color: #cccccc;">No progression points available. Defeat more bosses to unlock abilities!</div>
                     <div style="font-size: 12px; color: #888; margin-top: 8px;">
-                        Points Spent: ${skillPointsSpent} • Signature: ${hasSignature ? '✓' : '✗'}
+                        Points Spent: ${skillPointsSpent} • Signature Abilities: ${signatureCount}
                     </div>
                 `;
             } else {
                 skillDescription.innerHTML = `
                     <div style="color: #66ff66;">🎯 PROGRESSION AVAILABLE</div>
                     <div style="color: #cccccc;">You have ${unspentProgPts} progression point${unspentProgPts !== 1 ? 's' : ''} to spend!</div>
+                    <div style="font-size: 12px; color: #888; margin-top: 8px;">Signature Abilities Unlocked: ${signatureCount}</div>
                 `;
             }
         }
@@ -10967,11 +10987,12 @@ function tryVoidStep(player, target, now = performance.now()){
         
         const totalUnspentPts = p.unspentProgressionPoints || 0;
         const totalSpentPts = p.skillPointsSpent || 0;
+        const signatureAbilities = p.signatureAbilities || {};
         
         // NEW PROGRESSION SYSTEM:
         if (tier === 'class') {
-            // Signature abilities: Available if a progression point is free and the signature isn't already unlocked
-            return totalUnspentPts > 0 && !p.signatureAbility;
+            // Signature abilities: Available if a progression point is free and this specific signature isn't already unlocked
+            return totalUnspentPts > 0 && !signatureAbilities[skill];
         }
 
         if (tier === 1) {
@@ -11100,6 +11121,10 @@ function tryVoidStep(player, target, now = performance.now()){
             
             // Handle signature ability flag for class tier skills
             if (tier === 'class') {
+                if (!p.signatureAbilities || typeof p.signatureAbilities !== 'object') {
+                    p.signatureAbilities = {};
+                }
+                p.signatureAbilities[skill] = true;
                 p.signatureAbility = true;
             }
             
@@ -11588,6 +11613,7 @@ function tryVoidStep(player, target, now = performance.now()){
                 p.beefShieldDamageDealt = 0; // Track damage dealt for shield charging
                 p.beefShieldDamageTaken = 0; // Track damage taken for shield depletion
                 p.beefShieldCooldown = 0; // Cooldown after depletion before shield can absorb again
+                p.hasBeefShield = true;
                 playSound('powerup');
                 announce('🛡️ BEEF SHIELD UNLOCKED! - Class Ability Activated!');
                 break;
