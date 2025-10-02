@@ -1018,7 +1018,7 @@
     const W = 960, H = 540;
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const collide = (a, b) => { const dx = a.x - b.x, dy = a.y - b.y; const rr = (a.r || 0) + (b.r || 0); return dx * dx + dy * dy < rr * rr; };
-    const API_BASE = "https://interest-christine-kingdom-excerpt.trycloudflare.com/api";
+    const API_BASE = "https://exams-withdrawal-katrina-warren.trycloudflare.com/api";
     const q = (id) => document.getElementById(id);
     const cvs = q('game'), ctx = cvs.getContext('2d'), stage = q('stage');
     new ResizeObserver(() => {
@@ -5760,6 +5760,7 @@ function render(dt) {
         ctx.restore();
     }
     
+// ...existing code...
     // Draw voidmancer laser beam
     if (store.player.hasVoidLaser && store.player.voidLaserTarget && !store.player.voidLaserTarget.dead) {
         const p = store.player;
@@ -5821,7 +5822,9 @@ function render(dt) {
             ctx.lineTo(target.x, target.y);
             ctx.stroke();
             
-            // Draw laser glow effect
+            // Draw laser glow effect - create gradient here
+            const gradient = ctx.createLinearGradient(p.x + offsetX, p.y - 12, target.x, target.y);
+            gradient.addColorStop(0, laserColor + '40');
             gradient.addColorStop(1, laserColor + '80');
             
             ctx.strokeStyle = gradient;
@@ -5842,6 +5845,7 @@ function render(dt) {
         
         ctx.restore();
     }
+// ...existing code...
     
     
     closeBullets.forEach(item => {
@@ -5982,6 +5986,7 @@ function render(dt) {
     
     function escapeHtml(s) { s = String(s ?? ''); return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
     function announce(text) { const el = q('announce'); el.textContent = text; el.classList.remove('hide'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('hide'), 2500); }
+// ...existing code...
     function updateHUD() { 
         const t = store.player;
         const hpPercent = Math.round(t.hp / t.hpMax * 100);
@@ -6042,6 +6047,8 @@ function render(dt) {
         if (timedPowerups.length > 0) {
             let timedContent = '';
             timedPowerups.forEach(key => {
+                const timer = store.player.powerupTimers[key];
+                const percent = Math.round((timer.remaining / timer.max) * 100);
                 timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`;
             });
             q("powerupList").innerHTML = timedContent;
@@ -6121,18 +6128,22 @@ function render(dt) {
             // COMMENTED OUT: Update health table
             /*
             if (store.enemies.length > 0) {
+                const enemy = store.enemies[0]; // Get first enemy for reference
                 q('enemyCurrentHp').textContent = Math.round(enemy.hp);
             } else {
                 q('enemyCurrentHp').textContent = '0';
             }
             if (store.boss) {
                 q('bossCurrentHp').textContent = Math.round(store.boss.hp);
+                q('bossBaseHp').textContent = Math.round(store.boss.hpMax);
             } else {
                 q('bossCurrentHp').textContent = '0';
+                q('bossBaseHp').textContent = '0';
             }
             */
         }
     }
+// ...existing code...
     function normalizeLeaderboardEntries(source) {
         if (!source) return null;
 
