@@ -3372,7 +3372,12 @@ class FlameParticle {
                     // Skill tree compatibility - check subclass for existing players
                     if (p.subclass === 'juggernaut') impactRadius = Math.max(impactRadius, 120);
                     
-                    if (p.skillTree && p.skillTree.juggernaut || p.subclass === 'juggernaut') {
+                    // Check for juggernaut skills (including crossover skills for marauder)
+                    const hasJuggernautSkills = (p.skillTree && p.skillTree.juggernaut) || p.subclass === 'juggernaut' ||
+                        (p.skillTree && (p.skillTree.juggernaut_charge_power || p.skillTree.juggernaut_charge_mastery || 
+                         p.skillTree.juggernaut_heavy_armor || p.skillTree.juggernaut_unstoppable || p.skillTree.juggernaut_enhanced));
+                    
+                    if (hasJuggernautSkills) {
                         playSound('charge');
                         explode(closestEnemy.x, closestEnemy.y, false, true);
                     } else {
@@ -10490,7 +10495,12 @@ function render(dt) {
         ctx.translate(h.x, h.y);
         const time = performance.now();
         ctx.globalAlpha = 0.6 + 0.2 * Math.sin(time / 1000 + h.side);
-        const r = h.r;
+        let r = h.r;
+        
+        // Make the 4th dog (tanish orange one with regular pupils) half size
+        if (h.side === 2) {
+            r = r * 0.5;
+        }
 
         if (!h.isUpgraded) {
             const { main, accent } = h.color;
