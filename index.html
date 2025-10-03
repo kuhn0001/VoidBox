@@ -1417,13 +1417,6 @@ class FlameParticle {
         hasLazarusBeam: false, lazarusBeamCooldown: 0,
         hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 0, vampirismLevel: 0, flamethrowerLevel: 0,
         flamethrowerT: 0, // Separate timer for lava chunks, unaffected by overclock
-        // Time slowdown system for nano save
-        timeSlowActive: false,
-        timeSlowTimer: 0,
-        timeSlowDuration: 2.0,
-        timeSlowFactor: 0.3,
-        timeSlowStartTime: null,
-        nanoSaveSlowmoCooldown: 0, // 30-second cooldown for slowmo effect
         // Shield recharge delay system
         shieldRecharging: false,
         shieldRechargeDelay: 0,
@@ -3577,19 +3570,7 @@ class FlameParticle {
                 p.afterburnerParticleTimer = 0;
             }
 
-            // Handle nano save time slowdown timer using real time
-            if (p.timeSlowActive) {
-                // Store the real time when effect started for accurate countdown
-                if (!p.timeSlowStartTime) {
-                    p.timeSlowStartTime = performance.now();
-                }
-                const realTimeElapsed = (performance.now() - p.timeSlowStartTime) / 1000;
-                if (realTimeElapsed >= p.timeSlowDuration) {
-                    p.timeSlowActive = false;
-                    p.timeSlowTimer = 0;
-                    p.timeSlowStartTime = null;
-                }
-            }
+
 
             // Handle afterburner phase - small particles from rear boosters
             if (p.afterburnerActive) {
@@ -3786,7 +3767,7 @@ class FlameParticle {
         if (p.hasLazarusBeam) { p.lazarusBeamCooldown -= dt; if (p.lazarusBeamCooldown <= 0) { activateLazarus(); p.lazarusBeamCooldown = 30 / (p.upgradeLevels.lazarus_beam > 0 ? 2 : 1) ; } }
         if (store.cheatInvincibilityCooldown > 0) store.cheatInvincibilityCooldown -= dt;
         if (store.cheatDogHealCooldown > 0) store.cheatDogHealCooldown -= dt;
-        if (p.nanoSaveSlowmoCooldown > 0) p.nanoSaveSlowmoCooldown -= dt;
+
         if (p.x < 50 && p.y < 50 && store.cheatInvincibilityCooldown <= 0) {
             store.cheatsUsed = true; p.isInvincible = true; p.cheatMultishotBonus = 2; announce('TEST: INVINCIBILITY ACTIVE');
             setTimeout(() => { p.isInvincible = false; p.cheatMultishotBonus = 0; announce('TEST: INVINCIBILITY ENDS'); store.cheatInvincibilityCooldown = 10; }, 15000);
@@ -6266,13 +6247,42 @@ function render(dt) {
         }
         
         const time = performance.now() / 1000;
-        const pulseAlpha = 0.8 + 0.2 * Math.sin(time * 10);
+        const isSlashing = p.isBlinkSlashing;
+        const basePulseAlpha = 0.8 + 0.2 * Math.sin(time * 10);
+        const pulseAlpha = isSlashing ? basePulseAlpha * 1.3 : basePulseAlpha; // Brighter during slash
         const laserLength = 180; // Shorter, just long enough to hit boss from safe zone
         
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         
-        // Draw two wiper lasers
+        // Draw motion blur trail first (behind main lasers)
+        if (p.wiperLaserBlurTrail && p.wiperLaserBlurTrail.length > 0) {
+            for (const trail of p.wiperLaserBlurTrail) {
+                const trailAlpha = (trail.life / 0.15) * trail.intensity;
+                if (trailAlpha > 0.05) {
+                    const trailLasers = [
+                        { angle: trail.angle1, offset: -8 },
+                        { angle: trail.angle2, offset: 8 }
+                    ];
+                    
+                    trailLasers.forEach(trailLaser => {
+                        const trailEndX = p.x + Math.cos(trailLaser.angle) * laserLength;
+                        const trailEndY = p.y + Math.sin(trailLaser.angle) * laserLength;
+                        
+                        // Draw blur trail effect
+                        ctx.strokeStyle = laserColor + Math.floor(trailAlpha * 100).toString(16).padStart(2, '0');
+                        ctx.globalAlpha = trailAlpha * 0.6;
+                        ctx.lineWidth = isSlashing ? 8 : 4;
+                        ctx.beginPath();
+                        ctx.moveTo(p.x + trailLaser.offset, p.y - 12);
+                        ctx.lineTo(trailEndX, trailEndY);
+                        ctx.stroke();
+                    });
+                }
+            }
+        }
+        
+        // Draw two main wiper lasers
         const lasers = [
             { angle: p.wiperLaser1Angle, offset: -8 },
             { angle: p.wiperLaser2Angle, offset: 8 }
@@ -6282,19 +6292,25 @@ function render(dt) {
             const endX = p.x + Math.cos(laser.angle) * laserLength;
             const endY = p.y + Math.sin(laser.angle) * laserLength;
             
+            // Enhanced visuals during blink slash
+            const coreWidth = isSlashing ? 3 : 2;
+            const mainWidth = isSlashing ? 7 : 5;
+            const glowWidth = isSlashing ? 14 : 10;
+            
             // Draw lightsaber core (bright white center)
-            ctx.strokeStyle = '#ffffff';
-            ctx.globalAlpha = pulseAlpha * 0.9;
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = isSlashing ? '#ffffee' : '#ffffff';
+            ctx.globalAlpha = pulseAlpha * (isSlashing ? 1.0 : 0.9);
+            ctx.lineWidth = coreWidth;
             ctx.beginPath();
             ctx.moveTo(p.x + laser.offset, p.y - 12);
             ctx.lineTo(endX, endY);
             ctx.stroke();
             
             // Draw main laser beam (colored)
-            ctx.strokeStyle = laserColor;
-            ctx.globalAlpha = pulseAlpha * 0.8;
-            ctx.lineWidth = 5;
+            const mainColor = isSlashing ? laserColor + 'ee' : laserColor;
+            ctx.strokeStyle = mainColor;
+            ctx.globalAlpha = pulseAlpha * (isSlashing ? 0.9 : 0.8);
+            ctx.lineWidth = mainWidth;
             ctx.beginPath();
             ctx.moveTo(p.x + laser.offset, p.y - 12);
             ctx.lineTo(endX, endY);
@@ -6302,75 +6318,83 @@ function render(dt) {
             
             // Draw inner glow
             const gradient = ctx.createLinearGradient(p.x + laser.offset, p.y - 12, endX, endY);
-            gradient.addColorStop(0, laserColor + '80');
-            gradient.addColorStop(0.5, laserColor + '60');
-            gradient.addColorStop(1, laserColor + '30');
+            const glowIntensity = isSlashing ? '90' : '80';
+            gradient.addColorStop(0, laserColor + glowIntensity);
+            gradient.addColorStop(0.5, laserColor + (isSlashing ? '70' : '60'));
+            gradient.addColorStop(1, laserColor + (isSlashing ? '40' : '30'));
             
             ctx.strokeStyle = gradient;
-            ctx.globalAlpha = pulseAlpha * 0.6;
-            ctx.lineWidth = 10;
+            ctx.globalAlpha = pulseAlpha * (isSlashing ? 0.7 : 0.6);
+            ctx.lineWidth = glowWidth;
             ctx.beginPath();
             ctx.moveTo(p.x + laser.offset, p.y - 12);
             ctx.lineTo(endX, endY);
             ctx.stroke();
             
             // Add outer glow effect
-            ctx.strokeStyle = laserColor + '40';
-            ctx.globalAlpha = 0.4;
-            ctx.lineWidth = 16;
+            const outerGlow = isSlashing ? laserColor + '60' : laserColor + '40';
+            const outerWidth = isSlashing ? 20 : 16;
+            ctx.strokeStyle = outerGlow;
+            ctx.globalAlpha = isSlashing ? 0.5 : 0.4;
+            ctx.lineWidth = outerWidth;
             ctx.beginPath();
             ctx.moveTo(p.x + laser.offset, p.y - 12);
             ctx.lineTo(endX, endY);
             ctx.stroke();
             
-            // Add sweeping motion trail
-            const trailAngle = laser.angle - (p.wiperLaserSpeed * 0.3);
-            const trailEndX = p.x + Math.cos(trailAngle) * laserLength * 0.8;
-            const trailEndY = p.y + Math.sin(trailAngle) * laserLength * 0.8;
-            
-            ctx.strokeStyle = laserColor + '20';
-            ctx.globalAlpha = 0.2;
-            ctx.lineWidth = 8;
-            ctx.beginPath();
-            ctx.moveTo(p.x + laser.offset, p.y - 12);
-            ctx.lineTo(trailEndX, trailEndY);
-            ctx.stroke();
+            // Add sweeping motion trail (skip during slash mode - we have blur trail instead)
+            if (!isSlashing) {
+                const trailAngle = laser.angle - (p.wiperLaserSpeed * 0.3);
+                const trailEndX = p.x + Math.cos(trailAngle) * laserLength * 0.8;
+                const trailEndY = p.y + Math.sin(trailAngle) * laserLength * 0.8;
+                
+                ctx.strokeStyle = laserColor + '20';
+                ctx.globalAlpha = 0.2;
+                ctx.lineWidth = 8;
+                ctx.beginPath();
+                ctx.moveTo(p.x + laser.offset, p.y - 12);
+                ctx.lineTo(trailEndX, trailEndY);
+                ctx.stroke();
+            }
             
             // Add polished circular cap at the end of the laser
-            const capRadius = 8;
+            const capRadius = isSlashing ? 10 : 8;
             
             // Bright glowing core of the cap
-            ctx.fillStyle = '#ffffff';
-            ctx.globalAlpha = pulseAlpha * 0.9;
+            ctx.fillStyle = isSlashing ? '#ffffee' : '#ffffff';
+            ctx.globalAlpha = pulseAlpha * (isSlashing ? 1.0 : 0.9);
             ctx.beginPath();
             ctx.arc(endX, endY, capRadius * 0.4, 0, Math.PI * 2);
             ctx.fill();
             
             // Main colored cap
-            ctx.fillStyle = laserColor;
-            ctx.globalAlpha = pulseAlpha * 0.8;
+            ctx.fillStyle = isSlashing ? laserColor + 'ee' : laserColor;
+            ctx.globalAlpha = pulseAlpha * (isSlashing ? 0.9 : 0.8);
             ctx.beginPath();
             ctx.arc(endX, endY, capRadius * 0.7, 0, Math.PI * 2);
             ctx.fill();
             
             // Outer glow cap
             const capGradient = ctx.createRadialGradient(endX, endY, 0, endX, endY, capRadius);
-            capGradient.addColorStop(0, laserColor + '80');
-            capGradient.addColorStop(0.5, laserColor + '60');
-            capGradient.addColorStop(1, laserColor + '20');
+            const capGlowIntensity = isSlashing ? '90' : '80';
+            capGradient.addColorStop(0, laserColor + capGlowIntensity);
+            capGradient.addColorStop(0.5, laserColor + (isSlashing ? '70' : '60'));
+            capGradient.addColorStop(1, laserColor + (isSlashing ? '30' : '20'));
             
             ctx.fillStyle = capGradient;
-            ctx.globalAlpha = pulseAlpha * 0.6;
+            ctx.globalAlpha = pulseAlpha * (isSlashing ? 0.7 : 0.6);
             ctx.beginPath();
             ctx.arc(endX, endY, capRadius, 0, Math.PI * 2);
             ctx.fill();
             
             // Pulsing rim effect
-            ctx.strokeStyle = laserColor + '40';
-            ctx.globalAlpha = 0.4 + 0.3 * Math.sin(time * 15);
-            ctx.lineWidth = 2;
+            const rimIntensity = isSlashing ? '60' : '40';
+            ctx.strokeStyle = laserColor + rimIntensity;
+            const rimPulse = isSlashing ? 0.5 + 0.4 * Math.sin(time * 20) : 0.4 + 0.3 * Math.sin(time * 15);
+            ctx.globalAlpha = rimPulse;
+            ctx.lineWidth = isSlashing ? 3 : 2;
             ctx.beginPath();
-            ctx.arc(endX, endY, capRadius * 1.2, 0, Math.PI * 2);
+            ctx.arc(endX, endY, capRadius * (isSlashing ? 1.3 : 1.2), 0, Math.PI * 2);
             ctx.stroke();
         });
         
@@ -6423,18 +6447,7 @@ function render(dt) {
     renderVoidStepSystems(ctx);
     renderImpactSystem(ctx);
     
-    // Time slowdown visual effect
-    if (store.player.timeSlowActive) {
-        const intensity = store.player.timeSlowTimer / store.player.timeSlowDuration;
-        const pulse = 0.5 + 0.3 * Math.sin(frameTime * 6);
-        ctx.fillStyle = `rgba(100, 149, 237, ${0.15 * intensity * pulse})`;
-        ctx.fillRect(0, 0, W, H);
-        
-        // Add subtle border effect
-        ctx.strokeStyle = `rgba(100, 149, 237, ${0.4 * intensity})`;
-        ctx.lineWidth = 3;
-        ctx.strokeRect(0, 0, W, H);
-    }
+
     
     // Throttle HUD updates to avoid layout thrashing on every frame
     if (!window.lastHudUpdate || Date.now() - window.lastHudUpdate > 16) { // ~60fps
@@ -6493,13 +6506,6 @@ function render(dt) {
             const revivedHp = Math.max(p.hpMax * 0.3, hpAfterDamage + p.hpMax * 0.35);
             p.hp = Math.max(1, Math.min(p.hpMax, revivedHp));
             store.activeEffects.push(createEffect("nanoHeal"));
-            // Activate time slowdown only if cooldown has expired (30 seconds)
-            if (p.nanoSaveSlowmoCooldown <= 0) {
-                p.timeSlowActive = true;
-                p.timeSlowTimer = p.timeSlowDuration; // Ensure exactly 2 seconds
-                p.timeSlowStartTime = performance.now();
-                p.nanoSaveSlowmoCooldown = 30.0; // Set 30-second cooldown
-            }
             announce('NANO SAVE ACTIVATED!');
             return; // Don't apply the lethal damage
         }
@@ -11425,7 +11431,7 @@ function render(dt) {
                         }
                     }
                     
-                    if (p.voidLaserTarget === store.boss) damage *= 0.3; // Reduced damage to boss
+                    if (p.voidLaserTarget === store.boss) damage *= 0.4; // Reduced damage to boss
                     
                     const voidLaserVuln = applySubclassVulnerability(p.voidLaserTarget, damage, {
                         subclass: p.subclass,
@@ -11463,35 +11469,80 @@ function render(dt) {
     
     function stepWiperLasers(dt) {
         const p = store.player;
-        
-        // Ninja-like variable speed movement with dynamic speed changes
         const time = performance.now() / 1000;
         
-        // Create variable speed like a ninja twirling weapons
-        const baseSpeed = 2.0;
-        const speedVariation = 1.5 * Math.sin(time * 3) + 0.8 * Math.cos(time * 5.7);
-        const currentSpeed = baseSpeed + speedVariation;
+        // Initialize wiper laser blur tracking if needed
+        if (!p.wiperLaserBlurTrail) p.wiperLaserBlurTrail = [];
         
-        // Add occasional direction changes for more dynamic movement
-        if (Math.random() < 0.002) { // Random direction changes for ninja movement
-            p.wiperLaserSpeed *= -1;
+        // Different behavior during blink slash vs normal mode
+        if (p.isBlinkSlashing) {
+            // SLASH MODE: Focused, dramatic blade-like movement
+            const slashSpeed = 4.5; // Faster, more dramatic during slash
+            const slashRange = Math.PI; // Wider sweep range (±180°)
+            
+            // Create synchronized slashing motion
+            const slashPhase = time * slashSpeed;
+            p.wiperLaser1Angle = Math.sin(slashPhase) * slashRange * 0.5;
+            p.wiperLaser2Angle = p.wiperLaser1Angle + Math.PI; // Opposite side
+            
+            // Add motion blur during slash
+            p.wiperLaserBlurTrail.unshift({
+                angle1: p.wiperLaser1Angle,
+                angle2: p.wiperLaser2Angle,
+                life: 0.15,
+                intensity: 0.8
+            });
+            
+        } else {
+            // NORMAL MODE: Ninja-like variable speed movement
+            const baseSpeed = 1.8; // Slightly slower for better control
+            const speedVariation = 1.2 * Math.sin(time * 2.5) + 0.6 * Math.cos(time * 4.8);
+            const currentSpeed = baseSpeed + speedVariation;
+            
+            // Add occasional direction changes for more dynamic movement
+            if (Math.random() < 0.001) { // Less frequent for smoother flow
+                p.wiperLaserSpeed *= -1;
+            }
+            
+            // Update wiper laser angles with variable speed
+            const adjustedSpeed = p.wiperLaserSpeed * currentSpeed;
+            p.wiperLaser1Angle += adjustedSpeed * dt;
+            p.wiperLaser2Angle += adjustedSpeed * dt;
+            
+            // Normal range limits (±135°)
+            const normalRange = Math.PI * 0.75;
+            if (p.wiperLaser1Angle > normalRange) {
+                p.wiperLaserSpeed = -Math.abs(p.wiperLaserSpeed);
+            } else if (p.wiperLaser1Angle < -normalRange) {
+                p.wiperLaserSpeed = Math.abs(p.wiperLaserSpeed);
+            }
+            
+            // Keep second laser offset by PI (opposite side)
+            p.wiperLaser2Angle = p.wiperLaser1Angle + Math.PI;
+            
+            // Add subtle motion blur for normal movement
+            if (Math.abs(adjustedSpeed) > 2.0) { // Only blur during fast movement
+                p.wiperLaserBlurTrail.unshift({
+                    angle1: p.wiperLaser1Angle,
+                    angle2: p.wiperLaser2Angle,
+                    life: 0.08,
+                    intensity: 0.3
+                });
+            }
         }
         
-        // Update wiper laser angles with variable speed
-        const oldSpeed = p.wiperLaserSpeed;
-        const adjustedSpeed = p.wiperLaserSpeed * currentSpeed;
-        p.wiperLaser1Angle += adjustedSpeed * dt;
-        p.wiperLaser2Angle += adjustedSpeed * dt;
-        
-        // Keep angles in reasonable range and reverse direction at limits
-        if (p.wiperLaser1Angle > Math.PI * 0.75) {
-            p.wiperLaserSpeed = -Math.abs(p.wiperLaserSpeed);
-        } else if (p.wiperLaser1Angle < -Math.PI * 0.75) {
-            p.wiperLaserSpeed = Math.abs(p.wiperLaserSpeed);
+        // Update blur trail
+        for (let i = p.wiperLaserBlurTrail.length - 1; i >= 0; i--) {
+            p.wiperLaserBlurTrail[i].life -= dt;
+            if (p.wiperLaserBlurTrail[i].life <= 0) {
+                p.wiperLaserBlurTrail.splice(i, 1);
+            }
         }
         
-        // Keep second laser offset by PI (opposite side)
-        p.wiperLaser2Angle = p.wiperLaser1Angle + Math.PI;
+        // Cap blur trail length
+        if (p.wiperLaserBlurTrail.length > 8) {
+            p.wiperLaserBlurTrail.length = 8;
+        }
         
         // Apply damage continuously
         p.wiperLaserDamageTimer -= dt;
@@ -14475,14 +14526,8 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
         const rawDt = Math.min((now - store.last) / 1000, 0.07);
         const speedMultiplier = window.gameSpeedMultiplier || 1;
         
-        // Apply nano save time slowdown effect
-        let timeSlowMultiplier = 1;
-        if (store.player.timeSlowActive) {
-            timeSlowMultiplier = store.player.timeSlowFactor;
-        }
-        
         // Cap the dt to prevent simulation instability even with speed multiplier
-        const dt = Math.min(rawDt * speedMultiplier * timeSlowMultiplier, 0.1); 
+        const dt = Math.min(rawDt * speedMultiplier, 0.1); 
         
         store.last = now;
         
