@@ -13418,8 +13418,11 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
             case 'beef_charge':
                 p.beefChargeState = 'ready';
                 p.beefChargeCooldown = 0;
-                p.beefCharges = 1;
-                p.beefMaxCharges = 1;
+                // Don't reset charges if already have more than 1 (preserve subclass bonuses)
+                if (!p.beefMaxCharges || p.beefMaxCharges < 1) {
+                    p.beefCharges = 1;
+                    p.beefMaxCharges = 1;
+                }
                 announce('BEEF CHARGE ACTIVATED - Devastating Rush Attack!');
                 break;
             case 'beef_charge_enhanced':
