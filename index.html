@@ -6267,7 +6267,7 @@ function render(dt) {
         
         const time = performance.now() / 1000;
         const pulseAlpha = 0.8 + 0.2 * Math.sin(time * 10);
-        const laserLength = 450; // Longer, more lightsaber-like
+        const laserLength = 180; // Shorter, just long enough to hit boss from safe zone
         
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
@@ -6334,6 +6334,43 @@ function render(dt) {
             ctx.beginPath();
             ctx.moveTo(p.x + laser.offset, p.y - 12);
             ctx.lineTo(trailEndX, trailEndY);
+            ctx.stroke();
+            
+            // Add polished circular cap at the end of the laser
+            const capRadius = 8;
+            
+            // Bright glowing core of the cap
+            ctx.fillStyle = '#ffffff';
+            ctx.globalAlpha = pulseAlpha * 0.9;
+            ctx.beginPath();
+            ctx.arc(endX, endY, capRadius * 0.4, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Main colored cap
+            ctx.fillStyle = laserColor;
+            ctx.globalAlpha = pulseAlpha * 0.8;
+            ctx.beginPath();
+            ctx.arc(endX, endY, capRadius * 0.7, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Outer glow cap
+            const capGradient = ctx.createRadialGradient(endX, endY, 0, endX, endY, capRadius);
+            capGradient.addColorStop(0, laserColor + '80');
+            capGradient.addColorStop(0.5, laserColor + '60');
+            capGradient.addColorStop(1, laserColor + '20');
+            
+            ctx.fillStyle = capGradient;
+            ctx.globalAlpha = pulseAlpha * 0.6;
+            ctx.beginPath();
+            ctx.arc(endX, endY, capRadius, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Pulsing rim effect
+            ctx.strokeStyle = laserColor + '40';
+            ctx.globalAlpha = 0.4 + 0.3 * Math.sin(time * 15);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(endX, endY, capRadius * 1.2, 0, Math.PI * 2);
             ctx.stroke();
         });
         
@@ -11427,10 +11464,25 @@ function render(dt) {
     function stepWiperLasers(dt) {
         const p = store.player;
         
-        // Update wiper laser angles - they sweep back and forth like windshield wipers
+        // Ninja-like variable speed movement with dynamic speed changes
+        const time = performance.now() / 1000;
+        
+        // Create variable speed like a ninja twirling weapons
+        const baseSpeed = 2.0;
+        const speedVariation = 1.5 * Math.sin(time * 3) + 0.8 * Math.cos(time * 5.7);
+        const currentSpeed = baseSpeed + speedVariation;
+        
+        // Add occasional direction changes for more dynamic movement
+        if (Math.random() < 0.008) { // Small chance each frame for direction change
+            p.wiperLaserSpeed *= -1;
+            playSound('stargun'); // Whoosh sound on direction change
+        }
+        
+        // Update wiper laser angles with variable speed
         const oldSpeed = p.wiperLaserSpeed;
-        p.wiperLaser1Angle += p.wiperLaserSpeed * dt;
-        p.wiperLaser2Angle += p.wiperLaserSpeed * dt;
+        const adjustedSpeed = p.wiperLaserSpeed * currentSpeed;
+        p.wiperLaser1Angle += adjustedSpeed * dt;
+        p.wiperLaser2Angle += adjustedSpeed * dt;
         
         // Keep angles in reasonable range and reverse direction at limits
         if (p.wiperLaser1Angle > Math.PI * 0.75) {
@@ -11452,7 +11504,7 @@ function render(dt) {
             p.wiperLaserDamageTimer = 0.15; // Damage every 0.15 seconds
             
             // Calculate laser endpoints
-            const laserLength = 450; // Fixed laser length - matches visual
+            const laserLength = 180; // Fixed laser length - matches visual
             const laser1EndX = p.x + Math.cos(p.wiperLaser1Angle) * laserLength;
             const laser1EndY = p.y + Math.sin(p.wiperLaser1Angle) * laserLength;
             const laser2EndX = p.x + Math.cos(p.wiperLaser2Angle) * laserLength;
