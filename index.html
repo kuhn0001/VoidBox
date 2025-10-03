@@ -514,6 +514,19 @@
             background: linear-gradient(180deg, rgba(255, 215, 0, 0.4), rgba(255, 165, 0, 0.2));
             border-color: #ffd700;
         }
+        #shopBtn.mech-forge-pulse {
+            animation: mechForgePulse 1.2s ease-in-out infinite;
+            box-shadow: 0 0 18px rgba(255, 215, 0, 0.45), 0 0 35px rgba(255, 140, 0, 0.25);
+        }
+        #shopBtn.mech-forge-pulse::after {
+            content: "";
+            position: absolute;
+            inset: -6px;
+            border-radius: 18px;
+            border: 2px solid rgba(255, 215, 0, 0.65);
+            pointer-events: none;
+            animation: mechForgeRing 1.2s ease-in-out infinite;
+        }
         #pauseBtn {
             top: 50%;
             right: 15px; 
@@ -559,6 +572,16 @@
             0% { box-shadow: 0 0 15px rgba(102, 255, 178, .5); }
             50% { box-shadow: 0 0 35px rgba(102, 255, 178, 1); }
             100% { box-shadow: 0 0 15px rgba(102, 255, 178, .5); }
+        }
+        @keyframes mechForgePulse {
+            0% { transform: scale(1); box-shadow: 0 0 18px rgba(255, 215, 0, 0.45), 0 0 35px rgba(255, 140, 0, 0.25); }
+            50% { transform: scale(1.03); box-shadow: 0 0 28px rgba(255, 215, 0, 0.75), 0 0 45px rgba(255, 140, 0, 0.35); }
+            100% { transform: scale(1); box-shadow: 0 0 18px rgba(255, 215, 0, 0.45), 0 0 35px rgba(255, 140, 0, 0.25); }
+        }
+        @keyframes mechForgeRing {
+            0% { transform: scale(0.92); opacity: 0.9; }
+            70% { transform: scale(1.1); opacity: 0.3; }
+            100% { transform: scale(1.15); opacity: 0; }
         }
         @keyframes pulse-glow-ability {
             0% { box-shadow: 0 0 10px rgba(178, 102, 255, .5); }
@@ -1369,7 +1392,8 @@ class FlameParticle {
     const player_initial_state = {
         x: W / 2, y: H * 0.8, r: 14, hp: 50, hpMax: 50, fireT: 0, speed: 380, dmgMult: 1.2, fireRate: 0.16,
         vampirism: 0, shield: 50, shieldMax: 50, multishot: 2, isInvincible: false, piercing: 0, explosive: false,
-        hasShieldBubble: false, powerupTimers: {},
+    hasShieldBubble: false, powerupTimers: {},
+    swirlShots: false, attackSpeedStacks: 0,
     upgradeLevels: { dmg: 0, speed: 0, hp: 0, max_shield: 0, crit_chance: 0, ghost_hounds: 0, launcher: 0, lazarus_beam: 0, gravity_well: 0, star_cannon: 0 },
         grenades: 0, hasVoidBeam: false, voidBeamCooldown: 0,
         hasLazarusBeam: false, lazarusBeamCooldown: 0,
@@ -1510,7 +1534,9 @@ class FlameParticle {
             lastSpawnFallback: false,
             lastSpawnQueueLength: 0,
             lastSpawnTempo: 0,
-            firstBossOrbsGifted: false
+            firstBossOrbsGifted: false,
+            mechForgeGoldTriggered: false,
+            mechForgePulseTimeout: null
         },
         player: { ...player_initial_state },
     boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [], starProjectiles: [], pendingStarClones: [],
@@ -1801,7 +1827,7 @@ class FlameParticle {
                         minion.dead = true;
                     }
                 });
-                spawnVoidCoreDrop(e.x, e.y - 10);
+                handleVoidChampionReward(e);
             }
 
             if (e === store.boss) {
@@ -2121,7 +2147,7 @@ class FlameParticle {
         'luck_boost': { name: "LUCK BOOST", icon: '🍀', baseCost: 50, scale: 2, maxLevel: 5, category: 'utility', effect: (level) => { store.player.luckBoost = (store.player.luckBoost || 0) + (0.15 / Math.pow(2, level)); }, desc: level => `+${(0.15 / Math.pow(2, level) * 100).toFixed(1)}% drop chance (Lvl ${level + 1})` },
         'dmg': { name: "DAMAGE", icon: '💪', baseCost: 50, scale: 1.5, maxLevel: 10, category: 'attack', effect: () => store.player.dmgMult *= 1.06, desc: level => `+6% Damage (Lvl ${level + 1})` },
         'crit_chance': { name: "SHINOBI REFLEXES", icon: '🥷', baseCost: 40, increment: 24, maxLevel: 10, category: 'attack', effect: () => { store.player.critChance *= 1.5; store.player.critDamage *= 1.5; }, desc: level => `+50% Crit Chance & Dmg (Lvl ${level + 1})` },
-        'speed': { name: "SPEED", icon: '🚀', baseCost: 60, scale: 1.6, maxLevel: 8, category: 'utility', effect: () => store.player.speed *= 1.10, desc: level => `+10% Speed (Lvl ${level + 1})` },
+        'speed': { name: "SPEED", icon: '🚀', baseCost: 40, scale: 1.6, maxLevel: 8, category: 'utility', effect: () => store.player.speed *= 1.10, desc: level => `+10% Speed (Lvl ${level + 1})` },
         'grenade': { name: "NOVA GRENADE", icon: '💥💣💥', cost: 70, isPremium: true, max: 3, category: 'attack', apply: () => { if (store.player.grenades < 3) { store.player.grenades++; return true; } return false; }, desc: () => `Buy 1 (Max 3)` },
         'max_shield': { 
             name: "MAX SHIELD", 
@@ -2173,7 +2199,7 @@ class FlameParticle {
             name: 'STAR CANNON',
             icon: '🌠',
             baseCost: 180,
-            scale: 2.2,
+            scale: 1.6,
             maxLevel: 3,
             category: 'attack',
             effect: level => {
@@ -2212,7 +2238,10 @@ class FlameParticle {
         'shield': { name: 'SHIELD BUBBLE', icon: '🛡️', duration: 0, type: 'instant' },
         'repair': { name: 'REPAIR KIT', icon: '❤️', duration: 0, type: 'instant' },
         'missile': { name: 'HOMING MISSILES', icon: '🚀', duration: 20, type: 'timed' },
-        'void_core': { name: 'VOID CORE', icon: '🌀', duration: 25, type: 'timed' }
+        'void_core': { name: 'VOID CORE', icon: '🌀', duration: 25, type: 'timed' },
+        'attack_speed': { name: 'HYPER DRIVE', icon: '⚡', duration: 0, type: 'instant', isSpecial: true },
+        'swirly_upgrade': { name: 'SWIRL CORE', icon: '🌪️', duration: 0, type: 'instant', isSpecial: true },
+        'star_upgrade': { name: 'STAR CORE', icon: '🌠', duration: 0, type: 'instant', isSpecial: true }
     };
 
     // --- GAME MECHANICS ---
@@ -2223,7 +2252,7 @@ class FlameParticle {
         const wave = store.world.wave;
         const waveReductionFactor = 0.0025;
         let finalChance = Math.max(0.025, baseChance - (wave - 1) * waveReductionFactor);
-    let types = Object.keys(POWERUP_TYPES).filter(key => key !== 'void_core');
+    let types = Object.keys(POWERUP_TYPES).filter(key => key !== 'void_core' && !POWERUP_TYPES[key].isSpecial);
         let bonusType = null;
         if (p.pilotGenome === 'beef') {
             // Enhanced drop rates for beef - additional powerups, not replacing existing ones
@@ -2257,12 +2286,113 @@ class FlameParticle {
         if (!store.powerups) store.powerups = [];
         store.powerups.push({ x, y, r: 14, type: 'void_core' });
     }
+
+    const VOID_CHAMPION_REWARD_POOL = ['multishot_bundle', 'attack_speed', 'swirly_upgrade', 'star_upgrade'];
+    const VOID_CHAMPION_REWARD_MAP = {
+        purple: 'swirly_upgrade',
+        crimson: 'attack_speed',
+        azure: 'multishot_bundle',
+        emerald: 'star_upgrade',
+        golden: 'random_high_tier'
+    };
+
+    function spawnMultishotBundle(x, y) {
+        if (!store.powerups) store.powerups = [];
+        const offsets = [-36, 0, 36];
+        offsets.forEach((offset, index) => {
+            store.powerups.push({
+                x: x + offset,
+                y: y - index * 6,
+                r: 12,
+                type: 'double'
+            });
+        });
+    }
+
+    function spawnSpecialPowerup(type, x, y) {
+        if (!store.powerups) store.powerups = [];
+        store.powerups.push({ x, y, r: 14, type });
+    }
+
+    function handleVoidChampionReward(enemy) {
+        if (!enemy || enemy.voidChampionRewardGranted) return;
+        const scheme = getVoidChampionColorScheme(enemy);
+        const colorKey = enemy.colorScheme || 'purple';
+        if (!enemy.voidChampionRewardKey) {
+            let rewardKey = VOID_CHAMPION_REWARD_MAP[colorKey] || 'attack_speed';
+            if (rewardKey === 'random_high_tier') {
+                rewardKey = VOID_CHAMPION_REWARD_POOL[Math.floor(Math.random() * VOID_CHAMPION_REWARD_POOL.length)];
+            }
+            enemy.voidChampionRewardKey = rewardKey;
+        }
+
+        enemy.voidChampionRewardGranted = true;
+        const rewardKey = enemy.voidChampionRewardKey;
+        const dropX = enemy.x;
+        const dropY = enemy.y - 12;
+
+        switch (rewardKey) {
+            case 'multishot_bundle':
+                spawnMultishotBundle(dropX, dropY);
+                announce(`${scheme.name} shattered! Triple scatter caches deployed!`);
+                break;
+            case 'attack_speed':
+                spawnSpecialPowerup('attack_speed', dropX, dropY);
+                announce(`${scheme.name} dismantled! Hyper drive matrix recovered!`);
+                break;
+            case 'swirly_upgrade':
+                spawnSpecialPowerup('swirly_upgrade', dropX, dropY);
+                announce(`${scheme.name} collapsed! Swirl core resonance secured!`);
+                break;
+            case 'star_upgrade':
+                spawnSpecialPowerup('star_upgrade', dropX, dropY);
+                announce(`${scheme.name} defeated! Star core schematics salvaged!`);
+                break;
+            default:
+                spawnSpecialPowerup('attack_speed', dropX, dropY);
+                announce(`${scheme.name} neutralized! Hyper drive cache secured!`);
+                break;
+        }
+    }
     
     function applyPowerup(typeKey) {
         const p = store.player;
         const powerup = POWERUP_TYPES[typeKey];
         if (typeKey === 'missile') {
             if (p.pilotGenome === 'rocketman') { p.missileVolley = Math.min(5, p.missileVolley + 2); } else { p.missileVolley = 2; }
+        }
+        if (typeKey === 'attack_speed') {
+            const newStacks = (p.attackSpeedStacks || 0) + 1;
+            p.attackSpeedStacks = newStacks;
+            p.fireRate = Math.max(p.fireRate * 0.88, 0.045);
+            announce(`HYPER DRIVE +12% (${newStacks} stack${newStacks === 1 ? '' : 's'})`);
+            return;
+        }
+        if (typeKey === 'swirly_upgrade') {
+            if (!p.swirlShots) {
+                p.swirlShots = true;
+                announce('SWIRL SHOTS ONLINE!');
+            } else {
+                announce('Swirl core overloaded! Diverting to hyper drive.');
+                applyPowerup('attack_speed');
+            }
+            return;
+        }
+        if (typeKey === 'star_upgrade') {
+            const upgrade = SHOP_UPGRADES && SHOP_UPGRADES.star_cannon;
+            if (upgrade) {
+                const currentLevel = p.upgradeLevels.star_cannon || 0;
+                const maxLevel = upgrade.maxLevel ?? 3;
+                if (currentLevel < maxLevel) {
+                    upgrade.effect(currentLevel);
+                    p.upgradeLevels.star_cannon = currentLevel + 1;
+                    announce('STAR CANNON BLUEPRINT ACQUIRED (FREE)!');
+                } else {
+                    announce('Star core surplus! Converting to hyper drive.');
+                    applyPowerup('attack_speed');
+                }
+            }
+            return;
         }
         if (typeKey === 'void_core') {
             const timer = p.powerupTimers[typeKey];
@@ -5329,6 +5459,8 @@ class FlameParticle {
             bosses: 0,
             bossesAtPilotSelection: null,
             lowHealthTutorialShown: false, 
+            mechForgeGoldTriggered: false,
+            mechForgePulseTimeout: null,
             bossSpawnTime: 0, 
             waveStartTime: 0, 
             enemyHealthBonus: 1.0, 
@@ -5371,6 +5503,15 @@ class FlameParticle {
         shopItemOrder = [];
         q('gameOverPanel').classList.add('hide'); q('shopPanel').classList.add('hide'); q('levelPanel').classList.add('hide'); 
         q('subclassPanel').classList.add('hide');
+        const mechForgeBtn = q('shopBtn');
+        if (mechForgeBtn) {
+            mechForgeBtn.classList.remove('forge-highlight');
+            mechForgeBtn.classList.remove('mech-forge-pulse');
+            if (mechForgeBtn._forgePulseTimeout) {
+                clearTimeout(mechForgeBtn._forgePulseTimeout);
+                mechForgeBtn._forgePulseTimeout = null;
+            }
+        }
         ensureName();
     }
 
@@ -6000,6 +6141,9 @@ function render(dt) {
         q("pilotTitle").textContent = store.name ? `◢ ${store.name} ◣` : "◢ UNIDENTIFIED ◣";
         q("scoreNum").textContent = store.world.score;
         q("goldNum").textContent = store.world.gold;
+        if (!store.world.mechForgeGoldTriggered && store.world.gold >= 135) {
+            triggerMechForgeGoldMilestone();
+        }
         
         // Update health bar and text
         q("hpBarFill").style.width = hpPercent + "%";
@@ -6250,14 +6394,16 @@ function render(dt) {
     }
     function fireBullet(x, y, vx, vy, props = {}) { 
         const p = store.player; 
-        spawnBullet({
+        const swirlFlag = props.isSwirl !== undefined ? props.isSwirl : !!p.swirlShots;
+        return spawnBullet({
             x, y, vx, vy,
             r: p.explosive ? 5 : 3,
             col: p.explosive ? "#ED2F32" : "#b266ff",
             dmg: 15 * p.dmgMult,
             pierce: p.piercing,
             explosive: p.explosive,
-            ...props
+            ...props,
+            isSwirl: swirlFlag
         });
     }
     function firePlayer() {
@@ -6278,7 +6424,8 @@ function render(dt) {
                 col: p.explosive ? "#cc99ff" : "#b266ff",
                 dmg: 15 * p.dmgMult,
                 pierce: p.piercing,
-                explosive: p.explosive
+                explosive: p.explosive,
+                isSwirl: p.swirlShots
             });
         }
         if (p.hasIceman && store.iceman) {
@@ -6294,7 +6441,8 @@ function render(dt) {
                     dmg: 15 * p.dmgMult * 0.35,
                     pierce: p.piercing,
                     explosive: p.explosive,
-                    isIceman: true
+                    isIceman: true,
+                    isSwirl: p.swirlShots
                 });
             }
         }
@@ -6311,7 +6459,8 @@ function render(dt) {
                     r: 3,
                     col: "#ffddff",
                     dmg: 11.25 * p.dmgMult,
-                    pierce: p.piercing > 0 ? p.piercing - 1 : 0
+                    pierce: p.piercing > 0 ? p.piercing - 1 : 0,
+                    isSwirl: p.swirlShots
                 });
             }
         }
@@ -6323,7 +6472,8 @@ function render(dt) {
             r: 3,
             col: "#66aaff",
             dmg: 15 * p.dmgMult * 0.4,
-            isDrone: true
+            isDrone: true,
+            isSwirl: p.swirlShots
         }));
         if (p.hasLauncher) {
             const speed = 350;
@@ -6530,7 +6680,7 @@ function render(dt) {
                         minion.dead = true;
                     }
                 });
-                spawnVoidCoreDrop(target.x, target.y - 10);
+                handleVoidChampionReward(target);
             }
 
             if (target === store.boss) {
@@ -10012,6 +10162,26 @@ function getVoidChampionColorScheme(enemy) {
     }
 
     function showShopWithHighlight() { showShop(); announce('Low health! Use the Mech Forge to repair!'); setTimeout(() => { const repairItem = document.querySelector('.shop-item[data-key="repair"]'); if (repairItem) repairItem.classList.add('highlight'); }, 100); }
+
+    function triggerMechForgeGoldMilestone() {
+        store.world.mechForgeGoldTriggered = true;
+        const mechForgeBtn = q('shopBtn');
+        if (mechForgeBtn) {
+            mechForgeBtn.classList.add('mech-forge-pulse');
+            if (mechForgeBtn._forgePulseTimeout) {
+                clearTimeout(mechForgeBtn._forgePulseTimeout);
+            }
+            const timeoutId = setTimeout(() => {
+                mechForgeBtn.classList.remove('mech-forge-pulse');
+                mechForgeBtn._forgePulseTimeout = null;
+                store.world.mechForgePulseTimeout = null;
+            }, 12000);
+            mechForgeBtn._forgePulseTimeout = timeoutId;
+            store.world.mechForgePulseTimeout = timeoutId;
+        }
+        announce('Forge unlocked! Spend that gold!');
+        showShop();
+    }
     function createHound(side) {
         const isTuxedo = side === -1 || side === -2;
         let color = isTuxedo ? { main: '#222222', accent: '#FFFFFF' } : { main: '#F0E68C', accent: '#BDB76B' };
@@ -12559,7 +12729,24 @@ function tryVoidStep(player, target, now = performance.now()){
     
     q("saveName").addEventListener("click",()=>{const t=(q("nameInput").value||"").slice(0,16).trim();if(t){store.name=t;q("namePanel").classList.add("hide");if(store.player.pilotGenome === null) { initWave(); resumeGame(); } else { resumeGame(); }}});
     
-    const closeShopLogic = () => { q("shopPanel").classList.add('hide'); resumeGame(); const highlighted = document.querySelector('.shop-item.highlight'); if (highlighted) highlighted.classList.remove('highlight'); };
+    const closeShopLogic = () => {
+        q("shopPanel").classList.add('hide');
+        resumeGame();
+        const highlighted = document.querySelector('.shop-item.highlight');
+        if (highlighted) highlighted.classList.remove('highlight');
+        const mechForgeBtn = q('shopBtn');
+        if (mechForgeBtn) {
+            mechForgeBtn.classList.remove('mech-forge-pulse');
+            if (mechForgeBtn._forgePulseTimeout) {
+                clearTimeout(mechForgeBtn._forgePulseTimeout);
+                mechForgeBtn._forgePulseTimeout = null;
+            }
+        }
+        if (store.world.mechForgePulseTimeout) {
+            clearTimeout(store.world.mechForgePulseTimeout);
+            store.world.mechForgePulseTimeout = null;
+        }
+    };
     q("closeShopTopBtn").addEventListener("click", closeShopLogic);
     q("closeShop").addEventListener("click", closeShopLogic);
 
