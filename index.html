@@ -1417,13 +1417,21 @@ class FlameParticle {
         hasLazarusBeam: false, lazarusBeamCooldown: 0,
         hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 0, vampirismLevel: 0, flamethrowerLevel: 0,
         flamethrowerT: 0, // Separate timer for lava chunks, unaffected by overclock
+        // Rocketman afterburner system
+        afterburnerActive: false,
+        afterburnerTimer: 0,
+        afterburnerMaxDuration: 2.0,
+        afterburnerParticleTimer: 0,
     starCannonLevel: 0, starCannonTimer: 0, starCannonIcemanSupport: false,
         luckBoost: 0, magnetRadius: 0, hasIceman: false, critChance: 0.02, critDamage: 1.85,
         pilotGenome: null, missileVolley: 2,
         hasRearGuard: false, rearGuardCooldown: 0, rearGuardReady: true,
         rearMultishot: 0, addFrontNext: true,
-        flameWallCooldown: 0,
-        flameWallActiveT: 0,
+    flameWallCooldown: 0,
+    flameWallCooldownMax: 10,
+    flameWallCharge: 0,
+    flameWallInitialized: false,
+    flameWallActiveT: 0,
         beefChargeState: 'ready', beefChargeCooldown: 0, beefChargeOrigin: null, beefChargeTarget: null, beefChargeT: 0, beefCharges: 1, beefMaxCharges: 1,
         beefDoubleCharge: false, beefBigExplosion: false, // New skill tree abilities
         beefChainTargets: [], beefChainIndex: 0, beefChainMode: false, // Chain jumping system for marauder
@@ -2259,6 +2267,7 @@ class FlameParticle {
         'repair': { name: 'REPAIR KIT', icon: '❤️', duration: 0, type: 'instant' },
         'missile': { name: 'HOMING MISSILES', icon: '🚀', duration: 20, type: 'timed' },
         'void_core': { name: 'VOID CORE', icon: '🌀', duration: 25, type: 'timed' },
+        'cash': { name: 'CASH INFUSION', icon: '💰', duration: 0, type: 'instant', isSpecial: true },
         'attack_speed': { name: 'HYPER DRIVE', icon: '⚡', duration: 0, type: 'instant', isSpecial: true },
         'swirly_upgrade': { name: 'SWIRL CORE', icon: '🌪️', duration: 0, type: 'instant', isSpecial: true },
         'star_upgrade': { name: 'STAR CORE', icon: '🌠', duration: 0, type: 'instant', isSpecial: true }
@@ -2313,7 +2322,7 @@ class FlameParticle {
         crimson: 'attack_speed',
         azure: 'multishot_bundle',
         emerald: 'star_upgrade',
-        golden: 'random_high_tier'
+        golden: 'cash_bundle'
     };
 
     function spawnMultishotBundle(x, y) {
@@ -2332,6 +2341,19 @@ class FlameParticle {
     function spawnSpecialPowerup(type, x, y) {
         if (!store.powerups) store.powerups = [];
         store.powerups.push({ x, y, r: 14, type });
+    }
+
+    function spawnCashBundle(x, y) {
+        if (!store.powerups) store.powerups = [];
+        const offsets = [-30, 0, 30];
+        offsets.forEach((offset, index) => {
+            store.powerups.push({
+                x: x + offset,
+                y: y - index * 8,
+                r: 14,
+                type: 'cash'
+            });
+        });
     }
 
     function handleVoidChampionReward(enemy) {
@@ -2368,6 +2390,10 @@ class FlameParticle {
                 spawnSpecialPowerup('star_upgrade', dropX, dropY);
                 announce(`${scheme.name} defeated! Star core schematics salvaged!`);
                 break;
+            case 'cash_bundle':
+                spawnCashBundle(dropX, dropY);
+                announce(`${scheme.name} destroyed! Triple cash infusion secured!`);
+                break;
             default:
                 spawnSpecialPowerup('attack_speed', dropX, dropY);
                 announce(`${scheme.name} neutralized! Hyper drive cache secured!`);
@@ -2380,6 +2406,14 @@ class FlameParticle {
         const powerup = POWERUP_TYPES[typeKey];
         if (typeKey === 'missile') {
             if (p.pilotGenome === 'rocketman') { p.missileVolley = Math.min(5, p.missileVolley + 2); } else { p.missileVolley = 2; }
+        }
+        if (typeKey === 'cash') {
+            const earlyGameValue = 100;
+            const waveScaling = Math.max(1, store.world.wave / 5);
+            const cashAmount = Math.floor(earlyGameValue * waveScaling);
+            store.world.shards = (store.world.shards || 0) + cashAmount;
+            announce(`CASH INFUSION +${cashAmount} SHARDS!`);
+            return;
         }
         if (typeKey === 'attack_speed') {
             const newStacks = (p.attackSpeedStacks || 0) + 1;
@@ -3494,10 +3528,77 @@ class FlameParticle {
                 }
             }
         } else if (p.pilotGenome === 'rocketman' && p.hasFirewall) {
-            if (p.flameWallCooldown > 0) p.flameWallCooldown -= dt;
-            if (p.flameWallActiveT > 0) p.flameWallActiveT -= dt;
-            if (p.flameWallCooldown <= 0) { p.flameWallActiveT = 0.5; p.flameWallCooldown = 10; }
+            // Rocketman afterburner system
+            if (!p.flameWallInitialized) {
+                const baseCooldown = p.flameWallCooldownMax || p.firewallCooldown || 10;
+                p.flameWallCooldownMax = baseCooldown;
+                const immediateCast = Math.random() < 0.5;
+                p.flameWallCooldown = immediateCast ? 0 : baseCooldown;
+                p.flameWallCharge = immediateCast ? 1 : 0;
+                p.flameWallInitialized = true;
+            }
+
+            const cooldownMax = p.flameWallCooldownMax || p.firewallCooldown || 10;
+
+            if (p.flameWallCooldown > 0) {
+                p.flameWallCooldown = Math.max(0, p.flameWallCooldown - dt);
+            }
+
+            const cooldownProgress = cooldownMax > 0 ? 1 - (p.flameWallCooldown / cooldownMax) : 1;
+            p.flameWallCharge = cooldownProgress;
+
+            // Start afterburner sequence when ready
+            if (p.flameWallCooldown <= 0 && !p.afterburnerActive && p.flameWallActiveT <= 0) {
+                p.afterburnerActive = true;
+                p.afterburnerTimer = p.afterburnerMaxDuration;
+                p.afterburnerParticleTimer = 0;
+            }
+
+            // Handle afterburner phase - small particles from rear boosters
+            if (p.afterburnerActive) {
+                p.afterburnerTimer -= dt;
+                p.afterburnerParticleTimer -= dt;
+
+                // Spawn small flame particles from rear boosters
+                if (p.afterburnerParticleTimer <= 0) {
+                    p.afterburnerParticleTimer = 0.08; // Fast particle spawn rate
+                    
+                    // Create small particles from left and right boosters at rear of ship
+                    for (let side = -1; side <= 1; side += 2) {
+                        const particle = new FlameParticle(
+                            p.x + side * 12, // Left/right booster positions
+                            p.y + 20,        // Behind the ship
+                            null
+                        );
+                        // Make afterburner particles smaller and shorter-lived
+                        particle.size *= 0.6;
+                        particle.baseSize *= 0.6;
+                        particle.life *= 0.4;
+                        particle.maxLife *= 0.4;
+                        particle.visualLife *= 0.4;
+                        particle.maxVisualLife *= 0.4;
+                        particle.damage *= 0.3; // Less damage than main flame wall
+                        // Make particles move mostly backward with slight spread
+                        particle.vx = (Math.random() - 0.5) * 20 + side * 15;
+                        particle.vy = 30 + Math.random() * 20; // Moving backward from ship
+                        store.flameParticles.push(particle);
+                    }
+                }
+
+                // Transition to main flame wall after afterburner duration
+                if (p.afterburnerTimer <= 0) {
+                    p.afterburnerActive = false;
+                    p.flameWallActiveT = 0.6;
+                    p.flameWallCooldown = cooldownMax || 10;
+                    p.flameWallCharge = 1;
+                }
+            }
+
+            // Main flame wall from nose (original system)
             if (p.flameWallActiveT > 0) {
+                p.flameWallActiveT -= dt;
+                p.flameWallCharge = Math.max(0, p.flameWallCharge - dt * 3.2);
+                
                 for (let i = 0; i < 2; i++) {
                     let attachedEnemy = null;
                     let closestDistSq = Infinity;
@@ -4671,12 +4772,22 @@ class FlameParticle {
                         }
                     }
 
+                    // Clamp void champion to playfield bounds (both horizontal and vertical)
                     if (e.x < e.r) {
                         e.x = e.r;
                         e.vx = Math.abs(e.vx || 60);
                     } else if (e.x > W - e.r) {
                         e.x = W - e.r;
                         e.vx = -Math.abs(e.vx || 60);
+                    }
+                    
+                    // NEW: Vertical clamping to keep void champion in playfield
+                    if (e.y < e.r) {
+                        e.y = e.r;
+                        if (e.ramming && e.dashVY < 0) e.dashVY = Math.abs(e.dashVY);
+                    } else if (e.y > H - e.r) {
+                        e.y = H - e.r;
+                        if (e.ramming && e.dashVY > 0) e.dashVY = -Math.abs(e.dashVY);
                     }
                 } else if (!e.isOrbiter) {
                     e.x += (e.vx || 0) * speedMultiplier * dt;
@@ -8603,6 +8714,97 @@ function render(dt) {
             ctx.fillText(shieldText, 0, meterY - 2);
         }
 
+        if (player.pilotGenome === 'rocketman' && player.hasFirewall) {
+            const flameCharge = Math.max(0, Math.min(1, player.flameWallCharge || 0));
+            const noseY = -20;
+            const tailY = 14;
+            const band = Math.max(0.04, 0.12 - flameCharge * 0.05);
+            const boundary = Math.max(0, Math.min(1, 1 - flameCharge));
+            const waveTime = performance.now() / 1000;
+            
+            // Show afterburner indicators when active
+            if (player.afterburnerActive) {
+                const afterburnerProgress = 1 - (player.afterburnerTimer / player.afterburnerMaxDuration);
+                const glowIntensity = 0.3 + 0.7 * Math.sin(waveTime * 8);
+                
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                
+                // Left and right afterburner glows
+                for (let side = -1; side <= 1; side += 2) {
+                    ctx.fillStyle = `rgba(255, 140, 20, ${glowIntensity * 0.4})`;
+                    ctx.beginPath();
+                    ctx.ellipse(side * 12, tailY + 6, 8, 12, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.fillStyle = `rgba(255, 200, 60, ${glowIntensity * 0.6})`;
+                    ctx.beginPath();
+                    ctx.ellipse(side * 12, tailY + 6, 4, 8, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                ctx.restore();
+            }
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.beginPath();
+            ctx.moveTo(0, -20);
+            ctx.lineTo(12, 8);
+            ctx.lineTo(8, 14);
+            ctx.lineTo(0, 10);
+            ctx.lineTo(-8, 14);
+            ctx.lineTo(-12, 8);
+            ctx.closePath();
+            ctx.clip();
+
+            const gradient = ctx.createLinearGradient(0, noseY, 0, tailY);
+            const yellowAlpha = 0.35 + flameCharge * 0.2;
+            const orangeAlpha = 0.25 + flameCharge * 0.45;
+            const yellow = `rgba(255, 210, 80, ${yellowAlpha})`;
+            const orange = `rgba(255, 110, 0, ${orangeAlpha})`;
+            const lowerCut = Math.max(0, boundary - band);
+            const upperCut = Math.min(1, boundary + band);
+
+            gradient.addColorStop(0, yellow);
+            gradient.addColorStop(lowerCut, yellow);
+            gradient.addColorStop(Math.max(lowerCut, boundary), orange);
+            gradient.addColorStop(upperCut, orange);
+            gradient.addColorStop(1, orange);
+
+            ctx.fillStyle = gradient;
+            ctx.fillRect(-22, noseY - 2, 44, tailY - noseY + 4);
+
+            const shimmerOffset = Math.sin(waveTime * 3.1) * (8 + flameCharge * 10);
+            const shimmer = ctx.createLinearGradient(-14, noseY - 10 + shimmerOffset, 14, tailY + 4 - shimmerOffset);
+            shimmer.addColorStop(0, `rgba(255, 240, 180, ${0.04 + flameCharge * 0.12})`);
+            shimmer.addColorStop(0.5, `rgba(255, 190, 120, ${0.08 + flameCharge * 0.16})`);
+            shimmer.addColorStop(1, `rgba(255, 120, 40, ${0.05 + flameCharge * 0.14})`);
+
+            ctx.globalAlpha = 0.9;
+            ctx.fillStyle = shimmer;
+            ctx.fillRect(-20, noseY - 8, 40, tailY - noseY + 12);
+
+            ctx.restore();
+
+            ctx.save();
+            ctx.shadowColor = `rgba(255, 120, 0, ${0.4 + flameCharge * 0.4})`;
+            ctx.shadowBlur = 12 + flameCharge * 14;
+            ctx.strokeStyle = `rgba(255, 220, 120, ${0.3 + flameCharge * 0.5})`;
+            ctx.lineWidth = 1.2 + flameCharge;
+            ctx.beginPath();
+            ctx.moveTo(0, -20);
+            ctx.lineTo(12, 8);
+            ctx.lineTo(8, 14);
+            ctx.lineTo(0, 10);
+            ctx.lineTo(-8, 14);
+            ctx.lineTo(-12, 8);
+            ctx.closePath();
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
         if (player.hasRearGuard && player.rearGuardReady) {
             const pulse = 0.4 + 0.3 * Math.sin(performance.now() / 200);
             ctx.fillStyle = `rgba(100, 255, 255, ${pulse})`;
@@ -11509,9 +11711,9 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 name: 'MARAUDER PATH',
                 nodes: [
                     { id: 'marauder_multi_charge', name: 'Multi Charge', desc: 'Gain 3 charge attacks with enhanced chain capability', icon: 'mar11.png', tier: 1 },
-                    { id: 'marauder_chain_assault', name: 'Chain Assault', desc: '+50% chain damage bonus and improved chain targeting', icon: 'mar2.png', tier: 2 },
-                    { id: 'marauder_combat_mastery', name: 'Combat Mastery', desc: '+25 HP, 15% damage reduction, enhanced armor', icon: 'mar3.png', tier: 3 },
-                    { id: 'marauder_elite_warrior', name: 'Elite Warrior', desc: '5 total charges with elite combat techniques', icon: 'mar4.png', tier: 4 }
+                    { id: 'marauder_chain_assault', name: 'Chain Assault', desc: 'Keep charge chains active and add +50% chain damage.', icon: 'mar2.png', tier: 2 },
+                    { id: 'marauder_combat_mastery', name: 'Combat Mastery', desc: 'Double chain damage bonuses and boost attack speed by 30%.', icon: 'mar3.png', tier: 3 },
+                    { id: 'marauder_elite_warrior', name: 'Elite Warrior', desc: 'Unlock 5 charges and elite double-hits that strike for 3x damage.', icon: 'mar4.png', tier: 4 }
                 ]
             },
             classAbility: { id: 'beef_shield_unlock', name: 'BEEF SHIELD', desc: 'UNLOCK: Regenerating armor plating with damage absorption', icon: 'bshield.png', tier: 'class' },
@@ -11539,7 +11741,7 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                     { id: 'railgunner_super_pierce', name: 'Super Pierce', desc: 'Missiles pierce 5 enemies with +30% pierce damage', icon: 'one.png', tier: 1 },
                     { id: 'railgunner_perfect_aim', name: 'Perfect Aim', desc: '+25% critical hit chance with +50% accuracy', icon: 'two.png', tier: 2 },
                     { id: 'railgunner_advanced_ballistics', name: 'Advanced Ballistics', desc: 'Pierce 8 enemies with +80% velocity and homing', icon: 'three.png', tier: 3 },
-                    { id: 'railgunner_precision_master', name: 'Precision Master', desc: 'Pierce 12 enemies with +100% critical damage', icon: 'four.png', tier: 4 }
+                    { id: 'railgunner_precision_master', name: 'Precision Master', desc: '+50% critical chance, 2x crit damage, and full railgun mastery.', icon: 'four.png', tier: 4 }
                 ]
             },
             classAbility: { id: 'firewall_unlock', name: 'FIREWALL', desc: 'UNLOCK: Deployable burning barrier for area control', icon: 'firewall.png', tier: 'class' },
@@ -11552,8 +11754,8 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 nodes: [
                     { id: 'demolitionist_bigger_clusters', name: 'Bigger Clusters', desc: 'Cluster bombs are 2x larger with increased blast radius', icon: 'demo1.png', tier: 1 },
                     { id: 'demolitionist_cluster_mastery', name: 'Cluster Mastery', desc: 'Clusters split into secondary explosions, +50% cluster count', icon: 'demo2.png', tier: 2 },
-                    { id: 'demolitionist_explosive_mastery', name: 'Explosive Mastery', desc: 'Advanced explosive techniques and enhanced detonation power', icon: 'demo3.png', tier: 3 },
-                    { id: 'demolitionist_demolition_expert', name: 'Demolition Expert', desc: 'Peak explosive specialist with maximum destructive force', icon: 'demo4.png', tier: 4 }
+                    { id: 'demolitionist_explosive_mastery', name: 'Explosive Mastery', desc: 'Guarantee 12 cluster bombs and chain detonations across explosions.', icon: 'demo3.png', tier: 3 },
+                    { id: 'demolitionist_demolition_expert', name: 'Demolition Expert', desc: 'Double cluster blast radius and add a 30% mega explosion chance.', icon: 'demo4.png', tier: 4 }
                 ]
             },
             classAbility: { id: 'firewall_unlock', name: 'FIREWALL', desc: 'UNLOCK: Deployable burning barrier for area control', icon: 'firewall.png', tier: 'class' },
@@ -12873,6 +13075,14 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 p.firewallDuration = 10;
                 p.firewallCooldown = 15;
                 p.firewallDamage = 50;
+                p.flameWallCooldownMax = 10;
+                p.flameWallCooldown = 0;
+                p.flameWallActiveDuration = 0.5;
+                p.flameWallActiveT = 0;
+                p.shipFlameColor = '#ff7b32';
+                p.shipHighlightColor = '#ffd166';
+                p.flameWallCharge = 0;
+                p.flameWallInitialized = false;
                 playSound('powerup');
                 announce('🔥 FIREWALL UNLOCKED! - Class Ability Activated!');
                 break;
