@@ -3573,11 +3573,14 @@ class FlameParticle {
             playSound('cluster');
         }
         
-        const baseRadius = 40; // Halved from 80
-        const explosionRadius = store.player.enhancedClusters ? 80 : baseRadius;
+        const baseRadius = 70; // Halved from 80
+        const explosionRadius = store.player.enhancedClusters ? 120 : baseRadius;
         const chainRadius = 90;
         const microExplosionCount = 5;
-        const aoeDmg = m.dmg * .8;
+        let aoeDmg = m.dmg * .8;
+        if (store.player.subclass === 'demolitionist') {
+            aoeDmg *= 1.5;  // OPTIONAL: Boost damage for demolitionist
+        }
         for (let i = 0; i < microExplosionCount; i++) {
             const angle = Math.random() * 2 * Math.PI;
             const dist = Math.random() * explosionRadius * 0.7;
@@ -3649,7 +3652,7 @@ class FlameParticle {
             // For cluster rockets, check proximity detonation only when they should explode
             if (m.cluster && !m.pierce) {
                 // Original cluster behavior - explode near enemies
-                const proxRadiusSq = 50 * 50;
+                const proxRadiusSq = 15 * 15;
                 for (const e of targets) {
                     if (!e.dead && ((m.x - e.x)**2 + (m.y - e.y)**2 < proxRadiusSq)) {
                         detonateClusterRocket(m);
@@ -3688,7 +3691,7 @@ class FlameParticle {
                         if (store.player.vampirism > 0) {
                             let healAmount = dmg * store.player.vampirism;
                             healAmount = Math.max(healAmount, 1); // Minimum 1 HP
-                            healAmount = Math.min(healAmount, 5); // Cap at 5 HP
+                            healAmount = Math.min(healAmount, 6); // Cap at 5 HP
                             store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
                         }
                         
@@ -8703,18 +8706,103 @@ function render(dt) {
             }
             ctx.shadowBlur = 0;
             break;
+// Color schemes dictionary for void_champion variants
+const VOID_CHAMPION_COLOR_SCHEMES = {
+    purple: {
+        name: 'Void Wraith',
+        shadowColor: '#b56bff',
+        auraColor: '#7a34ff',
+        hullGradient: ['#5f18c4', '#1b0635', '#320a63'],
+        strokeColor: '#c6a4ff',
+        finColor: [155, 69, 255], // RGB for rgba usage
+        visorGradient: ['#f5d9ff', '#7d2cff'],
+        eyeColor: '#ff508f',
+        coreGlow: '#e499ff',
+        coreColor: '#ffe6ff',
+        thrusterColor: '#732bff'
+    },
+    crimson: {
+        name: 'Crimson Reaper',
+        shadowColor: '#ff4444',
+        auraColor: '#cc1100',
+        hullGradient: ['#8b0000', '#330000', '#4a0000'],
+        strokeColor: '#ff6666',
+        finColor: [200, 50, 50],
+        visorGradient: ['#ffcccc', '#990000'],
+        eyeColor: '#ffff00',
+        coreGlow: '#ff8888',
+        coreColor: '#ffffff',
+        thrusterColor: '#cc0000'
+    },
+    azure: {
+        name: 'Azure Phantom',
+        shadowColor: '#4488ff',
+        auraColor: '#0044cc',
+        hullGradient: ['#1144aa', '#001122', '#002244'],
+        strokeColor: '#66aaff',
+        finColor: [100, 150, 255],
+        visorGradient: ['#ccddff', '#0066cc'],
+        eyeColor: '#00ffff',
+        coreGlow: '#88bbff',
+        coreColor: '#ffffff',
+        thrusterColor: '#0088ff'
+    },
+    emerald: {
+        name: 'Emerald Specter',
+        shadowColor: '#44ff44',
+        auraColor: '#00cc44',
+        hullGradient: ['#006600', '#001100', '#003300'],
+        strokeColor: '#66ff66',
+        finColor: [50, 200, 50],
+        visorGradient: ['#ccffcc', '#009900'],
+        eyeColor: '#ffff00',
+        coreGlow: '#88ff88',
+        coreColor: '#ffffff',
+        thrusterColor: '#00cc00'
+    },
+    golden: {
+        name: 'Golden Harbinger',
+        shadowColor: '#ffcc44',
+        auraColor: '#cc8800',
+        hullGradient: ['#b8860b', '#4a3c00', '#6b5b00'],
+        strokeColor: '#ffd700',
+        finColor: [255, 200, 50],
+        visorGradient: ['#fffacd', '#daa520'],
+        eyeColor: '#ff4500',
+        coreGlow: '#ffd700',
+        coreColor: '#ffffff',
+        thrusterColor: '#b8860b'
+    }
+};
+
+// Function to get color scheme for void_champion
+function getVoidChampionColorScheme(enemy) {
+    // Use enemy's unique ID or position to determine color scheme consistently
+    if (!enemy.colorScheme) {
+        const schemes = Object.keys(VOID_CHAMPION_COLOR_SCHEMES);
+        const seed = enemy.id || (enemy.x + enemy.y * 1000); // Use ID or position as seed
+        const schemeIndex = Math.abs(Math.floor(seed)) % schemes.length;
+        enemy.colorScheme = schemes[schemeIndex];
+        enemy.displayName = VOID_CHAMPION_COLOR_SCHEMES[enemy.colorScheme].name;
+    }
+    return VOID_CHAMPION_COLOR_SCHEMES[enemy.colorScheme];
+}
+
         case "void_champion": {
             const time = performance.now() / 1000;
             const shimmer = 0.55 + 0.45 * Math.sin(time * 6 + c * 3);
             const wingPulse = 0.8 + 0.2 * Math.sin(time * 5 + c * 2);
+            
+            // Get color scheme for this specific enemy
+            const colors = getVoidChampionColorScheme(e);
 
             ctx.save();
-            ctx.shadowColor = '#b56bff';
+            ctx.shadowColor = colors.shadowColor;
             ctx.shadowBlur = 8 * shimmer;
 
             // Outer aura to hint at teleport energy
             ctx.globalAlpha = 0.28 * shimmer;
-            ctx.fillStyle = '#7a34ff';
+            ctx.fillStyle = colors.auraColor;
             ctx.beginPath();
             ctx.arc(0, 0, a * 1.45, 0, Math.PI * 2);
             ctx.fill();
@@ -8724,11 +8812,11 @@ function render(dt) {
 
             // Player-like hull with evil tint
             const hullGradient = ctx.createLinearGradient(0, -a * 1.3, 0, a * 1.1);
-            hullGradient.addColorStop(0, '#5f18c4');
-            hullGradient.addColorStop(0.45, '#1b0635');
-            hullGradient.addColorStop(1, '#320a63');
+            hullGradient.addColorStop(0, colors.hullGradient[0]);
+            hullGradient.addColorStop(0.45, colors.hullGradient[1]);
+            hullGradient.addColorStop(1, colors.hullGradient[2]);
             ctx.fillStyle = hullGradient;
-            ctx.strokeStyle = '#c6a4ff';
+            ctx.strokeStyle = colors.strokeColor;
             ctx.lineWidth = 1.8;
             ctx.beginPath();
             ctx.moveTo(0, -a * 1.15);
@@ -8740,7 +8828,7 @@ function render(dt) {
             ctx.stroke();
 
             // Mirrored shoulder fins
-            ctx.fillStyle = `rgba(155, 69, 255, ${0.4 + 0.4 * shimmer})`;
+            ctx.fillStyle = `rgba(${colors.finColor[0]}, ${colors.finColor[1]}, ${colors.finColor[2]}, ${0.4 + 0.4 * shimmer})`;
             ctx.beginPath();
             ctx.moveTo(-a * 1.05, -a * 0.05);
             ctx.quadraticCurveTo(-a * 1.4, a * 0.35 * wingPulse, -a * 0.55, a * 0.55);
@@ -8756,8 +8844,8 @@ function render(dt) {
 
             // Face visor resembling the player silhouette
             const visorGradient = ctx.createLinearGradient(0, -a * 0.8, 0, -a * 0.2);
-            visorGradient.addColorStop(0, '#f5d9ff');
-            visorGradient.addColorStop(1, '#7d2cff');
+            visorGradient.addColorStop(0, colors.visorGradient[0]);
+            visorGradient.addColorStop(1, colors.visorGradient[1]);
             ctx.fillStyle = visorGradient;
             ctx.beginPath();
             ctx.moveTo(-a * 0.4, -a * 0.5);
@@ -8766,7 +8854,7 @@ function render(dt) {
             ctx.fill();
 
             // Eyes for villain vibe
-            ctx.fillStyle = '#ff508f';
+            ctx.fillStyle = colors.eyeColor;
             ctx.beginPath();
             ctx.ellipse(-a * 0.18, -a * 0.55, a * 0.11, a * 0.08, -0.3, 0, Math.PI * 2);
             ctx.ellipse(a * 0.18, -a * 0.55, a * 0.11, a * 0.08, 0.3, 0, Math.PI * 2);
@@ -8774,8 +8862,8 @@ function render(dt) {
 
             // Chest core
             ctx.shadowBlur = 12 * shimmer;
-            ctx.shadowColor = '#e499ff';
-            ctx.fillStyle = '#ffe6ff';
+            ctx.shadowColor = colors.coreGlow;
+            ctx.fillStyle = colors.coreColor;
             ctx.beginPath();
             ctx.arc(0, a * 0.15, a * (0.32 + 0.08 * shimmer), 0, Math.PI * 2);
             ctx.fill();
@@ -8784,7 +8872,7 @@ function render(dt) {
 
             // Trail thruster
             ctx.globalAlpha = 0.85;
-            ctx.fillStyle = '#732bff';
+            ctx.fillStyle = colors.thrusterColor;
             ctx.beginPath();
             ctx.moveTo(-a * 0.28, a * 1.05);
             ctx.lineTo(0, a * (1.45 + 0.2 * shimmer));
