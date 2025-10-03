@@ -1429,7 +1429,8 @@ class FlameParticle {
         beefChainTargets: [], beefChainIndex: 0, beefChainMode: false, // Chain jumping system for marauder
         hasChainLightning: false, chainLightningCooldown: 0, stormstrikerLevel: 0, lightningAlternate: false, lightningCycleIndex: 0, chainLightningDamage: 1.0,
         phasestRikerLevel: 0, voidLaserRampTime: 0, voidLaserLastTarget: null,
-        subclass: null, missilePierce: 0, missileCluster: false, blinkDamage: false,
+    subclass: null, missilePierce: 0, missileCluster: false, blinkDamage: false,
+    hasBlink: false, autoBlinkEnabled: false, autoBlinkRange: 0, autoBlinkLookahead: 0.45, autoBlinkLastTrigger: 0,
         enhancedClusters: false, enhancedPierce: false, hasStormcaller: false, hasPhasestriker: false,
         // Void caller enhanced options
         hasDoubleStorm: false, hasHybridVoid: false, hasImpactPhase: false,
@@ -2170,8 +2171,8 @@ class FlameParticle {
         'max_shield': { 
             name: "MAX SHIELD", 
             icon: '🛡️', 
-            baseCost: 80, 
-            scale: 1.8, 
+            baseCost: 60, 
+            scale: 1.5, 
             maxLevel: 20, // Increased max level
             category: 'health', 
             effect: (level) => { 
@@ -4316,6 +4317,9 @@ class FlameParticle {
         const lateGameBonus = store.world.lateGameDamageScaling || 1;
         dmgScale *= collarBonus * lateGameBonus;
         // console.log(`Wave ${store.world.wave}: Damage scale = ${dmgScale.toFixed(2)} | CollarStacks: ${store.world.collarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x | LateGameBonus: ${lateGameBonus.toFixed(2)}x`);
+        const player = store.player;
+        let autoBlinkTriggeredThisFrame = false;
+
         store.eBullets.forEach(b => {
             b.x += b.vx * dt;
             b.y += b.vy * dt;
@@ -4361,6 +4365,12 @@ class FlameParticle {
                 b.dead = true;
             }
             
+            if (!autoBlinkTriggeredThisFrame && !b.dead) {
+                if (attemptAutoBlink(player, b)) {
+                    autoBlinkTriggeredThisFrame = true;
+                }
+            }
+
             if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true;
 
             if (collide(b, store.player)) {
@@ -10955,6 +10965,49 @@ function tryVoidStep(player, target, now = performance.now()){
     spawnBlinkFlash(nx, ny);
     return true;
 }
+
+    const AUTO_BLINK_DEFAULT_LOOKAHEAD = 0.45;
+    const AUTO_BLINK_MIN_SPEED = 40;
+
+    function attemptAutoBlink(player, bullet, now = performance.now()) {
+        if (!player || !bullet) return false;
+        if (!player.autoBlinkEnabled || !player.hasBlink) return false;
+        if (store.isPaused || store.isGameOver) return false;
+        if (playerIsInvulnerable()) return false;
+
+        const range = player.autoBlinkRange || Math.max(150, (player.blinkRange || 0) * 0.6);
+        const dx = player.x - bullet.x;
+        const dy = player.y - bullet.y;
+        const distSq = dx * dx + dy * dy;
+        if (distSq > range * range) return false;
+
+        const vx = bullet.vx || 0;
+        const vy = bullet.vy || 0;
+        const speedSq = vx * vx + vy * vy;
+        if (speedSq < AUTO_BLINK_MIN_SPEED * AUTO_BLINK_MIN_SPEED) return false;
+
+        const dist = Math.sqrt(distSq) || 1;
+        const speed = Math.sqrt(speedSq);
+        const approach = vx * dx + vy * dy;
+        if (approach <= 0) return false; // Bullet moving away or across
+
+        const lookahead = player.autoBlinkLookahead ?? AUTO_BLINK_DEFAULT_LOOKAHEAD;
+        if (dist / speed > lookahead) return false; // Too early to react
+
+        if (player.autoBlinkLastTrigger && now - player.autoBlinkLastTrigger < 200) return false;
+
+        const blinkRange = player.blinkRange || 250;
+        const scale = blinkRange / dist;
+        const targetX = player.x + dx * scale;
+        const targetY = player.y + dy * scale;
+
+        if (tryVoidStep(player, { x: targetX, y: targetY }, now)) {
+            player.autoBlinkLastTrigger = now;
+            return true;
+        }
+
+        return false;
+    }
     
     // Impact shockwave system for earthquake enhancement
     const impactRipples = [];
@@ -12180,6 +12233,60 @@ function tryVoidStep(player, target, now = performance.now()){
         return !!p.skillTree[crossDetails.node.id];
     }
     
+    function ensurePhasestrikerLoadout(p) {
+        let newlyUnlocked = false;
+
+        if (!p.hasPhasestriker) {
+            p.hasPhasestriker = true;
+            newlyUnlocked = true;
+        }
+
+        if (!p.hasVoidLaser) {
+            p.hasVoidLaser = true;
+            newlyUnlocked = true;
+        }
+
+        if (p.voidLaserTarget === undefined) {
+            p.voidLaserTarget = null;
+        }
+        if (p.voidLaserDamageTimer === undefined) {
+            p.voidLaserDamageTimer = 0;
+        }
+        if (p.voidLaserRetargetTimer === undefined) {
+            p.voidLaserRetargetTimer = 0;
+        }
+
+        const baseRange = 250;
+        if (!p.voidLaserRange || p.voidLaserRange < baseRange) {
+            p.voidLaserRange = baseRange;
+        }
+        p.phasestRikerLevel = Math.max(p.phasestRikerLevel || 0, 0.5);
+
+        return newlyUnlocked;
+    }
+
+    function ensureStormcallerLoadout(p) {
+        let newlyUnlocked = false;
+
+        if (!p.hasStormcaller) {
+            p.hasStormcaller = true;
+            newlyUnlocked = true;
+        }
+
+        if (!p.hasChainLightning) {
+            p.hasChainLightning = true;
+            newlyUnlocked = true;
+        }
+
+        if (p.chainLightningCooldown === undefined) {
+            p.chainLightningCooldown = 0;
+        }
+
+        p.stormstrikerLevel = Math.max(p.stormstrikerLevel || 0, 1);
+
+        return newlyUnlocked;
+    }
+
     function applySkillBonus(skill) {
         const p = store.player;
         
@@ -12306,22 +12413,31 @@ function tryVoidStep(player, target, now = performance.now()){
                 p.blinkDamage = true;
                 p.blinkCooldown = 0;
                 p.blinkRecharge = 3; // 3 second cooldown
+                p.hasBlink = true;
+                p.autoBlinkEnabled = true;
+                p.autoBlinkRange = Math.max(p.autoBlinkRange || 0, 160);
+                p.autoBlinkLookahead = Math.max(p.autoBlinkLookahead || 0, 0.4);
+                p.autoBlinkLastTrigger = 0;
                 announce('BLINK ABILITY ACTIVATED - Damaging Teleportation!');
                 break;
             case 'blink_ability_enhanced':
                 p.blinkDamageEnhanced = true;
                 p.blinkRecharge = 2; // Faster cooldown
                 p.blinkAreaDamage = true; // Area damage on teleport
+                p.autoBlinkRange = Math.max(p.autoBlinkRange || 0, 200);
+                p.autoBlinkLookahead = Math.max(p.autoBlinkLookahead || 0, 0.5);
                 announce('VOID STEP ACTIVATED - Enhanced Teleportation Power!');
                 break;
-            case 'void_laser':
-                p.hasVoidLaser = true;
+            case 'void_laser': {
+                const unlocked = ensurePhasestrikerLoadout(p);
                 p.voidLaserTarget = null;
                 p.voidLaserDamageTimer = 0;
                 p.voidLaserRetargetTimer = 0;
-                announce('VOID LASER ACTIVATED - Focused Beam Weapon!');
+                announce(unlocked ? 'VOID LASER CROSS-TRAINED - Focused Beam Online!' : 'VOID LASER ACTIVATED - Focused Beam Weapon!');
                 break;
+            }
             case 'void_laser_enhanced':
+                ensurePhasestrikerLoadout(p);
                 p.voidLaserEnhanced = true;
                 p.voidLaserRampingDamage = 1.0; // Starts at 1x, builds up
                 p.voidLaserBeamWidth = 2.0; // Wider beam
@@ -12425,46 +12541,61 @@ function tryVoidStep(player, target, now = performance.now()){
                 break;
                 
             // Phasestriker Tree Skills
-            case 'phasestriker_unlimited_range':
+            case 'phasestriker_unlimited_range': {
+                const unlocked = ensurePhasestrikerLoadout(p);
                 // Remove range limitation from void laser
                 p.voidLaserRange = 999999; // Unlimited range - can hit any enemy
-                p.phasestRikerLevel = 1; // Upgrade to level 1 for unlimited range
-                announce('UNLIMITED RANGE ACTIVATED - Global Laser Targeting!');
+                p.phasestRikerLevel = Math.max(p.phasestRikerLevel, 1); // Ensure level reflects upgrade
+                announce(unlocked ? 'VOID LASER CROSS-TRAINED - Unlimited Range Achieved!' : 'UNLIMITED RANGE ACTIVATED - Global Laser Targeting!');
                 break;
+            }
             case 'phasestriker_ramping_power':
+                ensurePhasestrikerLoadout(p);
                 // Enable ramping damage/size effect
                 p.phasestRikerLevel = Math.max(p.phasestRikerLevel, 2); // Level 2: Ramping damage/size
                 announce('RAMPING POWER ACTIVATED - Growing Laser Strength!');
                 break;
             case 'phasestriker_blink_boost':
-                p.blinkRange = (p.blinkRange || 200) * 1.8;
+                ensurePhasestrikerLoadout(p);
+                const baseBlinkRange = p.blinkRange || 200;
+                p.blinkRange = baseBlinkRange * 1.8;
                 p.blinkCooldown = Math.max((p.blinkCooldown || 5) - 2, 1);
+                p.autoBlinkRange = Math.max(p.autoBlinkRange || 0, p.blinkRange * 0.7);
+                p.autoBlinkLookahead = Math.max(p.autoBlinkLookahead || 0, 0.55);
                 announce('BLINK BOOST ACTIVATED - Enhanced Teleportation!');
                 break;
             case 'phasestriker_phase_mastery':
+                ensurePhasestrikerLoadout(p);
                 p.blinkDamage = (p.blinkDamage || 50) * 2;
                 p.blinkInvulnerable = true; // Brief invulnerability during blink
                 announce('PHASE MASTERY ACTIVATED - Dimensional Superiority!');
                 break;
                 
             // Stormcaller Tree Skills
-            case 'stormcaller_chain_boost':
+            case 'stormcaller_chain_boost': {
+                const unlocked = ensureStormcallerLoadout(p);
                 // Add twin lightning bolts from wing guns
-                p.stormstrikerLevel = 2; // Twin wing lightning
-                announce('TWIN LIGHTNING ACTIVATED - Dual Chain Lightning!');
+                p.stormstrikerLevel = Math.max(p.stormstrikerLevel, 2); // Twin wing lightning
+                announce(unlocked ? 'CHAIN LIGHTNING CROSS-TRAINED - Twin Lightning Ready!' : 'TWIN LIGHTNING ACTIVATED - Dual Chain Lightning!');
                 break;
+            }
             case 'stormcaller_storm_mastery':
+                ensureStormcallerLoadout(p);
                 p.chainLightningDamage = (p.chainLightningDamage || 1.0) * 1.8; // 80% damage boost
                 p.chainLightningRange = (p.chainLightningRange || 150) * 1.5; // 50% jump range boost
                 announce('STORM MASTERY ACTIVATED - Enhanced Range & Power!');
                 break;
             case 'stormcaller_warp_boost':
+                ensureStormcallerLoadout(p);
                 if (!p.blinkRange) p.blinkRange = 200;
                 p.blinkRange *= 1.6;
                 p.blinkRecharge = Math.max((p.blinkRecharge || 5) - 1.5, 1);
+                p.autoBlinkRange = Math.max(p.autoBlinkRange || 0, p.blinkRange * 0.65);
+                p.autoBlinkLookahead = Math.max(p.autoBlinkLookahead || 0, 0.5);
                 announce('WARP BOOST ACTIVATED - Enhanced Teleportation!');
                 break;
             case 'stormcaller_void_control':
+                ensureStormcallerLoadout(p);
                 p.blinkTimeRipple = true;
                 p.blinkRippleDamage = 100;
                 announce('VOID CONTROL ACTIVATED - Time Ripple Effects!');
@@ -12576,6 +12707,10 @@ function tryVoidStep(player, target, now = performance.now()){
                 p.blinkRange = 250;
                 p.blinkCooldown = 4;
                 p.blinkDamage = 75;
+                p.autoBlinkEnabled = true;
+                p.autoBlinkRange = Math.max(p.autoBlinkRange || 0, 190);
+                p.autoBlinkLookahead = Math.max(p.autoBlinkLookahead || 0, 0.45);
+                p.autoBlinkLastTrigger = 0;
                 playSound('powerup');
                 announce('✨ BLINK UNLOCKED! - Class Ability Activated!');
                 break;
