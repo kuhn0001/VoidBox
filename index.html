@@ -1431,6 +1431,7 @@ class FlameParticle {
         phasestRikerLevel: 0, voidLaserRampTime: 0, voidLaserLastTarget: null,
     subclass: null, missilePierce: 0, missileCluster: false, blinkDamage: false,
     hasBlink: false, autoBlinkEnabled: false, autoBlinkRange: 0, autoBlinkLookahead: 0.45, autoBlinkLastTrigger: 0,
+    isBlinkSlashing: false,
         enhancedClusters: false, enhancedPierce: false, hasStormcaller: false, hasPhasestriker: false,
         // Void caller enhanced options
         hasDoubleStorm: false, hasHybridVoid: false, hasImpactPhase: false,
@@ -11011,13 +11012,14 @@ function tryVoidStep(player, target, now = performance.now()){
 }
 function performBlinkSlash(player, bullet, now = performance.now()) {
     const cd = VOIDSTEP.cooldownMs;
+    if (player.isBlinkSlashing) return false;
     if (now - lastVoidStep < cd) return false;
 
     const origin = { x: player.x, y: player.y };
 
-    let dirX = -(bullet.vx || 0);
-    let dirY = -(bullet.vy || 0);
-    if (Math.abs(dirX) < 0.001 && Math.abs(dirY) < 0.001) {
+    let dirX = -(bullet?.vx || 0);
+    let dirY = -(bullet?.vy || 0);
+    if (Math.abs(dirX) < 0.001 && Math.abs(dirY) < 0.001 && bullet) {
         dirX = bullet.x - origin.x;
         dirY = bullet.y - origin.y;
     }
@@ -11030,43 +11032,97 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
     dirX /= mag;
     dirY /= mag;
 
-    const perpX = -dirY;
-    const perpY = dirX;
-
     const blinkRange = Math.min(player.blinkRange || 250, 320);
-    const forwardStep = blinkRange * 0.9;
-    const sweepStep = blinkRange * 0.45;
+    const searchRadius = blinkRange * 1.1;
 
-    const pathPoints = [];
-    const first = clampToField(origin.x + dirX * forwardStep, origin.y + dirY * forwardStep);
-    pathPoints.push({ x: first.nx, y: first.ny });
-
-    const second = clampToField(pathPoints[0].x + perpX * sweepStep, pathPoints[0].y + perpY * sweepStep);
-    pathPoints.push({ x: second.nx, y: second.ny });
-
-    const third = clampToField(pathPoints[1].x - dirX * forwardStep * 0.6, pathPoints[1].y - dirY * forwardStep * 0.6);
-    pathPoints.push({ x: third.nx, y: third.ny });
-
-    pathPoints.push({ x: origin.x, y: origin.y });
-
-    let previous = origin;
-    pathPoints.forEach((pt, index) => {
-        const hasTravel = Math.abs(pt.x - previous.x) > 0.5 || Math.abs(pt.y - previous.y) > 0.5;
-        if (hasTravel) {
-            spawnRift(previous.x, previous.y, pt.x, pt.y, VOIDSTEP.riftMs * 0.75);
-            executeBlinkLineDamage(player, previous, pt, index === 0 ? 1.2 : 0.9);
+    const candidates = [];
+    store.enemies.forEach(e => {
+        if (e.dead) return;
+        const dx = e.x - origin.x;
+        const dy = e.y - origin.y;
+        const distSq = dx * dx + dy * dy;
+        if (distSq <= searchRadius * searchRadius) {
+            candidates.push({ x: e.x, y: e.y, dist: Math.sqrt(distSq) });
         }
-        spawnBlinkFlash(pt.x, pt.y, 140 + index * 15);
-        previous = pt;
     });
 
-    player.x = origin.x;
-    player.y = origin.y;
-    spawnBlinkFlash(origin.x, origin.y, 180);
+    candidates.sort((a, b) => a.dist - b.dist);
+    const maxTargets = 4;
+    const selected = candidates.slice(0, maxTargets);
+    for (let i = selected.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [selected[i], selected[j]] = [selected[j], selected[i]];
+    }
 
-    invulUntil = now + VOIDSTEP.iframeMs * 1.2;
+    const slashPoints = selected.map(candidate => {
+        const offsetAngle = Math.random() * Math.PI * 2;
+        const offsetDist = Math.random() * 35;
+        const tx = candidate.x + Math.cos(offsetAngle) * offsetDist;
+        const ty = candidate.y + Math.sin(offsetAngle) * offsetDist;
+        const clamped = clampToField(tx, ty);
+        return { x: clamped.nx, y: clamped.ny };
+    });
+
+    if (!slashPoints.length) {
+        const fallbackCount = 3;
+        for (let i = 0; i < fallbackCount; i++) {
+            const angleVariance = (Math.random() - 0.5) * Math.PI * 0.9;
+            const baseAngle = Math.atan2(dirY, dirX);
+            const angle = baseAngle + angleVariance;
+            const dist = blinkRange * (0.35 + Math.random() * 0.4);
+            const clampPos = clampToField(
+                origin.x + Math.cos(angle) * dist,
+                origin.y + Math.sin(angle) * dist
+            );
+            slashPoints.push({ x: clampPos.nx, y: clampPos.ny });
+        }
+    }
+
+    const legDelay = 120;
+    const initialDelay = 60;
+    const totalDuration = initialDelay + legDelay * (slashPoints.length + 1);
+
+    invulUntil = now + VOIDSTEP.iframeMs + totalDuration;
     lastVoidStep = now;
     player.autoBlinkLastTrigger = now;
+    player.isBlinkSlashing = true;
+    if (bullet) {
+        bullet.dead = true;
+    }
+
+    spawnBlinkFlash(origin.x, origin.y, 320);
+
+    const runSlashStep = (index, currentPos) => {
+        const isReturn = index >= slashPoints.length;
+        const dest = isReturn ? origin : slashPoints[index];
+        const dx = dest.x - currentPos.x;
+        const dy = dest.y - currentPos.y;
+        const hasTravel = Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5;
+
+        if (hasTravel) {
+            spawnRift(currentPos.x, currentPos.y, dest.x, dest.y, VOIDSTEP.riftMs * 1.5);
+            const damageMultiplier = isReturn
+                ? (slashPoints.length ? 1.1 : 1.0)
+                : (index === 0 ? 1.2 : 1.0);
+            executeBlinkLineDamage(player, currentPos, dest, damageMultiplier);
+        }
+
+        spawnBlinkFlash(dest.x, dest.y, isReturn ? 340 : 280);
+        player.x = dest.x;
+        player.y = dest.y;
+
+        if (isReturn) {
+            player.isBlinkSlashing = false;
+            player.autoBlinkLastTrigger = performance.now();
+            invulUntil = performance.now() + VOIDSTEP.iframeMs * 1.2;
+            spawnBlinkFlash(origin.x, origin.y, 360);
+            return;
+        }
+
+        setTimeout(() => runSlashStep(index + 1, dest), legDelay);
+    };
+
+    setTimeout(() => runSlashStep(0, origin), initialDelay);
     return true;
 }
 
@@ -11076,6 +11132,7 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
     function attemptAutoBlink(player, bullet, now = performance.now()) {
         if (!player || !bullet) return false;
         if (!player.autoBlinkEnabled || !player.hasBlink) return false;
+        if (player.isBlinkSlashing) return false;
         if (store.isPaused || store.isGameOver) return false;
         if (store.boss && !store.boss.dead) return false;
         if (playerIsInvulnerable()) return false;
@@ -11423,6 +11480,7 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
         p.voidLaserTarget = null;
         p.voidLaserDamageTimer = 0;
         p.voidLaserRetargetTimer = 0;
+    p.isBlinkSlashing = false;
 
         store.world.bossesAtPilotSelection = store.world.bosses;
         
@@ -12806,6 +12864,7 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 p.autoBlinkRange = Math.max(p.autoBlinkRange || 0, 190);
                 p.autoBlinkLookahead = Math.max(p.autoBlinkLookahead || 0, 0.45);
                 p.autoBlinkLastTrigger = 0;
+                p.isBlinkSlashing = false;
                 playSound('powerup');
                 announce('✨ BLINK UNLOCKED! - Class Ability Activated!');
                 break;
