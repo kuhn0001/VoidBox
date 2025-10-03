@@ -3701,7 +3701,7 @@ class FlameParticle {
             }
         }
         
-        if (p.shieldMax > 0 && p.shield < p.shieldMax) p.shield = Math.min(p.shieldMax, p.shield + 0.5 * dt);
+        if (p.shieldMax > 0 && p.shield < p.shieldMax) p.shield = Math.min(p.shieldMax, p.shield + (p.shieldMax / 6) * dt);
         for (const key in p.powerupTimers) {
             const timer = p.powerupTimers[key];
             timer.remaining -= dt;
@@ -6329,11 +6329,11 @@ function render(dt) {
             triggerMechForgeGoldMilestone();
         }
         
-        // Update health bar and text
+        // Update health bar and text (always visible for all pilots)
         q("hpBarFill").style.width = hpPercent + "%";
         q("hpText").textContent = `HP: ${Math.round(t.hp)} / ${t.hpMax}`;
         
-        // Handle beef shield
+        // Handle beef shield (show only for beef pilot with beef shield)
         const beefShieldBar = q("beefShieldBar");
         const beefShieldText = q("beefShieldText");
         if (t.pilotGenome === 'beef' && t.beefShieldMax > 0) {
@@ -6345,16 +6345,16 @@ function render(dt) {
             beefShieldText.textContent = "";
         }
         
-        // Handle regular shield
+        // Handle regular shield (show for all pilots, even if 0 - this gives consistent UI)
         const shieldBar = q("shieldBar");
         const shieldTextEl = q("shieldText");
+        // Always show shield bar for all pilots
+        shieldBar.style.display = "block";
+        q("shieldBarFill").style.width = shieldPercent + "%";
         if (t.shieldMax > 0) {
-            shieldBar.style.display = "block";
-            q("shieldBarFill").style.width = shieldPercent + "%";
             shieldTextEl.textContent = `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}`;
         } else {
-            shieldBar.style.display = "none";
-            shieldTextEl.textContent = "";
+            shieldTextEl.textContent = `SHIELD: 0 / 0`;
         }
         
         // Update wave info
@@ -8684,39 +8684,140 @@ function render(dt) {
             }
         }
         
-        // Draw floating beef shield meter above ship
-        if (player.pilotGenome === 'beef' && player.beefShieldMax > 0) {
-            const shieldPercent = player.beefShield / player.beefShieldMax;
-            const meterY = -35; // Position above ship
-            const meterWidth = 40;
-            const meterHeight = 4;
-            
-            // Background bar
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            ctx.fillRect(-meterWidth/2, meterY, meterWidth, meterHeight);
-            
-            // Shield fill bar
-            if (shieldPercent > 0) {
-                const fillGradient = ctx.createLinearGradient(-meterWidth/2, meterY, meterWidth/2, meterY);
-                fillGradient.addColorStop(0, 'rgba(75, 0, 130, 0.9)'); // Dark purple
-                fillGradient.addColorStop(0.5, 'rgba(138, 43, 226, 0.9)'); // Blue violet
-                fillGradient.addColorStop(1, 'rgba(147, 0, 211, 0.9)'); // Dark violet
-                
-                ctx.fillStyle = fillGradient;
-                ctx.fillRect(-meterWidth/2, meterY, meterWidth * shieldPercent, meterHeight);
+        // Draw universal health and shield meters above ship for all pilots
+        const meterWidth = 55;
+        const meterHeight = 3;
+        const meterSpacing = 6;
+        const cornerRadius = 1.5;
+        let meterY = -35;
+        
+        // Helper function for rounded rectangles
+        const drawRoundedRect = (x, y, width, height, radius, fill = true, stroke = false) => {
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.closePath();
+            if (fill) ctx.fill();
+            if (stroke) ctx.stroke();
+        };
+        
+        // Health bar (always visible)
+        const healthPercent = player.hp / player.hpMax;
+        
+        // Health bar background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        drawRoundedRect(-meterWidth/2, meterY, meterWidth, meterHeight, cornerRadius);
+        
+        // Health bar fill
+        if (healthPercent > 0) {
+            const healthGradient = ctx.createLinearGradient(-meterWidth/2, meterY, meterWidth/2, meterY);
+            if (healthPercent > 0.6) {
+                healthGradient.addColorStop(0, 'rgba(50, 205, 50, 0.8)'); // Lime green
+                healthGradient.addColorStop(1, 'rgba(34, 139, 34, 0.8)'); // Forest green
+            } else if (healthPercent > 0.3) {
+                healthGradient.addColorStop(0, 'rgba(255, 165, 0, 0.8)'); // Orange
+                healthGradient.addColorStop(1, 'rgba(255, 140, 0, 0.8)'); // Dark orange
+            } else {
+                healthGradient.addColorStop(0, 'rgba(255, 69, 0, 0.8)'); // Red orange
+                healthGradient.addColorStop(1, 'rgba(178, 34, 34, 0.8)'); // Fire brick red
             }
             
-            // Border
-            ctx.strokeStyle = 'rgba(138, 43, 226, 0.8)';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(-meterWidth/2, meterY, meterWidth, meterHeight);
+            ctx.fillStyle = healthGradient;
+            drawRoundedRect(-meterWidth/2, meterY, meterWidth * healthPercent, meterHeight, cornerRadius);
+        }
+        
+        // Health bar border
+        ctx.strokeStyle = healthPercent > 0.6 ? 'rgba(50, 205, 50, 0.6)' : 
+                         healthPercent > 0.3 ? 'rgba(255, 165, 0, 0.6)' : 'rgba(255, 69, 0, 0.6)';
+        ctx.lineWidth = 0.5;
+        drawRoundedRect(-meterWidth/2, meterY, meterWidth, meterHeight, cornerRadius, false, true);
+        
+        // Health text
+        ctx.fillStyle = healthPercent > 0.6 ? 'rgba(50, 205, 50, 0.9)' : 
+                       healthPercent > 0.3 ? 'rgba(255, 165, 0, 0.9)' : 'rgba(255, 69, 0, 0.9)';
+        ctx.font = '8px monospace';
+        ctx.textAlign = 'center';
+        const healthText = `${Math.round(player.hp)}/${Math.round(player.hpMax)}`;
+        ctx.fillText(healthText, 0, meterY - 2);
+        
+        // Shield bars (show if any shield type exists)
+        const hasRegularShield = player.shieldMax > 0;
+        const hasBeefShield = player.pilotGenome === 'beef' && player.beefShieldMax > 0;
+        
+        if (hasRegularShield || hasBeefShield) {
+            meterY -= meterSpacing;
             
-            // Shield text
-            ctx.fillStyle = 'rgba(138, 43, 226, 0.9)';
-            ctx.font = '8px monospace';
-            ctx.textAlign = 'center';
-            const shieldText = `${Math.round(player.beefShield)}/${Math.round(player.beefShieldMax)}`;
-            ctx.fillText(shieldText, 0, meterY - 2);
+            // Regular shield bar
+            if (hasRegularShield) {
+                const shieldPercent = player.shield / player.shieldMax;
+                
+                // Shield bar background
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                drawRoundedRect(-meterWidth/2, meterY, meterWidth, meterHeight, cornerRadius);
+                
+                // Shield bar fill
+                if (shieldPercent > 0) {
+                    const shieldGradient = ctx.createLinearGradient(-meterWidth/2, meterY, meterWidth/2, meterY);
+                    shieldGradient.addColorStop(0, 'rgba(100, 149, 237, 0.8)'); // Cornflower blue
+                    shieldGradient.addColorStop(1, 'rgba(65, 105, 225, 0.8)'); // Royal blue
+                    
+                    ctx.fillStyle = shieldGradient;
+                    drawRoundedRect(-meterWidth/2, meterY, meterWidth * shieldPercent, meterHeight, cornerRadius);
+                }
+                
+                // Shield bar border
+                ctx.strokeStyle = 'rgba(100, 149, 237, 0.6)';
+                ctx.lineWidth = 0.5;
+                drawRoundedRect(-meterWidth/2, meterY, meterWidth, meterHeight, cornerRadius, false, true);
+                
+                // Shield text
+                ctx.fillStyle = 'rgba(100, 149, 237, 0.9)';
+                ctx.font = '8px monospace';
+                ctx.textAlign = 'center';
+                const shieldText = `${Math.round(player.shield)}/${Math.round(player.shieldMax)}`;
+                ctx.fillText(shieldText, 0, meterY - 2);
+                
+                if (hasBeefShield) meterY -= meterSpacing;
+            }
+            
+            // Beef shield bar
+            if (hasBeefShield) {
+                const beefShieldPercent = player.beefShield / player.beefShieldMax;
+                
+                // Beef shield bar background
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                drawRoundedRect(-meterWidth/2, meterY, meterWidth, meterHeight, cornerRadius);
+                
+                // Beef shield bar fill
+                if (beefShieldPercent > 0) {
+                    const beefShieldGradient = ctx.createLinearGradient(-meterWidth/2, meterY, meterWidth/2, meterY);
+                    beefShieldGradient.addColorStop(0, 'rgba(75, 0, 130, 0.8)'); // Dark purple
+                    beefShieldGradient.addColorStop(0.5, 'rgba(138, 43, 226, 0.8)'); // Blue violet
+                    beefShieldGradient.addColorStop(1, 'rgba(147, 0, 211, 0.8)'); // Dark violet
+                    
+                    ctx.fillStyle = beefShieldGradient;
+                    drawRoundedRect(-meterWidth/2, meterY, meterWidth * beefShieldPercent, meterHeight, cornerRadius);
+                }
+                
+                // Beef shield bar border
+                ctx.strokeStyle = 'rgba(138, 43, 226, 0.6)';
+                ctx.lineWidth = 0.5;
+                drawRoundedRect(-meterWidth/2, meterY, meterWidth, meterHeight, cornerRadius, false, true);
+                
+                // Beef shield text
+                ctx.fillStyle = 'rgba(138, 43, 226, 0.9)';
+                ctx.font = '8px monospace';
+                ctx.textAlign = 'center';
+                const beefShieldText = `${Math.round(player.beefShield)}/${Math.round(player.beefShieldMax)}`;
+                ctx.fillText(beefShieldText, 0, meterY - 2);
+            }
         }
 
         if (player.pilotGenome === 'rocketman' && player.hasFirewall) {
