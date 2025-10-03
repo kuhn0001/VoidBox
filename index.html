@@ -2529,7 +2529,85 @@ class FlameParticle {
             store.goldenOrbs.length = 0;
         }
         const isBossWave = store.world.wave % 5 === 0;
-        
+
+        const teleportAuraByType = {
+            drone: '#7fd5ff',
+            hunter: '#ff6e84',
+            phantom: '#d9a7ff',
+            mech: '#4ef0ff',
+            angler: '#8cf8f8',
+            manta: '#7acbff',
+            void_champion: '#a864ff'
+        };
+        const spawnDurationByType = {
+            phantom: 0.7,
+            mech: 0.8,
+            angler: 0.7,
+            manta: 0.85,
+            void_champion: 1.05
+        };
+        const dropDistanceByType = {
+            mech: 200,
+            angler: 170,
+            manta: 180,
+            void_champion: 220
+        };
+        const BOSS_CHAMPION_LOOP = 6;
+
+        function spawnVoidChampion({
+            hpScale = 1,
+            damageMult = 1,
+            lateGameScaling = 1,
+            entryTargetYBase = 110,
+            entryYOffset = 0
+        } = {}) {
+            const champion = spawnEnemy('void_champion', { hpScale, damageMult });
+            if (!champion) return null;
+
+            applySpawnSpecToEnemy(champion, { lateGameScaling });
+            const entryDrop = dropDistanceByType.void_champion || 220;
+            const entryTargetY = entryTargetYBase + entryYOffset + Math.random() * 50;
+            champion.spawnTargetY = entryTargetY;
+            champion.y = entryTargetY - entryDrop;
+            champion.x = Math.max(120, Math.min(W - 120, champion.x));
+
+            activateSpawnIntro(champion, {
+                duration: spawnDurationByType.void_champion,
+                dropDistance: entryDrop,
+                targetY: entryTargetY,
+                clusterIndex: -1,
+                effectColor: teleportAuraByType.void_champion,
+                topClampBuffer: 1.2,
+                fireDelayBuffer: 0.6
+            });
+
+            store.activeEffects.push(createEffect('spawnTeleport', champion.x, champion.spawnTargetY ?? champion.y, champion.r || 28, {
+                duration: (champion.spawnDuration || 1) + 0.35,
+                color: teleportAuraByType.void_champion,
+                clusterIndex: -1,
+                isChampion: true
+            }));
+            store.enemies.push(champion);
+            return champion;
+        }
+
+        function spawnBossLoopChampions(loopCount, bossHpScale) {
+            if (loopCount < 1 || !Number.isFinite(loopCount)) return 0;
+            const championsToSpawn = Math.min(2, Math.max(0, loopCount));
+            let spawned = 0;
+            for (let i = 0; i < championsToSpawn; i++) {
+                const champion = spawnVoidChampion({
+                    hpScale: bossHpScale,
+                    damageMult: bossHpScale,
+                    lateGameScaling: bossHpScale,
+                    entryTargetYBase: 100,
+                    entryYOffset: i * 40
+                });
+                if (champion) spawned += 1;
+            }
+            return spawned;
+        }
+
         // Clear poison puddles at start of each wave for clean slate
         if (store.poisonPuddles) {
             store.poisonPuddles = [];
@@ -2564,6 +2642,12 @@ class FlameParticle {
                 spawnGoldenSentinelOrbs(3);
                 store.world.firstBossOrbsGifted = true;
                 setTimeout(() => announce('Collect GOLDEN ORBS to shatter the guardian!'), 750);
+            }
+
+            const bossesDefeated = ensureFiniteNumber(store.world.bosses, 0);
+            const bossLoopCount = Math.floor(bossesDefeated / BOSS_CHAMPION_LOOP);
+            if (bossLoopCount > 0) {
+                spawnBossLoopChampions(bossLoopCount, bossHpScale);
             }
         } else {
             store.enemies = [];
@@ -2618,64 +2702,19 @@ class FlameParticle {
 
             spawnCount = spawnIterations;
 
-            const teleportAuraByType = {
-                drone: '#7fd5ff',
-                hunter: '#ff6e84',
-                phantom: '#d9a7ff',
-                mech: '#4ef0ff',
-                angler: '#8cf8f8',
-                manta: '#7acbff',
-                void_champion: '#a864ff'
-            };
-            const spawnDurationByType = {
-                phantom: 0.7,
-                mech: 0.8,
-                angler: 0.7,
-                manta: 0.85,
-                void_champion: 1.05
-            };
-            const dropDistanceByType = {
-                mech: 200,
-                angler: 170,
-                manta: 180,
-                void_champion: 220
-            };
-
-            // Check if we should spawn a champion this wave (only one per wave)
-            let championSpawned = false;
             if (store.world.wave > 12) {
                 const championChance = Math.min(0.3, 0.06 + (store.world.wave - 12) * 0.015);
                 if (Math.random() < championChance) {
-                    const champion = spawnEnemy('void_champion', { hpScale: threatScale, damageMult: threatScale });
+                    const champion = spawnVoidChampion({
+                        hpScale: threatScale,
+                        damageMult: threatScale,
+                        lateGameScaling
+                    });
                     if (champion) {
-                        applySpawnSpecToEnemy(champion, { lateGameScaling });
-                        const entryDrop = dropDistanceByType.void_champion || 220;
-                        const entryTargetY = 110 + Math.random() * 50;
-                        champion.spawnTargetY = entryTargetY;
-                        champion.y = entryTargetY - entryDrop;
-                        champion.x = Math.max(120, Math.min(W - 120, champion.x));
-                        activateSpawnIntro(champion, {
-                            duration: spawnDurationByType.void_champion,
-                            dropDistance: entryDrop,
-                            targetY: entryTargetY,
-                            clusterIndex: -1,
-                            effectColor: teleportAuraByType.void_champion,
-                            topClampBuffer: 1.2,
-                            fireDelayBuffer: 0.6
-                        });
-                        store.activeEffects.push(createEffect('spawnTeleport', champion.x, champion.spawnTargetY ?? champion.y, champion.r || 28, {
-                            duration: (champion.spawnDuration || 1) + 0.35,
-                            color: teleportAuraByType.void_champion,
-                            clusterIndex: -1,
-                            isChampion: true
-                        }));
-                        store.enemies.push(champion);
-                        championSpawned = true;
-                        spawnCount = Math.max(1, spawnCount - 1); // Reduce normal enemy count by 1
+                        spawnCount = Math.max(1, spawnCount - 1);
                     }
                 }
             }
-
             const spawnSpecs = [];
 
             for (let i = 0; i < spawnCount; i++) {
@@ -10866,7 +10905,7 @@ function render(dt) {
     
     const VOIDSTEP = {
         cooldownMs: 2500,
-        iframeMs: 220,
+        iframeMs: 450,
         riftMs: 600,
         edgePadding: 6
     };
@@ -10881,6 +10920,38 @@ function render(dt) {
     function spawnRift(x1,y1,x2,y2, life=VOIDSTEP.riftMs){
         rifts.push({ x1,y1,x2,y2, birth: performance.now(), life, dead:false });
     }
+
+function executeBlinkLineDamage(player, start, end, damageMultiplier = 1) {
+    if (!player || !player.blinkDamage) return;
+
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const distSq = dx * dx + dy * dy;
+    if (distSq <= 0.001) return;
+
+    const baseDamage = (player.blinkDamageEnhanced ? 200 : 150) * player.dmgMult * damageMultiplier;
+
+    store.enemies.forEach(e => {
+        if (e.dead) return;
+        const dot = (((e.x - start.x) * dx) + ((e.y - start.y) * dy)) / distSq;
+        if (dot <= 0 || dot >= 1) return;
+
+        const closestX = start.x + dot * dx;
+        const closestY = start.y + dot * dy;
+        const distToLine = Math.sqrt((e.x - closestX) ** 2 + (e.y - closestY) ** 2);
+        if (distToLine > e.r + 10) return;
+
+        e.hp -= baseDamage;
+        store.world.totalDamage += baseDamage;
+
+        if (player.vampirism > 0) {
+            let healAmount = baseDamage * player.vampirism;
+            healAmount = Math.max(healAmount, 1);
+            healAmount = Math.min(healAmount, 6);
+            player.hp = Math.min(player.hpMax, player.hp + healAmount);
+        }
+    });
+}
 
 function clampToField(nx, ny){
     const pad = VOIDSTEP.edgePadding;
@@ -10897,44 +10968,17 @@ function tryVoidStep(player, target, now = performance.now()){
     let { nx, ny } = clampToField(target.x, target.y);
 
     if (player.blinkDamage) {
-        const dx = nx - start.x;
-        const dy = ny - start.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        let damage = 150 * player.dmgMult;
-        
-        // Enhanced damage for phasestriker mastery
-        if (player.blinkDamageEnhanced) {
-            damage = 200 * player.dmgMult;
-        }
-        
-        store.enemies.forEach(e => {
-            if (e.dead) return;
-            const dot = (((e.x - start.x) * dx) + ((e.y - start.y) * dy)) / (dist * dist);
-            const closestX = start.x + dot * dx;
-            const closestY = start.y + dot * dy;
-            
-            const onSegment = dot > 0 && dot < 1;
-            if (onSegment) {
-                 const distToLine = Math.sqrt((e.x - closestX)**2 + (e.y - closestY)**2);
-                 if (distToLine < e.r + 10) {
-                     e.hp -= damage;
-                     store.world.totalDamage += damage;
-                     
-                     // Apply vampirism healing for void step damage
-                     if (store.player.vampirism > 0) {
-                         let healAmount = damage * store.player.vampirism;
-                         healAmount = Math.max(healAmount, 1); // Minimum 1 HP
-                         healAmount = Math.min(healAmount, 6); // Cap at 6 HP
-                         store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
-                     }
-                 }
-            }
-        });
+        executeBlinkLineDamage(player, start, { x: nx, y: ny });
     }
 
     spawnRift(start.x, start.y, nx, ny, VOIDSTEP.riftMs);
 
     player.x = nx; player.y = ny;
+
+    if (typeof mouse !== 'undefined' && !document.body.classList.contains('mobile-controls-active')) {
+        mouse.x = nx;
+        mouse.y = ny;
+    }
     invulUntil = now + VOIDSTEP.iframeMs;
     lastVoidStep = now;
 
@@ -10965,6 +11009,66 @@ function tryVoidStep(player, target, now = performance.now()){
     spawnBlinkFlash(nx, ny);
     return true;
 }
+function performBlinkSlash(player, bullet, now = performance.now()) {
+    const cd = VOIDSTEP.cooldownMs;
+    if (now - lastVoidStep < cd) return false;
+
+    const origin = { x: player.x, y: player.y };
+
+    let dirX = -(bullet.vx || 0);
+    let dirY = -(bullet.vy || 0);
+    if (Math.abs(dirX) < 0.001 && Math.abs(dirY) < 0.001) {
+        dirX = bullet.x - origin.x;
+        dirY = bullet.y - origin.y;
+    }
+    let mag = Math.hypot(dirX, dirY);
+    if (mag < 0.001) {
+        dirX = 0;
+        dirY = -1;
+        mag = 1;
+    }
+    dirX /= mag;
+    dirY /= mag;
+
+    const perpX = -dirY;
+    const perpY = dirX;
+
+    const blinkRange = Math.min(player.blinkRange || 250, 320);
+    const forwardStep = blinkRange * 0.9;
+    const sweepStep = blinkRange * 0.45;
+
+    const pathPoints = [];
+    const first = clampToField(origin.x + dirX * forwardStep, origin.y + dirY * forwardStep);
+    pathPoints.push({ x: first.nx, y: first.ny });
+
+    const second = clampToField(pathPoints[0].x + perpX * sweepStep, pathPoints[0].y + perpY * sweepStep);
+    pathPoints.push({ x: second.nx, y: second.ny });
+
+    const third = clampToField(pathPoints[1].x - dirX * forwardStep * 0.6, pathPoints[1].y - dirY * forwardStep * 0.6);
+    pathPoints.push({ x: third.nx, y: third.ny });
+
+    pathPoints.push({ x: origin.x, y: origin.y });
+
+    let previous = origin;
+    pathPoints.forEach((pt, index) => {
+        const hasTravel = Math.abs(pt.x - previous.x) > 0.5 || Math.abs(pt.y - previous.y) > 0.5;
+        if (hasTravel) {
+            spawnRift(previous.x, previous.y, pt.x, pt.y, VOIDSTEP.riftMs * 0.75);
+            executeBlinkLineDamage(player, previous, pt, index === 0 ? 1.2 : 0.9);
+        }
+        spawnBlinkFlash(pt.x, pt.y, 140 + index * 15);
+        previous = pt;
+    });
+
+    player.x = origin.x;
+    player.y = origin.y;
+    spawnBlinkFlash(origin.x, origin.y, 180);
+
+    invulUntil = now + VOIDSTEP.iframeMs * 1.2;
+    lastVoidStep = now;
+    player.autoBlinkLastTrigger = now;
+    return true;
+}
 
     const AUTO_BLINK_DEFAULT_LOOKAHEAD = 0.45;
     const AUTO_BLINK_MIN_SPEED = 40;
@@ -10973,6 +11077,7 @@ function tryVoidStep(player, target, now = performance.now()){
         if (!player || !bullet) return false;
         if (!player.autoBlinkEnabled || !player.hasBlink) return false;
         if (store.isPaused || store.isGameOver) return false;
+        if (store.boss && !store.boss.dead) return false;
         if (playerIsInvulnerable()) return false;
 
         const range = player.autoBlinkRange || Math.max(150, (player.blinkRange || 0) * 0.6);
@@ -10996,17 +11101,7 @@ function tryVoidStep(player, target, now = performance.now()){
 
         if (player.autoBlinkLastTrigger && now - player.autoBlinkLastTrigger < 200) return false;
 
-        const blinkRange = player.blinkRange || 250;
-        const scale = blinkRange / dist;
-        const targetX = player.x + dx * scale;
-        const targetY = player.y + dy * scale;
-
-        if (tryVoidStep(player, { x: targetX, y: targetY }, now)) {
-            player.autoBlinkLastTrigger = now;
-            return true;
-        }
-
-        return false;
+        return performBlinkSlash(player, bullet, now);
     }
     
     // Impact shockwave system for earthquake enhancement
