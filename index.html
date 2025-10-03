@@ -348,33 +348,8 @@
             font-size: 16px;
             text-shadow: 0 0 10px rgba(255, 215, 0, 0.8);
         }
-        .crossover-track {
-            position: relative;
-            margin-left: 40px;
-            padding: 20px;
-            border-left: 3px solid rgba(102, 255, 178, 0.35);
-            border-radius: 0 12px 12px 0;
-            background: linear-gradient(135deg, rgba(102, 255, 178, 0.08), rgba(135, 206, 235, 0.08));
-        }
-        .crossover-track .track-title {
-            color: #9BFFDC;
-            font-size: 16px;
-            text-shadow: 0 0 10px rgba(102, 255, 178, 0.6);
-        }
-        .crossover-track .skill-icon-button {
-            border-color: rgba(102, 255, 178, 0.6);
-            box-shadow: 0 0 18px rgba(102, 255, 178, 0.3);
-        }
-        .crossover-track .skill-icon-button.available {
-            border-color: rgba(125, 255, 200, 0.9);
-            box-shadow: 0 0 28px rgba(125, 255, 200, 0.6);
-        }
-        .cross-req-text {
-            margin-top: 6px;
-            font-size: 10px;
-            color: #9BFFDC;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+        .class-ability-track .skill-icon-button + .skill-icon-button {
+            margin-top: 18px;
         }
         .class-ability-solo {
             border: 3px solid #FFD700 !important;
@@ -385,6 +360,21 @@
             border-color: #FFF700 !important;
             box-shadow: 0 0 40px rgba(255, 215, 0, 0.8) !important;
             transform: translateY(-8px) scale(1.08) !important;
+        }
+        .cross-ability {
+            border-color: rgba(102, 255, 178, 0.6);
+            box-shadow: 0 0 18px rgba(102, 255, 178, 0.3);
+        }
+        .cross-ability.available {
+            border-color: rgba(125, 255, 200, 0.9);
+            box-shadow: 0 0 28px rgba(125, 255, 200, 0.6);
+        }
+        .cross-req-text {
+            margin-top: 6px;
+            font-size: 10px;
+            color: #9BFFDC;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
         
         /* BEAUTIFUL GLOW ANIMATIONS */
@@ -8605,6 +8595,85 @@ function render(dt) {
 
         ctx.restore();
     }
+    const VOID_CHAMPION_COLOR_SCHEMES = {
+        purple: {
+            name: 'Void Wraith',
+            shadowColor: '#b56bff',
+            auraColor: '#7a34ff',
+            hullGradient: ['#5f18c4', '#1b0635', '#320a63'],
+            strokeColor: '#c6a4ff',
+            finColor: [155, 69, 255],
+            visorGradient: ['#f5d9ff', '#7d2cff'],
+            eyeColor: '#ff508f',
+            coreGlow: '#e499ff',
+            coreColor: '#ffe6ff',
+            thrusterColor: '#732bff'
+        },
+        crimson: {
+            name: 'Crimson Reaper',
+            shadowColor: '#ff4444',
+            auraColor: '#cc1100',
+            hullGradient: ['#8b0000', '#330000', '#4a0000'],
+            strokeColor: '#ff6666',
+            finColor: [200, 50, 50],
+            visorGradient: ['#ffcccc', '#990000'],
+            eyeColor: '#ffff00',
+            coreGlow: '#ff8888',
+            coreColor: '#ffffff',
+            thrusterColor: '#cc0000'
+        },
+        azure: {
+            name: 'Azure Phantom',
+            shadowColor: '#4488ff',
+            auraColor: '#0044cc',
+            hullGradient: ['#1144aa', '#001122', '#002244'],
+            strokeColor: '#66aaff',
+            finColor: [100, 150, 255],
+            visorGradient: ['#ccddff', '#0066cc'],
+            eyeColor: '#00ffff',
+            coreGlow: '#88bbff',
+            coreColor: '#ffffff',
+            thrusterColor: '#0088ff'
+        },
+        emerald: {
+            name: 'Emerald Specter',
+            shadowColor: '#44ff44',
+            auraColor: '#00cc44',
+            hullGradient: ['#006600', '#001100', '#003300'],
+            strokeColor: '#66ff66',
+            finColor: [50, 200, 50],
+            visorGradient: ['#ccffcc', '#009900'],
+            eyeColor: '#ffff00',
+            coreGlow: '#88ff88',
+            coreColor: '#ffffff',
+            thrusterColor: '#00cc00'
+        },
+        golden: {
+            name: 'Golden Harbinger',
+            shadowColor: '#ffcc44',
+            auraColor: '#cc8800',
+            hullGradient: ['#b8860b', '#4a3c00', '#6b5b00'],
+            strokeColor: '#ffd700',
+            finColor: [255, 200, 50],
+            visorGradient: ['#fffacd', '#daa520'],
+            eyeColor: '#ff4500',
+            coreGlow: '#ffd700',
+            coreColor: '#ffffff',
+            thrusterColor: '#b8860b'
+        }
+    };
+
+    function getVoidChampionColorScheme(enemy) {
+        if (!enemy.colorScheme) {
+            const schemes = Object.keys(VOID_CHAMPION_COLOR_SCHEMES);
+            const seed = enemy.id || (enemy.x + enemy.y * 1000);
+            const schemeIndex = Math.abs(Math.floor(seed)) % schemes.length;
+            enemy.colorScheme = schemes[schemeIndex];
+            enemy.displayName = VOID_CHAMPION_COLOR_SCHEMES[enemy.colorScheme].name;
+        }
+        return VOID_CHAMPION_COLOR_SCHEMES[enemy.colorScheme];
+    }
+
     function drawEnemy(e) {
         const { x: t, y: o, r: a, type: r, color: n, hp: l, hpMax: s, t: c } = e;
         ctx.save();
@@ -8884,88 +8953,6 @@ function render(dt) {
             }
             ctx.shadowBlur = 0;
             break;
-// Color schemes dictionary for void_champion variants
-const VOID_CHAMPION_COLOR_SCHEMES = {
-    purple: {
-        name: 'Void Wraith',
-        shadowColor: '#b56bff',
-        auraColor: '#7a34ff',
-        hullGradient: ['#5f18c4', '#1b0635', '#320a63'],
-        strokeColor: '#c6a4ff',
-        finColor: [155, 69, 255], // RGB for rgba usage
-        visorGradient: ['#f5d9ff', '#7d2cff'],
-        eyeColor: '#ff508f',
-        coreGlow: '#e499ff',
-        coreColor: '#ffe6ff',
-        thrusterColor: '#732bff'
-    },
-    crimson: {
-        name: 'Crimson Reaper',
-        shadowColor: '#ff4444',
-        auraColor: '#cc1100',
-        hullGradient: ['#8b0000', '#330000', '#4a0000'],
-        strokeColor: '#ff6666',
-        finColor: [200, 50, 50],
-        visorGradient: ['#ffcccc', '#990000'],
-        eyeColor: '#ffff00',
-        coreGlow: '#ff8888',
-        coreColor: '#ffffff',
-        thrusterColor: '#cc0000'
-    },
-    azure: {
-        name: 'Azure Phantom',
-        shadowColor: '#4488ff',
-        auraColor: '#0044cc',
-        hullGradient: ['#1144aa', '#001122', '#002244'],
-        strokeColor: '#66aaff',
-        finColor: [100, 150, 255],
-        visorGradient: ['#ccddff', '#0066cc'],
-        eyeColor: '#00ffff',
-        coreGlow: '#88bbff',
-        coreColor: '#ffffff',
-        thrusterColor: '#0088ff'
-    },
-    emerald: {
-        name: 'Emerald Specter',
-        shadowColor: '#44ff44',
-        auraColor: '#00cc44',
-        hullGradient: ['#006600', '#001100', '#003300'],
-        strokeColor: '#66ff66',
-        finColor: [50, 200, 50],
-        visorGradient: ['#ccffcc', '#009900'],
-        eyeColor: '#ffff00',
-        coreGlow: '#88ff88',
-        coreColor: '#ffffff',
-        thrusterColor: '#00cc00'
-    },
-    golden: {
-        name: 'Golden Harbinger',
-        shadowColor: '#ffcc44',
-        auraColor: '#cc8800',
-        hullGradient: ['#b8860b', '#4a3c00', '#6b5b00'],
-        strokeColor: '#ffd700',
-        finColor: [255, 200, 50],
-        visorGradient: ['#fffacd', '#daa520'],
-        eyeColor: '#ff4500',
-        coreGlow: '#ffd700',
-        coreColor: '#ffffff',
-        thrusterColor: '#b8860b'
-    }
-};
-
-// Function to get color scheme for void_champion
-function getVoidChampionColorScheme(enemy) {
-    // Use enemy's unique ID or position to determine color scheme consistently
-    if (!enemy.colorScheme) {
-        const schemes = Object.keys(VOID_CHAMPION_COLOR_SCHEMES);
-        const seed = enemy.id || (enemy.x + enemy.y * 1000); // Use ID or position as seed
-        const schemeIndex = Math.abs(Math.floor(seed)) % schemes.length;
-        enemy.colorScheme = schemes[schemeIndex];
-        enemy.displayName = VOID_CHAMPION_COLOR_SCHEMES[enemy.colorScheme].name;
-    }
-    return VOID_CHAMPION_COLOR_SCHEMES[enemy.colorScheme];
-}
-
         case "void_champion": {
             const time = performance.now() / 1000;
             const shimmer = 0.55 + 0.45 * Math.sin(time * 6 + c * 3);
@@ -11558,28 +11545,21 @@ function tryVoidStep(player, target, now = performance.now()){
         // Generate the 5-node single path skill tree HTML
         const path = treeData.path;
         const classAbility = treeData.classAbility;
-        const crossInfo = treeData.crossUnlock;
-        let crossTrackHTML = '';
+        const crossDetails = getCrossUnlockNode(treeData);
         let crossSummary = '';
-        if (crossInfo) {
-            const requiredInvestments = crossInfo.requiredInvestments ?? 3;
-            const otherTree = SKILL_TREE_DATA[crossInfo.subclass];
-            if (otherTree && otherTree.path && otherTree.path.nodes && otherTree.path.nodes.length > 0) {
-                const crossNode = otherTree.path.nodes[0];
-                const crossTitle = otherTree.title ? otherTree.title.replace(' MASTERY TREE', '').trim() : otherTree.path.name;
-                crossSummary = ` Invest at least ${requiredInvestments} points to cross-train into <strong>${crossTitle}</strong>.`;
-                crossTrackHTML = `
-                    <div class="skill-track crossover-track" data-cross-source="${crossInfo.subclass}">
-                        <div class="track-title">CROSS TRAINING: ${crossTitle}</div>
-                        <div class="skill-icon-button locked" data-skill="${crossNode.id}" data-tier="cross" data-cross-source="${crossInfo.subclass}">
+        let crossNodeHTML = '';
+        if (crossDetails) {
+            const crossNode = crossDetails.node;
+            const crossTitle = crossDetails.tree.title ? crossDetails.tree.title.replace(' MASTERY TREE', '').trim() : crossDetails.tree.path.name;
+            crossSummary = ` Unlock your signature ability to cross-train into <strong>${crossTitle}</strong>.`;
+            crossNodeHTML = `
+                        <div class="skill-icon-button locked cross-ability" data-skill="${crossNode.id}" data-tier="cross" data-parent="${classAbility.id}" data-cross-source="${crossDetails.config.subclass}">
                             <img src="${crossNode.icon}" alt="${crossNode.name}" class="skill-icon-image">
                             <div class="skill-info-overlay">
                                 <div class="skill-overlay-title">${crossNode.name}</div>
-                                <div class="skill-overlay-desc">${crossNode.desc}<div class="cross-req-text">Requires ${requiredInvestments} investments in your mastery path or signature ability.</div></div>
+                                <div class="skill-overlay-desc">${crossNode.desc}<div class="cross-req-text">Requires signature ability unlock.</div></div>
                             </div>
-                        </div>
-                    </div>`;
-            }
+                        </div>`;
         }
         
         skillTreeElement.innerHTML = `
@@ -11623,9 +11603,9 @@ function tryVoidStep(player, target, now = performance.now()){
                             </div>
                         </div>
                     </div>
-                    <!-- Separate class ability track (always available) -->
+                    <!-- Signature ability column (with crossover unlock) -->
                     <div class="skill-track class-ability-track">
-                        <div class="track-title" style="color: #FFD700;">SIGNATURE ABILITY</div>
+                        <div class="track-title" style="color: #FFD700;">SIGNATURE TRAINING</div>
                         <div class="skill-icon-button locked class-ability-solo" data-skill="${classAbility.id}" data-tier="class">
                             <img src="${classAbility.icon}" alt="${classAbility.name}" class="skill-icon-image class-ability">
                             <div class="skill-info-overlay">
@@ -11633,8 +11613,8 @@ function tryVoidStep(player, target, now = performance.now()){
                                 <div class="skill-overlay-desc">${classAbility.desc}</div>
                             </div>
                         </div>
+                        ${crossNodeHTML}
                     </div>
-                    ${crossTrackHTML}
                 </div>
             </div>
             <div class="skill-description" id="skillDescription">
@@ -11685,19 +11665,6 @@ function tryVoidStep(player, target, now = performance.now()){
             tree: otherTree,
             node: otherTree.path.nodes[0]
         };
-    }
-
-    function countInvestmentsInTree(subclass, treeData) {
-        const p = store.player;
-        if (!treeData || !p.skillTree) return 0;
-        let count = 0;
-        treeData.path.nodes.forEach(node => {
-            if (p.skillTree[node.id]) count++;
-        });
-        if (treeData.classAbility && p.skillTree[treeData.classAbility.id]) {
-            count++;
-        }
-        return count;
     }
 
     // Old skill tree code - now commented out as we use dynamic trees
@@ -11938,31 +11905,25 @@ function tryVoidStep(player, target, now = performance.now()){
     
     function canLearnSkill(skill, tier, parent) {
         const p = store.player;
-        
+
         // Can't learn a skill that's already learned
         if (p.skillTree && p.skillTree[skill]) return false;
-        
+
         // Initialize progression tracking
         initializeProgressionTracking();
-        
+
         const totalUnspentPts = p.unspentProgressionPoints || 0;
         const totalSpentPts = p.skillPointsSpent || 0;
-        const signatureAbilities = p.signatureAbilities || {};
-        
+
         // NEW PROGRESSION SYSTEM:
         if (tier === 'class') {
-            // Signature abilities: Available if a progression point is free and this specific signature isn't already unlocked
-            return totalUnspentPts > 0 && !signatureAbilities[skill];
+            // Signature abilities become available as soon as a progression point is free
+            return totalUnspentPts > 0;
         }
 
         if (tier === 'cross') {
-            const { subclass, treeData } = getActiveSubclassAndTree();
-            if (!subclass || !treeData) return false;
-            const crossDetails = getCrossUnlockNode(treeData);
-            if (!crossDetails || crossDetails.node.id !== skill) return false;
-            const requiredInvestments = crossDetails.config.requiredInvestments ?? 3;
-            const invested = countInvestmentsInTree(subclass, treeData);
-            return totalUnspentPts > 0 && invested >= requiredInvestments;
+            const hasSignatureUnlocked = parent && p.skillTree && p.skillTree[parent];
+            return totalUnspentPts > 0 && !!hasSignatureUnlocked;
         }
 
         if (tier === 1) {
