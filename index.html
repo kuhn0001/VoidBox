@@ -1059,7 +1059,7 @@
     const W = 960, H = 540;
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const collide = (a, b) => { const dx = a.x - b.x, dy = a.y - b.y; const rr = (a.r || 0) + (b.r || 0); return dx * dx + dy * dy < rr * rr; };
-    const API_BASE = "https://along-time-confident-fly.trycloudflare.com/api";
+    const API_BASE = "https://welfare-silk-disco-defines.trycloudflare.com/api";
     const q = (id) => document.getElementById(id);
     const cvs = q('game'), ctx = cvs.getContext('2d'), stage = q('stage');
     new ResizeObserver(() => {
@@ -1423,6 +1423,7 @@ class FlameParticle {
         timeSlowDuration: 2.0,
         timeSlowFactor: 0.3,
         timeSlowStartTime: null,
+        nanoSaveSlowmoCooldown: 0, // 30-second cooldown for slowmo effect
         // Shield recharge delay system
         shieldRecharging: false,
         shieldRechargeDelay: 0,
@@ -1433,7 +1434,7 @@ class FlameParticle {
         afterburnerMaxDuration: 2.0,
         afterburnerParticleTimer: 0,
     starCannonLevel: 0, starCannonTimer: 0, starCannonIcemanSupport: false,
-        luckBoost: 0, magnetRadius: 0, hasIceman: false, critChance: 0.02, critDamage: 1.85,
+        luckBoost: 0, magnetRadius: 0, hasIceman: false, hasBeefClone: false, critChance: 0.02, critDamage: 1.85,
         pilotGenome: null, missileVolley: 2,
         hasRearGuard: false, rearGuardCooldown: 0, rearGuardReady: true,
         rearMultishot: 0, addFrontNext: true,
@@ -1447,6 +1448,7 @@ class FlameParticle {
         beefChainTargets: [], beefChainIndex: 0, beefChainMode: false, // Chain jumping system for marauder
         hasChainLightning: false, chainLightningCooldown: 0, stormstrikerLevel: 0, lightningAlternate: false, lightningCycleIndex: 0, chainLightningDamage: 1.0,
         phasestRikerLevel: 0, voidLaserRampTime: 0, voidLaserLastTarget: null,
+        wiperLasers: false, wiperLaser1Angle: 0, wiperLaser2Angle: Math.PI, wiperLaserSpeed: 1.5, wiperLaserDamageTimer: 0,
     subclass: null, missilePierce: 0, missileCluster: false, blinkDamage: false,
     hasBlink: false, autoBlinkEnabled: false, autoBlinkRange: 0, autoBlinkLookahead: 0.45, autoBlinkLastTrigger: 0,
     isBlinkSlashing: false,
@@ -1590,6 +1592,7 @@ class FlameParticle {
             usedKeys: []
         },
             iceman: null,
+        beefClone: null,
         waveSpawnQueue: [],
             pendingSpawnCount: 0,
         vulnerabilityEvents: [],
@@ -2157,8 +2160,8 @@ class FlameParticle {
         'hp': { 
             name: "MAX HP", 
             icon: '❤️', 
-            baseCost: 40, 
-            scale: 1.4, 
+            baseCost: 25, 
+            scale: 1.1, 
             maxLevel: 20, 
             category: 'health', 
             effect: (level) => { 
@@ -2190,8 +2193,8 @@ class FlameParticle {
         'max_shield': { 
             name: "MAX SHIELD", 
             icon: '🛡️', 
-            baseCost: 60, 
-            scale: 1.5, 
+            baseCost: 30, 
+            scale: 1.2, 
             maxLevel: 20, // Increased max level
             category: 'health', 
             effect: (level) => { 
@@ -2747,13 +2750,18 @@ class FlameParticle {
 
             spawnCount = spawnIterations;
 
-            if (store.world.wave > 12) {
-                const championChance = Math.min(0.3, 0.06 + (store.world.wave - 12) * 0.015);
+            if (store.world.wave > 8) {
+                const championChance = Math.min(0.4, 0.12 + (store.world.wave - 8) * 0.025);
                 if (Math.random() < championChance) {
+                    // Cap champion scaling to prevent absurd HP values
+                    const maxChampionScale = 3.0; // Max 3x scaling instead of unlimited
+                    const cappedHpScale = Math.min(maxChampionScale, threatScale);
+                    const cappedLateGameScaling = Math.min(maxChampionScale, lateGameScaling);
+                    
                     const champion = spawnVoidChampion({
-                        hpScale: threatScale,
-                        damageMult: threatScale,
-                        lateGameScaling
+                        hpScale: cappedHpScale,
+                        damageMult: Math.min(2.0, threatScale), // Cap damage scaling at 2x
+                        lateGameScaling: cappedLateGameScaling
                     });
                     if (champion) {
                         spawnCount = Math.max(1, spawnCount - 1);
@@ -3659,10 +3667,15 @@ class FlameParticle {
             
             // Voidmancer base laser beam system
             if (p.hasVoidLaser) {
-                stepVoidLaser(dt);
+                if (p.wiperLasers) {
+                    stepWiperLasers(dt);
+                } else {
+                    stepVoidLaser(dt);
+                }
             }
         }
         if (p.hasIceman && store.iceman) { store.iceman.x = p.x - 50; store.iceman.y = p.y + 40; }
+        if (p.hasBeefClone && store.beefClone) { store.beefClone.x = p.x + 50; store.beefClone.y = p.y + 40; }
         p.fireT -= dt;
         if (p.fireT <= 0 && !p.empDisabled) { firePlayer(); p.fireT = p.fireRate; }
         
@@ -3697,7 +3710,15 @@ class FlameParticle {
                 });
                 if (closest) {
                     const isRocketman = p.pilotGenome === 'rocketman';
-                    const missileDmg = isRocketman ? (95 * p.dmgMult * 0.7) : (95 * p.dmgMult);
+                    let baseMissileDmg = isRocketman ? (95 * p.dmgMult * 0.7) : (95 * p.dmgMult);
+                    let baseSpeed = 200;
+                    
+                    // Apply stealth rocket upgrades
+                    if (p.stealthRockets) {
+                        baseMissileDmg *= (p.stealthRocketDamage || 1.25);
+                        baseSpeed *= (p.stealthRocketSpeed || 1.5);
+                    }
+                    
                     const volleySize = p.missileVolley || 2;
                     
                     for (let i = 0; i < volleySize; i++) {
@@ -3709,14 +3730,15 @@ class FlameParticle {
                         
                         const missile = {
                             x: p.x, y: p.y - 10,
-                            vx: Math.cos(finalAngle) * 200,
-                            vy: Math.sin(finalAngle) * 200,
-                            speed: 200, turnRate: 4.5,
+                            vx: Math.cos(finalAngle) * baseSpeed,
+                            vy: Math.sin(finalAngle) * baseSpeed,
+                            speed: baseSpeed, turnRate: 4.5,
                             target: closest, life: 0,
-                            dmg: missileDmg,
+                            dmg: baseMissileDmg,
                             cluster: isRocketman && p.missileCluster,
                             pierce: isRocketman ? (p.missilePierce || 0) : 0,
-                            isIceman: false
+                            isIceman: false,
+                            isStealth: p.stealthRockets || false
                         };
                         store.missiles.push(missile);
                     }
@@ -3763,6 +3785,7 @@ class FlameParticle {
         if (p.hasLazarusBeam) { p.lazarusBeamCooldown -= dt; if (p.lazarusBeamCooldown <= 0) { activateLazarus(); p.lazarusBeamCooldown = 30 / (p.upgradeLevels.lazarus_beam > 0 ? 2 : 1) ; } }
         if (store.cheatInvincibilityCooldown > 0) store.cheatInvincibilityCooldown -= dt;
         if (store.cheatDogHealCooldown > 0) store.cheatDogHealCooldown -= dt;
+        if (p.nanoSaveSlowmoCooldown > 0) p.nanoSaveSlowmoCooldown -= dt;
         if (p.x < 50 && p.y < 50 && store.cheatInvincibilityCooldown <= 0) {
             store.cheatsUsed = true; p.isInvincible = true; p.cheatMultishotBonus = 2; announce('TEST: INVINCIBILITY ACTIVE');
             setTimeout(() => { p.isInvincible = false; p.cheatMultishotBonus = 0; announce('TEST: INVINCIBILITY ENDS'); store.cheatInvincibilityCooldown = 10; }, 15000);
@@ -4798,7 +4821,7 @@ class FlameParticle {
                         e.v = e.baseV;
                         e.vx += Math.sin(e.t * 2.5) * 20 * dt;
                         e.x += (e.vx || 0) * speedMultiplier * dt;
-                        e.y += e.v * speedMultiplier * dt;
+                        // Void champion is immune to gravity - no automatic downward movement
                     }
 
                     if (!e.ramming) {
@@ -5716,6 +5739,7 @@ class FlameParticle {
         store.drones = []; store.hounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
         store.lightningBolts = []; store.empNovas = []; store.poisonPuddles = []; store.goldenOrbs = [];
         store.iceman = null;
+        store.beefClone = null;
         store.waveSpawnQueue = [];
         store.pendingSpawnCount = 0;
         store._startTs = performance.now(); store.isGameOver = false;
@@ -6056,6 +6080,7 @@ function render(dt) {
     store.drones.forEach(d => drawDrone(d));
     store.hounds.forEach(h => drawHound(h));
     if (store.iceman) drawIceman(store.iceman);
+    if (store.beefClone) drawBeefClone(store.beefClone);
     drawShip(store.player.x, store.player.y, store.player);
     
     // Draw EMP disabled effect on player
@@ -6128,7 +6153,10 @@ function render(dt) {
     
 // ...existing code...
     // Draw voidmancer laser beam
-    if (store.player.hasVoidLaser && store.player.voidLaserTarget && !store.player.voidLaserTarget.dead) {
+    if (store.player.hasVoidLaser) {
+        if (store.player.wiperLasers) {
+            drawWiperLasers();
+        } else if (store.player.voidLaserTarget && !store.player.voidLaserTarget.dead) {
         const p = store.player;
         const target = p.voidLaserTarget;
         
@@ -6208,6 +6236,86 @@ function render(dt) {
         ctx.beginPath();
         ctx.arc(target.x, target.y, 4 + Math.sin(time * 8) * 2, 0, Math.PI * 2);
         ctx.fill();
+        
+        ctx.restore();
+        }
+    }
+    
+    // Draw wiper lasers
+    function drawWiperLasers() {
+        const p = store.player;
+        
+        // Determine laser color based on player ship color
+        let laserColor = '#b266ff'; // Default purple
+        switch (p.subclass) {
+            case 'juggernaut':
+                laserColor = '#ff3333';
+                break;
+            case 'marauder':
+                laserColor = '#33cc33';
+                break;
+            case 'railgunner':
+                laserColor = '#ff6600';
+                break;
+            case 'demolitionist':
+                laserColor = '#ff4500';
+                break;
+            case 'phasestriker':
+                laserColor = '#9900ff';
+                break;
+            case 'stormcaller':
+                laserColor = '#00ccff';
+                break;
+        }
+        
+        const time = performance.now() / 1000;
+        const pulseAlpha = 0.7 + 0.3 * Math.sin(time * 8);
+        const laserLength = 300;
+        
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        
+        // Draw two wiper lasers
+        const lasers = [
+            { angle: p.wiperLaser1Angle, offset: -8 },
+            { angle: p.wiperLaser2Angle, offset: 8 }
+        ];
+        
+        lasers.forEach(laser => {
+            const endX = p.x + Math.cos(laser.angle) * laserLength;
+            const endY = p.y + Math.sin(laser.angle) * laserLength;
+            
+            // Draw main laser beam
+            ctx.strokeStyle = laserColor;
+            ctx.globalAlpha = pulseAlpha;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(p.x + laser.offset, p.y - 12);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+            
+            // Draw glow effect
+            const gradient = ctx.createLinearGradient(p.x + laser.offset, p.y - 12, endX, endY);
+            gradient.addColorStop(0, laserColor + '60');
+            gradient.addColorStop(1, laserColor + '20');
+            
+            ctx.strokeStyle = gradient;
+            ctx.globalAlpha = pulseAlpha * 0.6;
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.moveTo(p.x + laser.offset, p.y - 12);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+            
+            // Add sweeping trail effect
+            ctx.strokeStyle = laserColor + '30';
+            ctx.globalAlpha = 0.3;
+            ctx.lineWidth = 12;
+            ctx.beginPath();
+            ctx.moveTo(p.x + laser.offset, p.y - 12);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+        });
         
         ctx.restore();
     }
@@ -6328,10 +6436,13 @@ function render(dt) {
             const revivedHp = Math.max(p.hpMax * 0.3, hpAfterDamage + p.hpMax * 0.35);
             p.hp = Math.max(1, Math.min(p.hpMax, revivedHp));
             store.activeEffects.push(createEffect("nanoHeal"));
-            // Activate time slowdown for critical moment
-            p.timeSlowActive = true;
-            p.timeSlowTimer = p.timeSlowDuration;
-            p.timeSlowStartTime = performance.now();
+            // Activate time slowdown only if cooldown has expired (30 seconds)
+            if (p.nanoSaveSlowmoCooldown <= 0) {
+                p.timeSlowActive = true;
+                p.timeSlowTimer = p.timeSlowDuration; // Ensure exactly 2 seconds
+                p.timeSlowStartTime = performance.now();
+                p.nanoSaveSlowmoCooldown = 30.0; // Set 30-second cooldown
+            }
             announce('NANO SAVE ACTIVATED!');
             return; // Don't apply the lethal damage
         }
@@ -6697,6 +6808,24 @@ function render(dt) {
                 });
             }
         }
+        if (p.hasBeefClone && store.beefClone) {
+            for (let i = 0; i < totalMultishot; i++) {
+                const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180;
+                spawnBullet({
+                    x: store.beefClone.x + 10 * Math.sin(angle),
+                    y: store.beefClone.y - 12,
+                    vx: Math.sin(angle) * bulletSpeed,
+                    vy: -Math.cos(angle) * bulletSpeed,
+                    r: p.explosive ? 5 : 3,
+                    col: "#66ff66", // Green color for beef clone
+                    dmg: 15 * p.dmgMult * 0.35,
+                    pierce: p.piercing,
+                    explosive: p.explosive,
+                    isBeefClone: true,
+                    isSwirl: p.swirlShots
+                });
+            }
+        }
         if (p.rearMultishot > 0) {
             const rearAngleSpread = 15;
             for (let i = 0; i < p.rearMultishot; i++) {
@@ -6737,6 +6866,10 @@ function render(dt) {
                 if (p.hasIceman && store.iceman) {
                     spawnBullet({ x: store.iceman.x - spread, y: store.iceman.y, vx: -vx_offset, vy: -speed, r: 4, col: '#66aaff', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true });
                     spawnBullet({ x: store.iceman.x + spread, y: store.iceman.y, vx: vx_offset, vy: -speed, r: 4, col: '#66aaff', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true });
+                }
+                if (p.hasBeefClone && store.beefClone) {
+                    spawnBullet({ x: store.beefClone.x - spread, y: store.beefClone.y, vx: -vx_offset, vy: -speed, r: 4, col: '#66ff66', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isBeefClone: true });
+                    spawnBullet({ x: store.beefClone.x + spread, y: store.beefClone.y, vx: vx_offset, vy: -speed, r: 4, col: '#66ff66', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isBeefClone: true });
                 }
             }
         }
@@ -6824,6 +6957,20 @@ function render(dt) {
                     delay: STAR_CANNON_CLONE_DELAY,
                     originX: store.iceman.x + shot.offset,
                     originY: icemanOriginY,
+                    angle: shot.angle,
+                    damageScale: STAR_CANNON_ICEMAN_DAMAGE_SCALE,
+                    playSound: true
+                });
+            }
+        }
+        if (p.starCannonIcemanSupport && p.hasBeefClone && store.beefClone) {
+            const beefCloneOriginY = store.beefClone.y - 12;
+            for (let i = 0; i < shots.length; i++) {
+                const shot = shots[i];
+                store.pendingStarClones.push({
+                    delay: STAR_CANNON_CLONE_DELAY,
+                    originX: store.beefClone.x + shot.offset,
+                    originY: beefCloneOriginY,
                     angle: shot.angle,
                     damageScale: STAR_CANNON_ICEMAN_DAMAGE_SCALE,
                     playSound: true
@@ -7972,27 +8119,75 @@ function render(dt) {
         ctx.translate(m.x, m.y);
         ctx.rotate(Math.atan2(m.vy, m.vx) + Math.PI / 2);
 
-        ctx.fillStyle = m.isIceman ? "#a0e9ff" : "#ffddff";
-        ctx.shadowColor = m.isIceman ? '#3c9aed' : '#ff8080';
-        ctx.shadowBlur = 10;
-        ctx.beginPath();
-        ctx.moveTo(0, -10);
-        ctx.lineTo(4, 5); 
-        ctx.lineTo(-4, 5);
-        ctx.closePath();
-        ctx.fill();
+        if (m.isStealth) {
+            // Advanced stealth rocket design - sleeker and more futuristic
+            ctx.fillStyle = "#2a2a2a"; // Dark metallic body
+            ctx.strokeStyle = "#00ffff"; // Cyan highlights
+            ctx.lineWidth = 1;
+            ctx.shadowColor = '#00ffff';
+            ctx.shadowBlur = 15;
+            
+            // Main body - longer and sleeker
+            ctx.beginPath();
+            ctx.moveTo(0, -12);
+            ctx.lineTo(3, 0);
+            ctx.lineTo(2, 6);
+            ctx.lineTo(-2, 6);
+            ctx.lineTo(-3, 0);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            
+            // Stealth fins
+            ctx.beginPath();
+            ctx.moveTo(-2, 2);
+            ctx.lineTo(-5, 4);
+            ctx.lineTo(-2, 6);
+            ctx.moveTo(2, 2);
+            ctx.lineTo(5, 4);
+            ctx.lineTo(2, 6);
+            ctx.stroke();
+            
+            // Advanced plasma exhaust
+            const flameSize = 10 + 3 * Math.sin(performance.now() / 30);
+            const grad = ctx.createLinearGradient(0, 6, 0, 6 + flameSize);
+            grad.addColorStop(0, 'rgba(0, 255, 255, 0.9)');
+            grad.addColorStop(0.5, 'rgba(0, 150, 255, 0.7)');
+            grad.addColorStop(1, 'rgba(0, 100, 200, 0.3)');
+            ctx.fillStyle = grad;
+            
+            ctx.beginPath();
+            ctx.moveTo(-2, 6);
+            ctx.lineTo(2, 6);
+            ctx.lineTo(1, 6 + flameSize * 0.7);
+            ctx.lineTo(0, 6 + flameSize);
+            ctx.lineTo(-1, 6 + flameSize * 0.7);
+            ctx.closePath();
+            ctx.fill();
+        } else {
+            // Regular missile design
+            ctx.fillStyle = m.isIceman ? "#a0e9ff" : "#ffddff";
+            ctx.shadowColor = m.isIceman ? '#3c9aed' : '#ff8080';
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.moveTo(0, -10);
+            ctx.lineTo(4, 5); 
+            ctx.lineTo(-4, 5);
+            ctx.closePath();
+            ctx.fill();
 
-        ctx.shadowBlur = 0;
+            ctx.shadowBlur = 0;
 
-        const flameSize = 8 + 4 * Math.sin(performance.now() / 50);
-        ctx.fillStyle = m.isIceman ? `rgba(60, 154, 237, ${0.6 + 0.4 * Math.random()})` : `rgba(255, 128, 128, ${0.6 + 0.4 * Math.random()})`;
+            const flameSize = 8 + 4 * Math.sin(performance.now() / 50);
+            ctx.fillStyle = m.isIceman ? `rgba(60, 154, 237, ${0.6 + 0.4 * Math.random()})` : `rgba(255, 128, 128, ${0.6 + 0.4 * Math.random()})`;
 
-        ctx.beginPath();
-        ctx.moveTo(-3, 5);
-        ctx.lineTo(3, 5); 
-        ctx.lineTo(0, 5 + flameSize);
-        ctx.closePath();
-        ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(-3, 5);
+            ctx.lineTo(3, 5); 
+            ctx.lineTo(0, 5 + flameSize);
+            ctx.closePath();
+            ctx.fill();
+        }
 
         ctx.restore();
     }
@@ -10925,6 +11120,51 @@ function render(dt) {
 
         ctx.restore();
     }
+    function drawBeefClone(beefClone) {
+        const { x, y } = beefClone;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.globalAlpha = 0.6 + 0.2 * Math.sin(performance.now() / 200);
+
+        ctx.beginPath();
+        ctx.moveTo(0, -20);
+        ctx.lineTo(12, 8);
+        ctx.lineTo(8, 14);
+        ctx.lineTo(0, 10);
+        ctx.lineTo(-8, 14);
+        ctx.lineTo(-12, 8);
+        ctx.closePath();
+
+        const bodyGrad = ctx.createLinearGradient(0, -20, 0, 14);
+        bodyGrad.addColorStop(0, "#a0ffa0"); // Light green
+        bodyGrad.addColorStop(1, "#3ced3c"); // Darker green
+        ctx.fillStyle = bodyGrad;
+        ctx.fill();
+
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#d0ffd0"; // Light green outline
+        ctx.stroke();
+
+        // Arms - green colored
+        ctx.strokeStyle = "#a0ffa0";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-12, 5);
+        ctx.lineTo(-20, -2);
+        ctx.lineTo(-18, 8);
+        ctx.moveTo(12, 5);
+        ctx.lineTo(20, -2);
+        ctx.lineTo(18, 8);
+        ctx.stroke();
+
+        // Eye - white dot
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(0, -8, 3, 0, 2 * Math.PI);
+        ctx.fill();
+
+        ctx.restore();
+    }
     function drawLightningBolt(bolt) {
         const { points, life, maxLife } = bolt;
         const t = life / maxLife;
@@ -11162,6 +11402,119 @@ function render(dt) {
             p.voidLaserRampTime = 0;
             p.voidLaserLastTarget = null;
         }
+    }
+    
+    function stepWiperLasers(dt) {
+        const p = store.player;
+        
+        // Update wiper laser angles - they sweep back and forth like windshield wipers
+        p.wiperLaser1Angle += p.wiperLaserSpeed * dt;
+        p.wiperLaser2Angle += p.wiperLaserSpeed * dt;
+        
+        // Keep angles in reasonable range and reverse direction at limits
+        if (p.wiperLaser1Angle > Math.PI * 0.75) {
+            p.wiperLaserSpeed = -Math.abs(p.wiperLaserSpeed);
+        } else if (p.wiperLaser1Angle < -Math.PI * 0.75) {
+            p.wiperLaserSpeed = Math.abs(p.wiperLaserSpeed);
+        }
+        
+        // Keep second laser offset by PI (opposite side)
+        p.wiperLaser2Angle = p.wiperLaser1Angle + Math.PI;
+        
+        // Apply damage continuously
+        p.wiperLaserDamageTimer -= dt;
+        if (p.wiperLaserDamageTimer <= 0) {
+            p.wiperLaserDamageTimer = 0.15; // Damage every 0.15 seconds
+            
+            // Calculate laser endpoints
+            const laserLength = 300; // Fixed laser length
+            const laser1EndX = p.x + Math.cos(p.wiperLaser1Angle) * laserLength;
+            const laser1EndY = p.y + Math.sin(p.wiperLaser1Angle) * laserLength;
+            const laser2EndX = p.x + Math.cos(p.wiperLaser2Angle) * laserLength;
+            const laser2EndY = p.y + Math.sin(p.wiperLaser2Angle) * laserLength;
+            
+            // Check for enemies hit by laser beams
+            const allEnemies = store.boss ? [...store.enemies.filter(e => !e.dead), store.boss] : store.enemies.filter(e => !e.dead);
+            const laserWidth = 20; // Width of laser beam for collision
+            
+            allEnemies.forEach(enemy => {
+                // Check collision with laser 1
+                if (isPointNearLine(enemy.x, enemy.y, p.x, p.y, laser1EndX, laser1EndY, laserWidth)) {
+                    let damage = 6 * p.dmgMult; // Base wiper laser damage
+                    if (enemy === store.boss) damage *= 0.3; // Reduced damage to boss
+                    
+                    const wiperVuln = applySubclassVulnerability(enemy, damage, {
+                        subclass: p.subclass,
+                        player: p,
+                        damageTags: ['void', 'magic'],
+                        source: 'wiperLaser',
+                        baseDamage: damage
+                    });
+                    damage = wiperVuln.damage;
+                    
+                    enemy.hp -= damage;
+                    store.world.totalDamage += damage;
+                    
+                    // Apply vampirism healing
+                    if (p.vampirism > 0) {
+                        let healAmount = damage * p.vampirism;
+                        healAmount = Math.max(healAmount, 0.1);
+                        healAmount = Math.min(healAmount, 0.4);
+                        p.hp = Math.min(p.hpMax, p.hp + healAmount);
+                    }
+                }
+                
+                // Check collision with laser 2
+                if (isPointNearLine(enemy.x, enemy.y, p.x, p.y, laser2EndX, laser2EndY, laserWidth)) {
+                    let damage = 6 * p.dmgMult; // Base wiper laser damage
+                    if (enemy === store.boss) damage *= 0.3; // Reduced damage to boss
+                    
+                    const wiperVuln = applySubclassVulnerability(enemy, damage, {
+                        subclass: p.subclass,
+                        player: p,
+                        damageTags: ['void', 'magic'],
+                        source: 'wiperLaser',
+                        baseDamage: damage
+                    });
+                    damage = wiperVuln.damage;
+                    
+                    enemy.hp -= damage;
+                    store.world.totalDamage += damage;
+                    
+                    // Apply vampirism healing
+                    if (p.vampirism > 0) {
+                        let healAmount = damage * p.vampirism;
+                        healAmount = Math.max(healAmount, 0.1);
+                        healAmount = Math.min(healAmount, 0.4);
+                        p.hp = Math.min(p.hpMax, p.hp + healAmount);
+                    }
+                }
+            });
+        }
+    }
+    
+    // Helper function to check if a point is near a line segment
+    function isPointNearLine(px, py, x1, y1, x2, y2, threshold) {
+        const A = px - x1;
+        const B = py - y1;
+        const C = x2 - x1;
+        const D = y2 - y1;
+        
+        const dot = A * C + B * D;
+        const lenSq = C * C + D * D;
+        
+        if (lenSq === 0) return Math.sqrt(A * A + B * B) <= threshold;
+        
+        let param = dot / lenSq;
+        param = Math.max(0, Math.min(1, param));
+        
+        const xx = x1 + param * C;
+        const yy = y1 + param * D;
+        
+        const dx = px - xx;
+        const dy = py - yy;
+        
+        return Math.sqrt(dx * dx + dy * dy) <= threshold;
     }
     
     function fireChainLightning() {
@@ -11895,7 +12248,8 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 ]
             },
             classAbility: { id: 'beef_shield_unlock', name: 'BEEF SHIELD', desc: 'UNLOCK: Regenerating armor plating with damage absorption', icon: 'bshield.png', tier: 'class' },
-            crossUnlock: { subclass: 'juggernaut', requiredInvestments: 3 }
+            crossUnlock: { subclass: 'juggernaut', requiredInvestments: 3 },
+            ultimateAbility: { id: 'marauder_clone', name: 'Battle Clone', desc: 'Summon a powerful green clone ally that fights alongside you', icon: 'clone.png', tier: 'ultimate' }
         },
         juggernaut: {
             title: 'JUGGERNAUT MASTERY TREE',
@@ -11909,7 +12263,8 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 ]
             },
             classAbility: { id: 'beef_shield_unlock', name: 'BEEF SHIELD', desc: 'UNLOCK: Regenerating armor plating with damage absorption', icon: 'bshield.png', tier: 'class' },
-            crossUnlock: { subclass: 'marauder', requiredInvestments: 3 }
+            crossUnlock: { subclass: 'marauder', requiredInvestments: 3 },
+            ultimateAbility: { id: 'juggernaut_clone', name: 'War Clone', desc: 'Summon a powerful green clone ally that fights alongside you', icon: 'clone.png', tier: 'ultimate' }
         },
         railgunner: {
             title: 'RAILGUNNER MASTERY TREE',
@@ -11923,7 +12278,8 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 ]
             },
             classAbility: { id: 'firewall_unlock', name: 'FIREWALL', desc: 'UNLOCK: Deployable burning barrier for area control', icon: 'firewall.png', tier: 'class' },
-            crossUnlock: { subclass: 'demolitionist', requiredInvestments: 3 }
+            crossUnlock: { subclass: 'demolitionist', requiredInvestments: 3 },
+            ultimateAbility: { id: 'railgunner_stealth_rockets', name: 'Stealth Rockets', desc: 'More badass rockets!', icon: 'badass.png', tier: 'ultimate' }
         },
         demolitionist: {
             title: 'DEMOLITIONIST MASTERY TREE',
@@ -11937,7 +12293,8 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 ]
             },
             classAbility: { id: 'firewall_unlock', name: 'FIREWALL', desc: 'UNLOCK: Deployable burning barrier for area control', icon: 'firewall.png', tier: 'class' },
-            crossUnlock: { subclass: 'railgunner', requiredInvestments: 3 }
+            crossUnlock: { subclass: 'railgunner', requiredInvestments: 3 },
+            ultimateAbility: { id: 'demolitionist_stealth_rockets', name: 'Stealth Rockets', desc: 'More badass rockets!', icon: 'badass.png', tier: 'ultimate' }
         },
         phasestriker: {
             title: 'PHASESTRIKER MASTERY TREE',
@@ -11951,7 +12308,8 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 ]
             },
             classAbility: { id: 'blink_unlock', name: 'BLINK', desc: 'UNLOCK: Teleportation ability with tactical positioning', icon: 'blink.png', tier: 'class' },
-            crossUnlock: { subclass: 'stormcaller', requiredInvestments: 3 }
+            crossUnlock: { subclass: 'stormcaller', requiredInvestments: 3 },
+            ultimateAbility: { id: 'phasestriker_wiper_lasers', name: 'Wiper Lasers', desc: 'Two lasers sweep back and forth like windshield wipers!', icon: 'sweep.png', tier: 'ultimate' }
         },
         stormcaller: {
             title: 'STORMCALLER MASTERY TREE',
@@ -11965,7 +12323,8 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 ]
             },
             classAbility: { id: 'blink_unlock', name: 'BLINK', desc: 'UNLOCK: Teleportation ability with tactical positioning', icon: 'blink.png', tier: 'class' },
-            crossUnlock: { subclass: 'phasestriker', requiredInvestments: 3 }
+            crossUnlock: { subclass: 'phasestriker', requiredInvestments: 3 },
+            ultimateAbility: { id: 'stormcaller_wiper_lasers', name: 'Wiper Lasers', desc: 'Two lasers sweep back and forth like windshield wipers!', icon: 'sweep.png', tier: 'ultimate' }
         }
     };
 
@@ -12148,6 +12507,21 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                         </div>`;
         }
         
+        // Generate ultimate ability HTML (clone skill for beef)
+        let ultimateAbilityHTML = '';
+        if (treeData.ultimateAbility) {
+            const ultimateAbility = treeData.ultimateAbility;
+            const crossParentId = crossDetails ? crossDetails.node.id : 'cross';
+            ultimateAbilityHTML = `
+                        <div class="skill-icon-button locked ultimate-ability" data-skill="${ultimateAbility.id}" data-tier="ultimate" data-parent="${crossParentId}" data-cross-required="true">
+                            <img src="${ultimateAbility.icon}" alt="${ultimateAbility.name}" class="skill-icon-image">
+                            <div class="skill-info-overlay">
+                                <div class="skill-overlay-title">${ultimateAbility.name}</div>
+                                <div class="skill-overlay-desc">${ultimateAbility.desc}<div class="cross-req-text">Requires crossover ability.</div></div>
+                            </div>
+                        </div>`;
+        }
+        
         skillTreeElement.innerHTML = `
             <button class="close-btn" id="skillTreeCloseBtn" type="button">✕</button>
             <div class="skill-tree-title">${treeData.title}</div>
@@ -12200,6 +12574,7 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                             </div>
                         </div>
                         ${crossNodeHTML}
+                        ${ultimateAbilityHTML}
                     </div>
                 </div>
             </div>
@@ -12410,6 +12785,8 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 tier = 'class';
             } else if (tierRaw === 'cross') {
                 tier = 'cross';
+            } else if (tierRaw === 'ultimate') {
+                tier = 'ultimate';
             } else {
                 tier = parseInt(tierRaw, 10);
             }
@@ -12531,6 +12908,12 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
             // Tier 4 skills: Need three prior spends and the tier 3 parent
             return totalUnspentPts > 0 && totalSpentPts >= 3 && p.skillTree && p.skillTree[parent];
         }
+
+        if (tier === 'ultimate') {
+            // Ultimate skills: Need the crossover skill (parent) to be unlocked
+            const hasCrossoverUnlocked = parent && p.skillTree && p.skillTree[parent];
+            return totalUnspentPts > 0 && !!hasCrossoverUnlocked;
+        }
         
         return false;
     }
@@ -12640,6 +13023,8 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 tier = 'class';
             } else if (tierRaw === 'cross') {
                 tier = 'cross';
+            } else if (tierRaw === 'ultimate') {
+                tier = 'ultimate';
             } else {
                 tier = parseInt(tierRaw, 10);
             }
@@ -12761,9 +13146,12 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
         if (!pathComplete) return false;
 
         const crossDetails = getCrossUnlockNode(treeData);
-        if (!crossDetails) return true;
+        if (crossDetails && !p.skillTree[crossDetails.node.id]) return false;
 
-        return !!p.skillTree[crossDetails.node.id];
+        // Check ultimate ability if it exists
+        if (treeData.ultimateAbility && !p.skillTree[treeData.ultimateAbility.id]) return false;
+
+        return true;
     }
     
     function ensurePhasestrikerLoadout(p) {
@@ -13148,6 +13536,11 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 p.marauderDoubleHitBonus = 3.0; // Elite double-hit gives 3x damage instead of 2x
                 announce('ELITE WARRIOR ACTIVATED - Peak Marauder Prowess!');
                 break;
+            case 'marauder_clone':
+                p.hasBeefClone = true;
+                store.beefClone = { x: p.x, y: p.y + 50, t: 0 };
+                announce('BATTLE CLONE ACTIVATED - Green ally summoned!');
+                break;
                 
             // Juggernaut Advanced Skills
             case 'juggernaut_heavy_armor':
@@ -13162,6 +13555,11 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 p.beefExplosionDamage = (p.beefExplosionDamage || 1.0) * 3.0;
                 p.beefUnstoppableForce = true;
                 announce('UNSTOPPABLE FORCE ACTIVATED - Maximum Impact Power!');
+                break;
+            case 'juggernaut_clone':
+                p.hasBeefClone = true;
+                store.beefClone = { x: p.x, y: p.y + 50, t: 0 };
+                announce('WAR CLONE ACTIVATED - Green ally summoned!');
                 break;
                 
             // Railgunner Advanced Skills
@@ -13190,6 +13588,28 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 p.megaExplosionChance = 0.3; // 30% chance for mega explosions
                 p.demolitionExpert = true;
                 announce('DEMOLITION EXPERT ACTIVATED - Maximum Destructive Force!');
+                break;
+            case 'railgunner_stealth_rockets':
+                p.stealthRockets = true;
+                p.stealthRocketDamage = 1.25; // 25% damage boost
+                p.stealthRocketSpeed = 1.5; // 50% speed boost
+                announce('STEALTH ROCKETS ACTIVATED - Advanced Stealth Technology!');
+                break;
+            case 'demolitionist_stealth_rockets':
+                p.stealthRockets = true;
+                p.stealthRocketDamage = 1.25; // 25% damage boost
+                p.stealthRocketSpeed = 1.5; // 50% speed boost
+                announce('STEALTH ROCKETS ACTIVATED - Advanced Stealth Technology!');
+                break;
+            case 'phasestriker_wiper_lasers':
+                p.wiperLasers = true;
+                p.wiperLaserCount = 2; // Convert 2 lasers to wiper mode
+                announce('WIPER LASERS ACTIVATED - Sweeping Laser Array!');
+                break;
+            case 'stormcaller_wiper_lasers':
+                p.wiperLasers = true;
+                p.wiperLaserCount = 2; // Convert 2 lasers to wiper mode
+                announce('WIPER LASERS ACTIVATED - Sweeping Laser Array!');
                 break;
                 
             // Phasestriker Advanced Skills
@@ -13598,7 +14018,7 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
         'dmgMult', 'multishot', 'rearMultishot', 'piercing', 'explosive', 
         'flamethrowerLevel', 'missileVolley', 'critChance', 'critDamage', 
         'hasLauncher', 'hasHounds', 'hasLazarusBeam', 'hasVoidBeam', 
-        'hasChainLightning', 'hasIceman', 'blinkDamage', 'missilePierce', 'missileCluster',
+        'hasChainLightning', 'hasIceman', 'hasBeefClone', 'blinkDamage', 'missilePierce', 'missileCluster',
         'hasDoubleStorm', 'hasHybridVoid', 'hasImpactPhase'
     ];
     
@@ -13616,6 +14036,8 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
     store.hounds = [];
     store.savedPlayerState.iceman = store.iceman;
     store.iceman = null;
+    store.savedPlayerState.beefClone = store.beefClone;
+    store.beefClone = null;
 }
 
     function deactivateDamageOffCheat() {
@@ -13629,6 +14051,8 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 store.hounds = store.savedPlayerState.hounds;
             } else if (prop === 'iceman') {
                 store.iceman = store.savedPlayerState.iceman;
+            } else if (prop === 'beefClone') {
+                store.beefClone = store.savedPlayerState.beefClone;
             } else if (p.hasOwnProperty(prop)) {
                 p[prop] = store.savedPlayerState[prop];
             }
