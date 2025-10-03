@@ -1409,7 +1409,7 @@ class FlameParticle {
     // --- GAME STATE & DATA ---
     const player_initial_state = {
         x: W / 2, y: H * 0.8, r: 14, hp: 50, hpMax: 50, fireT: 0, speed: 380, dmgMult: 1.2, fireRate: 0.16,
-        vampirism: 0, shield: 50, shieldMax: 50, multishot: 2, isInvincible: false, piercing: 0, explosive: false,
+        vampirism: 0, shield: 0, shieldMax: 0, multishot: 2, isInvincible: false, piercing: 0, explosive: false,
     hasShieldBubble: false, powerupTimers: {},
     swirlShots: false, attackSpeedStacks: 0,
     upgradeLevels: { dmg: 0, speed: 0, hp: 0, max_shield: 0, crit_chance: 0, ghost_hounds: 0, launcher: 0, lazarus_beam: 0, gravity_well: 0, star_cannon: 0 },
@@ -1417,6 +1417,16 @@ class FlameParticle {
         hasLazarusBeam: false, lazarusBeamCooldown: 0,
         hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 0, vampirismLevel: 0, flamethrowerLevel: 0,
         flamethrowerT: 0, // Separate timer for lava chunks, unaffected by overclock
+        // Time slowdown system for nano save
+        timeSlowActive: false,
+        timeSlowTimer: 0,
+        timeSlowDuration: 2.0,
+        timeSlowFactor: 0.3,
+        timeSlowStartTime: null,
+        // Shield recharge delay system
+        shieldRecharging: false,
+        shieldRechargeDelay: 0,
+        shieldRechargeDelayMax: 2.0,
         // Rocketman afterburner system
         afterburnerActive: false,
         afterburnerTimer: 0,
@@ -3559,6 +3569,20 @@ class FlameParticle {
                 p.afterburnerParticleTimer = 0;
             }
 
+            // Handle nano save time slowdown timer using real time
+            if (p.timeSlowActive) {
+                // Store the real time when effect started for accurate countdown
+                if (!p.timeSlowStartTime) {
+                    p.timeSlowStartTime = performance.now();
+                }
+                const realTimeElapsed = (performance.now() - p.timeSlowStartTime) / 1000;
+                if (realTimeElapsed >= p.timeSlowDuration) {
+                    p.timeSlowActive = false;
+                    p.timeSlowTimer = 0;
+                    p.timeSlowStartTime = null;
+                }
+            }
+
             // Handle afterburner phase - small particles from rear boosters
             if (p.afterburnerActive) {
                 p.afterburnerTimer -= dt;
@@ -3701,7 +3725,21 @@ class FlameParticle {
             }
         }
         
-        if (p.shieldMax > 0 && p.shield < p.shieldMax) p.shield = Math.min(p.shieldMax, p.shield + (p.shieldMax / 6) * dt);
+        // Shield recharge system with damage delay
+        if (p.shieldMax > 0 && p.shield < p.shieldMax) {
+            if (p.shieldRechargeDelay > 0) {
+                // Still in delay period, count down
+                p.shieldRechargeDelay -= dt;
+                p.shieldRecharging = false;
+            } else {
+                // Delay period over, start/continue recharging
+                p.shieldRecharging = true;
+                p.shield = Math.min(p.shieldMax, p.shield + (p.shieldMax / 6) * dt);
+            }
+        } else {
+            p.shieldRecharging = false;
+        }
+        
         for (const key in p.powerupTimers) {
             const timer = p.powerupTimers[key];
             timer.remaining -= dt;
@@ -6220,6 +6258,19 @@ function render(dt) {
     renderVoidStepSystems(ctx);
     renderImpactSystem(ctx);
     
+    // Time slowdown visual effect
+    if (store.player.timeSlowActive) {
+        const intensity = store.player.timeSlowTimer / store.player.timeSlowDuration;
+        const pulse = 0.5 + 0.3 * Math.sin(frameTime * 6);
+        ctx.fillStyle = `rgba(100, 149, 237, ${0.15 * intensity * pulse})`;
+        ctx.fillRect(0, 0, W, H);
+        
+        // Add subtle border effect
+        ctx.strokeStyle = `rgba(100, 149, 237, ${0.4 * intensity})`;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(0, 0, W, H);
+    }
+    
     // Throttle HUD updates to avoid layout thrashing on every frame
     if (!window.lastHudUpdate || Date.now() - window.lastHudUpdate > 16) { // ~60fps
         updateHUD();
@@ -6245,6 +6296,12 @@ function render(dt) {
             dmg -= beefAbsorbed;
             p.beefShieldDamageTaken += beefAbsorbed;
             
+            // Reset shield recharge delay when beef shield takes damage
+            if (beefAbsorbed > 0) {
+                p.shieldRechargeDelay = p.shieldRechargeDelayMax;
+                p.shieldRecharging = false;
+            }
+            
             // If beef shield was depleted, start cooldown
             if (p.beefShield <= 0) {
                 p.beefShieldCooldown = 2.0; // 2 second cooldown before shield can absorb again
@@ -6258,6 +6315,12 @@ function render(dt) {
         p.shield -= a;
         dmg -= a;
         
+        // Reset shield recharge delay whenever any damage is taken
+        if (a > 0 || dmg > 0) {
+            p.shieldRechargeDelay = p.shieldRechargeDelayMax;
+            p.shieldRecharging = false;
+        }
+        
         // Check for nano save BEFORE applying damage
         const hpAfterDamage = p.hp - dmg;
         if (hpAfterDamage <= 0 && p.nanoSaves > 0) {
@@ -6265,6 +6328,10 @@ function render(dt) {
             const revivedHp = Math.max(p.hpMax * 0.3, hpAfterDamage + p.hpMax * 0.35);
             p.hp = Math.max(1, Math.min(p.hpMax, revivedHp));
             store.activeEffects.push(createEffect("nanoHeal"));
+            // Activate time slowdown for critical moment
+            p.timeSlowActive = true;
+            p.timeSlowTimer = p.timeSlowDuration;
+            p.timeSlowStartTime = performance.now();
             announce('NANO SAVE ACTIVATED!');
             return; // Don't apply the lethal damage
         }
@@ -13909,8 +13976,15 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
         
         const rawDt = Math.min((now - store.last) / 1000, 0.07);
         const speedMultiplier = window.gameSpeedMultiplier || 1;
+        
+        // Apply nano save time slowdown effect
+        let timeSlowMultiplier = 1;
+        if (store.player.timeSlowActive) {
+            timeSlowMultiplier = store.player.timeSlowFactor;
+        }
+        
         // Cap the dt to prevent simulation instability even with speed multiplier
-        const dt = Math.min(rawDt * speedMultiplier, 0.1); 
+        const dt = Math.min(rawDt * speedMultiplier * timeSlowMultiplier, 0.1); 
         
         store.last = now;
         
