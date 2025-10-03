@@ -1059,7 +1059,7 @@
     const W = 960, H = 540;
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const collide = (a, b) => { const dx = a.x - b.x, dy = a.y - b.y; const rr = (a.r || 0) + (b.r || 0); return dx * dx + dy * dy < rr * rr; };
-    const API_BASE = "https://welfare-silk-disco-defines.trycloudflare.com/api";
+    const API_BASE = "https://apparently-wins-subjects-streets.trycloudflare.com/api";
     const q = (id) => document.getElementById(id);
     const cvs = q('game'), ctx = cvs.getContext('2d'), stage = q('stage');
     new ResizeObserver(() => {
@@ -3667,11 +3667,12 @@ class FlameParticle {
             
             // Voidmancer base laser beam system
             if (p.hasVoidLaser) {
-                if (p.wiperLasers) {
-                    stepWiperLasers(dt);
-                } else {
-                    stepVoidLaser(dt);
-                }
+                stepVoidLaser(dt); // Regular seeking lasers for Phasestriker
+            }
+            
+            // Wiper lasers work for both Phasestriker and Stormcaller
+            if (p.wiperLasers) {
+                stepWiperLasers(dt); // Ultimate ability for both subclasses
             }
         }
         if (p.hasIceman && store.iceman) { store.iceman.x = p.x - 50; store.iceman.y = p.y + 40; }
@@ -6152,11 +6153,8 @@ function render(dt) {
     }
     
 // ...existing code...
-    // Draw voidmancer laser beam
-    if (store.player.hasVoidLaser) {
-        if (store.player.wiperLasers) {
-            drawWiperLasers();
-        } else if (store.player.voidLaserTarget && !store.player.voidLaserTarget.dead) {
+    // Draw voidmancer laser beam (Phasestriker only)
+    if (store.player.hasVoidLaser && store.player.voidLaserTarget && !store.player.voidLaserTarget.dead) {
         const p = store.player;
         const target = p.voidLaserTarget;
         
@@ -6238,11 +6236,10 @@ function render(dt) {
         ctx.fill();
         
         ctx.restore();
-        }
     }
     
-    // Draw wiper lasers
-    function drawWiperLasers() {
+    // Draw wiper lasers (for both Phasestriker and Stormcaller ultimate)
+    if (store.player.wiperLasers) {
         const p = store.player;
         
         // Determine laser color based on player ship color
@@ -6269,8 +6266,8 @@ function render(dt) {
         }
         
         const time = performance.now() / 1000;
-        const pulseAlpha = 0.7 + 0.3 * Math.sin(time * 8);
-        const laserLength = 300;
+        const pulseAlpha = 0.8 + 0.2 * Math.sin(time * 10);
+        const laserLength = 450; // Longer, more lightsaber-like
         
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
@@ -6285,35 +6282,58 @@ function render(dt) {
             const endX = p.x + Math.cos(laser.angle) * laserLength;
             const endY = p.y + Math.sin(laser.angle) * laserLength;
             
-            // Draw main laser beam
-            ctx.strokeStyle = laserColor;
-            ctx.globalAlpha = pulseAlpha;
-            ctx.lineWidth = 4;
+            // Draw lightsaber core (bright white center)
+            ctx.strokeStyle = '#ffffff';
+            ctx.globalAlpha = pulseAlpha * 0.9;
+            ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.moveTo(p.x + laser.offset, p.y - 12);
             ctx.lineTo(endX, endY);
             ctx.stroke();
             
-            // Draw glow effect
+            // Draw main laser beam (colored)
+            ctx.strokeStyle = laserColor;
+            ctx.globalAlpha = pulseAlpha * 0.8;
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(p.x + laser.offset, p.y - 12);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+            
+            // Draw inner glow
             const gradient = ctx.createLinearGradient(p.x + laser.offset, p.y - 12, endX, endY);
-            gradient.addColorStop(0, laserColor + '60');
-            gradient.addColorStop(1, laserColor + '20');
+            gradient.addColorStop(0, laserColor + '80');
+            gradient.addColorStop(0.5, laserColor + '60');
+            gradient.addColorStop(1, laserColor + '30');
             
             ctx.strokeStyle = gradient;
             ctx.globalAlpha = pulseAlpha * 0.6;
-            ctx.lineWidth = 8;
+            ctx.lineWidth = 10;
             ctx.beginPath();
             ctx.moveTo(p.x + laser.offset, p.y - 12);
             ctx.lineTo(endX, endY);
             ctx.stroke();
             
-            // Add sweeping trail effect
-            ctx.strokeStyle = laserColor + '30';
-            ctx.globalAlpha = 0.3;
-            ctx.lineWidth = 12;
+            // Add outer glow effect
+            ctx.strokeStyle = laserColor + '40';
+            ctx.globalAlpha = 0.4;
+            ctx.lineWidth = 16;
             ctx.beginPath();
             ctx.moveTo(p.x + laser.offset, p.y - 12);
             ctx.lineTo(endX, endY);
+            ctx.stroke();
+            
+            // Add sweeping motion trail
+            const trailAngle = laser.angle - (p.wiperLaserSpeed * 0.3);
+            const trailEndX = p.x + Math.cos(trailAngle) * laserLength * 0.8;
+            const trailEndY = p.y + Math.sin(trailAngle) * laserLength * 0.8;
+            
+            ctx.strokeStyle = laserColor + '20';
+            ctx.globalAlpha = 0.2;
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.moveTo(p.x + laser.offset, p.y - 12);
+            ctx.lineTo(trailEndX, trailEndY);
             ctx.stroke();
         });
         
@@ -11408,14 +11428,19 @@ function render(dt) {
         const p = store.player;
         
         // Update wiper laser angles - they sweep back and forth like windshield wipers
+        const oldSpeed = p.wiperLaserSpeed;
         p.wiperLaser1Angle += p.wiperLaserSpeed * dt;
         p.wiperLaser2Angle += p.wiperLaserSpeed * dt;
         
         // Keep angles in reasonable range and reverse direction at limits
         if (p.wiperLaser1Angle > Math.PI * 0.75) {
             p.wiperLaserSpeed = -Math.abs(p.wiperLaserSpeed);
+            // Play lightsaber whoosh sound on direction change
+            if (oldSpeed > 0) playSound('stargun');
         } else if (p.wiperLaser1Angle < -Math.PI * 0.75) {
             p.wiperLaserSpeed = Math.abs(p.wiperLaserSpeed);
+            // Play lightsaber whoosh sound on direction change
+            if (oldSpeed < 0) playSound('stargun');
         }
         
         // Keep second laser offset by PI (opposite side)
@@ -11427,7 +11452,7 @@ function render(dt) {
             p.wiperLaserDamageTimer = 0.15; // Damage every 0.15 seconds
             
             // Calculate laser endpoints
-            const laserLength = 300; // Fixed laser length
+            const laserLength = 450; // Fixed laser length - matches visual
             const laser1EndX = p.x + Math.cos(p.wiperLaser1Angle) * laserLength;
             const laser1EndY = p.y + Math.sin(p.wiperLaser1Angle) * laserLength;
             const laser2EndX = p.x + Math.cos(p.wiperLaser2Angle) * laserLength;
@@ -13603,12 +13628,14 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 break;
             case 'phasestriker_wiper_lasers':
                 p.wiperLasers = true;
-                p.wiperLaserCount = 2; // Convert 2 lasers to wiper mode
+                p.wiperLaserCount = 2; // Additional wiper lasers
+                playSound('epicHorn'); // Epic activation sound
                 announce('WIPER LASERS ACTIVATED - Sweeping Laser Array!');
                 break;
             case 'stormcaller_wiper_lasers':
                 p.wiperLasers = true;
-                p.wiperLaserCount = 2; // Convert 2 lasers to wiper mode
+                p.wiperLaserCount = 2; // Additional wiper lasers
+                playSound('epicHorn'); // Epic activation sound
                 announce('WIPER LASERS ACTIVATED - Sweeping Laser Array!');
                 break;
                 
