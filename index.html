@@ -7714,12 +7714,17 @@ function render(dt) {
         const minionCount = store.championMinions.length;
         if (minionCount >= PLAYER_CHAMPION_CONFIG.maxMinions) return null;
         const id = performance.now() + Math.random();
+        
+        // Position minions in a triangle formation (120 degrees apart)
+        const baseAngle = (minionCount * Math.PI * 2) / 3; // 120 degrees apart
+        const orbitRadius = 58 + minionCount * 8; // Slight radius variation
+        
         const minion = {
             id,
             ownerId: owner.id,
-            orbitRadius: 52 + minionCount * 16,
-            orbitAngle: Math.random() * Math.PI * 2,
-            orbitSpeed: 1.75 + minionCount * 0.22,
+            orbitRadius: orbitRadius,
+            orbitAngle: baseAngle + Math.random() * 0.2 - 0.1, // Small random offset
+            orbitSpeed: 1.65 + minionCount * 0.15, // Slight speed variation
             pulsePhase: Math.random() * Math.PI * 2,
             swirlPhase: Math.random() * Math.PI * 2,
             fireCooldown: Math.max(0.9, 1.4 - level * 0.12),
@@ -7779,7 +7784,10 @@ function render(dt) {
             };
             store.playerChampion = champion;
             store.championMinions.length = 0;
-            spawnChampionMinion(champion);
+            // Spawn 3 minions immediately for better visual formation
+            for (let i = 0; i < 3; i++) {
+                spawnChampionMinion(champion);
+            }
             store.activeEffects.push(createEffect('spawnTeleport', champion.x, champion.y, champion.r * 2.1, {
                 duration: 1.05,
                 color: '#cbd4ff',
@@ -7811,8 +7819,13 @@ function render(dt) {
         champion.angularSpeed = PLAYER_CHAMPION_CONFIG.baseAngularSpeed + (champion.level - 1) * 0.08;
         champion.roamTimer = 0;
 
-        if (store.championMinions.length < Math.min(PLAYER_CHAMPION_CONFIG.maxMinions, champion.level)) {
-            spawnChampionMinion(champion);
+        // No need to spawn additional minions since we start with all 3
+        // Just update existing minions' stats instead
+        for (let minion of store.championMinions) {
+            if (minion && !minion.dead) {
+                minion.damageScale = 1 + (champion.level - 1) * 0.18;
+                minion.fireCooldown = Math.max(0.9, 1.4 - champion.level * 0.12);
+            }
         }
 
         store.activeEffects.push(createEffect('spawnTeleport', champion.x, champion.y, champion.r * 2.4, {
