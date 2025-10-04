@@ -12121,7 +12121,10 @@ function render(dt) {
         const oy = origin.y ?? store.player.y;
         let best = null;
         let bestDist = Infinity;
+        let bestChampion = null;
+        let bestChampionDist = Infinity;
 
+        // Always prioritize boss first
         if (store.boss && !store.boss.dead) {
             const dx = store.boss.x - ox;
             const dy = store.boss.y - oy;
@@ -12132,16 +12135,35 @@ function render(dt) {
             }
         }
 
+        // Search for enemy champions and regular enemies
         for (let i = 0; i < store.enemies.length; i++) {
             const enemy = store.enemies[i];
             if (!enemy || enemy.dead || enemy.hp <= 0) continue;
             const dx = enemy.x - ox;
             const dy = enemy.y - oy;
             const dist = dx * dx + dy * dy;
-            if (dist < bestDist) {
-                bestDist = dist;
-                best = enemy;
+            
+            // Check if this is a champion type enemy
+            const isChampion = enemy.type === 'void_champion' || enemy.type === 'shadow_champion';
+            
+            if (isChampion) {
+                // Track the closest champion separately
+                if (dist < bestChampionDist) {
+                    bestChampionDist = dist;
+                    bestChampion = enemy;
+                }
+            } else {
+                // Regular enemy - only consider if no champions found yet
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = enemy;
+                }
             }
+        }
+
+        // Prioritize champions over regular enemies (unless boss exists)
+        if (bestChampion && (!store.boss || store.boss.dead)) {
+            return bestChampion;
         }
 
         return best;
@@ -12233,6 +12255,195 @@ function render(dt) {
         store.activeEffects.push(createEffect('hitSpark', champion.x + Math.cos(baseAngle) * 6, champion.y + Math.sin(baseAngle) * 6, 14, { strength: 45 }));
     }
 
+    function championUseSpecialAbility(champion, target) {
+        if (!champion || champion.dead || !target) return;
+        const player = store.player;
+        const playerGenome = player.pilotGenome;
+        
+        if (!champion.lastSpecialUse) champion.lastSpecialUse = 0;
+        const now = performance.now();
+        
+        // Cooldown for special abilities
+        if (now - champion.lastSpecialUse < 2000) {
+            championFireVolley(champion, target);
+            return;
+        }
+        
+        champion.lastSpecialUse = now;
+        const dmgMult = (player?.dmgMult || 1) * (champion.damageScale || 1);
+        
+        // Random class ability based on pilot genome
+        const abilities = [];
+        if (playerGenome === 'beef') abilities.push('charge');
+        if (playerGenome === 'rocketman') abilities.push('stealth_rockets');  
+        if (playerGenome === 'voidmancer') abilities.push('lightning', 'laser');
+        
+        // Always add a basic ability as fallback
+        abilities.push('volley');
+        
+        const chosenAbility = abilities[Math.floor(Math.random() * abilities.length)];
+        
+        switch (chosenAbility) {
+            case 'charge':
+                championPerformCharge(champion, target, dmgMult);
+                break;
+            case 'stealth_rockets':
+                championFireStealthRockets(champion, target, dmgMult);
+                break;
+            case 'lightning':
+                championCastLightning(champion, target, dmgMult);
+                break;
+            case 'laser':
+                championFireLaser(champion, target, dmgMult);
+                break;
+            default:
+                championFireVolley(champion, target);
+                break;
+        }
+    }
+
+    function championPerformCharge(champion, target, dmgMult) {
+        const dx = target.x - champion.x;
+        const dy = target.y - champion.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const chargeSpeed = 600;
+        
+        // Play charge sound
+        playSound('beefCharge');
+        
+        champion.state = 'special_charge';
+        champion.dashTimer = 0.4;
+        champion.dashDuration = 0.4;
+        champion.dashVX = (dx / dist) * chargeSpeed;
+        champion.dashVY = (dy / dist) * chargeSpeed;
+        champion.visualAim = Math.atan2(champion.dashVY, champion.dashVX);
+        champion.dashHits = new Set();
+        champion.echoCooldown = 0;
+        
+        // Enhanced charge damage
+        champion.chargeDamage = (80 + (champion.level || 1) * 20) * dmgMult;
+        
+        // Visual effect - charge trail
+        for (let i = 0; i < 8; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 50 + Math.random() * 30;
+            const particle = createParticle(
+                champion.x + Math.random() * 10 - 5,
+                champion.y + Math.random() * 10 - 5,
+                Math.cos(angle) * speed,
+                Math.sin(angle) * speed,
+                '#4080ff',
+                200 + Math.random() * 100
+            );
+            if (particle) particle.size = 2 + Math.random() * 2;
+        }
+        
+        addShadowEcho(champion.x, champion.y);
+        champion.fireTimer = 1.2;
+        playSound('beefCharge');
+    }
+
+    function championFireStealthRockets(champion, target, dmgMult) {
+        const baseAngle = Math.atan2(target.y - champion.y, target.x - champion.x);
+        const rocketCount = 2 + Math.floor((champion.level || 1) / 2);
+        
+        for (let i = 0; i < rocketCount; i++) {
+            const angleSpread = 0.3;
+            const offsetIdx = i - (rocketCount - 1) / 2;
+            const angle = baseAngle + offsetIdx * (angleSpread / Math.max(1, rocketCount - 1));
+            
+            const rocket = spawnBullet({
+                x: champion.x + Math.cos(angle) * 15,
+                y: champion.y + Math.sin(angle) * 15,
+                vx: Math.cos(angle) * 280,
+                vy: Math.sin(angle) * 280,
+                r: 4,
+                col: 'rgba(80, 140, 220, 0.9)',
+                dmg: (45 + (champion.level || 1) * 12) * dmgMult,
+                life: 2.5,
+                pierce: true,
+                explosive: true,
+                isChampionShot: true,
+                stealthRocket: true
+            });
+            rocket.collisionSearchRadius = 180;
+        }
+        
+        champion.fireTimer = 1.8;
+        playSound('stargun');
+        store.activeEffects.push(createEffect('hitSpark', champion.x, champion.y, 18, { strength: 60 }));
+    }
+
+    function championCastLightning(champion, target, dmgMult) {
+        // Play thunder sound
+        playSound('thunder');
+        
+        const damage = (35 + (champion.level || 1) * 10) * dmgMult;
+        const maxJumps = 2 + Math.floor((champion.level || 1) / 2);
+        
+        // Create lightning chain starting from champion to target
+        let currentTarget = target;
+        let jumpCount = 0;
+        const hitTargets = new Set();
+        
+        while (currentTarget && jumpCount < maxJumps && !hitTargets.has(currentTarget)) {
+            hitTargets.add(currentTarget);
+            
+            // Deal damage
+            championDealDamage(currentTarget, damage * (0.8 ** jumpCount), { x: champion.x, y: champion.y });
+            
+            // Visual effect
+            store.activeEffects.push(createEffect('lightning', champion.x, champion.y, 30, {
+                targetX: currentTarget.x,
+                targetY: currentTarget.y,
+                strength: 70 - jumpCount * 15
+            }));
+            
+            // Find next target
+            let nextTarget = null;
+            let bestDist = 200;
+            
+            forEachEnemyNearby(currentTarget.x, currentTarget.y, bestDist, enemy => {
+                if (!enemy || enemy.dead || hitTargets.has(enemy)) return false;
+                const dx = enemy.x - currentTarget.x;
+                const dy = enemy.y - currentTarget.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    nextTarget = enemy;
+                }
+                return false;
+            });
+            
+            currentTarget = nextTarget;
+            jumpCount++;
+        }
+        
+        champion.fireTimer = 1.5;
+        playSound('thunder');
+    }
+
+    function championFireLaser(champion, target, dmgMult) {
+        const damage = (25 + (champion.level || 1) * 8) * dmgMult;
+        const laserDuration = 0.8;
+        
+        // Create sustained laser beam
+        champion.laserTarget = target;
+        champion.laserTimer = laserDuration;
+        champion.laserDamage = damage;
+        champion.fireTimer = 2.0;
+        
+        // Visual laser effect
+        store.activeEffects.push(createEffect('laser', champion.x, champion.y, 25, {
+            targetX: target.x,
+            targetY: target.y,
+            duration: laserDuration,
+            strength: 80
+        }));
+        
+        playSound('stargun');
+    }
+
     function stepPlayerChampion(dt) {
         const champion = store.playerChampion;
         const player = store.player;
@@ -12262,9 +12473,21 @@ function render(dt) {
             champion.visualAim = Math.atan2(dy, dx);
         }
 
-        const dashActive = champion.state === 'dash';
+        const dashActive = champion.state === 'dash' || champion.state === 'special_charge';
         champion.swirlPhase = (champion.swirlPhase || 0) + dt * (dashActive ? 9 : 5.4);
         if (champion.swirlPhase > Math.PI * 2) champion.swirlPhase -= Math.PI * 2;
+
+        // Handle laser beam damage over time
+        if (champion.laserTimer > 0) {
+            champion.laserTimer -= dt;
+            if (champion.laserTarget && !champion.laserTarget.dead && champion.laserDamage) {
+                championDealDamage(champion.laserTarget, champion.laserDamage * dt * 2, { x: champion.x, y: champion.y });
+            }
+            if (champion.laserTimer <= 0) {
+                champion.laserTarget = null;
+                champion.laserDamage = 0;
+            }
+        }
 
         const marginX = champion.r || 18;
         const marginY = champion.r || 18;
@@ -12319,8 +12542,10 @@ function render(dt) {
                 champion.echoCooldown = 0.035;
             }
 
-            const dashRadius = (champion.r || 20) + 6;
-            const damage = (120 + (champion.level || 1) * 28) * (player.dmgMult || 1) * (champion.damageScale || 1);
+            const dashRadius = (champion.r || 20) + (champion.state === 'special_charge' ? 10 : 6);
+            const damage = champion.state === 'special_charge' && champion.chargeDamage ? 
+                          champion.chargeDamage : 
+                          (120 + (champion.level || 1) * 28) * (player.dmgMult || 1) * (champion.damageScale || 1);
 
             if (!champion.dashHits) champion.dashHits = new Set();
 
@@ -12398,7 +12623,12 @@ function render(dt) {
                     addShadowEcho(champion.x, champion.y);
                     champion.fireTimer = 0.4;
                 } else {
-                    championFireVolley(champion, target);
+                    // 30% chance to use special class ability instead of normal volley
+                    if (Math.random() < 0.3) {
+                        championUseSpecialAbility(champion, target);
+                    } else {
+                        championFireVolley(champion, target);
+                    }
                 }
             }
         }
@@ -12866,12 +13096,12 @@ function render(dt) {
         }
 
         ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = 0.36 + 0.22 * (1 - fireRatio);
-        const auraRadius = baseRadius * (1.9 + pulse * 0.32 + level * 0.1);
+        ctx.globalAlpha = 0.4 + 0.25 * (1 - fireRatio);
+        const auraRadius = baseRadius * (1.9 + pulse * 0.35 + level * 0.1);
         const auraGradient = ctx.createRadialGradient(0, 0, baseRadius * 0.2, 0, 0, auraRadius);
-        auraGradient.addColorStop(0, 'rgba(220, 224, 255, 0.62)');
-        auraGradient.addColorStop(0.52, `rgba(110, 125, 210, ${0.36 + level * 0.05})`);
-        auraGradient.addColorStop(1, 'rgba(25, 28, 52, 0)');
+        auraGradient.addColorStop(0, 'rgba(150, 200, 255, 0.7)');
+        auraGradient.addColorStop(0.52, `rgba(80, 140, 220, ${0.4 + level * 0.05})`);
+        auraGradient.addColorStop(1, 'rgba(20, 40, 80, 0)');
         ctx.fillStyle = auraGradient;
         ctx.beginPath();
         ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
@@ -12880,9 +13110,9 @@ function render(dt) {
 
         ctx.save();
         ctx.rotate(swirl * 0.4);
-        ctx.globalAlpha = 0.35 + 0.15 * (1 - fireRatio);
+        ctx.globalAlpha = 0.4 + 0.2 * (1 - fireRatio);
         ctx.lineWidth = 1.25;
-        ctx.strokeStyle = 'rgba(145, 156, 255, 0.65)';
+        ctx.strokeStyle = 'rgba(100, 160, 255, 0.7)';
         ctx.beginPath();
         ctx.ellipse(0, 0, baseRadius * (1.18 + 0.08 * Math.sin(swirl)), baseRadius * (0.62 + 0.1 * Math.cos(swirl * 1.3)), 0, 0, Math.PI * 2);
         ctx.stroke();
@@ -12890,9 +13120,9 @@ function render(dt) {
 
         ctx.save();
         ctx.rotate(-swirl * 0.45);
-        ctx.globalAlpha = 0.22 + 0.18 * (1 - fireRatio);
+        ctx.globalAlpha = 0.25 + 0.2 * (1 - fireRatio);
         ctx.lineWidth = 0.9;
-        ctx.strokeStyle = 'rgba(90, 120, 230, 0.55)';
+        ctx.strokeStyle = 'rgba(60, 120, 200, 0.6)';
         ctx.beginPath();
         ctx.ellipse(0, 0, baseRadius * 1.45, baseRadius * 0.78, 0, 0, Math.PI * 2);
         ctx.stroke();
@@ -12900,10 +13130,10 @@ function render(dt) {
 
         ctx.globalAlpha = 0.95;
         const coreGradient = ctx.createRadialGradient(0, 0, baseRadius * 0.22, 0, 0, baseRadius * 0.92);
-        coreGradient.addColorStop(0, 'rgba(228, 232, 255, 0.95)');
-        coreGradient.addColorStop(0.4, 'rgba(152, 162, 235, 0.9)');
-        coreGradient.addColorStop(0.75, 'rgba(48, 54, 110, 0.95)');
-        coreGradient.addColorStop(1, 'rgba(16, 18, 36, 1)');
+        coreGradient.addColorStop(0, 'rgba(180, 220, 255, 0.95)');
+        coreGradient.addColorStop(0.4, 'rgba(100, 160, 240, 0.9)');
+        coreGradient.addColorStop(0.75, 'rgba(40, 80, 160, 0.95)');
+        coreGradient.addColorStop(1, 'rgba(20, 35, 70, 1)');
         ctx.fillStyle = coreGradient;
         ctx.beginPath();
         ctx.arc(0, 0, baseRadius * (0.95 + pulse * 0.05), 0, Math.PI * 2);
@@ -12911,7 +13141,7 @@ function render(dt) {
 
         ctx.globalAlpha = 0.8;
         ctx.lineWidth = 1.6;
-        ctx.strokeStyle = level >= 5 ? 'rgba(230, 200, 255, 0.85)' : 'rgba(160, 170, 245, 0.82)';
+        ctx.strokeStyle = level >= 5 ? 'rgba(120, 180, 255, 0.9)' : 'rgba(80, 140, 220, 0.85)';
         ctx.beginPath();
         ctx.arc(0, 0, baseRadius * 1.1, 0, Math.PI * 2);
         ctx.stroke();
@@ -12919,7 +13149,7 @@ function render(dt) {
         ctx.save();
         ctx.rotate(0.12 * Math.sin(swirl));
         ctx.globalAlpha = 0.9;
-        ctx.fillStyle = 'rgba(208, 214, 255, 0.9)';
+        ctx.fillStyle = 'rgba(140, 190, 255, 0.9)';
         ctx.beginPath();
         ctx.moveTo(-baseRadius * 0.52, -baseRadius * 0.12);
         ctx.quadraticCurveTo(-baseRadius * 0.12, -baseRadius * 0.58, baseRadius * 0.48, -baseRadius * 0.05);
@@ -12927,15 +13157,15 @@ function render(dt) {
         ctx.closePath();
         ctx.fill();
         ctx.globalAlpha = 0.65;
-        ctx.strokeStyle = 'rgba(96, 118, 222, 0.85)';
+        ctx.strokeStyle = 'rgba(60, 120, 200, 0.85)';
         ctx.lineWidth = 0.9;
         ctx.stroke();
         ctx.restore();
 
-        ctx.globalAlpha = 0.55 * (1 - fireRatio);
+        ctx.globalAlpha = 0.6 * (1 - fireRatio);
         const thrusterGradient = ctx.createRadialGradient(0, baseRadius * 0.95, baseRadius * 0.1, 0, baseRadius * 1.25, baseRadius * 0.6);
-        thrusterGradient.addColorStop(0, 'rgba(160, 180, 255, 0.8)');
-        thrusterGradient.addColorStop(1, 'rgba(60, 70, 150, 0)');
+        thrusterGradient.addColorStop(0, 'rgba(120, 180, 255, 0.8)');
+        thrusterGradient.addColorStop(1, 'rgba(40, 80, 160, 0)');
         ctx.fillStyle = thrusterGradient;
         ctx.beginPath();
         ctx.ellipse(0, baseRadius * 1.05, baseRadius * 0.6, baseRadius * 0.36, 0, 0, Math.PI * 2);
@@ -12959,15 +13189,15 @@ function render(dt) {
         ctx.save();
         ctx.translate(champion.x, champion.y);
 
-        // Shadow-toned aura
+        // Dark blue aura (darker than iceman)
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = 0.32 + 0.18 * Math.sin(now * 2.2 + auraPhase * 0.8);
-        const auraRadius = baseRadius * (1.9 + auraPulse * 0.6 + level * 0.08);
-        const auraGradient = ctx.createRadialGradient(0, 0, baseRadius * 0.35, 0, 0, auraRadius);
-        auraGradient.addColorStop(0, 'rgba(255, 255, 255, 0.18)');
-        auraGradient.addColorStop(0.45, `rgba(110, 120, 180, ${0.32 + level * 0.04})`);
-        auraGradient.addColorStop(1, 'rgba(30, 32, 60, 0)');
+        ctx.globalAlpha = 0.38 + 0.22 * Math.sin(now * 2.5 + auraPhase * 0.9);
+        const auraRadius = baseRadius * (2.0 + auraPulse * 0.7 + level * 0.1);
+        const auraGradient = ctx.createRadialGradient(0, 0, baseRadius * 0.3, 0, 0, auraRadius);
+        auraGradient.addColorStop(0, 'rgba(120, 180, 255, 0.25)');
+        auraGradient.addColorStop(0.5, `rgba(45, 85, 160, ${0.4 + level * 0.05})`);
+        auraGradient.addColorStop(1, 'rgba(15, 25, 65, 0)');
         ctx.fillStyle = auraGradient;
         ctx.beginPath();
         ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
@@ -12977,114 +13207,183 @@ function render(dt) {
         if (dashActive && (champion.dashVX || champion.dashVY)) {
             const dashDuration = champion.dashDuration || 0.01;
             const dashProgress = Math.max(0, Math.min(1, 1 - (champion.dashTimer || 0) / dashDuration));
-            const streakLength = baseRadius * (3.1 + level * 0.3);
+            const streakLength = baseRadius * (3.2 + level * 0.35);
             const trailAngle = Math.atan2(champion.dashVY || 0, champion.dashVX || 1);
 
             ctx.save();
             ctx.rotate(trailAngle);
             ctx.globalCompositeOperation = 'lighter';
-            ctx.globalAlpha = 0.5 + 0.4 * dashProgress;
+            ctx.globalAlpha = 0.6 + 0.3 * dashProgress;
             const streakGradient = ctx.createLinearGradient(-streakLength, 0, baseRadius * 0.9, 0);
-            streakGradient.addColorStop(0, 'rgba(30, 20, 60, 0)');
-            streakGradient.addColorStop(0.4, 'rgba(110, 90, 190, 0.45)');
-            streakGradient.addColorStop(1, 'rgba(210, 210, 255, 0.9)');
+            streakGradient.addColorStop(0, 'rgba(15, 30, 80, 0)');
+            streakGradient.addColorStop(0.4, 'rgba(60, 120, 200, 0.5)');
+            streakGradient.addColorStop(1, 'rgba(120, 180, 255, 0.9)');
             ctx.fillStyle = streakGradient;
             ctx.beginPath();
-            ctx.moveTo(-streakLength, -baseRadius * 0.55);
-            ctx.quadraticCurveTo(baseRadius * -0.15, -baseRadius * 0.9, baseRadius * 0.8, -baseRadius * 0.18);
-            ctx.lineTo(baseRadius * 0.8, baseRadius * 0.18);
-            ctx.quadraticCurveTo(baseRadius * -0.15, baseRadius * 0.9, -streakLength, baseRadius * 0.55);
+            ctx.moveTo(-streakLength, -baseRadius * 0.6);
+            ctx.lineTo(baseRadius * 0.9, -baseRadius * 0.2);
+            ctx.lineTo(baseRadius * 0.9, baseRadius * 0.2);
+            ctx.lineTo(-streakLength, baseRadius * 0.6);
             ctx.closePath();
             ctx.fill();
             ctx.restore();
         }
 
-        // Rotated core body
+        // Angular diamond body
         ctx.save();
         ctx.rotate(facing);
 
-        const bodyGradient = ctx.createLinearGradient(0, -baseRadius * 1.15, 0, baseRadius * 1.05);
-        bodyGradient.addColorStop(0, '#1a1b28');
-        bodyGradient.addColorStop(0.55, '#2f3149');
-        bodyGradient.addColorStop(1, '#454763');
+        // Main diamond body - darker blue gradient
+        const bodyGradient = ctx.createLinearGradient(0, -baseRadius * 1.2, 0, baseRadius * 1.1);
+        bodyGradient.addColorStop(0, '#2a3560');
+        bodyGradient.addColorStop(0.3, '#1e2845');
+        bodyGradient.addColorStop(0.7, '#3c4f78');
+        bodyGradient.addColorStop(1, '#253555');
         ctx.fillStyle = bodyGradient;
-        ctx.strokeStyle = '#989ae0';
-        ctx.lineWidth = 2.1;
-        ctx.globalAlpha = 0.98;
+        ctx.strokeStyle = '#6090d0';
+        ctx.lineWidth = 2.2;
+        ctx.globalAlpha = 0.95;
+        
+        // Angular diamond shape
         ctx.beginPath();
-        ctx.moveTo(0, -baseRadius * 1.05);
-        ctx.quadraticCurveTo(baseRadius * 0.92, -baseRadius * 0.05, baseRadius * 0.54, baseRadius * 0.92);
-        ctx.lineTo(-baseRadius * 0.54, baseRadius * 0.92);
-        ctx.quadraticCurveTo(-baseRadius * 0.92, -baseRadius * 0.05, 0, -baseRadius * 1.05);
+        ctx.moveTo(0, -baseRadius * 1.1);                    // Top point
+        ctx.lineTo(baseRadius * 0.9, -baseRadius * 0.15);    // Top-right
+        ctx.lineTo(baseRadius * 0.6, baseRadius * 0.9);      // Bottom-right
+        ctx.lineTo(0, baseRadius * 1.05);                    // Bottom point
+        ctx.lineTo(-baseRadius * 0.6, baseRadius * 0.9);     // Bottom-left
+        ctx.lineTo(-baseRadius * 0.9, -baseRadius * 0.15);   // Top-left
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
 
-        // Visor shadow
-        ctx.fillStyle = '#0d0e19';
-        ctx.globalAlpha = 0.95;
+        // Angular inner sections
+        ctx.fillStyle = '#1a2440';
+        ctx.globalAlpha = 0.7;
         ctx.beginPath();
-        ctx.ellipse(0, -baseRadius * 0.28, baseRadius * 0.48, baseRadius * 0.32, 0, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Luminous visor
-        const visorGradient = ctx.createLinearGradient(-baseRadius * 0.5, -baseRadius * 0.28, baseRadius * 0.5, -baseRadius * 0.05);
-        visorGradient.addColorStop(0, 'rgba(170, 190, 255, 0.78)');
-        visorGradient.addColorStop(1, 'rgba(240, 244, 255, 0.95)');
-        ctx.fillStyle = visorGradient;
-        ctx.beginPath();
-        ctx.moveTo(-baseRadius * 0.45, -baseRadius * 0.23);
-        ctx.quadraticCurveTo(0, -baseRadius * 0.48, baseRadius * 0.45, -baseRadius * 0.23);
-        ctx.quadraticCurveTo(baseRadius * 0.18, -baseRadius * 0.02, 0, baseRadius * 0.05);
-        ctx.quadraticCurveTo(-baseRadius * 0.18, -baseRadius * 0.02, -baseRadius * 0.45, -baseRadius * 0.23);
+        ctx.moveTo(-baseRadius * 0.25, -baseRadius * 0.3);
+        ctx.lineTo(baseRadius * 0.25, -baseRadius * 0.3);
+        ctx.lineTo(baseRadius * 0.4, baseRadius * 0.15);
+        ctx.lineTo(-baseRadius * 0.4, baseRadius * 0.15);
         ctx.closePath();
         ctx.fill();
 
-        // Accent lines
-        const accentColor = level >= 4 ? '#d5d7ff' : '#989ae0';
+        // Visor - angular hexagonal shape
+        ctx.fillStyle = '#0f1525';
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.moveTo(0, -baseRadius * 0.55);
+        ctx.lineTo(baseRadius * 0.45, -baseRadius * 0.25);
+        ctx.lineTo(baseRadius * 0.35, baseRadius * 0.05);
+        ctx.lineTo(-baseRadius * 0.35, baseRadius * 0.05);
+        ctx.lineTo(-baseRadius * 0.45, -baseRadius * 0.25);
+        ctx.closePath();
+        ctx.fill();
+
+        // Glowing visor
+        const visorGradient = ctx.createLinearGradient(-baseRadius * 0.4, -baseRadius * 0.3, baseRadius * 0.4, 0);
+        visorGradient.addColorStop(0, 'rgba(80, 150, 255, 0.8)');
+        visorGradient.addColorStop(0.5, 'rgba(120, 180, 255, 0.95)');
+        visorGradient.addColorStop(1, 'rgba(60, 120, 200, 0.7)');
+        ctx.fillStyle = visorGradient;
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.moveTo(0, -baseRadius * 0.5);
+        ctx.lineTo(baseRadius * 0.4, -baseRadius * 0.22);
+        ctx.lineTo(baseRadius * 0.3, 0);
+        ctx.lineTo(-baseRadius * 0.3, 0);
+        ctx.lineTo(-baseRadius * 0.4, -baseRadius * 0.22);
+        ctx.closePath();
+        ctx.fill();
+
+        // Angular accent lines
+        const accentColor = level >= 4 ? '#80c0ff' : '#6090d0';
         ctx.globalAlpha = 0.8;
         ctx.strokeStyle = accentColor;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1.8;
         ctx.beginPath();
-        ctx.moveTo(-baseRadius * 0.3, baseRadius * 0.2);
-        ctx.lineTo(baseRadius * 0.3, baseRadius * 0.2);
-        ctx.moveTo(-baseRadius * 0.22, baseRadius * 0.55);
-        ctx.lineTo(baseRadius * 0.22, baseRadius * 0.55);
+        ctx.moveTo(-baseRadius * 0.35, baseRadius * 0.25);
+        ctx.lineTo(baseRadius * 0.35, baseRadius * 0.25);
+        ctx.moveTo(-baseRadius * 0.25, baseRadius * 0.6);
+        ctx.lineTo(baseRadius * 0.25, baseRadius * 0.6);
         ctx.stroke();
 
+        // Level indicators
         if (level >= 2) {
-            ctx.globalAlpha = 0.55 + 0.2 * Math.sin(now * 5.2 + auraPhase);
-            ctx.lineWidth = level >= 4 ? 2 : 1.4;
+            ctx.globalAlpha = 0.6 + 0.25 * Math.sin(now * 5.5 + auraPhase);
+            ctx.lineWidth = level >= 4 ? 2.5 : 1.8;
             ctx.beginPath();
-            ctx.moveTo(0, -baseRadius * 1.4);
-            ctx.lineTo(0, -baseRadius * 1.95);
-            ctx.moveTo(-baseRadius * 0.28, -baseRadius * 1.7);
-            ctx.lineTo(baseRadius * 0.28, -baseRadius * 1.7);
+            ctx.moveTo(0, -baseRadius * 1.5);
+            ctx.lineTo(0, -baseRadius * 2.0);
+            ctx.moveTo(-baseRadius * 0.3, -baseRadius * 1.75);
+            ctx.lineTo(baseRadius * 0.3, -baseRadius * 1.75);
             ctx.stroke();
+        }
+
+        // Special ability charge indicator
+        if (champion.specialAbilityCooldown > 0) {
+            const cooldownRatio = champion.specialAbilityCooldown / 5000; // 5 second cooldown
+            ctx.globalAlpha = 0.7;
+            ctx.strokeStyle = '#4080ff';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, 0, baseRadius * 1.2, -Math.PI / 2, -Math.PI / 2 + (1 - cooldownRatio) * Math.PI * 2);
+            ctx.stroke();
+            
+            // Class ability icons when ready
+            if (cooldownRatio <= 0) {
+                const iconPulse = 0.8 + 0.2 * Math.sin(now * 4);
+                ctx.globalAlpha = 0.9 * iconPulse;
+                
+                // Determine next ability type (same logic as the special ability function)
+                const player = store.player;
+                let abilityType = 'beef'; // default
+                if (player) {
+                    if (player.pilotGenome === 'rocketman') abilityType = 'rocket';
+                    else if (player.pilotGenome === 'voidmancer') {
+                        abilityType = champion.lastVoidmancerAbility === 'lightning' ? 'laser' : 'lightning';
+                    }
+                }
+                
+                // Draw ability icon
+                ctx.fillStyle = '#80c0ff';
+                ctx.font = `${baseRadius * 0.4}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                let iconText = '⚡';
+                if (abilityType === 'beef') iconText = '💨';
+                else if (abilityType === 'rocket') iconText = '🚀';
+                else if (abilityType === 'laser') iconText = '🔫';
+                
+                ctx.fillText(iconText, 0, baseRadius * 1.8);
+            }
         }
 
         ctx.restore();
 
-        // Mystic cross aura
+        // Rotating energy field
         ctx.save();
-        ctx.globalAlpha = 0.75;
-        ctx.strokeStyle = 'rgba(150, 155, 230, 0.55)';
-        ctx.lineWidth = 2;
-        ctx.rotate(swirl);
-        for (let i = 0; i < 4; i++) {
+        ctx.globalAlpha = 0.4;
+        ctx.strokeStyle = 'rgba(80, 140, 220, 0.6)';
+        ctx.lineWidth = 1.8;
+        ctx.rotate(swirl * 0.8);
+        for (let i = 0; i < 6; i++) {
             ctx.beginPath();
-            ctx.moveTo(0, baseRadius * 0.2);
-            ctx.lineTo(0, baseRadius * 1.25);
+            ctx.moveTo(0, baseRadius * 0.3);
+            ctx.lineTo(0, baseRadius * 1.4);
             ctx.stroke();
-            ctx.rotate(Math.PI / 2);
+            ctx.rotate(Math.PI / 3);
         }
         ctx.restore();
 
-        // Core glow disk
-        ctx.globalAlpha = 0.6;
-        ctx.fillStyle = 'rgba(150, 150, 255, 0.35)';
+        // Core energy orb
+        ctx.globalAlpha = 0.7;
+        const coreGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, baseRadius * 0.5);
+        coreGradient.addColorStop(0, 'rgba(140, 200, 255, 0.8)');
+        coreGradient.addColorStop(1, 'rgba(60, 120, 200, 0.2)');
+        ctx.fillStyle = coreGradient;
         ctx.beginPath();
-        ctx.arc(0, baseRadius * 0.32, baseRadius * 0.42, 0, Math.PI * 2);
+        ctx.arc(0, baseRadius * 0.15, baseRadius * 0.45, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.restore();
