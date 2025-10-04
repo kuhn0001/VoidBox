@@ -945,7 +945,7 @@
             min-width: auto;
         }
 
-        #shopBtn {
+        #shopBtn, #shopBtnHUD {
             background: linear-gradient(180deg, rgba(255, 215, 0, 0.4), rgba(255, 165, 0, 0.2));
             border-color: #ffd700;
         }
@@ -961,6 +961,10 @@
             border: 2px solid rgba(255, 215, 0, 0.65);
             pointer-events: none;
             animation: mechForgeRing 1.2s ease-in-out infinite;
+        }
+        #shopBtnHUD.mech-forge-pulse {
+            animation: mechForgePulse 1.2s ease-in-out infinite;
+            box-shadow: 0 0 16px rgba(255, 215, 0, 0.35), 0 0 28px rgba(255, 140, 0, 0.18);
         }
         #pauseBtn {
             top: 50%;
@@ -1401,6 +1405,7 @@
                         <button type="button" class="close-btn" id="closeShopTopBtn">×</button>
                         <h2 style="font-family:'Orbitron';color:var(--accent)">⚡ MECH FORGE ⚡</h2>
                         <p style="color:#ffddff">Gold 💰 <span id="shopgold" style="color:#FFD700;font-size:1.2em">0</span></p>
+                        <p id="autoForgeStatusLabel" style="color:#a0ffdd;font-size:12px;margin:0 0 12px 0"></p>
                         <div id="shopGrid" class="grid"></div>
                         <div class="row" style="justify-content:center;margin-top:10px">
                             <button id="closeShop" class="btn" type="button">CLOSE</button>
@@ -1416,6 +1421,17 @@
                                 <span>Mobile Controls</span>
                                 <label class="switch">
                                     <input type="checkbox" id="mobileControlsToggleMenu">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="forge-menu-section">
+                            <div class="forge-menu-title">Automation</div>
+                            <div class="mobile-toggle-container">
+                                <span>Auto Spend Upgrades</span>
+                                <label class="switch">
+                                    <input type="checkbox" id="autoForgeToggle">
                                     <span class="slider"></span>
                                 </label>
                             </div>
@@ -1886,8 +1902,8 @@ function createParticle(x, y, vx, vy, color, life) {
 
     // --- GAME STATE & DATA ---
     const player_initial_state = {
-        x: W / 2, y: H * 0.8, r: 14, hp: 100, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1.2, fireRate: 0.16,
-        vampirism: 0, shield: 50, shieldMax: 50, multishot: 2, isInvincible: false, piercing: 0, explosive: false,
+        x: W / 2, y: H * 0.8, r: 14, hp: 80, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1.2, fireRate: 0.16,
+        vampirism: 0, shield: 25, shieldMax: 50, multishot: 2, isInvincible: false, piercing: 0, explosive: false,
     hasShieldBubble: false, powerupTimers: {},
     swirlShots: false, attackSpeedStacks: 0,
     upgradeLevels: { dmg: 0, speed: 0, hp: 0, max_shield: 0, crit_chance: 0, ghost_hounds: 0, launcher: 0, lazarus_beam: 0, gravity_well: 0, star_cannon: 0 },
@@ -2010,6 +2026,20 @@ function createParticle(x, y, vx, vy, color, life) {
         }
     })();
 
+    const storedAutoForgeEnabled = (() => {
+        try {
+            if (!window.localStorage) return true;
+            const value = window.localStorage.getItem('voidAutoForge');
+            if (value === null) return true;
+            const normalized = value.toLowerCase();
+            if (normalized === 'off' || normalized === '0' || normalized === 'false') return false;
+            if (normalized === 'on' || normalized === '1' || normalized === 'true') return true;
+            return true;
+        } catch (err) {
+            return true;
+        }
+    })();
+
     const store = {
         frame: 0, last: performance.now(), isGameOver: false, isPaused: false,
         isDamageOff: false,
@@ -2048,7 +2078,16 @@ function createParticle(x, y, vx, vy, color, life) {
             lastSpawnTempo: 0,
             firstBossOrbsGifted: false,
             mechForgeGoldTriggered: false,
-            mechForgePulseTimeout: null
+            mechForgePulseTimeout: null,
+            mechForgePromptActive: false,
+            mechForgePromptInterval: 250,
+            nextMechForgePrompt: 135,
+            mechForgePromptCount: 0,
+            autoForgeEnabled: storedAutoForgeEnabled,
+            autoForgeReserve: 15,
+            autoForgeAnnounceCooldown: 0,
+            totalForgeSpend: 0,
+            autoForgeTutorialShown: false
         },
         player: { ...player_initial_state },
     boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], shadowHounds: [], missiles: [], lasers: [], mines: [], activeEffects: [], starProjectiles: [], pendingStarClones: [],
@@ -5188,7 +5227,8 @@ function createParticle(x, y, vx, vy, color, life) {
         
         updateVoidStepSystems(store.enemies);
         updateImpactSystem();
-    stepGoldenOrbs(dt);
+        runAutoForge(dt);
+        stepGoldenOrbs(dt);
 
         store.activeEffects.forEach(e => { if (e.step) e.step(dt); });
         if (store.world.powerupCooldown > 0) {
@@ -6504,6 +6544,7 @@ function createParticle(x, y, vx, vy, color, life) {
     
     function resetGame() {
         store.player = JSON.parse(JSON.stringify(player_initial_state));
+        const prevAutoForge = (store.world && typeof store.world.autoForgeEnabled === 'boolean') ? store.world.autoForgeEnabled : storedAutoForgeEnabled;
         
         // Ensure dmgMult is initialized
         if (!store.player.dmgMult) store.player.dmgMult = 1;
@@ -6540,7 +6581,16 @@ function createParticle(x, y, vx, vy, color, life) {
             lastSpawnFallback: false,
             lastSpawnQueueLength: 0,
             lastSpawnTempo: 0,
-            firstBossOrbsGifted: false
+            firstBossOrbsGifted: false,
+            mechForgePromptActive: false,
+            mechForgePromptInterval: 250,
+            nextMechForgePrompt: 135,
+            mechForgePromptCount: 0,
+            autoForgeEnabled: prevAutoForge,
+            autoForgeReserve: 15,
+            autoForgeAnnounceCooldown: 0,
+            totalForgeSpend: 0,
+            autoForgeTutorialShown: false
         };
         
         if (store.bullets && store.bullets.length) {
@@ -7480,7 +7530,15 @@ function render(dt) {
         pilotTitle.textContent = store.name ? `◢ ${store.name} ◣` : "◢ UNIDENTIFIED ◣";
         scoreNum.textContent = store.world.score;
         goldNum.textContent = store.world.gold;
-        if (!store.world.mechForgeGoldTriggered && store.world.gold >= 135) {
+        const mechForgeBtn = q('shopBtn');
+        if (mechForgeBtn) {
+            const label = store.world.autoForgeEnabled ? '⚡ MECH FORGE 💰 (AUTO)' : '⚡ MECH FORGE 💰';
+            if (mechForgeBtn.textContent !== label) {
+                mechForgeBtn.textContent = label;
+            }
+        }
+        const nextForgePrompt = store.world.nextMechForgePrompt ?? 135;
+        if (store.world.gold >= nextForgePrompt && !store.world.mechForgePromptActive) {
             triggerMechForgeGoldMilestone();
         }
 
@@ -12698,12 +12756,211 @@ function render(dt) {
 
 
     let shopItemOrder = [];
+
+    const AUTO_FORGE_PRIORITY = ['hp', 'max_shield', 'nano_save', 'dmg', 'speed', 'crit_chance', 'luck_boost', 'vampirism'];
+    const AUTO_FORGE_MAX_PURCHASES_PER_TICK = 3;
+
+    function getNextUpgradeCost(key) {
+        const upgrade = SHOP_UPGRADES[key];
+        if (!upgrade) return { cost: Infinity, available: false };
+        if (upgrade.isPremium) {
+            if (key === 'repair') {
+                if (store.player.hp >= store.player.hpMax) {
+                    return { cost: Infinity, available: false, premium: true };
+                }
+                return { cost: upgrade.cost, available: store.world.gold >= upgrade.cost, premium: true };
+            }
+            if (key === 'vampirism') {
+                const currentLevel = store.player.vampirismLevel || 0;
+                if (currentLevel >= upgrade.max) {
+                    return { cost: Infinity, available: false, premium: true };
+                }
+                const cost = 12 + (currentLevel * 5);
+                return { cost, available: store.world.gold >= cost, premium: true };
+            }
+            if (key === 'nano_save') {
+                if (store.player.nanoSaves >= upgrade.max) {
+                    return { cost: Infinity, available: false, premium: true };
+                }
+                return { cost: upgrade.cost, available: store.world.gold >= upgrade.cost, premium: true };
+            }
+            if (key === 'grenade') {
+                if (store.player.grenades >= upgrade.max) {
+                    return { cost: Infinity, available: false, premium: true };
+                }
+                return { cost: upgrade.cost, available: store.world.gold >= upgrade.cost, premium: true };
+            }
+            return { cost: upgrade.cost, available: store.world.gold >= upgrade.cost, premium: true };
+        } else {
+            const currentLevel = store.player.upgradeLevels[key] || 0;
+            if (upgrade.maxLevel && currentLevel >= upgrade.maxLevel) {
+                return { cost: Infinity, available: false };
+            }
+            const cost = upgrade.increment
+                ? upgrade.baseCost + (currentLevel * upgrade.increment)
+                : Math.floor(upgrade.baseCost * Math.pow(upgrade.scale, currentLevel));
+            return { cost, available: store.world.gold >= cost, level: currentLevel };
+        }
+    }
+
+    function attemptPurchaseUpgrade(key, options = {}) {
+        const upgrade = SHOP_UPGRADES[key];
+        if (!upgrade) return { success: false, cost: 0, key };
+
+        let cost = 0;
+        let success = false;
+
+        if (upgrade.isPremium) {
+            if (key === 'vampirism') {
+                const info = getNextUpgradeCost(key);
+                if (isFinite(info.cost) && store.world.gold >= info.cost) {
+                    const prevGold = store.world.gold;
+                    success = upgrade.apply();
+                    if (success) {
+                        cost = prevGold - store.world.gold;
+                    }
+                }
+            } else {
+                const info = getNextUpgradeCost(key);
+                if (isFinite(info.cost) && store.world.gold >= info.cost) {
+                    store.world.gold -= info.cost;
+                    cost = info.cost;
+                    success = upgrade.apply();
+                    if (!success) {
+                        store.world.gold += info.cost;
+                        cost = 0;
+                    }
+                }
+            }
+        } else {
+            const info = getNextUpgradeCost(key);
+            if (isFinite(info.cost) && store.world.gold >= info.cost) {
+                const currentLevel = store.player.upgradeLevels[key] || 0;
+                store.world.gold -= info.cost;
+                cost = info.cost;
+                upgrade.effect(currentLevel);
+                store.player.upgradeLevels[key] = currentLevel + 1;
+                success = true;
+            }
+        }
+
+        if (success) {
+            shopItemOrder = [];
+            store.world.totalForgeSpend = (store.world.totalForgeSpend || 0) + cost;
+            if (!options.silent) {
+                requestAnimationFrame(() => showShop());
+            }
+            if (typeof options.onSuccess === 'function') {
+                options.onSuccess({ key, upgrade, cost });
+            }
+        }
+
+        return { success, cost, key, name: upgrade ? upgrade.name : key };
+    }
+
+    function flashForgeButton(duration = 1200) {
+        const mechForgeBtn = q('shopBtn');
+        if (!mechForgeBtn) return;
+        mechForgeBtn.classList.add('mech-forge-pulse');
+        if (mechForgeBtn._forgePulseTimeout) {
+            clearTimeout(mechForgeBtn._forgePulseTimeout);
+        }
+        const timeoutId = setTimeout(() => {
+            mechForgeBtn.classList.remove('mech-forge-pulse');
+            mechForgeBtn._forgePulseTimeout = null;
+            store.world.mechForgePulseTimeout = null;
+        }, duration);
+        mechForgeBtn._forgePulseTimeout = timeoutId;
+        store.world.mechForgePulseTimeout = timeoutId;
+
+        const hudBtn = q('shopBtnHUD');
+        if (hudBtn) {
+            hudBtn.classList.add('mech-forge-pulse');
+            if (hudBtn._forgePulseTimeout) {
+                clearTimeout(hudBtn._forgePulseTimeout);
+            }
+            const hudTimeout = setTimeout(() => {
+                hudBtn.classList.remove('mech-forge-pulse');
+                hudBtn._forgePulseTimeout = null;
+            }, duration);
+            hudBtn._forgePulseTimeout = hudTimeout;
+        }
+    }
+
+    function computeNextForgePromptInterval(currentInterval, promptCount) {
+        const base = currentInterval || 250;
+        const multiplier = 1.18 + Math.min(promptCount, 5) * 0.12;
+        const scaled = Math.round(base * multiplier);
+        return Math.max(250, Math.min(scaled, 2200));
+    }
+
+    function runAutoForge(dt) {
+        const world = store.world;
+        if (!world) return;
+
+        world.autoForgeAnnounceCooldown = Math.max(0, (world.autoForgeAnnounceCooldown || 0) - dt);
+
+        if (!world.autoForgeEnabled || store.isPaused || store.isGameOver) {
+            return;
+        }
+
+        const shopPanel = q('shopPanel');
+        if (shopPanel && !shopPanel.classList.contains('hide')) return;
+        if (typeof isAnyPanelOpen === 'function' && isAnyPanelOpen()) return;
+
+        if (!store.player || store.player.hp <= 0) return;
+
+        const purchases = [];
+
+        const repairInfo = getNextUpgradeCost('repair');
+        if (store.player.hp < store.player.hpMax * 0.6 && repairInfo.cost <= store.world.gold) {
+            const result = attemptPurchaseUpgrade('repair', { silent: true });
+            if (result.success) {
+                purchases.push(result);
+            }
+        }
+
+        let purchaseCount = purchases.length;
+        const reserve = store.world.autoForgeReserve ?? 0;
+
+        for (const key of AUTO_FORGE_PRIORITY) {
+            if (purchaseCount >= AUTO_FORGE_MAX_PURCHASES_PER_TICK) break;
+            const info = getNextUpgradeCost(key);
+            if (!info || !isFinite(info.cost)) continue;
+            if (store.world.gold - reserve < info.cost) continue;
+            if (key === 'nano_save' && store.player.nanoSaves >= 2 && store.world.wave < 4) continue;
+            const result = attemptPurchaseUpgrade(key, { silent: true });
+            if (result.success) {
+                purchases.push(result);
+                purchaseCount++;
+            }
+        }
+
+        if (purchases.length) {
+            if (!store.world.autoForgeTutorialShown) {
+                store.world.autoForgeTutorialShown = true;
+                announce('Auto-forge is spending gold for you! Toggle it in the Mech Forge menu.');
+            } else if ((store.world.autoForgeAnnounceCooldown || 0) <= 0) {
+                const names = purchases.map(p => p.name).join(', ');
+                announce(`Auto-forged: ${names}`);
+                store.world.autoForgeAnnounceCooldown = 3.5;
+            }
+            flashForgeButton(900);
+        }
+    }
+
     function showShop() {
         pauseGame();
         const panel = q("shopPanel"),
             grid = q("shopGrid"),
-            goldEl = q("shopgold");
+            goldEl = q("shopgold"),
+            autoStatusEl = q('autoForgeStatusLabel');
         goldEl.textContent = store.world.gold;
+        if (autoStatusEl) {
+            autoStatusEl.textContent = store.world.autoForgeEnabled
+                ? "Auto-forge is ON. We'll spend spare gold on core upgrades."
+                : "Auto-forge is OFF. Tap an item to spend gold.";
+        }
 
 
 
@@ -12805,41 +13062,7 @@ function render(dt) {
             item.addEventListener("click", () => {
                 if (item.classList.contains('disabled')) return;
                 const key = item.dataset.key;
-                const upgrade = SHOP_UPGRADES[key];
-                let purchaseSuccessful = false;
-                if (upgrade.isPremium) {
-                    if (key === 'vampirism') {
-                        const cost = 12 + (store.player.vampirismLevel * 5);
-                        if (store.world.gold >= cost) {
-                            purchaseSuccessful = upgrade.apply()
-                        }
-                    } else {
-                        const cost = upgrade.cost;
-                        if (store.world.gold >= cost) {
-                            store.world.gold -= cost;
-                            purchaseSuccessful = upgrade.apply()
-                        }
-                    }
-                } else {
-                    const currentLevel = store.player.upgradeLevels[key] || 0;
-                    let cost;
-                    if (upgrade.increment) {
-                        cost = upgrade.baseCost + (currentLevel * upgrade.increment);
-                    } else {
-                        cost = Math.floor(upgrade.baseCost * Math.pow(upgrade.scale, currentLevel));
-                    }
-
-                    if (store.world.gold >= cost) {
-                        store.world.gold -= cost;
-                        upgrade.effect(currentLevel);
-                        store.player.upgradeLevels[key] = (store.player.upgradeLevels[key] || 0) + 1;
-                        purchaseSuccessful = true;
-                    }
-                }
-                if (purchaseSuccessful) {
-                    // Defer shop update to next frame to avoid blocking interaction response
-                    requestAnimationFrame(() => showShop());
-                }
+                attemptPurchaseUpgrade(key);
             })
         });
 
@@ -12863,6 +13086,22 @@ function render(dt) {
                     try { localStorage.setItem('mobileControlsEnabled', 'false'); } catch(e) {}
                 }
             });
+        }
+
+        const autoForgeToggle = q('autoForgeToggle');
+        if (autoForgeToggle) {
+            autoForgeToggle.checked = !!store.world.autoForgeEnabled;
+            autoForgeToggle.onchange = () => {
+                const enabled = !!autoForgeToggle.checked;
+                store.world.autoForgeEnabled = enabled;
+                store.world.autoForgeAnnounceCooldown = 0;
+                try {
+                    if (window.localStorage) {
+                        window.localStorage.setItem('voidAutoForge', enabled ? 'on' : 'off');
+                    }
+                } catch (err) {}
+                announce(enabled ? 'Auto-forge enabled. We will spend gold for you!' : 'Auto-forge disabled. Spend gold manually in the Mech Forge.');
+            };
         }
         
         // Enable/disable skill tree button based on subclass
@@ -13395,24 +13634,40 @@ function render(dt) {
 
     function showShopWithHighlight() { showShop(); announce('Low health! Use the Mech Forge to repair!'); setTimeout(() => { const repairItem = document.querySelector('.shop-item[data-key="repair"]'); if (repairItem) repairItem.classList.add('highlight'); }, 100); }
 
-    function triggerMechForgeGoldMilestone() {
-        store.world.mechForgeGoldTriggered = true;
-        const mechForgeBtn = q('shopBtn');
-        if (mechForgeBtn) {
-            mechForgeBtn.classList.add('mech-forge-pulse');
-            if (mechForgeBtn._forgePulseTimeout) {
-                clearTimeout(mechForgeBtn._forgePulseTimeout);
-            }
-            const timeoutId = setTimeout(() => {
-                mechForgeBtn.classList.remove('mech-forge-pulse');
-                mechForgeBtn._forgePulseTimeout = null;
-                store.world.mechForgePulseTimeout = null;
-            }, 12000);
-            mechForgeBtn._forgePulseTimeout = timeoutId;
-            store.world.mechForgePulseTimeout = timeoutId;
+    function triggerMechForgeGoldMilestone(forceShop = false) {
+        const world = store.world;
+        if (!world) return;
+
+        world.mechForgePromptActive = true;
+        if (!world.mechForgeGoldTriggered || forceShop) {
+            world.mechForgeGoldTriggered = true;
         }
-        announce('Forge unlocked! Spend that gold!');
-        showShop();
+
+        const promptCount = (world.mechForgePromptCount || 0) + 1;
+        world.mechForgePromptCount = promptCount;
+
+        const interval = computeNextForgePromptInterval(world.mechForgePromptInterval, promptCount);
+        world.mechForgePromptInterval = interval;
+        world.nextMechForgePrompt = world.gold + interval;
+
+        flashForgeButton(promptCount <= 2 ? 10000 : 5000);
+
+        const autoEnabled = !!world.autoForgeEnabled;
+        if (!autoEnabled || forceShop) {
+            announce('Forge unlocked! Spend that gold!');
+            showShop();
+        } else {
+            announce('Auto-forge stocked up. Tap the Mech Forge to customize!');
+        }
+
+        const menuToggle = q('autoForgeToggle');
+        if (menuToggle && menuToggle.checked !== autoEnabled) {
+            menuToggle.checked = autoEnabled;
+        }
+
+        setTimeout(() => {
+            world.mechForgePromptActive = false;
+        }, 600);
     }
     function getChampionPrimaryTarget(origin) {
         if (!origin) return null;
