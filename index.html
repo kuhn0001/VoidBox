@@ -12461,18 +12461,27 @@ function render(dt) {
 
         const { subclass, treeData } = getSkillTreeContext();
         const genomeName = player.pilotGenome ? player.pilotGenome.toUpperCase() : 'PENDING';
-        const subclassName = treeData && treeData.title
-            ? treeData.title.replace(' MASTERY TREE', '').toUpperCase()
-            : (subclass ? subclass.toUpperCase() : 'UNASSIGNED');
+        
+        // Only show subclass if actually selected, not just from tree data
+        const actualSubclass = player.subclass;
+        let subclassDisplay;
+        if (actualSubclass && treeData && treeData.title) {
+            subclassDisplay = treeData.title.replace(' MASTERY TREE', '').toUpperCase();
+        } else if (actualSubclass) {
+            subclassDisplay = actualSubclass.toUpperCase();
+        } else {
+            subclassDisplay = 'PENDING SELECTION';
+        }
 
         const summaryLines = [
-            `GENOME ROUTE ▸ ${genomeName} ➜ ${subclassName}`,
+            `GENOME ROUTE ▸ ${genomeName} ➜ ${subclassDisplay}`,
             `MISSION STATUS ▸ W${pad(world.wave || 1)} | LV ${pad(world.level || 1)} | BOSSES ${pad(world.bosses || 0)} | KILLS ${pad(world.kills || 0, 3)}`,
             `FORGE LEDGER ▸ GOLD ${pad(world.gold || 0, 4)} | XP ${pad(world.xp || 0, 4)} | SCORE ${pad(world.score || 0, 6)}`,
             `PROGRESSION ▸ TOTAL ${pad(player.totalProgressionPoints || 0)} | SPENT ${pad(player.skillPointsSpent || 0)} | UNSPENT ${pad(player.unspentProgressionPoints || 0)}`
         ];
 
-        const skillMatrixData = computeSkillMatrix(treeData, player, subclassName);
+        // Only show skill matrix if subclass is actually selected
+        const skillMatrixData = actualSubclass ? computeSkillMatrix(treeData, player, subclassDisplay) : null;
         if (skillMatrixData && skillMatrixData.laneSummaries.length) {
             skillMatrixData.laneSummaries.forEach(line => summaryLines.push(line));
         }
@@ -12662,7 +12671,7 @@ function render(dt) {
         }
 
         function computeSkillMatrix(treeData, p, subclassDisplay) {
-            if (!treeData) return null;
+            if (!treeData || !p.subclass) return null; // Don't show matrix without actual subclass selection
             const result = {
                 rows: [],
                 laneSummaries: [],
@@ -12672,6 +12681,7 @@ function render(dt) {
             const skillTree = p.skillTree || {};
 
             const lanes = [];
+            // Lane 1: Core progression path
             if (treeData.path && Array.isArray(treeData.path.nodes)) {
                 const lane = {
                     index: 1,
@@ -12703,6 +12713,7 @@ function render(dt) {
                 lanes.push(lane);
             }
 
+            // Lane 2: Signature → Crossover → Ultimate progression
             const succession = [];
             if (treeData.classAbility) {
                 succession.push({ node: treeData.classAbility, kind: 'Signature' });
@@ -12714,21 +12725,17 @@ function render(dt) {
             if (treeData.ultimateAbility) {
                 succession.push({ node: treeData.ultimateAbility, kind: 'Ultimate' });
             }
+            
             if (succession.length) {
                 const lane = {
                     index: 2,
-                    name: `${subclassDisplay || 'SIGNATURE'} Path`,
+                    name: `${subclassDisplay || 'SIGNATURE'} Abilities`,
                     nodes: []
                 };
                 succession.forEach((entry, idx) => {
                     const id = entry.node.id;
                     const unlocked = !!skillTree[id];
-                    const order = idx + 1;
-                    const laneLabel = entry.kind === 'Signature'
-                        ? 'Lane β – Signature'
-                        : entry.kind === 'Crossover'
-                            ? 'Lane β – Crossover'
-                            : 'Lane β – Ultimate';
+                    const laneLabel = `Lane β – ${entry.kind}`;
                     result.rows.push({
                         tier: entry.kind.toUpperCase(),
                         lane: laneLabel,
@@ -12738,7 +12745,7 @@ function render(dt) {
                         active: unlocked
                     });
                     lane.nodes.push({
-                        order,
+                        order: entry.kind, // Use ability type instead of number
                         name: entry.node.name,
                         desc: entry.node.desc,
                         unlocked,
@@ -12758,11 +12765,19 @@ function render(dt) {
             }
 
             lanes.forEach(lane => {
-                const nodeStatus = lane.nodes.map(node => `${node.statusSymbol}${node.order}`);
-                result.laneSummaries.push(`LANE ${lane.index} ▸ ${lane.name.toUpperCase()} → Nodes ${nodeStatus.join(' ')}`);
+                if (lane.index === 1) {
+                    // Core path uses numbered nodes
+                    const nodeStatus = lane.nodes.map(node => `${node.statusSymbol}${node.order}`);
+                    result.laneSummaries.push(`LANE ${lane.index} ▸ ${lane.name.toUpperCase()} → Nodes ${nodeStatus.join(' ')}`);
+                } else {
+                    // Ability path uses ability types
+                    const nodeStatus = lane.nodes.map(node => `${node.statusSymbol}${node.kind.substring(0, 3)}`);
+                    result.laneSummaries.push(`LANE ${lane.index} ▸ ${lane.name.toUpperCase()} → ${nodeStatus.join(' ')}`);
+                }
+                
                 result.laneNotes.push(lane.nodes.map(node => {
                     const requirement = node.requirement ? ` (req ${node.requirement})` : '';
-                    return `${node.order}. ${node.name}${requirement} (${node.unlocked ? 'active' : 'locked'})`;
+                    return `${node.kind || node.order}. ${node.name}${requirement} (${node.unlocked ? 'active' : 'locked'})`;
                 }).join(' | '));
             });
 
