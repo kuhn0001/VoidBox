@@ -2084,7 +2084,8 @@ function createParticle(x, y, vx, vy, color, life) {
             nextMechForgePrompt: 135,
             mechForgePromptCount: 0,
             autoForgeEnabled: storedAutoForgeEnabled,
-            autoForgeReserve: 15,
+            autoForgeReserve: 40,
+            autoForgeDecisionTimer: null,
             autoForgeAnnounceCooldown: 0,
             totalForgeSpend: 0,
             autoForgeTutorialShown: false
@@ -6587,7 +6588,8 @@ function createParticle(x, y, vx, vy, color, life) {
             nextMechForgePrompt: 135,
             mechForgePromptCount: 0,
             autoForgeEnabled: prevAutoForge,
-            autoForgeReserve: 15,
+            autoForgeReserve: 40,
+            autoForgeDecisionTimer: null,
             autoForgeAnnounceCooldown: 0,
             totalForgeSpend: 0,
             autoForgeTutorialShown: false
@@ -12757,8 +12759,43 @@ function render(dt) {
 
     let shopItemOrder = [];
 
-    const AUTO_FORGE_PRIORITY = ['hp', 'max_shield', 'nano_save', 'dmg', 'speed', 'crit_chance', 'luck_boost', 'vampirism'];
-    const AUTO_FORGE_MAX_PURCHASES_PER_TICK = 3;
+    const AUTO_FORGE_CORE_PRIORITY = Object.freeze(['hp', 'max_shield', 'vampirism', 'crit_chance']);
+    const AUTO_FORGE_CORE_CAPS = Object.freeze({ hp: 6, max_shield: 6, vampirism: 2, crit_chance: 3 });
+    const AUTO_FORGE_FUN_POOL = Object.freeze([
+        'gravity_well',
+        'ghost_hounds',
+        'star_cannon',
+        'launcher',
+        'iceman',
+        'magnet_pull',
+        'grenade',
+        'lazarus_beam'
+    ]);
+    const AUTO_FORGE_FUN_CHANCE = 0.3;
+    const AUTO_FORGE_FUN_WAVE_THRESHOLD = 3;
+    const AUTO_FORGE_SKIP_CHANCE = 0.25;
+    const AUTO_FORGE_MIN_DECISION_TIME = 4.5;
+    const AUTO_FORGE_MAX_DECISION_TIME = 9.5;
+    const AUTO_FORGE_MAX_PURCHASES_PER_TICK = 1;
+
+    function scheduleNextAutoForgeDecision(world, extraDelay = 0) {
+        if (!world) return;
+        const span = Math.max(0, AUTO_FORGE_MAX_DECISION_TIME - AUTO_FORGE_MIN_DECISION_TIME);
+        const base = AUTO_FORGE_MIN_DECISION_TIME + (span > 0 ? Math.random() * span : 0);
+        world.autoForgeDecisionTimer = base + (extraDelay || 0);
+    }
+
+    function canAutoForgeCore(key) {
+        const caps = AUTO_FORGE_CORE_CAPS[key];
+        if (caps === undefined) return true;
+        const player = store.player;
+        if (!player) return false;
+        if (key === 'vampirism') {
+            return (player.vampirismLevel || 0) < caps;
+        }
+        const levels = player.upgradeLevels || {};
+        return (levels[key] || 0) < caps;
+    }
 
     function getNextUpgradeCost(key) {
         const upgrade = SHOP_UPGRADES[key];
@@ -12910,6 +12947,12 @@ function render(dt) {
 
         if (!store.player || store.player.hp <= 0) return;
 
+        if (typeof world.autoForgeDecisionTimer !== 'number' || Number.isNaN(world.autoForgeDecisionTimer)) {
+            scheduleNextAutoForgeDecision(world);
+        } else {
+            world.autoForgeDecisionTimer = Math.max(0, world.autoForgeDecisionTimer - dt);
+        }
+
         const purchases = [];
 
         const repairInfo = getNextUpgradeCost('repair');
@@ -12917,33 +12960,77 @@ function render(dt) {
             const result = attemptPurchaseUpgrade('repair', { silent: true });
             if (result.success) {
                 purchases.push(result);
+                scheduleNextAutoForgeDecision(world, 1.5);
             }
         }
 
-        let purchaseCount = purchases.length;
-        const reserve = store.world.autoForgeReserve ?? 0;
+    const reachedPurchaseLimit = purchases.length >= AUTO_FORGE_MAX_PURCHASES_PER_TICK;
+    const readyForCore = world.autoForgeDecisionTimer <= 0 && !reachedPurchaseLimit;
+        let funPurchase = false;
 
-        for (const key of AUTO_FORGE_PRIORITY) {
-            if (purchaseCount >= AUTO_FORGE_MAX_PURCHASES_PER_TICK) break;
-            const info = getNextUpgradeCost(key);
-            if (!info || !isFinite(info.cost)) continue;
-            if (store.world.gold - reserve < info.cost) continue;
-            if (key === 'nano_save' && store.player.nanoSaves >= 2 && store.world.wave < 4) continue;
-            const result = attemptPurchaseUpgrade(key, { silent: true });
-            if (result.success) {
-                purchases.push(result);
-                purchaseCount++;
+        if (readyForCore) {
+            const reserve = Math.max(0, store.world.autoForgeReserve ?? 0);
+            const availableGold = store.world.gold - reserve;
+            const wave = store.world.wave || 1;
+
+            let candidateKey = null;
+
+            const funChoices = AUTO_FORGE_FUN_POOL
+                .map(key => ({ key, info: getNextUpgradeCost(key) }))
+                .filter(entry => entry.info && isFinite(entry.info.cost) && availableGold >= entry.info.cost);
+            const shouldGoFun = funChoices.length > 0 && wave >= AUTO_FORGE_FUN_WAVE_THRESHOLD && Math.random() < AUTO_FORGE_FUN_CHANCE;
+
+            if (shouldGoFun) {
+                const pick = funChoices[Math.floor(Math.random() * funChoices.length)];
+                candidateKey = pick.key;
+                funPurchase = true;
             }
+
+            if (!candidateKey) {
+                const skipCore = Math.random() < AUTO_FORGE_SKIP_CHANCE;
+                if (!skipCore) {
+                    const coreOrder = AUTO_FORGE_CORE_PRIORITY.slice();
+                    for (let i = coreOrder.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [coreOrder[i], coreOrder[j]] = [coreOrder[j], coreOrder[i]];
+                    }
+                    for (const key of coreOrder) {
+                        if (!canAutoForgeCore(key)) continue;
+                        const info = getNextUpgradeCost(key);
+                        if (!info || !isFinite(info.cost)) continue;
+                        if (availableGold < info.cost) continue;
+                        candidateKey = key;
+                        break;
+                    }
+                }
+            }
+
+            if (candidateKey) {
+                const result = attemptPurchaseUpgrade(candidateKey, { silent: true });
+                if (result.success) {
+                    result.isFun = funPurchase;
+                    purchases.push(result);
+                }
+            }
+
+            const extraDelay = purchases.some(p => p.isFun) ? 3.5 : purchases.length ? 2.25 : 1.25;
+            scheduleNextAutoForgeDecision(world, extraDelay);
         }
 
         if (purchases.length) {
             if (!store.world.autoForgeTutorialShown) {
                 store.world.autoForgeTutorialShown = true;
-                announce('Auto-forge is spending gold for you! Toggle it in the Mech Forge menu.');
+                announce('Auto-forge is spending gold for you! Expect comfy picks and the occasional wild card. Toggle it in the Mech Forge menu.');
             } else if ((store.world.autoForgeAnnounceCooldown || 0) <= 0) {
                 const names = purchases.map(p => p.name).join(', ');
-                announce(`Auto-forged: ${names}`);
-                store.world.autoForgeAnnounceCooldown = 3.5;
+                if (purchases.every(p => p.key === 'repair')) {
+                    announce('Auto-forge patched your hull with a quick repair.');
+                } else if (purchases.some(p => p.isFun)) {
+                    announce(`Auto-forge got whimsical: ${names}`);
+                } else {
+                    announce(`Auto-forged: ${names}`);
+                }
+                store.world.autoForgeAnnounceCooldown = purchases.some(p => p.isFun) ? 5 : 4;
             }
             flashForgeButton(900);
         }
@@ -12958,7 +13045,7 @@ function render(dt) {
         goldEl.textContent = store.world.gold;
         if (autoStatusEl) {
             autoStatusEl.textContent = store.world.autoForgeEnabled
-                ? "Auto-forge is ON. We'll spend spare gold on core upgrades."
+                ? "Auto-forge is ON. Expect cozy defenses and the occasional wild splurge."
                 : "Auto-forge is OFF. Tap an item to spend gold.";
         }
 
@@ -13095,12 +13182,17 @@ function render(dt) {
                 const enabled = !!autoForgeToggle.checked;
                 store.world.autoForgeEnabled = enabled;
                 store.world.autoForgeAnnounceCooldown = 0;
+                if (enabled) {
+                    scheduleNextAutoForgeDecision(store.world, 0.75);
+                } else {
+                    store.world.autoForgeDecisionTimer = null;
+                }
                 try {
                     if (window.localStorage) {
                         window.localStorage.setItem('voidAutoForge', enabled ? 'on' : 'off');
                     }
                 } catch (err) {}
-                announce(enabled ? 'Auto-forge enabled. We will spend gold for you!' : 'Auto-forge disabled. Spend gold manually in the Mech Forge.');
+                announce(enabled ? "Auto-forge enabled. We'll grab shields, health, and random toys!" : 'Auto-forge disabled. Spend gold manually in the Mech Forge.');
             };
         }
         
