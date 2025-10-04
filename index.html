@@ -1900,9 +1900,10 @@ class FlameParticle {
     flameWallCharge: 0,
     flameWallInitialized: false,
     flameWallActiveT: 0,
-        beefChargeState: 'ready', beefChargeCooldown: 0, beefChargeOrigin: null, beefChargeTarget: null, beefChargeT: 0, beefCharges: 1, beefMaxCharges: 1,
-        beefDoubleCharge: false, beefBigExplosion: false, // New skill tree abilities
-        beefChainTargets: [], beefChainIndex: 0, beefChainMode: false, // Chain jumping system for marauder
+    beefChargeState: 'ready', beefChargeCooldown: 0, beefChargeOrigin: null, beefChargeTarget: null, beefChargeT: 0, beefCharges: 1, beefMaxCharges: 1,
+    beefChargePlan: null, beefChargeSegmentIndex: 0, beefImpactDelay: 0, beefLastImpact: null, beefQueuedCharge: null,
+    beefDoubleCharge: false, beefBigExplosion: false, // New skill tree abilities
+    beefChainMode: false, // Chain jumping system for marauder
         hasChainLightning: false, chainLightningCooldown: 0, stormstrikerLevel: 0, lightningAlternate: false, lightningCycleIndex: 0, chainLightningDamage: 1.0,
         phasestRikerLevel: 0, voidLaserRampTime: 0, voidLaserLastTarget: null,
         wiperLasers: false, wiperLaser1Angle: 0, wiperLaser2Angle: Math.PI, wiperLaserSpeed: 1.5, wiperLaserDamageTimer: 0,
@@ -2037,6 +2038,8 @@ class FlameParticle {
         },
         player: { ...player_initial_state },
     boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], shadowHounds: [], missiles: [], lasers: [], mines: [], activeEffects: [], starProjectiles: [], pendingStarClones: [],
+        lastBossSnapshot: null,
+        lastBossDefeatId: null,
         flameParticles: [],
         lightningBolts: [],
         empNovas: [],
@@ -3158,6 +3161,8 @@ class FlameParticle {
             }
             
             store.boss = createBoss(bossHpScale);
+            store.lastBossSnapshot = null;
+            store.lastBossDefeatId = null;
             store.world.bossSpawnTime = performance.now();
             store.world.lastPlannedSpawnCount = 0;
             store.world.lastSpawnCount = 0;
@@ -3720,52 +3725,356 @@ class FlameParticle {
         }
     }
 
+    function computeBeefChargeContext(p) {
+        let impactRadius = 80;
+        if (p.skillTree && p.skillTree.juggernaut) impactRadius = 120;
+        if (p.beefBigExplosion || (p.skillTree && p.skillTree.juggernaut_enhanced)) impactRadius = 160;
+        if (p.beefExplosionRadius) impactRadius *= p.beefExplosionRadius;
+        if (p.subclass === 'juggernaut') impactRadius = Math.max(impactRadius, 120);
+
+        let baseDamage = 80;
+        if (p.beefBigExplosion || (p.skillTree && p.skillTree.juggernaut_enhanced)) baseDamage = 150;
+        if (p.beefChargeDamage) baseDamage *= p.beefChargeDamage;
+        if (p.beefExplosionDamage) baseDamage *= p.beefExplosionDamage;
+
+        const damageTags = p.subclass === 'juggernaut' ? ['fire', 'explosive'] : ['kinetic', 'concussive'];
+
+        const hasJuggernautSkills = (p.skillTree && p.skillTree.juggernaut) || p.subclass === 'juggernaut' ||
+            (p.skillTree && (p.skillTree.juggernaut_charge_power || p.skillTree.juggernaut_charge_mastery ||
+             p.skillTree.juggernaut_heavy_armor || p.skillTree.juggernaut_unstoppable || p.skillTree.juggernaut_enhanced));
+
+        const chainDamageBonus = p.beefChainDamageBonus || (p.beefChainMode ? 1.25 : 1);
+        const chainRadiusScale = p.beefChainMode ? 0.85 : 1;
+
+        return {
+            impactRadius,
+            baseDamage,
+            damageTags,
+            hasJuggernautSkills,
+            explosionSound: hasJuggernautSkills ? 'charge' : 'beefCharge',
+            knockbackBase: 250,
+            doubleHitMultiplier: p.marauderDoubleHitBonus || 2.0,
+            chainDamageBonus,
+            chainRadiusScale
+        };
+    }
+
+    function getBeefChargeTargetPosition(segment) {
+        if (!segment) return { x: 0, y: 0 };
+        const enemy = segment.enemy;
+        if (enemy && !enemy.dead) {
+            segment.fallbackX = enemy.x;
+            segment.fallbackY = enemy.y;
+            return { x: enemy.x, y: enemy.y };
+        }
+        return { x: segment.fallbackX, y: segment.fallbackY };
+    }
+
+    function findClosestEnemyInRange(origin, potentialTargets, rangeSq, excludeSet = new Set()) {
+        let best = null;
+        let bestDistSq = rangeSq;
+        potentialTargets.forEach(enemy => {
+            if (!enemy || enemy.dead || excludeSet.has(enemy) || enemy.stunTimer > 0) return;
+            const dx = enemy.x - origin.x;
+            const dy = enemy.y - origin.y;
+            const distSq = dx * dx + dy * dy;
+            if (distSq < bestDistSq) {
+                bestDistSq = distSq;
+                best = enemy;
+            }
+        });
+        return best;
+    }
+
+    function buildBeefChargePlan(p, primaryEnemy, potentialTargets) {
+        if (!primaryEnemy) return null;
+
+        const context = computeBeefChargeContext(p);
+        const origin = { x: p.x, y: p.y };
+        const rangeSq = 150 * 150;
+        const segments = [];
+        const used = new Set();
+
+        const pushEnemySegment = (enemy, label) => {
+            if (!enemy) return;
+            segments.push({
+                enemy,
+                fallbackX: enemy.x,
+                fallbackY: enemy.y,
+                doImpact: true,
+                label
+            });
+            used.add(enemy);
+        };
+
+        pushEnemySegment(primaryEnemy, 'primary');
+
+        if (p.beefChainMode && p.beefMaxCharges > 1) {
+            let anchor = primaryEnemy;
+            for (let i = 1; i < p.beefMaxCharges; i++) {
+                const reference = (anchor && !anchor.dead)
+                    ? { x: anchor.x, y: anchor.y }
+                    : (segments.length ? { x: segments[segments.length - 1].fallbackX, y: segments[segments.length - 1].fallbackY } : origin);
+                const next = findClosestEnemyInRange(reference, potentialTargets, rangeSq, used);
+                if (!next) break;
+                pushEnemySegment(next, 'chain');
+                anchor = next;
+            }
+        }
+
+        if (!segments.length) return null;
+
+        const returnToOrigin = !p.beefChainMode && p.subclass !== 'marauder';
+        if (returnToOrigin) {
+            segments.push({
+                enemy: null,
+                fallbackX: origin.x,
+                fallbackY: origin.y,
+                doImpact: false,
+                label: 'return'
+            });
+        }
+
+        return {
+            context,
+            origin,
+            segments,
+            chainDelay: p.beefChainMode ? 0.08 : 0,
+            recoveryDelay: returnToOrigin ? 0.1 : 0.12,
+            segmentDuration: 0.24 / Math.max(p.beefChargeSpeed || 1.35, 0.6),
+            returnToOrigin
+        };
+    }
+
+    function spawnBeefChargeTrail(startX, startY, targetX, targetY, options = {}) {
+        store.activeEffects.push(createEffect('beefCharge', { x: startX, y: startY }, { x: targetX, y: targetY }, undefined, options));
+    }
+
+    function resolveBeefChargeImpact(p, context, impactX, impactY, options = {}) {
+        const segment = options.segment || null;
+        const segmentLabel = segment ? segment.label : 'primary';
+        const segmentIndex = options.index ?? 0;
+        let impactRadius = context.impactRadius;
+        if (segmentLabel === 'chain' && context.chainRadiusScale) {
+            impactRadius *= context.chainRadiusScale;
+        }
+
+        if (context.hasJuggernautSkills) {
+            playSound(context.explosionSound);
+            explode(impactX, impactY, false, true);
+        } else {
+            playSound(context.explosionSound);
+        }
+
+        store.activeEffects.push(createEffect('marauderImpact', impactX, impactY, impactRadius, {
+            subclass: p.subclass,
+            segmentLabel,
+            segmentIndex
+        }));
+
+        const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
+        if (!p.marauderHitTargets) p.marauderHitTargets = new Set();
+
+        let lastEnemyHit = null;
+    const radiusSq = impactRadius * impactRadius;
+
+        potentialTargets.forEach(e => {
+            if (!e || e.dead) return;
+            const dx = e.x - impactX;
+            const dy = e.y - impactY;
+            const distSq = dx * dx + dy * dy;
+            if (distSq > radiusSq) return;
+
+            let damageMultiplier = 1;
+            if (segmentLabel === 'chain') {
+                if (context.chainDamageBonus) damageMultiplier *= context.chainDamageBonus;
+                if (p.beefChainBonus) damageMultiplier *= p.beefChainBonus;
+            }
+            let chargeDmg = context.baseDamage * damageMultiplier * p.dmgMult;
+            const enemyId = e.id || `${e.x}_${e.y}_${e.type}`;
+            let isDoubleHit = false;
+
+            if (p.subclass === 'marauder') {
+                if (p.marauderHitTargets.has(enemyId)) {
+                    isDoubleHit = true;
+                    const multiplier = context.doubleHitMultiplier || 2.0;
+                    if (e === store.boss || e.type === 'void_champion') {
+                        chargeDmg *= multiplier * 1.5;
+                        e.stunTimer = 8.0;
+                        e.marauderMarked = true;
+                        announce('CHAMPION DEVASTATION!');
+                    } else {
+                        e.isFlattened = true;
+                        e.flattenedTime = performance.now();
+                        e.v = 0;
+                        e.vx = 0;
+                        e.vy = 0;
+                        e.hp = Math.min(e.hp, 1);
+                        e.stunTimer = Math.max(e.stunTimer || 0, 999);
+                        e.fireRateChance = 0;
+                        e.flattenScale = { x: 2.0, y: 0.1 };
+                        const bonusText = multiplier >= 3.0 ? 'ELITE FLATTEN!' : 'MARAUDER FLATTEN!';
+                        announce(bonusText);
+                    }
+                    setTimeout(() => p.marauderHitTargets.delete(enemyId), 100);
+                } else {
+                    p.marauderHitTargets.add(enemyId);
+                    setTimeout(() => p.marauderHitTargets.delete(enemyId), 3000);
+                }
+            }
+
+            const knockbackAngle = Math.atan2(e.y - impactY, e.x - impactX);
+            const vulnResult = applySubclassVulnerability(e, chargeDmg, {
+                player: p,
+                subclass: p.subclass,
+                damageTags: context.damageTags,
+                source: 'beefCharge',
+                knockbackAngle,
+                baseDamage: chargeDmg
+            });
+            chargeDmg = vulnResult.damage;
+
+            e.hp -= chargeDmg;
+            if (!isDoubleHit) {
+                e.stunTimer = Math.max(e.stunTimer || 0, 2.5);
+            }
+
+            if (p.vampirism > 0) {
+                let healAmount = chargeDmg * p.vampirism;
+                healAmount = Math.max(healAmount, 1);
+                healAmount = Math.min(healAmount, 8);
+                p.hp = Math.min(p.hpMax, p.hp + healAmount);
+            }
+
+            let knockbackForce = context.knockbackBase * (segmentLabel === 'chain' ? Math.max(0.85, damageMultiplier) : 1);
+            if (p.beefChargeKnockback) {
+                knockbackForce *= p.beefChargeKnockback;
+            }
+            if (!e.knockback || e.knockback.type !== 'maraLaunch') {
+                e.knockback = {
+                    vx: Math.cos(knockbackAngle) * knockbackForce,
+                    vy: Math.sin(knockbackAngle) * knockbackForce,
+                    duration: 0.3,
+                    type: 'maraLaunch'
+                };
+            }
+
+            lastEnemyHit = e;
+        });
+
+        return {
+            x: impactX,
+            y: impactY,
+            enemy: lastEnemyHit
+        };
+    }
+
     function stepPlayer(dt) {
         const p = store.player;
-        if (p.pilotGenome === 'beef' && p.beefChargeState !== 'ready' && p.beefMaxCharges > 0) {
-            p.beefChargeT += dt;
-            const chargeSpeed = Math.max(p.beefChargeSpeed || 1.35, 0.6);
-            const chargeDuration = 0.24 / chargeSpeed;
-            const returnDuration = 0.32 / chargeSpeed;
-            if (p.beefChargeState === 'charging') {
-                const progress = Math.min(p.beefChargeT / chargeDuration, 1);
-                p.x = p.beefChargeOrigin.x + (p.beefChargeTarget.x - p.beefChargeOrigin.x) * progress;
-                p.y = p.beefChargeOrigin.y + (p.beefChargeTarget.y - p.beefChargeOrigin.y) * progress;
-                if (progress >= 1) { 
-                    // Check if we're in chain mode and have more targets
-                    if (p.beefChainMode && p.beefChainIndex < p.beefChainTargets.length - 1) {
-                        // Move to next chain target
-                        p.beefChainIndex++;
-                        p.beefChargeOrigin = { x: p.x, y: p.y }; // Current position becomes new origin
-                        p.beefChargeTarget = { x: p.beefChainTargets[p.beefChainIndex].x, y: p.beefChainTargets[p.beefChainIndex].y };
-                        p.beefChargeT = 0; // Reset timing for next jump
-                        // console.log(`Chaining to target ${p.beefChainIndex + 1} of ${p.beefChainTargets.length}`);
-                    } else {
-                        // Chain complete - stay at final position for chain mode, or return for single charge
-                        if (p.beefChainMode) {
-                            // Chain complete - stay here and reset
-                            p.beefChargeState = 'ready'; 
-                            p.isInvincible = false;
-                            p.beefChainTargets = [];
-                            p.beefChainIndex = 0;
-                            // console.log('Chain jumping complete!');
+        if (p.pilotGenome === 'beef' && p.beefMaxCharges > 0 && p.beefChargeState !== 'ready') {
+            const plan = p.beefChargePlan;
+            if (!plan || !plan.segments || plan.segments.length === 0) {
+                p.beefChargeState = 'ready';
+                p.beefChargePlan = null;
+                p.beefChargeT = 0;
+                p.beefImpactDelay = 0;
+                p.isInvincible = false;
+            } else if (p.beefChargeState === 'charging') {
+                const segmentIndex = Math.min(p.beefChargeSegmentIndex, plan.segments.length - 1);
+                const segment = plan.segments[segmentIndex];
+                if (!segment) {
+                    p.beefChargeState = 'ready';
+                    p.beefChargePlan = null;
+                    p.beefChargeT = 0;
+                    p.isInvincible = false;
+                } else {
+                    if (segment.startX === undefined) {
+                        segment.startX = p.x;
+                        segment.startY = p.y;
+                    }
+                    const targetPos = getBeefChargeTargetPosition(segment);
+                    const startX = segment.startX;
+                    const startY = segment.startY;
+                    const progress = Math.min((p.beefChargeT + dt) / plan.segmentDuration, 1);
+                    const eased = 1 - Math.pow(1 - progress, 3);
+                    p.x = startX + (targetPos.x - startX) * eased;
+                    p.y = startY + (targetPos.y - startY) * eased;
+                    p.beefChargeT += dt;
+                    p.isInvincible = true;
+                    const distSq = (targetPos.x - p.x) * (targetPos.x - p.x) + (targetPos.y - p.y) * (targetPos.y - p.y);
+                    if (progress >= 1 || distSq < 9) {
+                        p.x = targetPos.x;
+                        p.y = targetPos.y;
+                        const impactResult = segment.doImpact
+                            ? resolveBeefChargeImpact(p, plan.context, targetPos.x, targetPos.y, {
+                                segment,
+                                index: p.beefChargeSegmentIndex
+                            })
+                            : { x: targetPos.x, y: targetPos.y, enemy: null };
+                        if (segment.doImpact || !p.beefLastImpact) {
+                            p.beefLastImpact = impactResult;
+                        }
+                        p.beefChargeSegmentIndex++;
+                        p.beefChargeT = 0;
+                        if (p.beefChargeSegmentIndex < plan.segments.length) {
+                            p.beefImpactDelay = plan.chainDelay;
+                            if (plan.chainDelay > 0) {
+                                p.beefChargeState = 'impactPause';
+                            } else {
+                                const nextSegment = plan.segments[p.beefChargeSegmentIndex];
+                                nextSegment.startX = p.x;
+                                nextSegment.startY = p.y;
+                                const nextTarget = getBeefChargeTargetPosition(nextSegment);
+                                p.beefChargeOrigin = { x: p.x, y: p.y };
+                                p.beefChargeTarget = { x: nextTarget.x, y: nextTarget.y };
+                                spawnBeefChargeTrail(p.x, p.y, nextTarget.x, nextTarget.y, {
+                                    subclass: p.subclass,
+                                    segmentIndex: p.beefChargeSegmentIndex,
+                                    segmentLabel: nextSegment.label,
+                                    rangeOverride: plan.context.impactRadius
+                                });
+                            }
                         } else {
-                            // Single charge - return to origin
-                            p.beefChargeState = 'returning'; 
-                            p.beefChargeT = 0; 
+                            p.beefImpactDelay = plan.recoveryDelay;
+                            p.beefChargeState = 'recovering';
+                            p.beefChargePlan = null;
+                            p.isInvincible = false;
                         }
                     }
                 }
-            } else if (p.beefChargeState === 'returning') {
-                // Only used for single charge mode (non-marauder)
-                const progress = Math.min(p.beefChargeT / returnDuration, 1);
-                p.x = p.beefChargeTarget.x + (p.beefChargeOrigin.x - p.beefChargeTarget.x) * progress;
-                p.y = p.beefChargeTarget.y + (p.beefChargeOrigin.y - p.beefChargeTarget.y) * progress;
-                if (progress >= 1) { 
-                    p.x = p.beefChargeOrigin.x; 
-                    p.y = p.beefChargeOrigin.y; 
-                    p.beefChargeState = 'ready'; 
-                    p.isInvincible = false; 
+            } else if (p.beefChargeState === 'impactPause') {
+                p.beefImpactDelay -= dt;
+                p.isInvincible = true;
+                if (p.beefImpactDelay <= 0) {
+                    if (plan && p.beefChargeSegmentIndex < plan.segments.length) {
+                        const nextSegment = plan.segments[p.beefChargeSegmentIndex];
+                        nextSegment.startX = p.x;
+                        nextSegment.startY = p.y;
+                        const nextTarget = getBeefChargeTargetPosition(nextSegment);
+                        p.beefChargeOrigin = { x: p.x, y: p.y };
+                        p.beefChargeTarget = { x: nextTarget.x, y: nextTarget.y };
+                        spawnBeefChargeTrail(p.x, p.y, nextTarget.x, nextTarget.y, {
+                            subclass: p.subclass,
+                            segmentIndex: p.beefChargeSegmentIndex,
+                            segmentLabel: nextSegment.label,
+                            rangeOverride: plan.context.impactRadius
+                        });
+                        p.beefChargeState = 'charging';
+                        p.beefChargeT = 0;
+                    } else {
+                        p.beefChargeState = 'recovering';
+                        p.beefImpactDelay = plan ? plan.recoveryDelay : 0.12;
+                        p.isInvincible = false;
+                    }
+                }
+            } else if (p.beefChargeState === 'recovering') {
+                p.beefImpactDelay -= dt;
+                if (p.beefImpactDelay <= 0) {
+                    p.beefChargeState = 'ready';
+                    p.beefChargePlan = null;
+                    p.beefChargeT = 0;
+                    p.beefImpactDelay = 0;
+                    p.isInvincible = false;
                 }
             }
         } else {
@@ -3794,7 +4103,7 @@ class FlameParticle {
         if (p.pilotGenome === 'beef' && p.beefMaxCharges > 0) {
             if (p.beefCharges < p.beefMaxCharges) {
                 if (p.beefChargeCooldown > 0) {
-                    p.beefChargeCooldown -= dt;
+                    p.beefChargeCooldown = Math.max(0, p.beefChargeCooldown - dt);
                 }
                 if (p.beefChargeCooldown <= 0) {
                     p.beefCharges++;
@@ -3803,254 +4112,118 @@ class FlameParticle {
                     }
                 }
             }
-            // The charge is triggered either by the button OR automatically by proximity
+
             const shouldCharge = p.isRequestingCharge || !document.body.classList.contains('mobile-controls-active');
 
             if (p.beefChargeState === 'ready' && p.beefCharges > 0 && shouldCharge) {
-                p.isRequestingCharge = false; // Reset the flag
-                const chargeRadius = 120; let closestEnemy = null; let closestDistSq = chargeRadius * chargeRadius;
-                const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
-                potentialTargets.forEach(e => {
-                    if (e.dead || e.stunTimer > 0) return;
-                    const dx = e.x - p.x; const dy = e.y - p.y; const distSq = dx * dx + dy * dy;
-                    if (distSq < closestDistSq) { closestDistSq = distSq; closestEnemy = e; }
+                p.isRequestingCharge = false;
+                const chargeRadius = 120;
+                let closestEnemy = null;
+                let closestDistSq = chargeRadius * chargeRadius;
+                const potentialTargets = store.boss ? [...store.enemies, store.boss] : [...store.enemies];
+                potentialTargets.forEach(enemy => {
+                    if (!enemy || enemy.dead || enemy.stunTimer > 0) return;
+                    const dx = enemy.x - p.x;
+                    const dy = enemy.y - p.y;
+                    const distSq = dx * dx + dy * dy;
+                    if (distSq < closestDistSq) {
+                        closestDistSq = distSq;
+                        closestEnemy = enemy;
+                    }
                 });
+
                 if (closestEnemy) {
                     if (p.beefCharges === p.beefMaxCharges) {
                         p.beefChargeCooldown = 8;
                     }
-                    p.beefCharges--; 
-                    
-                    // Set up chain jumping system for marauder
-                    if (p.beefChainMode && p.beefMaxCharges > 1) {
-                        // Find chain targets
-                        p.beefChainTargets = [{ x: p.x, y: p.y }]; // Start with player position
-                        let currentPos = { x: p.x, y: p.y };
-                        
-                        // Add targets based on max charges (marauder=2, enhanced=3)
-                        for (let i = 0; i < p.beefMaxCharges; i++) {
-                            let nextTarget = null;
-                            let nextClosestDistSq = 150 * 150; // Chain range
-                            
-                            potentialTargets.forEach(e => {
-                                if (e.dead || e.stunTimer > 0) return;
-                                // Don't target the same enemy twice in a row
-                                if (p.beefChainTargets.length > 1 && 
-                                    Math.abs(e.x - p.beefChainTargets[p.beefChainTargets.length-1].x) < 10 &&
-                                    Math.abs(e.y - p.beefChainTargets[p.beefChainTargets.length-1].y) < 10) return;
-                                    
-                                const dx = e.x - currentPos.x;
-                                const dy = e.y - currentPos.y; 
-                                const distSq = dx * dx + dy * dy;
-                                if (distSq < nextClosestDistSq) { 
-                                    nextClosestDistSq = distSq; 
-                                    nextTarget = e; 
-                                }
-                            });
-                            
-                            if (nextTarget) {
-                                p.beefChainTargets.push({ x: nextTarget.x, y: nextTarget.y });
-                                currentPos = { x: nextTarget.x, y: nextTarget.y };
-                            } else {
-                                // No more targets found, end chain
-                                break;
-                            }
-                        }
-                        
-                        // Start chaining (skip player position)
-                        p.beefChainIndex = 0;
-                        if (p.beefChainTargets.length > 1) {
-                            p.beefChargeOrigin = { x: p.x, y: p.y };
-                            p.beefChargeTarget = { x: p.beefChainTargets[1].x, y: p.beefChainTargets[1].y };
-                            p.beefChainIndex = 1;
-                        } else {
-                            // Fall back to single target
-                            p.beefChargeOrigin = { x: p.x, y: p.y };
-                            p.beefChargeTarget = { x: closestEnemy.x, y: closestEnemy.y };
-                        }
-                        
-                        // console.log(`Chain setup: ${p.beefChainTargets.length} targets for ${p.beefMaxCharges} charges`);
-                    } else {
-                        // Original single charge system
-                        p.beefChargeOrigin = { x: p.x, y: p.y }; 
-                        p.beefChargeTarget = { x: closestEnemy.x, y: closestEnemy.y };
-                    }
-                    
-                    p.beefChargeState = 'charging'; 
-                    p.beefChargeT = 0; 
-                    p.isInvincible = true;
-                    store.activeEffects.push(createEffect("beefCharge", p.beefChargeOrigin, p.beefChargeTarget));
-                    
-                    // Calculate impact radius based on skills
-                    let impactRadius = 80; // Base radius
-                    if (p.skillTree && p.skillTree.juggernaut) impactRadius = 120;
-                    if (p.beefBigExplosion || (p.skillTree && p.skillTree.juggernaut_enhanced)) impactRadius = 160; // Big explosion
-                    
-                    // Apply Juggernaut Unstoppable Force radius multiplier
-                    if (p.beefExplosionRadius) {
-                        impactRadius *= p.beefExplosionRadius;
-                    }
-                    
-                    // Skill tree compatibility - check subclass for existing players
-                    if (p.subclass === 'juggernaut') impactRadius = Math.max(impactRadius, 120);
-                    
-                    // Check for juggernaut skills (including crossover skills for marauder)
-                    const hasJuggernautSkills = (p.skillTree && p.skillTree.juggernaut) || p.subclass === 'juggernaut' ||
-                        (p.skillTree && (p.skillTree.juggernaut_charge_power || p.skillTree.juggernaut_charge_mastery || 
-                         p.skillTree.juggernaut_heavy_armor || p.skillTree.juggernaut_unstoppable || p.skillTree.juggernaut_enhanced));
-                    
-                    if (hasJuggernautSkills) {
-                        playSound('charge');
-                        explode(closestEnemy.x, closestEnemy.y, false, true);
-                    } else {
-                        playSound('beefCharge');
-                    }
-                    
-                    // Apply impact damage
-                    let baseDamage = 80;
-                    if (p.beefBigExplosion || (p.skillTree && p.skillTree.juggernaut_enhanced)) baseDamage = 150; // Big explosion damage
-                    
-                    // Apply Juggernaut skill multipliers
-                    if (p.beefChargeDamage) {
-                        baseDamage *= p.beefChargeDamage; // Charge Power skill
-                    }
-                    if (p.beefExplosionDamage) {
-                        baseDamage *= p.beefExplosionDamage; // Unstoppable Force skill
-                    }
-                    
-                    // Track enemies hit for marauder double-hit bonus
-                    if (!p.marauderHitTargets) p.marauderHitTargets = new Set();
-                    
-                    potentialTargets.forEach(e => {
-                        if (e.dead) return;
-                        const dx = e.x - closestEnemy.x; const dy = e.y - closestEnemy.y; const distSq = dx * dx + dy * dy;
-                        if (distSq < impactRadius * impactRadius) {
-                            let chargeDmg = baseDamage * p.dmgMult;
-                            
-                            // Marauder double-hit bonus system
-                            const enemyId = e.id || `${e.x}_${e.y}_${e.type}`;
-                            let isDoubleHit = false;
-                            if (p.subclass === 'marauder' && p.marauderHitTargets.has(enemyId)) {
-                                const doubleHitMultiplier = p.marauderDoubleHitBonus || 2.0;
-                                isDoubleHit = true;
-                                
-                                // Special effects based on enemy type
-                                if (e === store.boss || e.type === 'void_champion') {
-                                    // Boss/Champion: Major damage + long stun, but no flatten
-                                    chargeDmg *= doubleHitMultiplier * 1.5; // Extra multiplier for tough enemies
-                                    e.stunTimer = 8.0; // Extended stun
-                                    e.marauderMarked = true; // Mark for visual effect
-                                    announce('CHAMPION DEVASTATION!');
-                                } else {
-                                    // Regular enemy: Flatten effect - disable but leave for cleanup
-                                    e.isFlattened = true;
-                                    e.flattenedTime = performance.now();
-                                    e.v = 0; // Stop movement
-                                    e.vx = 0;
-                                    e.vy = 0;
-                                    e.hp = 1; // Leave at 1 HP for cleanup
-                                    e.stunTimer = 999; // Effectively permanent stun
-                                    e.fireRateChance = 0; // Can't fire anymore
-                                    
-                                    // Add special flattened visual scaling
-                                    e.flattenScale = { x: 2.0, y: 0.1 }; // Wide and very flat
-                                    
-                                    const bonusText = doubleHitMultiplier >= 3.0 ? 'ELITE FLATTEN!' : 'MARAUDER FLATTEN!';
-                                    announce(bonusText);
-                                }
-                                
-                                // Reset the tracking for this enemy after the bonus
-                                setTimeout(() => p.marauderHitTargets.delete(enemyId), 100);
-                            } else if (p.subclass === 'marauder') {
-                                // First hit - track this enemy for potential double hit
-                                p.marauderHitTargets.add(enemyId);
-                                // Clear tracking after 3 seconds if not hit again
-                                setTimeout(() => p.marauderHitTargets.delete(enemyId), 3000);
-                            }
-                            
-                            const knockbackAngle = Math.atan2(e.y - p.y, e.x - p.x);
-                            const damageTags = p.subclass === 'juggernaut' ? ['fire', 'explosive'] : ['kinetic', 'concussive'];
-                            const vulnResult = applySubclassVulnerability(e, chargeDmg, {
-                                player: p,
-                                subclass: p.subclass,
-                                damageTags,
-                                source: 'beefCharge',
-                                knockbackAngle,
-                                baseDamage: chargeDmg
-                            });
-                            chargeDmg = vulnResult.damage;
+                    p.beefCharges = Math.max(0, p.beefCharges - 1);
 
-                            e.hp -= chargeDmg; 
-                            if (!isDoubleHit) e.stunTimer = 2.5; // Normal stun if not double hit
-                            
-                            // Apply vampirism healing for charge damage
-                            if (store.player.vampirism > 0) {
-                                let healAmount = chargeDmg * store.player.vampirism;
-                                healAmount = Math.max(healAmount, 1); // Minimum 1 HP
-                                healAmount = Math.min(healAmount, 8); // Cap at 8 HP for charge
-                                store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                    const plan = buildBeefChargePlan(p, closestEnemy, potentialTargets);
+                    if (plan) {
+                        plan.primaryEnemy = closestEnemy;
+                        p.beefChargePlan = plan;
+                        p.beefChargeSegmentIndex = 0;
+                        p.beefChargeState = 'charging';
+                        p.beefChargeT = 0;
+                        p.beefImpactDelay = 0;
+                        p.isInvincible = true;
+                        p.beefLastImpact = null;
+
+                        const firstSegment = plan.segments[0];
+                        firstSegment.startX = p.x;
+                        firstSegment.startY = p.y;
+                        const firstTarget = getBeefChargeTargetPosition(firstSegment);
+                        p.beefChargeOrigin = { x: p.x, y: p.y };
+                        p.beefChargeTarget = { x: firstTarget.x, y: firstTarget.y };
+                        spawnBeefChargeTrail(p.x, p.y, firstTarget.x, firstTarget.y, {
+                            subclass: p.subclass,
+                            segmentIndex: p.beefChargeSegmentIndex,
+                            segmentLabel: firstSegment.label,
+                            rangeOverride: plan.context.impactRadius
+                        });
+
+                        if ((p.beefDoubleCharge || (p.skillTree && p.skillTree.combo_charge)) && p.beefCharges > 0) {
+                            p.beefQueuedCharge = {
+                                delay: 0.4,
+                                fallback: { x: firstTarget.x, y: firstTarget.y },
+                                targetEnemy: closestEnemy
+                            };
+                        } else {
+                            p.beefQueuedCharge = null;
+                        }
+                    } else {
+                        p.beefChargeState = 'ready';
+                        p.isInvincible = false;
+                    }
+                }
+            } else if (p.beefChargeState !== 'ready') {
+                p.isRequestingCharge = false;
+            }
+
+            if (p.beefQueuedCharge) {
+                p.beefQueuedCharge.delay -= dt;
+                if (p.beefQueuedCharge.delay <= 0) {
+                    if (p.beefChargeState === 'ready' && p.beefCharges > 0) {
+                        const potentialTargets = store.boss ? [...store.enemies, store.boss] : [...store.enemies];
+                        let comboEnemy = p.beefQueuedCharge.targetEnemy;
+                        if (!comboEnemy || comboEnemy.dead) {
+                            comboEnemy = findClosestEnemyInRange(p.beefQueuedCharge.fallback, potentialTargets, 180 * 180);
+                        }
+                        if (comboEnemy) {
+                            if (p.beefCharges === p.beefMaxCharges) {
+                                p.beefChargeCooldown = 8;
                             }
-                            
-                            let knockbackForce = 250; 
-                            if (p.beefChargeKnockback) {
-                                knockbackForce *= p.beefChargeKnockback; // Apply Charge Power knockback multiplier
-                            }
-                            if (!e.knockback || e.knockback.type !== 'maraLaunch') {
-                                e.knockback = { vx: Math.cos(knockbackAngle) * knockbackForce, vy: Math.sin(knockbackAngle) * knockbackForce, duration: 0.3 };
+                            p.beefCharges = Math.max(0, p.beefCharges - 1);
+                            const comboPlan = buildBeefChargePlan(p, comboEnemy, potentialTargets);
+                            if (comboPlan) {
+                                comboPlan.primaryEnemy = comboEnemy;
+                                p.beefChargePlan = comboPlan;
+                                p.beefChargeSegmentIndex = 0;
+                                p.beefChargeState = 'charging';
+                                p.beefChargeT = 0;
+                                p.beefImpactDelay = 0;
+                                p.isInvincible = true;
+                                p.beefLastImpact = null;
+
+                                const firstSegment = comboPlan.segments[0];
+                                firstSegment.startX = p.x;
+                                firstSegment.startY = p.y;
+                                const firstTarget = getBeefChargeTargetPosition(firstSegment);
+                                p.beefChargeOrigin = { x: p.x, y: p.y };
+                                p.beefChargeTarget = { x: firstTarget.x, y: firstTarget.y };
+                                spawnBeefChargeTrail(p.x, p.y, firstTarget.x, firstTarget.y, {
+                                    subclass: p.subclass,
+                                    segmentIndex: p.beefChargeSegmentIndex,
+                                    segmentLabel: firstSegment.label,
+                                    rangeOverride: comboPlan.context ? comboPlan.context.impactRadius : undefined
+                                });
+                                p.beefQueuedCharge = null;
                             }
                         }
-                    });
-                    
-                    // Handle double charge (combo skill)
-                    if (p.beefDoubleCharge || (p.skillTree && p.skillTree.combo_charge) && p.beefCharges > 0) {
-                        setTimeout(() => {
-                            if (p.beefChargeState === 'ready' && p.beefCharges > 0) {
-                                // Trigger second charge at same target
-                                p.beefCharges--;
-                                p.beefChargeState = 'charging'; 
-                                p.beefChargeOrigin = { x: p.x, y: p.y }; 
-                                p.beefChargeTarget = { x: closestEnemy.x, y: closestEnemy.y }; 
-                                p.beefChargeT = 0; p.isInvincible = true;
-                                store.activeEffects.push(createEffect("beefCharge", p.beefChargeOrigin, p.beefChargeTarget));
-                                
-                                setTimeout(() => {
-                                    // Second impact (smaller for combo)
-                                    if (p.skillTree && p.skillTree.juggernaut || p.subclass === 'juggernaut') {
-                                        explode(closestEnemy.x, closestEnemy.y, false, true);
-                                    }
-                                    potentialTargets.forEach(e => {
-                                        if (e.dead) return;
-                                        const dx = e.x - closestEnemy.x; const dy = e.y - closestEnemy.y; const distSq = dx * dx + dy * dy;
-                                        // Use smaller radius for combo double charge
-                                        const comboRadius = 60; 
-                                        if (distSq < comboRadius * comboRadius) {
-                                            let secondChargeDmg = baseDamage * p.dmgMult * 0.7; // Reduced damage for second hit
-                                            const comboAngle = Math.atan2(e.y - p.y, e.x - p.x);
-                                            const comboTags = p.subclass === 'juggernaut' ? ['fire', 'explosive'] : ['kinetic', 'concussive'];
-                                            const comboVuln = applySubclassVulnerability(e, secondChargeDmg, {
-                                                player: p,
-                                                subclass: p.subclass,
-                                                damageTags: comboTags,
-                                                source: 'beefChargeCombo',
-                                                knockbackAngle: comboAngle,
-                                                baseDamage: secondChargeDmg
-                                            });
-                                            secondChargeDmg = comboVuln.damage;
-                                            e.hp -= secondChargeDmg;
-                                            e.stunTimer = Math.max(e.stunTimer, 1.5);
-                                            
-                                            // Apply vampirism healing for second charge damage
-                                            if (store.player.vampirism > 0) {
-                                                let healAmount = secondChargeDmg * store.player.vampirism;
-                                                healAmount = Math.max(healAmount, 1); // Minimum 1 HP
-                                                healAmount = Math.min(healAmount, 6); // Cap at 6 HP for second charge
-                                                store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
-                                            }
-                                        }
-                                    });
-                                }, 400); // Second impact timing
-                            }
-                        }, 400); // Delay before second charge
+                    }
+
+                    if (p.beefQueuedCharge) {
+                        p.beefQueuedCharge.delay = 0.08;
                     }
                 }
             }
@@ -6036,6 +6209,30 @@ class FlameParticle {
     }
 
     function handleBossDefeat() {
+        const activeBoss = store.boss;
+        const snapshot = activeBoss || store.lastBossSnapshot;
+        if (!snapshot) {
+            return;
+        }
+
+        const bossId = snapshot.id || snapshot._instanceId || snapshot.behavior || snapshot.name;
+        if (bossId && store.lastBossDefeatId === bossId) {
+            return;
+        }
+
+    const playerRef = store.player || {};
+    const fallbackX = Number.isFinite(playerRef.x) ? playerRef.x : W / 2;
+    const fallbackY = Number.isFinite(playerRef.y) ? playerRef.y : H / 2;
+    const bossX = ensureFiniteNumber(snapshot.x, fallbackX);
+    const bossY = ensureFiniteNumber(snapshot.y, fallbackY);
+        const bossName = snapshot.name || 'UNKNOWN';
+
+        store.lastBossSnapshot = { x: bossX, y: bossY, name: bossName, id: bossId };
+        store.lastBossDefeatId = bossId;
+        if (activeBoss) {
+            activeBoss.dead = true;
+        }
+
         const now = performance.now();
         const bossSpawnTime = ensureFiniteNumber(store.world.bossSpawnTime, now);
         const fightDuration = ensureFiniteNumber((now - bossSpawnTime) / 1000, 0);
@@ -6045,9 +6242,6 @@ class FlameParticle {
         
         const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
         store.world.score += Math.floor(2000 * collarBonus); store.world.gold += Math.floor(25 * collarBonus); store.world.xp += Math.floor(100 * collarBonus); store.world.bosses++;
-        const bossX = store.boss.x;
-        const bossY = store.boss.y;
-        const bossName = store.boss.name; // Store boss name before nulling
         if (store.goldenOrbs) {
             store.goldenOrbs.length = 0;
         }
@@ -6338,6 +6532,8 @@ class FlameParticle {
             store.eBullets.forEach(returnEBulletToPool);
         }
     store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = []; store.starProjectiles = []; store.pendingStarClones = [];
+        store.lastBossSnapshot = null;
+        store.lastBossDefeatId = null;
         store.drones = []; store.hounds = []; store.shadowHounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
         store.lightningBolts = []; store.empNovas = []; store.poisonPuddles = []; store.goldenOrbs = []; store.shadowEchoes = [];
         store.championMinions = [];
@@ -11621,31 +11817,110 @@ function render(dt) {
                 };
                 break;
             case "beefCharge":
-                effect.maxLife = 0.4;
+                effect.maxLife = opts.duration ?? 0.38;
                 effect.origin = x;
                 effect.target = y;
-                effect.step = function(dt) { this.life -= dt / this.maxLife; if(this.life <= 0) this.isActive = false; };
+                effect.opts = opts;
+                effect.step = function(dt) {
+                    this.life -= dt / this.maxLife;
+                    if (this.life <= 0) this.isActive = false;
+                };
                 effect.draw = function() {
                     const progress = 1 - this.life;
-                    const currentX = this.origin.x + (this.target.x - this.origin.x) * progress;
-                    const currentY = this.origin.y + (this.target.y - this.origin.y) * progress;
-        
+                    const eased = 1 - Math.pow(1 - progress, 2.2);
+                    const currentX = this.origin.x + (this.target.x - this.origin.x) * eased;
+                    const currentY = this.origin.y + (this.target.y - this.origin.y) * eased;
+                    const subclass = this.opts.subclass;
+                    const chain = this.opts.segmentLabel === 'chain';
+                    const colorMain = subclass === 'juggernaut' ? '255, 210, 120' : '255, 120, 120';
+                    const colorEdge = subclass === 'juggernaut' ? '255, 180, 70' : '255, 80, 80';
+
                     ctx.save();
-                    if(progress > 0.5) {
-                        const shockwaveProgress = (progress - 0.5) / 0.5;
-                        ctx.strokeStyle = `rgba(255, 100, 100, ${1 - shockwaveProgress})`;
-                        ctx.lineWidth = 5 * (1 - shockwaveProgress);
+                    ctx.globalCompositeOperation = 'lighter';
+
+                    if (progress > 0.45) {
+                        const shockwaveProgress = (progress - 0.45) / 0.55;
+                        const decay = 1 - shockwaveProgress;
+                        ctx.strokeStyle = `rgba(${colorEdge}, ${0.55 * decay})`;
+                        ctx.lineWidth = 6 * decay;
                         ctx.beginPath();
-                        ctx.arc(this.target.x, this.target.y, 80 * shockwaveProgress, 0, Math.PI * 2);
+                        ctx.arc(this.target.x, this.target.y, (this.opts.rangeOverride ?? 85) * shockwaveProgress, 0, Math.PI * 2);
                         ctx.stroke();
                     }
-                    ctx.strokeStyle = `rgba(255, 150, 150, ${this.life})`;
-                    ctx.lineWidth = 15 * this.life;
+
+                    ctx.strokeStyle = `rgba(${colorMain}, ${0.85 * this.life})`;
+                    ctx.lineWidth = (chain ? 10 : 13) * this.life;
                     ctx.lineCap = 'round';
                     ctx.beginPath();
                     ctx.moveTo(this.origin.x, this.origin.y);
                     ctx.lineTo(currentX, currentY);
                     ctx.stroke();
+
+                    ctx.globalAlpha = 0.6 * this.life;
+                    ctx.lineWidth = 2.5 * (chain ? 1.2 : 1);
+                    ctx.strokeStyle = `rgba(${colorEdge}, ${0.9 * this.life})`;
+                    ctx.beginPath();
+                    ctx.moveTo(this.origin.x, this.origin.y);
+                    ctx.lineTo(currentX, currentY);
+                    ctx.stroke();
+
+                    ctx.restore();
+                };
+                break;
+            case "marauderImpact":
+                effect.maxLife = 0.48;
+                effect.life = effect.maxLife;
+                effect.radius = radius || 90;
+                effect.opts = opts;
+                effect.shards = Array.from({ length: opts.subclass === 'juggernaut' ? 22 : 16 }, () => ({
+                    angle: Math.random() * Math.PI * 2,
+                    speed: 140 + Math.random() * 160,
+                    width: 5 + Math.random() * 3.5
+                }));
+                effect.step = function(dt) {
+                    this.life -= dt / this.maxLife;
+                    if (this.life <= 0) this.isActive = false;
+                };
+                effect.draw = function() {
+                    const t = 1 - (this.life / this.maxLife);
+                    const subclass = this.opts.subclass;
+                    const primary = subclass === 'juggernaut' ? '255, 205, 120' : '255, 120, 120';
+                    const secondary = subclass === 'juggernaut' ? '255, 175, 60' : '255, 90, 70';
+
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    ctx.globalCompositeOperation = 'lighter';
+
+                    const coreRadius = this.radius * (0.45 + 0.25 * Math.sin(performance.now() / 140));
+                    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.radius * (0.8 + t * 0.4));
+                    gradient.addColorStop(0, `rgba(${primary}, ${0.65 * this.life})`);
+                    gradient.addColorStop(0.55, `rgba(${secondary}, ${0.45 * this.life})`);
+                    gradient.addColorStop(1, 'rgba(255, 70, 20, 0)');
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius * (0.8 + 0.35 * t), 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.strokeStyle = `rgba(255, 255, 255, ${0.7 * this.life})`;
+                    ctx.lineWidth = 6 * (1 - t) + 3;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, coreRadius * (0.9 + t * 0.6), 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    ctx.globalAlpha = 0.9 * this.life;
+                    this.shards.forEach((shard, index) => {
+                        const length = this.radius * (0.25 + t * 1.1);
+                        const decay = Math.pow(1 - t, 0.5);
+                        const sx = Math.cos(shard.angle) * length * decay;
+                        const sy = Math.sin(shard.angle) * length * decay;
+                        ctx.lineWidth = Math.max(1.2, shard.width * this.life * 0.75);
+                        ctx.strokeStyle = subclass === 'juggernaut' ? '#ffe7a0' : '#ffc1b1';
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        ctx.lineTo(sx, sy);
+                        ctx.stroke();
+                    });
+
                     ctx.restore();
                 };
                 break;
