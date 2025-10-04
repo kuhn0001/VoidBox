@@ -1798,6 +1798,20 @@ class FlameParticle {
     }
 }
 
+// Simple particle creation function
+function createParticle(x, y, vx, vy, color, life) {
+    return {
+        x: x,
+        y: y,
+        vx: vx,
+        vy: vy,
+        life: life,
+        maxLife: life,
+        color: color,
+        size: 1
+    };
+}
+
 
     cvs.addEventListener('mousemove', (e) => { 
         try { 
@@ -4980,6 +4994,10 @@ class FlameParticle {
                 alive = false;
             } else if (!p.update) {
                 // Handle legacy flame particles without update function
+                if (p.vx !== undefined) {
+                    p.x += p.vx * dt;
+                    p.y += p.vy * dt;
+                }
                 p.life -= dt;
                 if (p.life <= 0) {
                     store.flameParticles.splice(i, 1);
@@ -6881,7 +6899,17 @@ function render(dt) {
     drawGibs(ctx); // <-- ADD THIS LINE TO DRAW THE GIBS
     drawShadowEchoes();
     if (store.boss && store.boss.visible !== false) drawBoss(store.boss);
-    store.flameParticles.forEach(p => { if (p.draw) p.draw(); });
+    store.flameParticles.forEach(p => { 
+        if (p.draw) p.draw(); 
+        else if (p.color) {
+            ctx.save();
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size || 2, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.restore();
+        }
+    });
     store.drones.forEach(d => drawDrone(d));
     if (store.shadowHounds) store.shadowHounds.forEach(h => drawShadowHound(h));
     store.hounds.forEach(h => drawHound(h));
@@ -13607,6 +13635,7 @@ function render(dt) {
                 200 + Math.random() * 100
             );
             if (particle) particle.size = 2 + Math.random() * 2;
+            store.flameParticles.push(particle);
         }
         
         addShadowEcho(champion.x, champion.y);
