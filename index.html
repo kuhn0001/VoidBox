@@ -871,13 +871,15 @@
                         <div id="hudWaveContent" class="hud-card">
                             <div class="hud-title">◢ VOID SKIES ◣</div>
                             <div style="text-align:center">
-                                SECTOR <b id="waveNum">1</b> • KILLS <b id="killsNum">0</b> • LVL <b id="levelNum">1</b>
+                                    SCORE <b id="scoreNum">0</b> • Gold 💰 <b id="goldNum" style="color:#FFD700;font-size:1.2em">0</b>
                             </div>
                         </div>
                         <div id="hudPilotContent" class="hud-card">
                             <div class="hud-title" id="pilotTitle">◢ UNIDENTIFIED ◣</div>
-                            <div style="text-align:center">
-                                SCORE <b id="scoreNum">0</b> • Gold 💰 <b id="goldNum" style="color:#FFD700;font-size:1.2em">0</b>
+                            <div style="display:flex;justify-content:space-between;font-size:10px;margin:4px 0 6px 0;">
+                                <div>WAVE <b id="waveNum">1</b></div>
+                                <div>KILLS <b id="killsNum">0</b></div>
+                                <div>LEVEL <b id="levelNum">1</b></div>
                             </div>
                             <div class="bar" id="hpBar"><span id="hpBarFill" style="width:100%"></span></div>
                             <div style="font-size: 9px; text-align: center; line-height: 1;" id="hpText">HP: 100 / 100</div>
@@ -1572,13 +1574,20 @@ class FlameParticle {
             mechForgePulseTimeout: null
         },
         player: { ...player_initial_state },
-    boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], missiles: [], lasers: [], mines: [], activeEffects: [], starProjectiles: [], pendingStarClones: [],
+    boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], shadowHounds: [], missiles: [], lasers: [], mines: [], activeEffects: [], starProjectiles: [], pendingStarClones: [],
         flameParticles: [],
         lightningBolts: [],
         empNovas: [],
         mechPuddles: [], // Hazardous puddles left by mech tank attacks
         poisonPuddles: [],
         goldenOrbs: [],
+        shadowEchoes: [],
+        championMinions: [],
+        playerChampion: null,
+        shadowChampionId: null,
+        shadowChampionDefeated: false,
+        shadowChampionTokenDropped: false,
+        shadowChampionLastPos: null,
         _enemySpatial: {
             cellSize: 160,
             buckets: new Map(),
@@ -1864,6 +1873,16 @@ class FlameParticle {
                 handleVoidChampionReward(e);
             }
 
+            if (e.type === 'shadow_champion') {
+                store.shadowChampionDefeated = true;
+                store.shadowChampionLastPos = { x: e.x, y: e.y };
+                store.shadowChampionId = null;
+                if (!store.shadowChampionTokenDropped) {
+                    addShadowEcho(e.x, e.y);
+                    announce('Champion sigil destabilized!');
+                }
+            }
+
             if (e === store.boss) {
                 handleBossDefeat();
             } else {
@@ -1874,7 +1893,9 @@ class FlameParticle {
                 store.world.xp += Math.floor(e.xp * collarBonus);
                 store.world.kills++;
 
-                spawnPowerup(e.x, e.y);
+                if (e.type !== 'shadow_champion') {
+                    spawnPowerup(e.x, e.y);
+                }
                 explode(e.x, e.y);
             }
         }
@@ -2276,7 +2297,8 @@ class FlameParticle {
         'cash': { name: 'CASH INFUSION', icon: '💰', duration: 0, type: 'instant', isSpecial: true },
         'attack_speed': { name: 'HYPER DRIVE', icon: '⚡', duration: 0, type: 'instant', isSpecial: true },
         'swirly_upgrade': { name: 'SWIRL CORE', icon: '🌪️', duration: 0, type: 'instant', isSpecial: true },
-        'star_upgrade': { name: 'STAR CORE', icon: '🌠', duration: 0, type: 'instant', isSpecial: true }
+        'star_upgrade': { name: 'STAR CORE', icon: '🌠', duration: 0, type: 'instant', isSpecial: true },
+        'shadow_champion_token': { name: 'CHAMPION SIGIL', icon: '⚔️', duration: 0, type: 'instant', isSpecial: true }
     };
 
     // --- GAME MECHANICS ---
@@ -2410,15 +2432,19 @@ class FlameParticle {
     function applyPowerup(typeKey) {
         const p = store.player;
         const powerup = POWERUP_TYPES[typeKey];
+        if (typeKey === 'shadow_champion_token') {
+            grantChampionCompanion();
+            return;
+        }
         if (typeKey === 'missile') {
             if (p.pilotGenome === 'rocketman') { p.missileVolley = Math.min(5, p.missileVolley + 2); } else { p.missileVolley = 2; }
         }
         if (typeKey === 'cash') {
-            const earlyGameValue = 100;
-            const waveScaling = Math.max(1, store.world.wave / 5);
-            const cashAmount = Math.floor(earlyGameValue * waveScaling);
-            store.world.shards = (store.world.shards || 0) + cashAmount;
-            announce(`CASH INFUSION +${cashAmount} SHARDS!`);
+            const baseGoldValue = 80;
+            const waveScaling = Math.max(1, store.world.wave * 1.5);
+            const goldAmount = Math.floor(baseGoldValue * waveScaling);
+            store.world.gold = (store.world.gold || 0) + goldAmount;
+            announce(`💰 CASH INFUSION +${goldAmount} GOLD! 💰`);
             return;
         }
         if (typeKey === 'attack_speed') {
@@ -2821,14 +2847,16 @@ class FlameParticle {
     }
     
     function createBoss(scale) {
-        const bossCycle = Math.floor((store.world.wave - 5) / 5) % 5;
         const types = [
             { name: 'VOID SENTINEL', baseHp: 4000, r: 55, behavior: 'sentinel', color: '#8B4A9C' },
             { name: 'NEXUS PHANTOM', baseHp: 2200, r: 50, behavior: 'hex', color: '#66aaff'},
             { name: 'NEURAL CORE', baseHp: 3200, r: 60, behavior: 'malignus', color: '#2E8B57' },
             { name: 'HIVE SOVEREIGN', baseHp: 8500, r: 85, behavior: 'broodlord', color: '#2d5016' },
+            { name: 'SHADOW MIRROR', baseHp: 7200, r: 58, behavior: 'shadow_clone', color: '#cbd4ff' },
             { name: 'DEATH ENGINE', baseHp: 9000, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true }
         ];
+        const cycleRaw = Math.floor((store.world.wave - 5) / 5);
+        const bossCycle = ((cycleRaw % types.length) + types.length) % types.length;
         const type = types[bossCycle];
         let hp = type.baseHp * scale * store.world.bossHealthBonus;
     const collarBonus = calculateCollarBonus(sanitizeCollarStacks()); // Diminishing scaling per collar stack
@@ -2860,6 +2888,7 @@ class FlameParticle {
             avian_hatchling: { r: 8, v: 150, vx: 0, hp: 22, color: '#9370DB', xp: 4, score: 40, gold: 1, contactDamage: 6 },
             angler: { r: 22, v: 30, vx: 0, hp: 150, color: '#00008b', xp: 18, score: 180, gold: 4, fireRateChance: 0.008, contactDamage: 10 },
             manta: { r: 26, v: 50, vx: 0, hp: 175, color: '#53B6FF', xp: 22, score: 220, gold: 5, fireRateChance: 0.009, contactDamage: 10 },
+            shadow_champion: { r: 18, v: 70, vx: 0, hp: 620, color: '#cbd4ff', xp: 60, score: 480, gold: 12, fireRateChance: 1, fireCooldown: 1.45, contactDamage: 14 },
             void_champion: { r: 16, v: 48, vx: 0, hp: 190, color: '#5A28D8', xp: 32, score: 325, gold: 9, fireRateChance: 0.75, fireCooldown: 1.65, contactDamage: 10 },
             void_champion_orb: { r: 6, v: 0, vx: 0, hp: 22, color: '#FF7DEB', xp: 2, score: 24, gold: 0, fireRateChance: 0.55, fireCooldown: 1.25, contactDamage: 4 }
         };
@@ -2988,6 +3017,24 @@ class FlameParticle {
                     }
                 }
             }
+        }
+        if (e.type === 'shadow_champion') {
+            e.baseV = e.v;
+            e.guardRadius = props.guardRadius || 120;
+            e.guardAngle = props.guardAngle ?? Math.random() * Math.PI * 2;
+            e.angularSpeed = props.angularSpeed || (0.75 + Math.random() * 0.25);
+            e.anchorOffsetY = props.anchorOffsetY ?? 80;
+            e.fireCooldown = props.fireCooldown || e.fireCooldown || 1.45;
+            e.fireT = props.fireT !== undefined ? props.fireT : e.fireCooldown * (0.4 + Math.random() * 0.3);
+            e.momentum = props.momentum || 3.4;
+            e.enrageThreshold = props.enrageThreshold || 0.45;
+            e.state = null;
+            e.dashTimer = 0;
+            e.dashVX = 0;
+            e.dashVY = 0;
+            e.bossLinkId = props.bossLinkId || null;
+            e.guardAnchor = props.guardAnchor || null;
+            e.isShadowChampion = true;
         }
         if (e.type === 'void_champion_orb') {
             e.isOrbiter = true;
@@ -4455,14 +4502,18 @@ class FlameParticle {
             stepBoss(dt);
         }
 
-        stepPowerups(dt);
-        stepHounds(dt);
+    stepPowerups(dt);
+    stepPlayerChampion(dt);
+    stepChampionMinions(dt);
+    stepHounds(dt);
+    stepShadowHounds(dt);
         updateGibs(dt);
         
         stepMissiles(dt);
         stepLasers(dt);
         stepMines(dt);
         stepFlameParticles(dt);
+    updateShadowEchoes(dt);
         stepLightning(dt);
         stepEmpNovas(dt);
         processWaveSpawnQueue(dt);
@@ -4787,6 +4838,36 @@ class FlameParticle {
                     // Simple sinusoidal snake movement only
                     e.x = e.startX + e.amplitude * Math.sin(e.t * e.frequency);
                     e.y += e.v * speedMultiplier * dt;
+                } else if (e.type === 'shadow_champion') {
+                    const boss = store.boss && store.boss.behavior === 'shadow_clone' ? store.boss : null;
+                    const enrageThreshold = e.enrageThreshold ?? 0.45;
+                    const bossRatio = boss && boss.hpMax ? boss.hp / boss.hpMax : 1;
+                    const isEnraged = boss ? (boss.isEnraged || bossRatio <= enrageThreshold) : true;
+                    e.isEnraged = isEnraged;
+
+                    if (e.state === 'dash') {
+                        e.dashTimer -= dt;
+                        e.x += (e.dashVX || 0) * speedMultiplier * dt;
+                        e.y += (e.dashVY || 0) * speedMultiplier * dt;
+                        addShadowEcho(e.x, e.y);
+                        if (e.dashTimer <= 0) {
+                            e.state = null;
+                            e.dashVX = 0;
+                            e.dashVY = 0;
+                        }
+                    } else {
+                        const anchorX = boss ? boss.x : store.player.x;
+                        const anchorY = boss ? boss.y + (e.anchorOffsetY ?? 80) : store.player.y - 60;
+                        const radius = boss ? (e.guardRadius || 120) : Math.max(80, (e.guardRadius || 120) * 0.65);
+                        e.guardAngle = (e.guardAngle ?? 0) + (e.angularSpeed || 0.9) * dt * (isEnraged ? 1.35 : 1);
+                        const desiredX = anchorX + Math.cos(e.guardAngle) * radius;
+                        const desiredY = anchorY + Math.sin(e.guardAngle) * Math.max(radius * 0.55, 60);
+                        const followSpeed = (e.momentum || 3.4) * (isEnraged ? 1.15 : 1);
+                        e.x += (desiredX - e.x) * Math.min(1, followSpeed * dt);
+                        e.y += (desiredY - e.y) * Math.min(1, followSpeed * 0.9 * dt);
+                    }
+
+                    store.shadowChampionLastPos = { x: e.x, y: e.y };
                 } else if (e.type === 'void_champion') {
                     e.baseV = e.baseV || e.v;
                     e.t += dt;
@@ -4942,6 +5023,42 @@ class FlameParticle {
                     }
                     case 'angler': { const a = Math.atan2(store.player.y - e.y, store.player.x - e.x); store.eBullets.push({x:e.x,y:e.y,vx:Math.cos(a)*120,vy:Math.sin(a)*120,r:4,col:e.color,dmg:15*dmgScale*damageMult, life: 5}); e.fireT = 2.5; break; }
                     case 'manta': { for(let i=-1; i<=1; i++) { const angle = (90 + i * 30) * Math.PI/180; store.eBullets.push({x:e.x, y:e.y, vx:Math.cos(angle)*150, vy:Math.sin(angle)*150, r:3, col:e.color, dmg:12*dmgScale*damageMult}); } e.fireT = 2.8; break; }
+                    case 'shadow_champion': {
+                        const boss = store.boss && store.boss.behavior === 'shadow_clone' ? store.boss : null;
+                        const enrageThreshold = e.enrageThreshold ?? 0.45;
+                        const bossRatio = boss && boss.hpMax ? boss.hp / boss.hpMax : 1;
+                        const isEnraged = boss ? (boss.isEnraged || bossRatio <= enrageThreshold) : true;
+                        const attackMult = (e.damageMult || 1) * (isEnraged ? 1.2 : 1);
+                        const angle = Math.atan2(store.player.y - e.y, store.player.x - e.x);
+                        if (Math.random() < 0.45) {
+                            const volley = isEnraged ? 6 : 4;
+                            const spread = isEnraged ? 0.18 : 0.14;
+                            for (let i = 0; i < volley; i++) {
+                                const offset = (i - (volley - 1) / 2) * spread;
+                                const speed = 320 + (isEnraged ? 90 : 60);
+                                store.eBullets.push(getEBulletFromPool({
+                                    x: e.x + Math.cos(angle) * (e.r * 0.3),
+                                    y: e.y + Math.sin(angle) * (e.r * 0.3),
+                                    vx: Math.cos(angle + offset) * speed,
+                                    vy: Math.sin(angle + offset) * speed,
+                                    r: isEnraged ? 6 : 5,
+                                    col: isEnraged ? '#a89fff' : '#d6dbff',
+                                    dmg: 16 * attackMult,
+                                    life: 1.6
+                                }));
+                            }
+                            e.fireT = isEnraged ? 1.05 : 1.35;
+                        } else {
+                            e.state = 'dash';
+                            const dashSpeed = isEnraged ? 520 : 440;
+                            e.dashVX = Math.cos(angle) * dashSpeed;
+                            e.dashVY = Math.sin(angle) * dashSpeed;
+                            e.dashTimer = 0.32;
+                            addShadowEcho(e.x, e.y);
+                            e.fireT = isEnraged ? 1.25 : 1.55;
+                        }
+                        break;
+                    }
                     case 'void_champion': {
                         if (e.nextPattern === 'beam') {
                             const baseAngle = Math.atan2(store.player.y - e.y, store.player.x - e.x);
@@ -5011,8 +5128,17 @@ class FlameParticle {
             if (collide(e, store.player)) {
                 const contactDmg = (e.contactDamage || 8) * dmgScale;
                 takeDamage(contactDmg); // Reduced baseline from 15 to 8 for better balance
-                store.world.gold += e.gold;
-                e.dead = true;
+                if (e.type === 'shadow_champion') {
+                    e.stunTimer = Math.max(e.stunTimer || 0, 0.35);
+                    e.state = null;
+                    e.dashTimer = 0;
+                    e.dashVX = 0;
+                    e.dashVY = 0;
+                    e.fireT = Math.max(e.fireT, 0.8);
+                } else {
+                    store.world.gold += e.gold;
+                    e.dead = true;
+                }
             }
         });
 
@@ -5182,7 +5308,11 @@ class FlameParticle {
         removeDeadObjects(store.eBullets, bullet => returnEBulletToPool(bullet));
         
         // Efficient removal for other arrays
-        removeDeadObjects(store.enemies);
+    removeDeadObjects(store.enemies);
+    removeDeadObjects(store.shadowHounds);
+    if (store.championMinions && store.championMinions.length) {
+        removeDeadObjects(store.championMinions);
+    }
         removeDeadObjects(store.powerups);
         removeDeadObjects(store.mines);
         removeDeadObjects(store.missiles);
@@ -5190,6 +5320,10 @@ class FlameParticle {
         removeDeadObjects(store.flameParticles);
         removeDeadObjects(store.lightningBolts);
         removeDeadObjects(store.empNovas);
+    removeDeadObjects(store.shadowEchoes);
+    if (store.playerChampion && store.playerChampion.dead) {
+        store.playerChampion = null;
+    }
         
         // Handle active effects separately (different property name)
         compactInactiveEffects(store.activeEffects);
@@ -5357,19 +5491,37 @@ class FlameParticle {
         }
     }
 
+    function ensureSkillTrackingLists() {
+        const p = store.player;
+        if (!p) return;
+
+        if (!Array.isArray(p.learnedSkills)) {
+            if (p.learnedSkills && typeof p.learnedSkills === 'object') {
+                const legacyKeys = Object.keys(p.learnedSkills).filter(key => p.learnedSkills[key]);
+                p.learnedSkills = legacyKeys;
+            } else {
+                p.learnedSkills = [];
+            }
+        }
+    }
+
     // Helper function to ensure progression tracking is initialized
     function initializeProgressionTracking() {
         const p = store.player;
-        if (!p.totalProgressionPoints) p.totalProgressionPoints = 0;
-        if (!p.unspentProgressionPoints) p.unspentProgressionPoints = 0;
-        if (!p.skillPointsSpent) p.skillPointsSpent = 0;
+        if (!p) return;
+
+        if (typeof p.totalProgressionPoints !== 'number') p.totalProgressionPoints = 0;
+        if (typeof p.unspentProgressionPoints !== 'number') p.unspentProgressionPoints = 0;
+        if (typeof p.skillPointsSpent !== 'number') p.skillPointsSpent = 0;
         if (!p.signatureAbilities || typeof p.signatureAbilities !== 'object') {
             p.signatureAbilities = {};
         }
         p.signatureAbility = Object.keys(p.signatureAbilities).length > 0;
-        
+
+        ensureSkillTrackingLists();
+
         // Ensure player always has skill points available for purchases (controlled by progression logic)
-        if (!p.skillPoints || p.skillPoints <= 0) {
+        if (typeof p.skillPoints !== 'number' || p.skillPoints <= 0) {
             p.skillPoints = 10; // Generous skill point pool, but availability controlled by progression
         }
     }
@@ -5452,6 +5604,10 @@ class FlameParticle {
         store.boss = null;
         announce('⚡ GUARDIAN DEFEATED ⚡');
         explode(bossX, bossY, true);
+
+        if (bossName === 'SHADOW MIRROR') {
+            finalizeShadowChampionAfterBoss(bossX, bossY);
+        }
 
         let healthBonusMultiplier = 1.0, announcedAdaptation = false;
         // Calculate collar stacks to add based on boss kill speed (more generous)
@@ -5718,8 +5874,14 @@ class FlameParticle {
             store.eBullets.forEach(returnEBulletToPool);
         }
     store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = []; store.starProjectiles = []; store.pendingStarClones = [];
-        store.drones = []; store.hounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
-        store.lightningBolts = []; store.empNovas = []; store.poisonPuddles = []; store.goldenOrbs = [];
+        store.drones = []; store.hounds = []; store.shadowHounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
+        store.lightningBolts = []; store.empNovas = []; store.poisonPuddles = []; store.goldenOrbs = []; store.shadowEchoes = [];
+        store.championMinions = [];
+        store.playerChampion = null;
+        store.shadowChampionId = null;
+        store.shadowChampionDefeated = false;
+        store.shadowChampionTokenDropped = false;
+    store.shadowChampionLastPos = null;
         store.iceman = null;
         store.beefClone = null;
         store.waveSpawnQueue = [];
@@ -6057,10 +6219,40 @@ function render(dt) {
     
     store.enemies.forEach(e => drawEnemy(e));
     drawGibs(ctx); // <-- ADD THIS LINE TO DRAW THE GIBS
+    drawShadowEchoes();
     if (store.boss && store.boss.visible !== false) drawBoss(store.boss);
     store.flameParticles.forEach(p => { if (p.draw) p.draw(); });
     store.drones.forEach(d => drawDrone(d));
+    if (store.shadowHounds) store.shadowHounds.forEach(h => drawShadowHound(h));
     store.hounds.forEach(h => drawHound(h));
+    const champion = store.playerChampion;
+    if (champion && !champion.dead) {
+        const minions = store.championMinions || [];
+        if (minions.length) {
+            ctx.save();
+            minions.forEach(minion => {
+                if (!minion || minion.dead) return;
+                const gradient = ctx.createLinearGradient(champion.x, champion.y, minion.x, minion.y);
+                gradient.addColorStop(0, 'rgba(180, 190, 255, 0.6)');
+                gradient.addColorStop(1, 'rgba(255, 255, 255, 0.2)');
+                ctx.strokeStyle = gradient;
+                ctx.lineWidth = 1.4;
+                ctx.globalAlpha = 0.4 + Math.min(0.35, (champion.level || 1) * 0.05);
+                ctx.beginPath();
+                ctx.moveTo(champion.x, champion.y);
+                ctx.lineTo(minion.x, minion.y);
+                ctx.stroke();
+            });
+            ctx.restore();
+
+            minions.forEach(minion => {
+                if (!minion || minion.dead) return;
+                drawChampionMinion(minion, champion);
+            });
+        }
+
+        drawPlayerChampion(champion);
+    }
     if (store.iceman) drawIceman(store.iceman);
     if (store.beefClone) drawBeefClone(store.beefClone);
     drawShip(store.player.x, store.player.y, store.player);
@@ -6557,112 +6749,137 @@ function render(dt) {
     function announce(text) { const el = q('announce'); el.textContent = text; el.classList.remove('hide'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('hide'), 2500); }
 // ...existing code...
     function updateHUD() { 
-        const t = store.player;
-        const hpPercent = Math.round(t.hp / t.hpMax * 100);
-        const shieldPercent = t.shieldMax > 0 ? Math.round(t.shield / t.shieldMax * 100) : 0;
-        const beefShieldPercent = t.pilotGenome === 'beef' && t.beefShieldMax > 0 ? Math.round(t.beefShield / t.beefShieldMax * 100) : 0;
-        
-        // Update pilot info with textContent (no DOM parsing)
-        q("pilotTitle").textContent = store.name ? `◢ ${store.name} ◣` : "◢ UNIDENTIFIED ◣";
-        q("scoreNum").textContent = store.world.score;
-        q("goldNum").textContent = store.world.gold;
+        const player = store.player;
+        if (!player) return;
+
+        const pilotTitle = q("pilotTitle");
+        const scoreNum = q("scoreNum");
+        const goldNum = q("goldNum");
+        const hpBarFill = q("hpBarFill");
+        const hpText = q("hpText");
+        const beefShieldBar = q("beefShieldBar");
+        const beefShieldBarFill = q("beefShieldBarFill");
+        const beefShieldText = q("beefShieldText");
+        const shieldBar = q("shieldBar");
+        const shieldBarFill = q("shieldBarFill");
+        const shieldTextEl = q("shieldText");
+        const waveNum = q("waveNum");
+        const killsNum = q("killsNum");
+        const levelNum = q("levelNum");
+        const bossContent = q("hudBossContent");
+        const bossTitle = q("bossTitle");
+        const bossBarFill = q("bossBarFill");
+        const powerupEl = q("hudPowerup");
+        const powerupList = q("powerupList");
+        const equipEl = q("hudEquipment");
+        const equipmentList = q("equipmentList");
+        const grenadeBtn = q('grenadeBtnUI');
+        const fpsEl = q('fps');
+
+        if (!pilotTitle || !scoreNum || !goldNum || !hpBarFill || !hpText || !shieldBar || !shieldBarFill || !shieldTextEl) {
+            if (!store._hudInitWarned && typeof console !== 'undefined') {
+                console.warn('[HUD] Elements missing, skipping update until UI is ready.');
+                store._hudInitWarned = true;
+            }
+            return;
+        }
+        store._hudInitWarned = false;
+
+        const hpPercent = Math.round((player.hp / player.hpMax) * 100);
+        const shieldPercent = player.shieldMax > 0 ? Math.round((player.shield / player.shieldMax) * 100) : 0;
+        const beefShieldPercent = player.pilotGenome === 'beef' && player.beefShieldMax > 0 ? Math.round((player.beefShield / player.beefShieldMax) * 100) : 0;
+
+        pilotTitle.textContent = store.name ? `◢ ${store.name} ◣` : "◢ UNIDENTIFIED ◣";
+        scoreNum.textContent = store.world.score;
+        goldNum.textContent = store.world.gold;
         if (!store.world.mechForgeGoldTriggered && store.world.gold >= 135) {
             triggerMechForgeGoldMilestone();
         }
-        
-        // Update health bar and text (always visible for all pilots)
-        q("hpBarFill").style.width = hpPercent + "%";
-        q("hpText").textContent = `HP: ${Math.round(t.hp)} / ${t.hpMax}`;
-        
-        // Handle beef shield (show only for beef pilot with beef shield)
-        const beefShieldBar = q("beefShieldBar");
-        const beefShieldText = q("beefShieldText");
-        if (t.pilotGenome === 'beef' && t.beefShieldMax > 0) {
-            beefShieldBar.style.display = "block";
-            q("beefShieldBarFill").style.width = beefShieldPercent + "%";
-            beefShieldText.textContent = `BEEF SHIELD: ${Math.round(t.beefShield)} / ${t.beefShieldMax}`;
-        } else {
-            beefShieldBar.style.display = "none";
-            beefShieldText.textContent = "";
+
+        hpBarFill.style.width = `${hpPercent}%`;
+        hpText.textContent = `HP: ${Math.round(player.hp)} / ${player.hpMax}`;
+
+        if (beefShieldBar && beefShieldText && beefShieldBarFill) {
+            if (player.pilotGenome === 'beef' && player.beefShieldMax > 0) {
+                beefShieldBar.style.display = "block";
+                beefShieldBarFill.style.width = `${beefShieldPercent}%`;
+                beefShieldText.textContent = `BEEF SHIELD: ${Math.round(player.beefShield)} / ${player.beefShieldMax}`;
+            } else {
+                beefShieldBar.style.display = "none";
+                beefShieldText.textContent = "";
+            }
         }
-        
-        // Handle regular shield (show for all pilots, even if 0 - this gives consistent UI)
-        const shieldBar = q("shieldBar");
-        const shieldTextEl = q("shieldText");
-        // Always show shield bar for all pilots
+
         shieldBar.style.display = "block";
-        q("shieldBarFill").style.width = shieldPercent + "%";
-        if (t.shieldMax > 0) {
-            shieldTextEl.textContent = `SHIELD: ${Math.round(t.shield)} / ${t.shieldMax}`;
-        } else {
-            shieldTextEl.textContent = `SHIELD: 0 / 0`;
+        shieldBarFill.style.width = `${shieldPercent}%`;
+        shieldTextEl.textContent = player.shieldMax > 0
+            ? `SHIELD: ${Math.round(player.shield)} / ${player.shieldMax}`
+            : 'SHIELD: 0 / 0';
+
+        if (waveNum) waveNum.textContent = store.world.wave;
+        if (killsNum) killsNum.textContent = store.world.kills;
+        if (levelNum) levelNum.textContent = store.world.level;
+
+        if (bossContent && bossTitle && bossBarFill) {
+            if (store.boss) {
+                bossContent.classList.remove("hide");
+                bossTitle.textContent = `⚡ ${store.boss.name} ⚡`;
+                bossBarFill.style.width = `${Math.round((store.boss.hp / store.boss.hpMax) * 100)}%`;
+            } else {
+                bossContent.classList.add("hide");
+            }
         }
-        
-        // Update wave info
-        q("waveNum").textContent = store.world.wave;
-        q("killsNum").textContent = store.world.kills;
-        q("levelNum").textContent = store.world.level;
-        
-        // Update boss info
-        const bossContent = q("hudBossContent");
-        if (store.boss) {
-            bossContent.classList.remove("hide");
-            q("bossTitle").textContent = `⚡ ${store.boss.name} ⚡`;
-            q("bossBarFill").style.width = Math.round(store.boss.hp / store.boss.hpMax * 100) + "%";
-        } else {
-            bossContent.classList.add("hide");
+
+        if (powerupEl && powerupList) {
+            const timedPowerups = Object.keys(player.powerupTimers || {});
+            if (timedPowerups.length > 0) {
+                let timedContent = '';
+                timedPowerups.forEach(key => {
+                    const timer = player.powerupTimers[key];
+                    if (!timer || !POWERUP_TYPES[key]) return;
+                    const percent = Math.round((timer.remaining / timer.max) * 100);
+                    timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`;
+                });
+                powerupList.innerHTML = timedContent;
+                powerupEl.classList.remove('hide');
+            } else {
+                powerupEl.classList.add('hide');
+            }
         }
-        
-        // Update powerups (still needs some innerHTML for dynamic content)
-        const powerupEl = q("hudPowerup");
-        const timedPowerups = Object.keys(store.player.powerupTimers);
-        if (timedPowerups.length > 0) {
-            let timedContent = '';
-            timedPowerups.forEach(key => {
-                const timer = store.player.powerupTimers[key];
-                const percent = Math.round((timer.remaining / timer.max) * 100);
-                timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`;
-            });
-            q("powerupList").innerHTML = timedContent;
-            powerupEl.classList.remove('hide');
-        } else {
-            powerupEl.classList.add('hide');
+
+        if (equipEl && equipmentList) {
+            const hasEquipment = player.hasLauncher || player.hasHounds || player.nanoSaves > 0;
+            if (hasEquipment) {
+                let content = '';
+                if (player.nanoSaves > 0) content += `<div>NANO SAVE [${player.nanoSaves}]</div>`;
+                if (player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`;
+                if (player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`;
+                equipmentList.innerHTML = content;
+                equipEl.classList.remove('hide');
+            } else {
+                equipEl.classList.add('hide');
+            }
         }
-        
-        // Update equipment (still needs some innerHTML for dynamic content)
-        const equipEl = q("hudEquipment");
-        let hasEquipment = store.player.hasLauncher || store.player.hasHounds || store.player.nanoSaves > 0;
-        if (hasEquipment) {
-            let content = '';
-            if (store.player.nanoSaves > 0) content += `<div>NANO SAVE [${store.player.nanoSaves}]</div>`;
-            if (store.player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`;
-            if (store.player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`;
-            q("equipmentList").innerHTML = content;
-            equipEl.classList.remove('hide');
-        } else {
-            equipEl.classList.add('hide');
+
+        if (grenadeBtn) {
+            if (player.grenades > 0) {
+                grenadeBtn.classList.remove('hide');
+                grenadeBtn.textContent = `GRENADE [${player.grenades}]`;
+                grenadeBtn.disabled = false;
+            } else {
+                grenadeBtn.classList.add('hide');
+            }
         }
-        
-        // Update grenade button
-        const grenadeBtn = q('grenadeBtnUI');
-        if (store.player.grenades > 0) {
-            grenadeBtn.classList.remove('hide');
-            grenadeBtn.textContent = `GRENADE [${store.player.grenades}]`;
-            grenadeBtn.disabled = false;
-        } else {
-            grenadeBtn.classList.add('hide');
-        } 
-        
-        // Update FPS counter
+
         if (!store.fpsLastTime) {
             store.fpsLastTime = performance.now();
             store.fpsFrameCount = 0;
         }
         store.fpsFrameCount++;
         const now = performance.now();
-        if (now - store.fpsLastTime >= 1000) {
+        if (fpsEl && now - store.fpsLastTime >= 1000) {
             const fps = Math.round((store.fpsFrameCount * 1000) / (now - store.fpsLastTime));
-            q('fps').textContent = fps;
+            fpsEl.textContent = fps;
             
             // COMMENTED OUT: Enhanced collar display with better feedback
             /*
@@ -6988,7 +7205,9 @@ function render(dt) {
             trailColor: options.trailColor || null,
             primaryColor: options.primaryColor || null,
             coreColor: options.coreColor || null,
-            shadowColor: options.shadowColor || null
+            shadowColor: options.shadowColor || null,
+            isEnemy: options.isEnemy || false,
+            enemyDamage: options.enemyDamage ?? 0
         };
         store.starProjectiles.push(projectile);
     }
@@ -7082,21 +7301,58 @@ function render(dt) {
             }
 
             const hitRadius = star.size * (star.hitboxScale || STAR_CANNON_HITBOX_SCALE);
-            for (const target of targets) {
-                if (!target || target.dead || target.hp <= 0) continue;
-                if (target === store.boss && target.isInvincible) continue;
-                if (target.isHeatDeath) continue;
-
-                const targetRadius = target.r || target.radius || 18;
-                const dx = star.x - target.x;
-                const dy = star.y - target.y;
-                const combined = hitRadius + targetRadius;
+            if (star.isEnemy) {
+                const player = store.player;
+                const playerRadius = player.r || 18;
+                const dx = star.x - player.x;
+                const dy = star.y - player.y;
+                const combined = hitRadius + playerRadius;
                 if (dx * dx + dy * dy <= combined * combined) {
-                    const id = target.id || target.__starId || target;
-                    if (!star.hitIds.has(id)) {
-                        const starDamage = baseDamage * (star.damageScale ?? 1);
-                        applyStarDamage(target, starDamage);
-                        star.hitIds.add(id);
+                    if (star.enemyDamage > 0) {
+                        takeDamage(star.enemyDamage);
+                    }
+                    store.starProjectiles.splice(i, 1);
+                    continue;
+                }
+
+                if (store.iceman) {
+                    const icemanRadius = 18;
+                    const iDx = star.x - store.iceman.x;
+                    const iDy = star.y - store.iceman.y;
+                    const iCombined = hitRadius + icemanRadius;
+                    if (iDx * iDx + iDy * iDy <= iCombined * iCombined) {
+                        store.starProjectiles.splice(i, 1);
+                        continue;
+                    }
+                }
+
+                if (store.beefClone) {
+                    const cloneRadius = 18;
+                    const cDx = star.x - store.beefClone.x;
+                    const cDy = star.y - store.beefClone.y;
+                    const cCombined = hitRadius + cloneRadius;
+                    if (cDx * cDx + cDy * cDy <= cCombined * cCombined) {
+                        store.starProjectiles.splice(i, 1);
+                        continue;
+                    }
+                }
+            } else {
+                for (const target of targets) {
+                    if (!target || target.dead || target.hp <= 0) continue;
+                    if (target === store.boss && target.isInvincible) continue;
+                    if (target.isHeatDeath) continue;
+
+                    const targetRadius = target.r || target.radius || 18;
+                    const dx = star.x - target.x;
+                    const dy = star.y - target.y;
+                    const combined = hitRadius + targetRadius;
+                    if (dx * dx + dy * dy <= combined * combined) {
+                        const id = target.id || target.__starId || target;
+                        if (!star.hitIds.has(id)) {
+                            const starDamage = baseDamage * (star.damageScale ?? 1);
+                            applyStarDamage(target, starDamage);
+                            star.hitIds.add(id);
+                        }
                     }
                 }
             }
@@ -7162,8 +7418,14 @@ function render(dt) {
     function drawStarProjectiles() {
         if (!store.starProjectiles.length) return;
         for (const star of store.starProjectiles) {
-            const trailFillBase = star.isIceman ? 'rgba(190, 225, 255, ' : 'rgba(255, 255, 200, ';
-            const trailShadowBase = star.isIceman ? 'rgba(140, 200, 255, ' : 'rgba(255, 240, 150, ';
+            const isEnemyStar = !!star.isEnemy;
+            const isIcemanStar = !!star.isIceman && !isEnemyStar;
+            const trailFillBase = isEnemyStar
+                ? (star.trailColor || 'rgba(150, 160, 220, ')
+                : (isIcemanStar ? 'rgba(190, 225, 255, ' : 'rgba(255, 255, 200, ');
+            const trailShadowBase = isEnemyStar
+                ? 'rgba(80, 90, 160, '
+                : (isIcemanStar ? 'rgba(140, 200, 255, ' : 'rgba(255, 240, 150, ');
             for (const particle of star.trail) {
                 const trailAlpha = Math.max(0, Math.min(1, particle.life * 0.6));
                 const shadowAlpha = Math.max(0, Math.min(1, particle.life));
@@ -7179,13 +7441,19 @@ function render(dt) {
             ctx.translate(star.x, star.y);
             ctx.rotate(star.rotation);
 
-            ctx.fillStyle = star.isIceman ? 'rgba(180, 215, 255, 0.85)' : 'rgba(255, 255, 140, 0.85)';
-            ctx.shadowColor = star.isIceman ? 'rgba(140, 200, 255, 0.9)' : 'rgba(255, 220, 120, 0.9)';
+            ctx.fillStyle = isEnemyStar
+                ? (star.primaryColor || 'rgba(200, 205, 255, 0.82)')
+                : (isIcemanStar ? 'rgba(180, 215, 255, 0.85)' : 'rgba(255, 255, 140, 0.85)');
+            ctx.shadowColor = isEnemyStar
+                ? (star.shadowColor || 'rgba(70, 80, 160, 0.9)')
+                : (isIcemanStar ? 'rgba(140, 200, 255, 0.9)' : 'rgba(255, 220, 120, 0.9)');
             ctx.shadowBlur = 24;
             drawStarShape(ctx, 0, 0, 5, star.size, star.size * 0.45);
             ctx.fill();
 
-            ctx.fillStyle = star.isIceman ? '#eef7ff' : '#fffbe6';
+            ctx.fillStyle = isEnemyStar
+                ? (star.coreColor || '#c8ccff')
+                : (isIcemanStar ? '#eef7ff' : '#fffbe6');
             ctx.shadowBlur = 12;
             drawStarShape(ctx, 0, 0, 5, star.size * 0.65, star.size * 0.28);
             ctx.fill();
@@ -7193,6 +7461,22 @@ function render(dt) {
             ctx.restore();
             ctx.shadowBlur = 0;
         }
+    }
+
+    function drawShadowEchoes() {
+        if (!store.shadowEchoes || !store.shadowEchoes.length) return;
+        ctx.save();
+        for (const echo of store.shadowEchoes) {
+            const lifeRatio = echo.maxLife ? Math.max(0, Math.min(1, echo.life / echo.maxLife)) : 1;
+            if (lifeRatio <= 0) continue;
+            ctx.globalAlpha = 0.35 * lifeRatio;
+            ctx.fillStyle = `rgba(150, 160, 255, ${0.25 + lifeRatio * 0.35})`;
+            ctx.beginPath();
+            ctx.ellipse(echo.x, echo.y, 24 * lifeRatio, 16 * lifeRatio, echo.rotation || 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.restore();
+        ctx.globalAlpha = 1;
     }
 
     function drawStarShape(ctx, cx, cy, spikes, outerRadius, innerRadius) {
@@ -7295,6 +7579,563 @@ function render(dt) {
         ctx.globalAlpha = 1;
     }
     
+    function ensureShadowCloneInit(b) {
+        if (b.shadowInitialized) return;
+        b.shadowInitialized = true;
+        b.shadowAbilityCooldown = 30;
+        b.shadowAbilityTimers = {
+            star: 6 + Math.random() * 2,
+            lightning: 12 + Math.random() * 2,
+            hounds: 18 + Math.random() * 2,
+            charge: 24 + Math.random() * 2
+        };
+        b.shadowAbilityOrder = ['star', 'lightning', 'hounds', 'charge'];
+        b.shadowAbilityIndex = 0;
+        b.multishotTimer = 0.9;
+        b.shadowChargeVX = 0;
+        b.shadowChargeVY = 0;
+        b.shadowChargeTrailCooldown = 0;
+        b.shadowChargeHit = false;
+        b.shadowTelegraph = null;
+        b.shadowTelegraphTarget = null;
+        spawnShadowChampionEscort(b);
+    }
+
+    function getActiveShadowChampion() {
+        if (!store.shadowChampionId) return null;
+        return store.enemies.find(e => e.id === store.shadowChampionId && !e.dead) || null;
+    }
+
+    function spawnShadowChampionEscort(boss) {
+        if (!store || !store.enemies) return null;
+        if (store.shadowChampionDefeated) return null;
+        const existing = getActiveShadowChampion();
+        if (existing) {
+            store.shadowChampionLastPos = { x: existing.x, y: existing.y };
+            return existing;
+        }
+
+        const guardRadius = 130;
+        const spawnAngle = Math.random() * Math.PI * 2;
+        const offsetX = Math.cos(spawnAngle) * guardRadius;
+        const offsetY = Math.sin(spawnAngle) * Math.max(guardRadius * 0.55, 60);
+        const targetY = clamp(boss.y + 90, 120, H * 0.78);
+        const spawnX = clamp(boss.x + offsetX, 60, W - 60);
+        const spawnProps = {
+            x: spawnX,
+            y: targetY,
+            hpScale: Math.max(1.1, boss.hpMax ? boss.hpMax / 4500 : 1.1),
+            damageMult: 1 + Math.max(0, store.world.wave - 8) * 0.025,
+            guardRadius,
+            guardAngle: spawnAngle,
+            angularSpeed: 0.7 + Math.random() * 0.25,
+            anchorOffsetY: 90,
+            bossLinkId: boss._instanceId || (boss._instanceId = performance.now() + Math.random()),
+            fireCooldown: boss.isEnraged ? 1.1 : 1.35,
+            momentum: 3.6
+        };
+
+        const champion = spawnEnemy('shadow_champion', spawnProps);
+        if (!champion) return null;
+
+        champion.x = spawnX;
+        champion.y = targetY;
+        store.enemies.push(champion);
+        store.shadowChampionId = champion.id;
+    store.shadowChampionDefeated = false;
+    store.shadowChampionTokenDropped = false;
+        store.shadowChampionLastPos = { x: champion.x, y: champion.y };
+
+        activateSpawnIntro(champion, {
+            duration: 0.75,
+            dropDistance: 200,
+            targetY,
+            effectColor: '#8f9bff',
+            topClampBuffer: 0.7,
+            fireDelayBuffer: 0.6,
+            clusterIndex: -1
+        });
+
+        store.activeEffects.push(createEffect('spawnTeleport', champion.x, targetY, champion.r || 22, {
+            duration: 1.1,
+            color: '#8f9bff',
+            clusterIndex: -1,
+            isChampion: true
+        }));
+
+        announce('Shadow champion joins the mirror!');
+        return champion;
+    }
+
+    function dropShadowChampionToken(x, y) {
+        if (store.shadowChampionTokenDropped) return;
+        if (!store.powerups) store.powerups = [];
+        const dropX = clamp(x, 20, W - 20);
+        const dropY = clamp(y, 40, H - 40);
+        store.powerups.push({ x: dropX, y: dropY, r: 16, type: 'shadow_champion_token' });
+        store.shadowChampionTokenDropped = true;
+        announce('Champion sigil recovered! Summon secured.');
+    }
+
+    function finalizeShadowChampionAfterBoss(bossX, bossY) {
+        if (store.shadowChampionTokenDropped) return;
+        let dropPos = { x: bossX, y: bossY };
+        const champion = getActiveShadowChampion();
+        if (champion) {
+            dropPos = { x: champion.x, y: champion.y - 18 };
+            champion.dead = true;
+            spawnGibs(champion.x, champion.y, champion.color);
+        } else if (store.shadowChampionLastPos) {
+            dropPos = { x: store.shadowChampionLastPos.x, y: store.shadowChampionLastPos.y - 18 };
+        }
+        store.shadowChampionId = null;
+        store.shadowChampionDefeated = true;
+        store.shadowChampionLastPos = { x: dropPos.x, y: dropPos.y };
+        dropShadowChampionToken(dropPos.x, dropPos.y);
+    }
+
+    const PLAYER_CHAMPION_CONFIG = Object.freeze({
+        baseGuardRadius: 110,
+        baseAngularSpeed: 1.35,
+        baseFireCooldown: 1.25,
+        baseDashCooldown: 2.8,
+        maxLevel: 5,
+        maxMinions: 3
+    });
+
+    function ensureChampionCollections() {
+        if (!store.championMinions) store.championMinions = [];
+    }
+
+    function spawnChampionMinion(owner) {
+        ensureChampionCollections();
+        if (!owner) return null;
+        const level = owner.level || 1;
+        const minionCount = store.championMinions.length;
+        if (minionCount >= PLAYER_CHAMPION_CONFIG.maxMinions) return null;
+        const id = performance.now() + Math.random();
+        const minion = {
+            id,
+            ownerId: owner.id,
+            orbitRadius: 52 + minionCount * 16,
+            orbitAngle: Math.random() * Math.PI * 2,
+            orbitSpeed: 1.75 + minionCount * 0.22,
+            pulsePhase: Math.random() * Math.PI * 2,
+            swirlPhase: Math.random() * Math.PI * 2,
+            fireCooldown: Math.max(0.9, 1.4 - level * 0.12),
+            fireTimer: 0.35 + Math.random() * 0.4,
+            damageScale: 1 + (level - 1) * 0.18,
+            dead: false
+        };
+        const anchorX = owner.x + Math.cos(minion.orbitAngle) * minion.orbitRadius;
+        const anchorY = owner.y + Math.sin(minion.orbitAngle) * minion.orbitRadius * 0.55;
+        minion.x = anchorX;
+        minion.y = anchorY;
+        store.championMinions.push(minion);
+        store.activeEffects.push(createEffect('spawnTeleport', owner.x, owner.y, owner.r * 1.6, {
+            duration: 0.6,
+            color: '#e7e9ff',
+            clusterIndex: -1,
+            isChampion: true
+        }));
+        return minion;
+    }
+
+    function grantChampionCompanion() {
+        ensureChampionCollections();
+        const now = performance.now();
+        if (!store.playerChampion || store.playerChampion.dead) {
+            const champion = {
+                id: now + Math.random(),
+                x: clamp(store.player.x, 60, W - 60),
+                y: clamp(store.player.y - 90, 80, H - 120),
+                r: 20,
+                guardRadius: PLAYER_CHAMPION_CONFIG.baseGuardRadius,
+                guardAngle: Math.random() * Math.PI * 2,
+                angularSpeed: PLAYER_CHAMPION_CONFIG.baseAngularSpeed,
+                anchorOffsetY: -80,
+                fireCooldown: PLAYER_CHAMPION_CONFIG.baseFireCooldown,
+                fireTimer: 0.45,
+                dashCooldown: PLAYER_CHAMPION_CONFIG.baseDashCooldown,
+                dashTimer: 0,
+                dashDuration: 0,
+                dashVX: 0,
+                dashVY: 0,
+                dashCooldownTimer: 1.4,
+                state: null,
+                level: 1,
+                damageScale: 1,
+                volleySpread: 0.16,
+                volleySize: 4,
+                momentum: 4.1,
+                auraPulse: Math.random() * Math.PI * 2,
+                swirlPhase: Math.random() * Math.PI * 2,
+                roamAnchor: null,
+                roamTimer: 0,
+                roamMode: 'idle',
+                echoCooldown: 0,
+                dead: false,
+                isPlayerChampion: true
+            };
+            store.playerChampion = champion;
+            store.championMinions.length = 0;
+            spawnChampionMinion(champion);
+            store.activeEffects.push(createEffect('spawnTeleport', champion.x, champion.y, champion.r * 2.1, {
+                duration: 1.05,
+                color: '#cbd4ff',
+                clusterIndex: -1,
+                isChampion: true
+            }));
+            announce('⚔️ Champion sigil aligned! Guardian bound to you.');
+            playSound('epicHorn');
+            return;
+        }
+
+        const champion = store.playerChampion;
+        if (champion.dead) {
+            store.playerChampion = null;
+            grantChampionCompanion();
+            return;
+        }
+
+        const nextLevel = Math.min((champion.level || 1) + 1, PLAYER_CHAMPION_CONFIG.maxLevel);
+        const levelDelta = nextLevel - (champion.level || 1);
+        champion.level = nextLevel;
+        champion.damageScale = 1 + (champion.level - 1) * 0.25;
+        champion.fireCooldown = Math.max(0.6, champion.fireCooldown * (levelDelta > 0 ? 0.9 : 1));
+        champion.dashCooldown = Math.max(1.5, champion.dashCooldown * (levelDelta > 0 ? 0.92 : 1));
+        champion.momentum = Math.min(6.2, champion.momentum + 0.25 * levelDelta);
+        champion.volleySize = Math.min(7, 4 + champion.level);
+        champion.volleySpread = Math.min(0.22, 0.16 + (champion.level - 1) * 0.015);
+        champion.guardRadius = PLAYER_CHAMPION_CONFIG.baseGuardRadius + champion.level * 6;
+        champion.angularSpeed = PLAYER_CHAMPION_CONFIG.baseAngularSpeed + (champion.level - 1) * 0.08;
+        champion.roamTimer = 0;
+
+        if (store.championMinions.length < Math.min(PLAYER_CHAMPION_CONFIG.maxMinions, champion.level)) {
+            spawnChampionMinion(champion);
+        }
+
+        store.activeEffects.push(createEffect('spawnTeleport', champion.x, champion.y, champion.r * 2.4, {
+            duration: 0.7,
+            color: '#f4f0ff',
+            clusterIndex: -1,
+            isChampion: true
+        }));
+        announce(`Champion ascends to rank ${champion.level}!`);
+        playSound('epicHorn');
+    }
+
+    function startShadowAbility(b, ability) {
+        b.currentAbility = ability;
+        b.abilityStage = 'windup';
+        b.shadowTelegraph = { type: ability, progress: 0 };
+        b.shadowTelegraphTarget = { x: store.player.x, y: store.player.y };
+        let windupBase;
+        switch (ability) {
+            case 'star': windupBase = b.isEnraged ? 0.6 : 0.8; break;
+            case 'lightning': windupBase = b.isEnraged ? 0.65 : 0.85; break;
+            case 'hounds': windupBase = b.isEnraged ? 0.7 : 0.9; break;
+            case 'charge': windupBase = b.isEnraged ? 0.9 : 1.1; break;
+            default: windupBase = 0.8; break;
+        }
+        b.abilityWindupTotal = windupBase;
+        b.abilityTimer = windupBase;
+    }
+
+    function finishShadowAbility(b) {
+        b.currentAbility = null;
+        b.abilityStage = null;
+        b.abilityTimer = 0;
+        b.abilityWindupTotal = 0;
+        b.shadowTelegraph = null;
+        b.shadowTelegraphTarget = null;
+        b.shadowChargeVX = 0;
+        b.shadowChargeVY = 0;
+        b.shadowChargeTrailCooldown = 0;
+        b.shadowChargeHit = false;
+    }
+
+    function shadowCloneFireMultishot(b, dmgScale) {
+        const volley = b.isEnraged ? 7 : 5;
+        const spread = Math.PI / 6;
+        const baseAngle = Math.atan2(store.player.y - b.y, store.player.x - b.x);
+        const bulletSpeed = 320 + (b.isEnraged ? 40 : 0);
+        for (let i = 0; i < volley; i++) {
+            const offset = i - (volley - 1) / 2;
+            const angle = baseAngle + offset * (spread / Math.max(1, volley - 1));
+            const bullet = getEBulletFromPool({
+                x: b.x,
+                y: b.y,
+                vx: Math.cos(angle) * bulletSpeed,
+                vy: Math.sin(angle) * bulletSpeed,
+                r: 4,
+                col: '#aab0ff',
+                dmg: 14 * dmgScale,
+                life: 3.2
+            });
+            store.eBullets.push(bullet);
+        }
+    }
+
+    function shadowCloneFireStarVolley(b, dmgScale) {
+        const player = store.player;
+        const baseAngle = Math.atan2(player.y - b.y, player.x - b.x);
+        const starCount = b.isEnraged ? 4 : 3;
+        const angleStep = 0.18;
+        const radialOffset = 28;
+        for (let i = 0; i < starCount; i++) {
+            const offsetIdx = i - (starCount - 1) / 2;
+            const angle = baseAngle + offsetIdx * angleStep;
+            const originX = b.x + Math.cos(angle + Math.PI / 2) * radialOffset;
+            const originY = b.y + Math.sin(angle + Math.PI / 2) * radialOffset;
+            launchStarProjectile(originX, originY, angle, {
+                isEnemy: true,
+                enemyDamage: 20 * dmgScale * (b.isEnraged ? 1.2 : 1),
+                speedMultiplier: b.isEnraged ? 1.05 : 0.92,
+                trailColor: 'rgba(170, 180, 255, ',
+                primaryColor: '#e0e4ff',
+                coreColor: '#545b99',
+                shadowColor: '#2c2f58'
+            });
+        }
+        playSound('stargun');
+    }
+
+    function generateShadowLightningPath(start, end, segments) {
+        segments = segments || 5;
+        const points = [{ x: start.x, y: start.y }];
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const length = Math.sqrt(dx * dx + dy * dy) || 1;
+        const nx = -dy / length;
+        const ny = dx / length;
+        for (let i = 1; i < segments; i++) {
+            const t = i / segments;
+            const jitterScale = 1 - Math.abs(0.5 - t) * 1.4;
+            const jitter = (Math.random() - 0.5) * 90 * jitterScale;
+            points.push({
+                x: start.x + dx * t + nx * jitter,
+                y: start.y + dy * t + ny * jitter
+            });
+        }
+        points.push({ x: end.x, y: end.y });
+        return points;
+    }
+
+    function shadowCloneCastLightning(b, dmgScale) {
+        const start = { x: b.x, y: b.y - b.r * 0.25 };
+        const targets = [{ type: 'player', x: store.player.x, y: store.player.y }];
+        if (store.iceman) targets.push({ type: 'iceman', x: store.iceman.x, y: store.iceman.y });
+        if (store.beefClone) targets.push({ type: 'beefClone', x: store.beefClone.x, y: store.beefClone.y });
+        const maxTargets = b.isEnraged ? 3 : 2;
+        while (targets.length > maxTargets) targets.pop();
+        for (let i = 0; i < targets.length; i++) {
+            const target = targets[i];
+            const endPoint = { x: target.x, y: target.y };
+            const points = generateShadowLightningPath(start, endPoint, 5);
+            store.lightningBolts.push({
+                points,
+                life: 0.45,
+                maxLife: 0.45,
+                dead: false,
+                isEnemy: true,
+                color: '#d7dcff',
+                glowColor: '#4a58c7'
+            });
+            store.activeEffects.push(createEffect('lightningFlash', endPoint.x, endPoint.y));
+            if (target.type === 'player') {
+                takeDamage(24 * dmgScale * (b.isEnraged ? 1.2 : 1));
+            }
+        }
+        playSound('thunder');
+    }
+
+    function spawnShadowHoundsFromBoss(b, count, dmgScale) {
+        if (!store.shadowHounds) store.shadowHounds = [];
+        count = count || 3;
+        for (let i = 0; i < count; i++) {
+            const offsetIdx = i - (count - 1) / 2;
+            const lifespan = 11 + (b.isEnraged ? 4 : 0);
+            store.shadowHounds.push({
+                x: b.x + offsetIdx * 24,
+                y: b.y + 24 + Math.abs(offsetIdx) * 6,
+                vx: 0,
+                vy: 0,
+                speed: (b.isEnraged ? 260 : 220),
+                damage: 8 * dmgScale * (b.isEnraged ? 1.2 : 1),
+                life: lifespan,
+                maxLife: lifespan,
+                attackCooldown: 0.4,
+                wobble: Math.random() * Math.PI * 2,
+                dead: false
+            });
+        }
+        playSound('dogs');
+    }
+
+    function addShadowEcho(x, y) {
+        if (!store.shadowEchoes) store.shadowEchoes = [];
+        store.shadowEchoes.push({
+            x,
+            y,
+            life: 0.4,
+            maxLife: 0.4,
+            rotation: Math.random() * Math.PI * 2,
+            dead: false
+        });
+    }
+
+    function updateShadowEchoes(dt) {
+        if (!store.shadowEchoes || !store.shadowEchoes.length) return;
+        for (let i = store.shadowEchoes.length - 1; i >= 0; i--) {
+            const echo = store.shadowEchoes[i];
+            echo.life -= dt;
+            if (echo.life <= 0) {
+                store.shadowEchoes.splice(i, 1);
+            }
+        }
+    }
+
+    function stepBossShadowClone(dt, b, dmgScale) {
+        ensureShadowCloneInit(b);
+        if (!b.isEnraged && b.hp / b.hpMax <= 0.35) {
+            b.isEnraged = true;
+            b.shadowAbilityCooldown = 24;
+            playSound('horn');
+            announce('THE SHADOW MIRROR UNLEASHES ITS POWER!');
+        }
+
+        for (const key in b.shadowAbilityTimers) {
+            if (Object.prototype.hasOwnProperty.call(b.shadowAbilityTimers, key)) {
+                b.shadowAbilityTimers[key] -= dt;
+            }
+        }
+
+        if (b.currentAbility) {
+            if (b.abilityStage === 'windup') {
+                b.abilityTimer -= dt;
+                if (b.shadowTelegraph) {
+                    const total = b.abilityWindupTotal || 1;
+                    b.shadowTelegraph.progress = Math.min(1, Math.max(0, 1 - (b.abilityTimer / total)));
+                }
+                if (b.currentAbility === 'lightning') {
+                    b.shadowTelegraphTarget = { x: store.player.x, y: store.player.y };
+                }
+                if (b.abilityTimer <= 0) {
+                    switch (b.currentAbility) {
+                        case 'star':
+                            shadowCloneFireStarVolley(b, dmgScale);
+                            b.abilityStage = 'recover';
+                            b.abilityTimer = 0.55;
+                            b.shadowTelegraph = null;
+                            b.shadowTelegraphTarget = null;
+                            break;
+                        case 'lightning':
+                            shadowCloneCastLightning(b, dmgScale);
+                            b.abilityStage = 'recover';
+                            b.abilityTimer = 0.65;
+                            b.shadowTelegraph = null;
+                            b.shadowTelegraphTarget = null;
+                            break;
+                        case 'hounds':
+                            spawnShadowHoundsFromBoss(b, b.isEnraged ? 4 : 3, dmgScale);
+                            b.abilityStage = 'recover';
+                            b.abilityTimer = 0.6;
+                            b.shadowTelegraph = null;
+                            b.shadowTelegraphTarget = null;
+                            break;
+                        case 'charge':
+                            b.shadowTelegraph = null;
+                            b.shadowTelegraphTarget = null;
+                            b.abilityStage = 'charge';
+                            b.abilityTimer = b.isEnraged ? 0.85 : 1.05;
+                            const angle = Math.atan2(store.player.y - b.y, store.player.x - b.x);
+                            const speed = b.isEnraged ? 640 : 560;
+                            b.shadowChargeVX = Math.cos(angle) * speed;
+                            b.shadowChargeVY = Math.sin(angle) * speed;
+                            b.shadowChargeTrailCooldown = 0;
+                            b.shadowChargeHit = false;
+                            addShadowEcho(b.x, b.y);
+                            break;
+                    }
+                }
+            } else if (b.abilityStage === 'charge') {
+                b.abilityTimer -= dt;
+                b.x += b.shadowChargeVX * dt;
+                b.y += b.shadowChargeVY * dt;
+                addShadowEcho(b.x, b.y);
+                b.shadowChargeTrailCooldown -= dt;
+                if (b.shadowChargeTrailCooldown <= 0) {
+                    b.shadowChargeTrailCooldown = 0.08;
+                    const pulse = getEBulletFromPool({
+                        x: b.x,
+                        y: b.y,
+                        vx: 0,
+                        vy: 0,
+                        r: 7,
+                        col: '#5460d8',
+                        dmg: 10 * dmgScale,
+                        life: 0.35
+                    });
+                    store.eBullets.push(pulse);
+                }
+                const margin = b.r;
+                if (b.x <= margin || b.x >= W - margin || b.y <= margin || b.y >= H * 0.92) {
+                    b.abilityTimer = 0;
+                }
+                const player = store.player;
+                const playerRadius = player.r || 18;
+                const dx = player.x - b.x;
+                const dy = player.y - b.y;
+                if (!b.shadowChargeHit && dx * dx + dy * dy <= Math.pow(playerRadius + b.r * 0.55, 2)) {
+                    takeDamage(30 * dmgScale * (b.isEnraged ? 1.25 : 1));
+                    b.shadowChargeHit = true;
+                }
+                if (b.abilityTimer <= 0) {
+                    b.abilityStage = 'recover';
+                    b.abilityTimer = 0.55;
+                    b.shadowChargeVX = 0;
+                    b.shadowChargeVY = 0;
+                }
+            } else if (b.abilityStage === 'recover') {
+                b.abilityTimer -= dt;
+                if (b.abilityTimer <= 0) {
+                    finishShadowAbility(b);
+                }
+            }
+        } else {
+            const abilities = b.shadowAbilityOrder;
+            for (let i = 0; i < abilities.length; i++) {
+                const index = (b.shadowAbilityIndex + i) % abilities.length;
+                const abilityName = abilities[index];
+                if (b.shadowAbilityTimers[abilityName] <= 0) {
+                    startShadowAbility(b, abilityName);
+                    b.shadowAbilityTimers[abilityName] = b.shadowAbilityCooldown;
+                    b.shadowAbilityIndex = (index + 1) % abilities.length;
+                    break;
+                }
+            }
+        }
+
+        if (!b.currentAbility) {
+            b.multishotTimer -= dt;
+            if (b.multishotTimer <= 0) {
+                shadowCloneFireMultishot(b, dmgScale);
+                b.multishotTimer = b.isEnraged ? 0.45 : 0.65;
+            }
+        }
+
+        if (b.abilityStage !== 'charge') {
+            b.moveT += dt;
+            const follow = clamp(store.player.x, b.r + 40, W - b.r - 40);
+            const strafe = Math.sin(b.moveT * (b.isEnraged ? 1.4 : 1.0)) * (140 + (b.isEnraged ? 40 : 0));
+            const desiredX = clamp(follow + strafe * 0.3, b.r, W - b.r);
+            b.x += (desiredX - b.x) * dt * 3.2;
+            const targetY = 130 + Math.sin(b.moveT * 0.9) * 16;
+            b.y += (targetY - b.y) * dt * 2.6;
+        }
+    }
+
     function stepBossOmegaSentinel(dt, b, dmgScale) {
         // Movement behavior
         if (b.y >= 100) {
@@ -8173,6 +9014,7 @@ function render(dt) {
             case 'malignus': stepBossCoreMalignus(dt, b, dmgScale); break;
             case 'hex':      stepBossTheHex(dt, b, dmgScale); break;
             case 'construct': stepBossGeometron(dt, b, dmgScale); break;
+            case 'shadow_clone': stepBossShadowClone(dt, b, dmgScale); break;
             case 'avian':    stepBossVoidRaven(dt, b, dmgScale); break;
             case 'broodlord': stepBossBroodlord(dt, b, dmgScale); break;
         }
@@ -8254,7 +9096,80 @@ function render(dt) {
 
         ctx.restore();
     }
-    function drawPowerup(p) { const cfg = POWERUP_TYPES[p.type]; ctx.save(); ctx.translate(p.x, p.y); const pulse = 0.8 + 0.2 * Math.sin(performance.now() / 150); ctx.scale(pulse, pulse); ctx.beginPath(); ctx.arc(0, 0, p.r + 3, 0, Math.PI * 2); const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, p.r + 3); grad.addColorStop(0, '#FFD70099'); grad.addColorStop(1, '#FFD70000'); ctx.fillStyle = grad; ctx.fill(); ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.fillStyle = '#FFD70044'; ctx.fill(); ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 16px Orbitron'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(cfg.icon, 0, 1); ctx.restore(); }
+    function drawPowerup(p) {
+        const cfg = POWERUP_TYPES[p.type];
+        ctx.save();
+        ctx.translate(p.x, p.y);
+
+        const time = performance.now();
+        const pulse = 0.8 + 0.2 * Math.sin(time / 150 + (p.pulseOffset || 0));
+        ctx.scale(pulse, pulse);
+
+        let glowInner = '#FFD70099';
+        let glowOuter = '#FFD70000';
+        let coreFill = '#FFD70044';
+        let borderColor = '#FFD700';
+        let iconColor = '#FFFFFF';
+        let iconFont = 'bold 16px Orbitron';
+
+        if (p.type === 'shadow_champion_token') {
+            glowInner = 'rgba(160, 180, 255, 0.85)';
+            glowOuter = 'rgba(80, 100, 235, 0)';
+            coreFill = 'rgba(80, 100, 220, 0.5)';
+            borderColor = 'rgba(220, 230, 255, 0.95)';
+            iconColor = '#f8f9ff';
+            iconFont = 'bold 18px Orbitron';
+        }
+
+        ctx.beginPath();
+        ctx.arc(0, 0, p.r + 3, 0, Math.PI * 2);
+        const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, p.r + 3);
+        glow.addColorStop(0, glowInner);
+        glow.addColorStop(1, glowOuter);
+        ctx.fillStyle = glow;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(0, 0, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = coreFill;
+        ctx.fill();
+
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        if (p.type === 'shadow_champion_token') {
+            const spin = (time / 480) % (Math.PI * 2);
+            ctx.save();
+            ctx.rotate(spin);
+            ctx.strokeStyle = 'rgba(245, 247, 255, 0.75)';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            const runeRadius = p.r * 0.65;
+            ctx.moveTo(-runeRadius, 0);
+            ctx.lineTo(runeRadius, 0);
+            ctx.moveTo(0, -runeRadius);
+            ctx.lineTo(0, runeRadius);
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.strokeStyle = 'rgba(235, 240, 255, 0.8)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(0, 0, p.r * 0.45, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        ctx.fillStyle = iconColor;
+        ctx.font = iconFont;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(cfg.icon, 0, 1);
+        ctx.restore();
+    }
     function drawDrone(d) { const p = store.player; ctx.save(); ctx.translate(p.x + d.offset, p.y + 20); ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(6, 6); ctx.lineTo(-6, 6); ctx.closePath(); ctx.fillStyle = '#c49cff'; ctx.fill(); ctx.restore(); }
     
     function drawLaser(laser) {
@@ -8908,6 +9823,263 @@ function render(dt) {
         }
         ctx.shadowBlur = 0;
         
+    } else if (t.behavior === "shadow_clone") {
+        const player = (typeof store !== 'undefined' && store && store.player) ? store.player : {};
+        const subclass = player && player.subclass ? player.subclass : '';
+        const time = performance.now() / 1000;
+        const basePulse = 0.6 + 0.25 * Math.sin(time * 4.3);
+        let accent = '#8fa0ff';
+        switch (subclass) {
+            case 'juggernaut': accent = '#ff6b6b'; break;
+            case 'marauder': accent = '#66ff99'; break;
+            case 'demolitionist': accent = '#ffd166'; break;
+            case 'railgunner': accent = '#b794ff'; break;
+            case 'phasestriker': accent = '#ff91d2'; break;
+            case 'stormcaller': accent = '#6dd0ff'; break;
+        }
+        const glowStrength = t.isEnraged ? 1.0 : 0.7;
+        let facing = Math.atan2(((player && player.y) ? player.y : t.y) - t.y, ((player && player.x) ? player.x : t.x) - t.x) + Math.PI / 2;
+        if (t.abilityStage === 'charge' && (Math.abs(t.shadowChargeVX || 0) + Math.abs(t.shadowChargeVY || 0)) > 16) {
+            facing = Math.atan2(t.shadowChargeVY || 0, t.shadowChargeVX || 0) + Math.PI / 2;
+        }
+        const wobble = Math.sin(time * 3 + (t.moveT || 0)) * 0.05;
+        ctx.save();
+        ctx.rotate(facing + wobble);
+        const scalePulse = 1 + (t.currentAbility ? basePulse * 0.05 : 0);
+        ctx.scale(scalePulse, 1);
+
+        ctx.shadowColor = addAlpha(accent, glowStrength);
+        ctx.shadowBlur = t.isEnraged ? 30 : 18;
+
+        const bodyGradient = ctx.createLinearGradient(0, -t.r * 1.4, 0, t.r * 1.3);
+        bodyGradient.addColorStop(0, addAlpha('#f4f7ff', 0.85));
+        bodyGradient.addColorStop(0.45, addAlpha('#3b4268', 0.95));
+        bodyGradient.addColorStop(1, addAlpha('#060712', 0.95));
+        ctx.fillStyle = bodyGradient;
+        ctx.beginPath();
+        ctx.moveTo(0, -t.r * 1.35);
+        ctx.lineTo(t.r * 0.92, t.r * 0.88);
+        ctx.lineTo(0, t.r * 1.15);
+        ctx.lineTo(-t.r * 0.92, t.r * 0.88);
+        ctx.closePath();
+        ctx.fill();
+        ctx.lineWidth = 2.4;
+        ctx.strokeStyle = addAlpha('#ccd2ef', 0.55);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(0, -t.r * 0.95);
+        ctx.lineTo(t.r * 0.55, t.r * 0.68);
+        ctx.lineTo(0, t.r * 0.9);
+        ctx.lineTo(-t.r * 0.55, t.r * 0.68);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(22, 26, 52, 0.9)';
+        ctx.fill();
+        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = addAlpha(accent, 0.55 + 0.3 * basePulse);
+        ctx.stroke();
+
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = addAlpha('#f7fbff', 0.85);
+        ctx.beginPath();
+        ctx.arc(0, -t.r * 0.32, t.r * 0.28, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = addAlpha(accent, 0.6 + 0.3 * Math.sin(time * 6));
+        ctx.beginPath();
+        ctx.arc(0, -t.r * 0.32, t.r * 0.16, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = addAlpha(accent, 0.45 + 0.35 * basePulse);
+        for (let side = -1; side <= 1; side += 2) {
+            ctx.beginPath();
+            ctx.moveTo(side * t.r * 0.65, -t.r * 0.1);
+            ctx.quadraticCurveTo(side * t.r * 1.2, t.r * 0.15, side * t.r * 0.95, t.r * 0.95);
+            ctx.stroke();
+        }
+
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = addAlpha('#dde3ff', 0.4);
+        ctx.beginPath();
+        ctx.moveTo(-t.r * 0.35, -t.r * 0.2);
+        ctx.lineTo(-t.r * 0.55, t.r * 0.6);
+        ctx.moveTo(t.r * 0.35, -t.r * 0.2);
+        ctx.lineTo(t.r * 0.55, t.r * 0.6);
+        ctx.stroke();
+
+        const exhaustPulse = 0.6 + 0.35 * Math.sin(time * 10 + (t.isEnraged ? Math.PI / 4 : 0));
+        ctx.globalAlpha = 0.45 + 0.4 * exhaustPulse;
+        ctx.fillStyle = addAlpha(accent, 0.8);
+        ctx.beginPath();
+        ctx.ellipse(-t.r * 0.38, t.r * 1.08, t.r * 0.2, t.r * (0.45 + 0.12 * exhaustPulse), 0, 0, Math.PI * 2);
+        ctx.ellipse(t.r * 0.38, t.r * 1.08, t.r * 0.2, t.r * (0.45 + 0.12 * exhaustPulse), 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        if (t.abilityStage === 'charge') {
+            ctx.lineWidth = 2.6;
+            ctx.strokeStyle = addAlpha(accent, 0.85);
+            ctx.beginPath();
+            ctx.moveTo(-t.r * 0.5, t.r * 0.6);
+            ctx.lineTo(-t.r * 0.75, t.r * 1.4);
+            ctx.moveTo(t.r * 0.5, t.r * 0.6);
+            ctx.lineTo(t.r * 0.75, t.r * 1.4);
+            ctx.stroke();
+        }
+
+        ctx.shadowBlur = 0;
+        ctx.restore();
+
+        if (t.shadowTelegraph) {
+            const telegraph = t.shadowTelegraph;
+            const progress = Math.max(0, Math.min(1, telegraph.progress || 0));
+            if (telegraph.type === 'star') {
+                const ringRadius = t.r * (1.05 + progress * 0.65);
+                ctx.save();
+                ctx.globalAlpha = 0.4 + 0.4 * progress;
+                ctx.lineWidth = 2 + progress * 3;
+                ctx.strokeStyle = addAlpha(accent, 0.8);
+                ctx.setLineDash([5, 3]);
+                ctx.beginPath();
+                ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.globalAlpha = 0.6;
+                const starCount = 6;
+                for (let i = 0; i < starCount; i++) {
+                    ctx.save();
+                    ctx.rotate(time * (t.isEnraged ? 2.1 : 1.6) + i * (Math.PI * 2 / starCount));
+                    ctx.translate(0, ringRadius);
+                    const size = 7 + progress * 6;
+                    ctx.fillStyle = addAlpha('#f6f8ff', 0.9);
+                    ctx.beginPath();
+                    ctx.moveTo(0, -size);
+                    ctx.lineTo(size * 0.45, 0);
+                    ctx.lineTo(0, size);
+                    ctx.lineTo(-size * 0.45, 0);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.lineWidth = 1.2;
+                    ctx.strokeStyle = addAlpha(accent, 0.6);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+                ctx.restore();
+                ctx.globalAlpha = 1;
+            } else if (telegraph.type === 'lightning' && t.shadowTelegraphTarget) {
+                const targetX = t.shadowTelegraphTarget.x - t.x;
+                const targetY = t.shadowTelegraphTarget.y - t.y;
+                const dist = Math.sqrt(targetX * targetX + targetY * targetY) || 1;
+                const segments = 7;
+                ctx.globalAlpha = 0.25 + 0.55 * progress;
+                ctx.lineWidth = 2 + progress * 2.5;
+                ctx.strokeStyle = addAlpha(accent, 0.7);
+                ctx.beginPath();
+                ctx.moveTo(0, -t.r * 0.25);
+                for (let i = 1; i <= segments; i++) {
+                    const tSeg = i / segments;
+                    const px = targetX * tSeg;
+                    const py = targetY * tSeg;
+                    const offsetScale = (1 - Math.abs(0.5 - tSeg) * 1.8);
+                    const offset = Math.sin(time * 12 + i * 1.7) * offsetScale * 24 * (0.3 + progress);
+                    const nx = -targetY / dist;
+                    const ny = targetX / dist;
+                    const jitterX = px + nx * offset;
+                    const jitterY = py + ny * offset;
+                    ctx.lineTo(jitterX, jitterY);
+                }
+                ctx.stroke();
+                ctx.setLineDash([10, 8]);
+                ctx.lineWidth = 1.4;
+                ctx.strokeStyle = addAlpha('#f1f3ff', 0.6);
+                ctx.beginPath();
+                ctx.moveTo(0, -t.r * 0.3);
+                ctx.lineTo(targetX, targetY);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.globalAlpha = 0.6;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(targetX, targetY, 14 + progress * 18, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+            } else if (telegraph.type === 'hounds') {
+                const baseRadius = t.r * 0.9;
+                const ringRadius = baseRadius + progress * t.r * 0.6;
+                ctx.save();
+                ctx.translate(0, t.r * 1.1);
+                ctx.scale(1, 0.55);
+                ctx.globalAlpha = 0.3 + 0.4 * progress;
+                ctx.fillStyle = 'rgba(10, 12, 28, 0.9)';
+                ctx.beginPath();
+                ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = addAlpha(accent, 0.7);
+                ctx.setLineDash([4, 3]);
+                ctx.beginPath();
+                ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.shadowColor = addAlpha(accent, 0.6);
+                ctx.shadowBlur = 15;
+                const pawCount = 4;
+                for (let i = 0; i < pawCount; i++) {
+                    const angle = time * (t.isEnraged ? 2.4 : 1.6) + i * (Math.PI * 2 / pawCount);
+                    const radius = ringRadius * (0.45 + 0.25 * Math.sin(time * 3 + i));
+                    const px = Math.cos(angle) * radius;
+                    const py = Math.sin(angle) * radius;
+                    ctx.save();
+                    ctx.translate(px, py);
+                    ctx.rotate(angle);
+                    const size = 6 + progress * 4;
+                    ctx.fillStyle = addAlpha('#f4f7ff', 0.85);
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, size, size * 0.6, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+                ctx.shadowBlur = 0;
+                ctx.restore();
+            } else if (telegraph.type === 'charge' && t.shadowTelegraphTarget) {
+                const targetX = t.shadowTelegraphTarget.x - t.x;
+                const targetY = t.shadowTelegraphTarget.y - t.y;
+                const dist = Math.sqrt(targetX * targetX + targetY * targetY) || 1;
+                const dirX = targetX / dist;
+                const dirY = targetY / dist;
+                const reach = Math.min(dist, t.r * (2.8 + 1.4 * progress));
+                ctx.globalAlpha = 0.4 + 0.45 * progress;
+                ctx.lineWidth = 3.2;
+                ctx.strokeStyle = addAlpha(accent, 0.8);
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(dirX * reach, dirY * reach);
+                ctx.stroke();
+                ctx.globalAlpha = 0.7;
+                ctx.fillStyle = addAlpha('#f3f6ff', 0.75);
+                ctx.beginPath();
+                ctx.moveTo(dirX * (reach + 12), dirY * (reach + 12));
+                ctx.lineTo(dirX * (reach - 10) - dirY * 8, dirY * (reach - 10) + dirX * 8);
+                ctx.lineTo(dirX * (reach - 10) + dirY * 8, dirY * (reach - 10) - dirX * 8);
+                ctx.closePath();
+                ctx.fill();
+                ctx.globalAlpha = 0.5;
+                ctx.lineWidth = 2;
+                ctx.setLineDash([6, 4]);
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(targetX, targetY);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.globalAlpha = 0.8;
+                ctx.beginPath();
+                ctx.arc(targetX, targetY, 14 + progress * 14, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+            }
+        }
     } else {const time = performance.now() / 1000; ctx.fillStyle = '#2c2c54'; ctx.strokeStyle = '#40407a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, t.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#706fd3'; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.8, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#f0932b'; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.3, 0, Math.PI * 2); ctx.fill(); for (let i = 0; i < 6; i++) {ctx.save(); ctx.rotate(i * Math.PI / 3 + time * 0.3); ctx.translate(t.r * 0.6, 0); ctx.fillStyle = '#ff6348'; ctx.strokeStyle = '#2f3542'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.15, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();} const eyeSize = t.r * 0.12; ctx.fillStyle = '#ff3838'; ctx.beginPath(); ctx.arc(-t.r * 0.2, -t.r * 0.15, eyeSize, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(t.r * 0.2, -t.r * 0.15, eyeSize, 0, Math.PI * 2); ctx.fill(); for (let i = 0; i < 4; i++) {ctx.save(); ctx.rotate(i * Math.PI / 2 + time * -0.5); ctx.translate(t.r * 0.9, 0); ctx.fillStyle = '#3c6382'; ctx.strokeStyle = '#40407a'; ctx.lineWidth = 2; ctx.fillRect(-t.r * 0.08, -t.r * 0.06, t.r * 0.16, t.r * 0.12); ctx.strokeRect(-t.r * 0.08, -t.r * 0.06, t.r * 0.16, t.r * 0.12); ctx.restore();}} ctx.restore();}
 
     function drawShip(t, e, player) {
@@ -9636,6 +10808,69 @@ function render(dt) {
             }
             ctx.shadowBlur = 0;
             break;
+        case "shadow_champion": {
+            const time = performance.now() / 1000;
+            const pulse = 0.8 + 0.2 * Math.sin(time * 5 + c * 3);
+            const swirl = c * 6;
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = 0.25 * pulse;
+            ctx.fillStyle = '#8f9bff';
+            ctx.beginPath();
+            ctx.arc(0, 0, a * 1.45, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = 1;
+
+            const bodyGradient = ctx.createLinearGradient(0, -a * 1.2, 0, a * 1.1);
+            bodyGradient.addColorStop(0, '#eef1ff');
+            bodyGradient.addColorStop(0.55, '#cbd4ff');
+            bodyGradient.addColorStop(1, '#7a80d4');
+            ctx.fillStyle = bodyGradient;
+            ctx.strokeStyle = '#4f55b7';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, -a * 1.05);
+            ctx.quadraticCurveTo(a * 0.95, -a * 0.05, a * 0.5, a * 0.95);
+            ctx.lineTo(-a * 0.5, a * 0.95);
+            ctx.quadraticCurveTo(-a * 0.95, -a * 0.05, 0, -a * 1.05);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#191a33';
+            ctx.beginPath();
+            ctx.ellipse(0, -a * 0.25, a * 0.52, a * 0.34, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#7b86ff';
+            ctx.beginPath();
+            ctx.ellipse(0, -a * 0.22, a * 0.45, a * 0.18, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 3;
+            ctx.save();
+            ctx.rotate(swirl);
+            for (let i = 0; i < 4; i++) {
+                ctx.beginPath();
+                ctx.moveTo(0, a * 0.2);
+                ctx.lineTo(0, a * 1.3);
+                ctx.stroke();
+                ctx.rotate(Math.PI / 2);
+            }
+            ctx.restore();
+
+            ctx.fillStyle = 'rgba(139, 149, 255, 0.45)';
+            ctx.beginPath();
+            ctx.arc(0, a * 0.35, a * 0.42, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+            break;
+        }
         case "void_champion": {
             const time = performance.now() / 1000;
             const shimmer = 0.55 + 0.45 * Math.sin(time * 6 + c * 3);
@@ -10880,6 +12115,355 @@ function render(dt) {
         announce('Forge unlocked! Spend that gold!');
         showShop();
     }
+    function getChampionPrimaryTarget(origin) {
+        if (!origin) return null;
+        const ox = origin.x ?? store.player.x;
+        const oy = origin.y ?? store.player.y;
+        let best = null;
+        let bestDist = Infinity;
+
+        if (store.boss && !store.boss.dead) {
+            const dx = store.boss.x - ox;
+            const dy = store.boss.y - oy;
+            const dist = dx * dx + dy * dy;
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = store.boss;
+            }
+        }
+
+        for (let i = 0; i < store.enemies.length; i++) {
+            const enemy = store.enemies[i];
+            if (!enemy || enemy.dead || enemy.hp <= 0) continue;
+            const dx = enemy.x - ox;
+            const dy = enemy.y - oy;
+            const dist = dx * dx + dy * dy;
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = enemy;
+            }
+        }
+
+        return best;
+    }
+
+    function resolveChampionTarget(entity, options = {}) {
+        if (!entity) return null;
+        const now = performance.now();
+        const stickRange = options.stickRange ?? 620;
+        const lingerMs = options.lingerMs ?? 260;
+        const originX = entity.x ?? store.player?.x ?? 0;
+        const originY = entity.y ?? store.player?.y ?? 0;
+        const stickRangeSq = stickRange * stickRange;
+
+        const existing = entity.currentTarget;
+        if (existing && !existing.dead && existing.hp > 0) {
+            const dx = existing.x - originX;
+            const dy = existing.y - originY;
+            if (dx * dx + dy * dy <= stickRangeSq) {
+                entity.currentTarget = existing;
+                entity._lastTargetSeen = now;
+                return existing;
+            }
+        }
+
+        const fresh = getChampionPrimaryTarget(entity);
+        if (fresh) {
+            entity.currentTarget = fresh;
+            entity._lastTargetSeen = now;
+            return fresh;
+        }
+
+        if (existing && !existing.dead && existing.hp > 0 && entity._lastTargetSeen && (now - entity._lastTargetSeen) < lingerMs) {
+            return existing;
+        }
+
+        entity.currentTarget = null;
+        return null;
+    }
+
+    function championDealDamage(target, damage, options = {}) {
+        if (!target || target.dead || damage <= 0) return;
+        const pseudoBullet = {
+            x: options.x ?? target.x,
+            y: options.y ?? target.y,
+            dmg: damage,
+            pierce: true,
+            explosive: false,
+            isChampionShot: true
+        };
+        handleBulletImpact(pseudoBullet, target);
+    }
+
+    function championFireVolley(champion, target) {
+        if (!champion || champion.dead || !target) return;
+        const player = store.player;
+        const dmgMult = (player?.dmgMult || 1) * (champion.damageScale || 1);
+        const baseAngle = Math.atan2(target.y - champion.y, target.x - champion.x);
+        const volley = Math.max(3, champion.volleySize || 4);
+        const spread = champion.volleySpread || 0.16;
+        const projectileSpeed = 360 + (champion.level || 1) * 45;
+        const baseDamage = (26 + (champion.level || 1) * 8) * dmgMult;
+
+        for (let i = 0; i < volley; i++) {
+            const offsetIdx = i - (volley - 1) / 2;
+            const angle = baseAngle + offsetIdx * spread;
+            const bullet = spawnBullet({
+                x: champion.x + Math.cos(baseAngle) * 10,
+                y: champion.y + Math.sin(baseAngle) * 10,
+                vx: Math.cos(angle) * projectileSpeed,
+                vy: Math.sin(angle) * projectileSpeed,
+                r: champion.level >= 4 ? 6 : 5,
+                col: champion.level >= 4 ? 'rgba(205, 210, 255, 0.96)' : 'rgba(162, 170, 255, 0.94)',
+                dmg: baseDamage,
+                life: 1.9,
+                pierce: champion.level >= 4,
+                isChampionShot: true
+            });
+            bullet.collisionSearchRadius = 160;
+        }
+
+        const jitter = 0.06 + Math.random() * 0.08;
+        champion.fireTimer = (champion.fireCooldown || 1) + jitter;
+        const now = performance.now();
+        if (!champion.lastShotTime || (now - champion.lastShotTime) > 200) {
+            playSound('stargun');
+            champion.lastShotTime = now;
+        }
+        store.activeEffects.push(createEffect('hitSpark', champion.x + Math.cos(baseAngle) * 6, champion.y + Math.sin(baseAngle) * 6, 14, { strength: 45 }));
+    }
+
+    function stepPlayerChampion(dt) {
+        const champion = store.playerChampion;
+        const player = store.player;
+        if (!champion || champion.dead || !player) return;
+
+        champion.auraPulse = (champion.auraPulse || 0) + dt * 2.4;
+        if (champion.dashCooldownTimer > 0) {
+            champion.dashCooldownTimer -= dt;
+        }
+
+        const hadTarget = !!(champion.currentTarget && !champion.currentTarget.dead && champion.currentTarget.hp > 0);
+        const fireTimerBase = champion.fireTimer ?? champion.fireCooldown ?? PLAYER_CHAMPION_CONFIG.baseFireCooldown;
+        champion.fireTimer = Math.max(0, fireTimerBase - dt);
+
+        const target = resolveChampionTarget(champion);
+        if (!hadTarget && target && champion.fireTimer > 0.15) {
+            champion.fireTimer = Math.min(champion.fireTimer, 0.15);
+        }
+
+        if (target) {
+            champion.visualAim = Math.atan2(target.y - champion.y, target.x - champion.x);
+        } else if (champion.roamAnchor) {
+            champion.visualAim = Math.atan2(champion.roamAnchor.y - champion.y, champion.roamAnchor.x - champion.x);
+        } else {
+            const dx = champion.x - player.x;
+            const dy = champion.y - player.y;
+            champion.visualAim = Math.atan2(dy, dx);
+        }
+
+        const dashActive = champion.state === 'dash';
+        champion.swirlPhase = (champion.swirlPhase || 0) + dt * (dashActive ? 9 : 5.4);
+        if (champion.swirlPhase > Math.PI * 2) champion.swirlPhase -= Math.PI * 2;
+
+        const marginX = champion.r || 18;
+        const marginY = champion.r || 18;
+        const clampAnchor = (x, y) => ({
+            x: clamp(x, marginX, W - marginX),
+            y: clamp(y, marginY, H - marginY)
+        });
+
+        if (!champion.roamAnchor) {
+            champion.roamAnchor = clampAnchor(player.x, player.y - 120);
+            champion.roamMode = 'idle';
+            champion.roamTimer = 0;
+        } else {
+            champion.roamAnchor = clampAnchor(champion.roamAnchor.x, champion.roamAnchor.y);
+        }
+
+        champion.roamTimer = (champion.roamTimer || 0) - dt;
+
+        if (target) {
+            if (champion.roamMode !== 'target' || champion.roamTimer <= 0) {
+                const baseRadius = Math.max(120, Math.min(210, champion.guardRadius || PLAYER_CHAMPION_CONFIG.baseGuardRadius));
+                const offsetAngle = Math.random() * Math.PI * 2;
+                const offsetDist = baseRadius * (0.4 + Math.random() * 0.8);
+                const anchorX = target.x + Math.cos(offsetAngle) * offsetDist;
+                const anchorY = target.y + Math.sin(offsetAngle) * offsetDist * 0.65;
+                champion.roamAnchor = clampAnchor(anchorX, anchorY);
+                champion.roamMode = 'target';
+                champion.roamTimer = 1.1 + Math.random() * 1.8;
+            }
+        } else if (champion.roamMode !== 'idle' || champion.roamTimer <= 0) {
+            const px = clamp(player.x, 80, W - 80);
+            const py = clamp(player.y - 140, 80, H - 160);
+            const idleAngle = Math.random() * Math.PI * 2;
+            const idleDist = 140 + Math.random() * 160;
+            const anchorX = px + Math.cos(idleAngle) * idleDist;
+            const anchorY = py + Math.sin(idleAngle) * 90;
+            champion.roamAnchor = clampAnchor(anchorX, anchorY);
+            champion.roamMode = 'idle';
+            champion.roamTimer = 2.4 + Math.random() * 1.8;
+        }
+
+        if (dashActive) {
+            champion.dashTimer -= dt;
+            if (champion.dashVX || champion.dashVY) {
+                champion.visualAim = Math.atan2(champion.dashVY || 0, champion.dashVX || 0);
+            }
+            champion.x += (champion.dashVX || 0) * dt;
+            champion.y += (champion.dashVY || 0) * dt;
+            champion.echoCooldown = (champion.echoCooldown || 0) - dt;
+            if ((champion.echoCooldown || 0) <= 0) {
+                addShadowEcho(champion.x, champion.y);
+                champion.echoCooldown = 0.035;
+            }
+
+            const dashRadius = (champion.r || 20) + 6;
+            const damage = (120 + (champion.level || 1) * 28) * (player.dmgMult || 1) * (champion.damageScale || 1);
+
+            if (!champion.dashHits) champion.dashHits = new Set();
+
+            if (store.boss && !store.boss.dead) {
+                const boss = store.boss;
+                const dx = boss.x - champion.x;
+                const dy = boss.y - champion.y;
+                const hitRadius = (boss.r || 70) + dashRadius;
+                if (dx * dx + dy * dy <= hitRadius * hitRadius && !champion.dashHits.has('boss')) {
+                    championDealDamage(boss, damage, { x: champion.x, y: champion.y });
+                    champion.dashHits.add('boss');
+                    store.activeEffects.push(createEffect('hitSpark', boss.x, boss.y, boss.r || 60, { strength: 90 }));
+                }
+            }
+
+            forEachEnemyNearby(champion.x, champion.y, dashRadius + 48, enemy => {
+                if (!enemy || enemy.dead) return false;
+                if (enemy.id && champion.dashHits.has(enemy.id)) return false;
+                const dx = enemy.x - champion.x;
+                const dy = enemy.y - champion.y;
+                const hitRadius = (enemy.r || 18) + dashRadius;
+                if (dx * dx + dy * dy <= hitRadius * hitRadius) {
+                    championDealDamage(enemy, damage, { x: champion.x, y: champion.y });
+                    if (enemy.id) champion.dashHits.add(enemy.id);
+                    store.activeEffects.push(createEffect('hitSpark', enemy.x, enemy.y, enemy.r || 18, { strength: 65 }));
+                }
+                return false;
+            });
+
+            if (champion.dashTimer <= 0) {
+                champion.state = null;
+                champion.dashVX = 0;
+                champion.dashVY = 0;
+                champion.dashHits = null;
+            }
+        } else {
+            const guardRadius = Math.max(100, champion.guardRadius || PLAYER_CHAMPION_CONFIG.baseGuardRadius);
+            const orbitAspect = 0.55 + Math.min(0.25, (champion.level || 1) * 0.04);
+            champion.guardAngle = (champion.guardAngle || Math.random() * Math.PI * 2) + (champion.angularSpeed || 1.2) * dt * (target ? 1.2 : 0.85);
+            const desiredX = champion.roamAnchor.x + Math.cos(champion.guardAngle) * guardRadius;
+            const desiredY = champion.roamAnchor.y + Math.sin(champion.guardAngle) * guardRadius * orbitAspect;
+            const followFactor = Math.min(1, (champion.momentum || 4.3) * dt);
+            champion.x += (desiredX - champion.x) * followFactor;
+            champion.y += (desiredY - champion.y) * followFactor * 0.92;
+
+            if (target) {
+                const dx = target.x - champion.x;
+                const dy = target.y - champion.y;
+                const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                if (dist > 420) {
+                    const chase = Math.min(220, (dist - 420) * 0.6);
+                    champion.x += (dx / dist) * chase * dt;
+                    champion.y += (dy / dist) * chase * dt * 0.85;
+                }
+            }
+
+            if (target && champion.fireTimer <= 0) {
+                const dx = target.x - champion.x;
+                const dy = target.y - champion.y;
+                const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                const canDash = (champion.dashCooldownTimer || 0) <= 0 && dist <= 420;
+                const dashChance = dist <= 220 ? 0.65 : dist <= 320 ? 0.45 : 0.28;
+
+                if (canDash && Math.random() < dashChance) {
+                    const dashSpeed = 480 + (champion.level || 1) * 55;
+                    champion.state = 'dash';
+                    champion.dashTimer = 0.32;
+                    champion.dashDuration = 0.32;
+                    champion.dashVX = (dx / dist) * dashSpeed;
+                    champion.dashVY = (dy / dist) * dashSpeed;
+                    champion.dashCooldownTimer = champion.dashCooldown || PLAYER_CHAMPION_CONFIG.baseDashCooldown;
+                    champion.visualAim = Math.atan2(champion.dashVY, champion.dashVX);
+                    champion.dashHits = new Set();
+                    champion.echoCooldown = 0;
+                    addShadowEcho(champion.x, champion.y);
+                    champion.fireTimer = 0.4;
+                } else {
+                    championFireVolley(champion, target);
+                }
+            }
+        }
+
+        champion.x = clamp(champion.x, marginX, W - marginX);
+        champion.y = clamp(champion.y, marginY, H - marginY);
+    }
+
+    function stepChampionMinions(dt) {
+        if (!store.championMinions || store.championMinions.length === 0) return;
+        const owner = store.playerChampion;
+        if (!owner || owner.dead) {
+            store.championMinions.length = 0;
+            return;
+        }
+
+        for (let i = store.championMinions.length - 1; i >= 0; i--) {
+            const minion = store.championMinions[i];
+            if (!minion || minion.dead) {
+                store.championMinions.splice(i, 1);
+                continue;
+            }
+
+            minion.orbitAngle += (minion.orbitSpeed || 1.6) * dt;
+            minion.pulsePhase = (minion.pulsePhase || 0) + dt * 3.1;
+            const radius = minion.orbitRadius * (1 + Math.sin(minion.pulsePhase) * 0.03);
+            const targetX = owner.x + Math.cos(minion.orbitAngle) * radius;
+            const targetY = owner.y + Math.sin(minion.orbitAngle) * radius * 0.55;
+            minion.x += (targetX - minion.x) * Math.min(1, 10 * dt);
+            minion.y += (targetY - minion.y) * Math.min(1, 10 * dt);
+
+            const desiredCooldown = Math.max(0.75, 1.4 - (owner.level || 1) * 0.12);
+            minion.fireCooldown += (desiredCooldown - minion.fireCooldown) * Math.min(1, dt * 3);
+            minion.damageScale = 1 + ((owner.level || 1) - 1) * 0.18;
+
+            const hadTarget = !!(minion.currentTarget && !minion.currentTarget.dead && minion.currentTarget.hp > 0);
+            const fireBase = minion.fireTimer ?? minion.fireCooldown ?? desiredCooldown;
+            minion.fireTimer = Math.max(0, fireBase - dt);
+
+            const target = resolveChampionTarget(minion, { stickRange: 520, lingerMs: 220 });
+            if (!hadTarget && target && minion.fireTimer > 0.2) {
+                minion.fireTimer = Math.min(minion.fireTimer, 0.2);
+            }
+            if (minion.fireTimer <= 0 && target) {
+                const angle = Math.atan2(target.y - minion.y, target.x - minion.x);
+                const speed = 340 + (owner.level || 1) * 30;
+                const damage = (18 + (owner.level || 1) * 6) * (store.player?.dmgMult || 1) * (minion.damageScale || 1);
+                const bullet = spawnBullet({
+                    x: minion.x,
+                    y: minion.y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    r: 4,
+                    col: '#cdd0ff',
+                    dmg: damage,
+                    life: 1.6,
+                    pierce: owner.level >= 4,
+                    isChampionShot: true
+                });
+                bullet.collisionSearchRadius = 150;
+                minion.fireTimer = minion.fireCooldown + Math.random() * 0.1;
+            }
+        }
+    }
+
     function createHound(side) {
         const isTuxedo = side === -1 || side === -2;
         let color = isTuxedo ? { main: '#222222', accent: '#FFFFFF' } : { main: '#F0E68C', accent: '#BDB76B' };
@@ -10916,6 +12500,43 @@ function render(dt) {
         };
     }
     function stepHounds(dt) { if (!store.player.hasHounds) return; store.hounds.forEach(h => { if (!h.target || h.target.dead || h.target.hp <= 0) { let closest = null, closestDist = Infinity; const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies; potentialTargets.forEach(e => { if (e.dead || e.hp <= 0) return; const dist = (h.x - e.x)**2 + (h.y - e.y)**2; if (dist < closestDist) { closestDist = dist; closest = e; } }); h.target = closest; } if (h.target) { const tx = h.target.x, ty = h.target.y; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); const speed = 350; if (dist > 30) { h.x += (dx / dist) * speed * dt; h.y += (dy / dist) * speed * dt; } else { h.attackT -= dt; if (h.attackT <= 0) { h.attackT = 0.25; let dmg = 8 * store.player.dmgMult; if (h.target === store.boss) dmg *= 0.3; if (!h.target.dead && h.target.hp > 0) { h.target.hp -= dmg; if (store.player.vampirism > 0) { let healAmount = dmg * store.player.vampirism; healAmount = Math.max(healAmount, 0.5); healAmount = Math.min(healAmount, 2); store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount); } if (h.target.hp <= 0) { h.killCount++; if (h.killCount > 0 && h.killCount % 12 === 0) { playSound('dogs'); } } } } } } else { const tx = store.player.x + h.side * 50, ty = store.player.y + 20; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); if (dist > 5) { h.x += dx * 5 * dt; h.y += dy * 5 * dt; } } }); }
+
+    function stepShadowHounds(dt) {
+        if (!store.shadowHounds || !store.shadowHounds.length) return;
+        const player = store.player;
+        for (let i = store.shadowHounds.length - 1; i >= 0; i--) {
+            const h = store.shadowHounds[i];
+            if (!h) {
+                store.shadowHounds.splice(i, 1);
+                continue;
+            }
+            h.life -= dt;
+            if (h.life <= 0 || h.dead) {
+                store.shadowHounds.splice(i, 1);
+                continue;
+            }
+            h.attackCooldown = Math.max(0, h.attackCooldown - dt);
+            h.wobble += dt * 3.4;
+            const targetOffsetX = Math.sin(h.wobble) * 16;
+            const targetOffsetY = Math.cos(h.wobble * 0.7) * 12;
+            const targetX = clamp(player.x + targetOffsetX, 20, W - 20);
+            const targetY = clamp(player.y + targetOffsetY, 40, H - 40);
+            const dx = targetX - h.x;
+            const dy = targetY - h.y;
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+            const step = Math.min(dist, h.speed * dt);
+            h.x += (dx / dist) * step;
+            h.y += (dy / dist) * step;
+
+            const px = player.x - h.x;
+            const py = player.y - h.y;
+            const hitRadius = (player.r || 18) + 10;
+            if (px * px + py * py <= hitRadius * hitRadius && h.attackCooldown <= 0) {
+                takeDamage(h.damage);
+                h.attackCooldown = 0.7;
+            }
+        }
+    }
     function drawHound(h) {
         ctx.save();
         ctx.translate(h.x, h.y);
@@ -11140,6 +12761,335 @@ function render(dt) {
         }
         ctx.restore();
     }
+
+    function drawShadowHound(h) {
+        ctx.save();
+        ctx.translate(h.x, h.y);
+        const time = performance.now() / 1000;
+        const lifeRatio = h.maxLife ? Math.max(0, Math.min(1, h.life / h.maxLife)) : 1;
+        const pulse = 0.5 + 0.4 * Math.sin(time * 6 + h.wobble);
+
+        ctx.globalAlpha = 0.55 + 0.35 * lifeRatio;
+
+        const bodyWidth = 18;
+        const bodyHeight = 12;
+
+        const gradient = ctx.createRadialGradient(0, 0, bodyHeight * 0.4, 0, 0, bodyWidth);
+        gradient.addColorStop(0, `rgba(35, 38, 62, ${0.9})`);
+        gradient.addColorStop(1, `rgba(18, 20, 34, ${0.9 * lifeRatio})`);
+
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, bodyWidth, bodyHeight, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = `rgba(205, 211, 255, ${0.8})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, bodyWidth, bodyHeight, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.shadowColor = 'rgba(120, 130, 220, 0.7)';
+        ctx.shadowBlur = 18 * lifeRatio;
+        ctx.fillStyle = `rgba(200, 210, 255, ${0.55 + pulse * 0.25})`;
+        ctx.beginPath();
+        ctx.arc(-6, -2, 3, 0, Math.PI * 2);
+        ctx.arc(6, -2, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = '#2a2f4e';
+        ctx.beginPath();
+        ctx.moveTo(-bodyWidth * 0.25, bodyHeight * 0.2);
+        ctx.lineTo(-bodyWidth * 0.45, bodyHeight * 0.95);
+        ctx.lineTo(-bodyWidth * 0.28, bodyHeight * 0.95);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(bodyWidth * 0.25, bodyHeight * 0.2);
+        ctx.lineTo(bodyWidth * 0.45, bodyHeight * 0.95);
+        ctx.lineTo(bodyWidth * 0.28, bodyHeight * 0.95);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = `rgba(150, 160, 240, ${0.8})`;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(-bodyWidth * 0.6, -bodyHeight * 0.2);
+        ctx.quadraticCurveTo(-bodyWidth * 0.1, -bodyHeight * 0.9, 0, -bodyHeight * 0.4);
+        ctx.quadraticCurveTo(bodyWidth * 0.1, -bodyHeight * 0.9, bodyWidth * 0.6, -bodyHeight * 0.2);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(bodyWidth * 0.4, -bodyHeight * 0.05);
+        ctx.quadraticCurveTo(bodyWidth * 0.9, -bodyHeight * 0.4, bodyWidth * 0.7, bodyHeight * 0.2);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    function drawChampionMinion(minion, owner) {
+        if (!minion) return;
+        const level = owner?.level || 1;
+        const baseRadius = 6 + Math.min(level, 3);
+    const now = performance.now() / 1000;
+    const pulse = 0.6 + 0.35 * Math.sin(now * 6 + (minion.pulsePhase || 0));
+    const swirl = now * 5.2 + (minion.swirlPhase || 0);
+        const fireCooldown = Math.max(0.12, minion.fireCooldown || 0.6);
+        const fireRatio = Math.max(0, Math.min(1, (minion.fireTimer || 0) / fireCooldown));
+
+        ctx.save();
+        ctx.translate(minion.x, minion.y);
+
+        if (owner) {
+            const angleToOwner = Math.atan2(owner.y - minion.y, owner.x - minion.x);
+            const tailLength = baseRadius * (2.2 + level * 0.35);
+
+            ctx.save();
+            ctx.rotate(angleToOwner + Math.PI);
+            ctx.globalAlpha = 0.32 + 0.28 * (1 - fireRatio);
+            const tailGradient = ctx.createLinearGradient(-tailLength, 0, 0, 0);
+            tailGradient.addColorStop(0, 'rgba(25, 28, 52, 0)');
+            tailGradient.addColorStop(0.9, 'rgba(70, 80, 150, 0.28)');
+            tailGradient.addColorStop(1, 'rgba(150, 160, 245, 0.72)');
+            ctx.fillStyle = tailGradient;
+            ctx.beginPath();
+            ctx.moveTo(-tailLength, -baseRadius * 0.55);
+            ctx.quadraticCurveTo(-tailLength * 0.6, -baseRadius, -baseRadius * 0.25, -baseRadius * 0.4);
+            ctx.lineTo(0, 0);
+            ctx.lineTo(-baseRadius * 0.25, baseRadius * 0.4);
+            ctx.quadraticCurveTo(-tailLength * 0.6, baseRadius, -tailLength, baseRadius * 0.55);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.36 + 0.22 * (1 - fireRatio);
+        const auraRadius = baseRadius * (1.9 + pulse * 0.32 + level * 0.1);
+        const auraGradient = ctx.createRadialGradient(0, 0, baseRadius * 0.2, 0, 0, auraRadius);
+        auraGradient.addColorStop(0, 'rgba(220, 224, 255, 0.62)');
+        auraGradient.addColorStop(0.52, `rgba(110, 125, 210, ${0.36 + level * 0.05})`);
+        auraGradient.addColorStop(1, 'rgba(25, 28, 52, 0)');
+        ctx.fillStyle = auraGradient;
+        ctx.beginPath();
+        ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+
+        ctx.save();
+        ctx.rotate(swirl * 0.4);
+        ctx.globalAlpha = 0.35 + 0.15 * (1 - fireRatio);
+        ctx.lineWidth = 1.25;
+        ctx.strokeStyle = 'rgba(145, 156, 255, 0.65)';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, baseRadius * (1.18 + 0.08 * Math.sin(swirl)), baseRadius * (0.62 + 0.1 * Math.cos(swirl * 1.3)), 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.save();
+        ctx.rotate(-swirl * 0.45);
+        ctx.globalAlpha = 0.22 + 0.18 * (1 - fireRatio);
+        ctx.lineWidth = 0.9;
+        ctx.strokeStyle = 'rgba(90, 120, 230, 0.55)';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, baseRadius * 1.45, baseRadius * 0.78, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.globalAlpha = 0.95;
+        const coreGradient = ctx.createRadialGradient(0, 0, baseRadius * 0.22, 0, 0, baseRadius * 0.92);
+        coreGradient.addColorStop(0, 'rgba(228, 232, 255, 0.95)');
+        coreGradient.addColorStop(0.4, 'rgba(152, 162, 235, 0.9)');
+        coreGradient.addColorStop(0.75, 'rgba(48, 54, 110, 0.95)');
+        coreGradient.addColorStop(1, 'rgba(16, 18, 36, 1)');
+        ctx.fillStyle = coreGradient;
+        ctx.beginPath();
+        ctx.arc(0, 0, baseRadius * (0.95 + pulse * 0.05), 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.globalAlpha = 0.8;
+        ctx.lineWidth = 1.6;
+        ctx.strokeStyle = level >= 5 ? 'rgba(230, 200, 255, 0.85)' : 'rgba(160, 170, 245, 0.82)';
+        ctx.beginPath();
+        ctx.arc(0, 0, baseRadius * 1.1, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.save();
+        ctx.rotate(0.12 * Math.sin(swirl));
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = 'rgba(208, 214, 255, 0.9)';
+        ctx.beginPath();
+        ctx.moveTo(-baseRadius * 0.52, -baseRadius * 0.12);
+        ctx.quadraticCurveTo(-baseRadius * 0.12, -baseRadius * 0.58, baseRadius * 0.48, -baseRadius * 0.05);
+        ctx.quadraticCurveTo(-baseRadius * 0.08, baseRadius * 0.28, -baseRadius * 0.45, baseRadius * 0.1);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 0.65;
+        ctx.strokeStyle = 'rgba(96, 118, 222, 0.85)';
+        ctx.lineWidth = 0.9;
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.globalAlpha = 0.55 * (1 - fireRatio);
+        const thrusterGradient = ctx.createRadialGradient(0, baseRadius * 0.95, baseRadius * 0.1, 0, baseRadius * 1.25, baseRadius * 0.6);
+        thrusterGradient.addColorStop(0, 'rgba(160, 180, 255, 0.8)');
+        thrusterGradient.addColorStop(1, 'rgba(60, 70, 150, 0)');
+        ctx.fillStyle = thrusterGradient;
+        ctx.beginPath();
+        ctx.ellipse(0, baseRadius * 1.05, baseRadius * 0.6, baseRadius * 0.36, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    function drawPlayerChampion(champion) {
+        if (!champion) return;
+
+        const level = champion.level || 1;
+        const baseRadius = champion.r || 20;
+        const now = performance.now() / 1000;
+        const auraPhase = champion.auraPulse || 0;
+        const auraPulse = 0.8 + 0.18 * Math.sin(now * 3 + auraPhase);
+        const dashActive = champion.state === 'dash';
+        const facing = typeof champion.visualAim === 'number' ? champion.visualAim : 0;
+        const swirl = champion.swirlPhase || 0;
+
+        ctx.save();
+        ctx.translate(champion.x, champion.y);
+
+        // Shadow-toned aura
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.32 + 0.18 * Math.sin(now * 2.2 + auraPhase * 0.8);
+        const auraRadius = baseRadius * (1.9 + auraPulse * 0.6 + level * 0.08);
+        const auraGradient = ctx.createRadialGradient(0, 0, baseRadius * 0.35, 0, 0, auraRadius);
+        auraGradient.addColorStop(0, 'rgba(255, 255, 255, 0.18)');
+        auraGradient.addColorStop(0.45, `rgba(110, 120, 180, ${0.32 + level * 0.04})`);
+        auraGradient.addColorStop(1, 'rgba(30, 32, 60, 0)');
+        ctx.fillStyle = auraGradient;
+        ctx.beginPath();
+        ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        if (dashActive && (champion.dashVX || champion.dashVY)) {
+            const dashDuration = champion.dashDuration || 0.01;
+            const dashProgress = Math.max(0, Math.min(1, 1 - (champion.dashTimer || 0) / dashDuration));
+            const streakLength = baseRadius * (3.1 + level * 0.3);
+            const trailAngle = Math.atan2(champion.dashVY || 0, champion.dashVX || 1);
+
+            ctx.save();
+            ctx.rotate(trailAngle);
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = 0.5 + 0.4 * dashProgress;
+            const streakGradient = ctx.createLinearGradient(-streakLength, 0, baseRadius * 0.9, 0);
+            streakGradient.addColorStop(0, 'rgba(30, 20, 60, 0)');
+            streakGradient.addColorStop(0.4, 'rgba(110, 90, 190, 0.45)');
+            streakGradient.addColorStop(1, 'rgba(210, 210, 255, 0.9)');
+            ctx.fillStyle = streakGradient;
+            ctx.beginPath();
+            ctx.moveTo(-streakLength, -baseRadius * 0.55);
+            ctx.quadraticCurveTo(baseRadius * -0.15, -baseRadius * 0.9, baseRadius * 0.8, -baseRadius * 0.18);
+            ctx.lineTo(baseRadius * 0.8, baseRadius * 0.18);
+            ctx.quadraticCurveTo(baseRadius * -0.15, baseRadius * 0.9, -streakLength, baseRadius * 0.55);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // Rotated core body
+        ctx.save();
+        ctx.rotate(facing);
+
+        const bodyGradient = ctx.createLinearGradient(0, -baseRadius * 1.15, 0, baseRadius * 1.05);
+        bodyGradient.addColorStop(0, '#1a1b28');
+        bodyGradient.addColorStop(0.55, '#2f3149');
+        bodyGradient.addColorStop(1, '#454763');
+        ctx.fillStyle = bodyGradient;
+        ctx.strokeStyle = '#989ae0';
+        ctx.lineWidth = 2.1;
+        ctx.globalAlpha = 0.98;
+        ctx.beginPath();
+        ctx.moveTo(0, -baseRadius * 1.05);
+        ctx.quadraticCurveTo(baseRadius * 0.92, -baseRadius * 0.05, baseRadius * 0.54, baseRadius * 0.92);
+        ctx.lineTo(-baseRadius * 0.54, baseRadius * 0.92);
+        ctx.quadraticCurveTo(-baseRadius * 0.92, -baseRadius * 0.05, 0, -baseRadius * 1.05);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Visor shadow
+        ctx.fillStyle = '#0d0e19';
+        ctx.globalAlpha = 0.95;
+        ctx.beginPath();
+        ctx.ellipse(0, -baseRadius * 0.28, baseRadius * 0.48, baseRadius * 0.32, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Luminous visor
+        const visorGradient = ctx.createLinearGradient(-baseRadius * 0.5, -baseRadius * 0.28, baseRadius * 0.5, -baseRadius * 0.05);
+        visorGradient.addColorStop(0, 'rgba(170, 190, 255, 0.78)');
+        visorGradient.addColorStop(1, 'rgba(240, 244, 255, 0.95)');
+        ctx.fillStyle = visorGradient;
+        ctx.beginPath();
+        ctx.moveTo(-baseRadius * 0.45, -baseRadius * 0.23);
+        ctx.quadraticCurveTo(0, -baseRadius * 0.48, baseRadius * 0.45, -baseRadius * 0.23);
+        ctx.quadraticCurveTo(baseRadius * 0.18, -baseRadius * 0.02, 0, baseRadius * 0.05);
+        ctx.quadraticCurveTo(-baseRadius * 0.18, -baseRadius * 0.02, -baseRadius * 0.45, -baseRadius * 0.23);
+        ctx.closePath();
+        ctx.fill();
+
+        // Accent lines
+        const accentColor = level >= 4 ? '#d5d7ff' : '#989ae0';
+        ctx.globalAlpha = 0.8;
+        ctx.strokeStyle = accentColor;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-baseRadius * 0.3, baseRadius * 0.2);
+        ctx.lineTo(baseRadius * 0.3, baseRadius * 0.2);
+        ctx.moveTo(-baseRadius * 0.22, baseRadius * 0.55);
+        ctx.lineTo(baseRadius * 0.22, baseRadius * 0.55);
+        ctx.stroke();
+
+        if (level >= 2) {
+            ctx.globalAlpha = 0.55 + 0.2 * Math.sin(now * 5.2 + auraPhase);
+            ctx.lineWidth = level >= 4 ? 2 : 1.4;
+            ctx.beginPath();
+            ctx.moveTo(0, -baseRadius * 1.4);
+            ctx.lineTo(0, -baseRadius * 1.95);
+            ctx.moveTo(-baseRadius * 0.28, -baseRadius * 1.7);
+            ctx.lineTo(baseRadius * 0.28, -baseRadius * 1.7);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+
+        // Mystic cross aura
+        ctx.save();
+        ctx.globalAlpha = 0.75;
+        ctx.strokeStyle = 'rgba(150, 155, 230, 0.55)';
+        ctx.lineWidth = 2;
+        ctx.rotate(swirl);
+        for (let i = 0; i < 4; i++) {
+            ctx.beginPath();
+            ctx.moveTo(0, baseRadius * 0.2);
+            ctx.lineTo(0, baseRadius * 1.25);
+            ctx.stroke();
+            ctx.rotate(Math.PI / 2);
+        }
+        ctx.restore();
+
+        // Core glow disk
+        ctx.globalAlpha = 0.6;
+        ctx.fillStyle = 'rgba(150, 150, 255, 0.35)';
+        ctx.beginPath();
+        ctx.arc(0, baseRadius * 0.32, baseRadius * 0.42, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+
     function drawIceman(iceman) {
         const { x, y } = iceman;
         ctx.save();
@@ -12862,25 +14812,47 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
             p.skillTree = {};
         }
 
+        ensureSkillTrackingLists();
+        const learnedSkillSet = new Set(p.learnedSkills || []);
+
         // Ensure current subclass nodes exist on the player's skill tree map
         treeData.path.nodes.forEach(node => {
             if (p.skillTree[node.id] === undefined) {
                 p.skillTree[node.id] = false;
+            }
+            if (learnedSkillSet.has(node.id)) {
+                p.skillTree[node.id] = true;
             }
         });
 
         if (p.skillTree[treeData.classAbility.id] === undefined) {
             p.skillTree[treeData.classAbility.id] = false;
         }
+        if (learnedSkillSet.has(treeData.classAbility.id)) {
+            p.skillTree[treeData.classAbility.id] = true;
+        }
 
         const crossDetails = getCrossUnlockNode(treeData);
         if (crossDetails && p.skillTree[crossDetails.node.id] === undefined) {
             p.skillTree[crossDetails.node.id] = false;
         }
+        if (crossDetails && learnedSkillSet.has(crossDetails.node.id)) {
+            p.skillTree[crossDetails.node.id] = true;
+        }
+
+        if (treeData.ultimateAbility) {
+            const ultimateId = treeData.ultimateAbility.id;
+            if (p.skillTree[ultimateId] === undefined) {
+                p.skillTree[ultimateId] = false;
+            }
+            if (learnedSkillSet.has(ultimateId)) {
+                p.skillTree[ultimateId] = true;
+            }
+        }
         
-        if (!p.skillTreeProgress) p.skillTreeProgress = { bossesDefeated: 0, tier1Choice: null, tier2Choice: null };
-        if (!p.skillPoints) p.skillPoints = 0;
-        if (!p.skillPointsSpent) p.skillPointsSpent = 0;
+    if (!p.skillTreeProgress) p.skillTreeProgress = { bossesDefeated: 0, tier1Choice: null, tier2Choice: null };
+    if (typeof p.skillPoints !== 'number') p.skillPoints = 0;
+    if (typeof p.skillPointsSpent !== 'number') p.skillPointsSpent = 0;
         
         // Don't award skill points here - they're awarded in handleBossDefeat
         // Just update the UI with whatever points we have
@@ -13166,6 +15138,10 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
 
             if (!p.skillTree) p.skillTree = {};
             p.skillTree[skill] = true;
+            ensureSkillTrackingLists();
+            if (!p.learnedSkills.includes(skill)) {
+                p.learnedSkills.push(skill);
+            }
             if (p.skillPoints > 0) {
                 p.skillPoints--;
             }
@@ -14136,37 +16112,52 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
     let lastCheatTap = 0;
 
     function activateDamageOffCheat() {
-    if (store.isDamageOff) return;
-    store.isDamageOff = true;
-    store.cheatsUsed = true;
-    announce('CHEAT: DAMAGE & ABILITIES OFF');
+        if (store.isDamageOff) return;
+        store.isDamageOff = true;
+        store.cheatsUsed = true;
+        announce('CHEAT: DAMAGE & ABILITIES OFF');
 
-    const p = store.player;
-    const propsToDisable = [
-        'dmgMult', 'multishot', 'rearMultishot', 'piercing', 'explosive', 
-        'flamethrowerLevel', 'missileVolley', 'critChance', 'critDamage', 
-        'hasLauncher', 'hasHounds', 'hasLazarusBeam', 'hasVoidBeam', 
-        'hasChainLightning', 'hasIceman', 'hasBeefClone', 'blinkDamage', 'missilePierce', 'missileCluster',
-        'hasDoubleStorm', 'hasHybridVoid', 'hasImpactPhase'
-    ];
-    
-    store.savedPlayerState = {};
-    propsToDisable.forEach(prop => {
-        store.savedPlayerState[prop] = p[prop];
-        if (typeof p[prop] === 'number') {
-            p[prop] = 0;
-        } else if (typeof p[prop] === 'boolean') {
-            p[prop] = false;
+        const p = store.player;
+        const propsToDisable = [
+            'dmgMult', 'multishot', 'rearMultishot', 'piercing', 'explosive',
+            'flamethrowerLevel', 'missileVolley', 'critChance', 'critDamage',
+            'hasLauncher', 'hasHounds', 'hasLazarusBeam', 'hasVoidBeam',
+            'hasChainLightning', 'hasIceman', 'hasBeefClone', 'blinkDamage', 'missilePierce', 'missileCluster',
+            'hasDoubleStorm', 'hasHybridVoid', 'hasImpactPhase'
+        ];
+
+        store.savedPlayerState = {};
+        propsToDisable.forEach(prop => {
+            store.savedPlayerState[prop] = p[prop];
+            if (typeof p[prop] === 'number') {
+                p[prop] = 0;
+            } else if (typeof p[prop] === 'boolean') {
+                p[prop] = false;
+            }
+        });
+
+        store.savedPlayerState.hounds = store.hounds;
+        store.hounds = [];
+        store.savedPlayerState.iceman = store.iceman;
+        store.iceman = null;
+        store.savedPlayerState.beefClone = store.beefClone;
+        store.beefClone = null;
+        store.savedPlayerState.playerChampion = store.playerChampion;
+        if (store.playerChampion) {
+            store.playerChampion.currentTarget = null;
+            store.playerChampion._lastTargetSeen = 0;
         }
-    });
-
-    store.savedPlayerState.hounds = store.hounds;
-    store.hounds = [];
-    store.savedPlayerState.iceman = store.iceman;
-    store.iceman = null;
-    store.savedPlayerState.beefClone = store.beefClone;
-    store.beefClone = null;
-}
+        store.savedPlayerState.championMinions = store.championMinions;
+        if (Array.isArray(store.championMinions)) {
+            store.championMinions.forEach(minion => {
+                if (!minion) return;
+                minion.currentTarget = null;
+                minion._lastTargetSeen = 0;
+            });
+        }
+        store.playerChampion = null;
+        store.championMinions = [];
+    }
 
     function deactivateDamageOffCheat() {
         if (!store.isDamageOff || !store.savedPlayerState) return;
@@ -14181,6 +16172,31 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
                 store.iceman = store.savedPlayerState.iceman;
             } else if (prop === 'beefClone') {
                 store.beefClone = store.savedPlayerState.beefClone;
+            } else if (prop === 'playerChampion') {
+                store.playerChampion = store.savedPlayerState.playerChampion || null;
+                if (store.playerChampion) {
+                    store.playerChampion.state = null;
+                    store.playerChampion.dashTimer = 0;
+                    store.playerChampion.dashVX = 0;
+                    store.playerChampion.dashVY = 0;
+                    store.playerChampion.dashHits = null;
+                    store.playerChampion.dashCooldownTimer = Math.max(0, store.playerChampion.dashCooldownTimer || 0);
+                    store.playerChampion.currentTarget = null;
+                    store.playerChampion._lastTargetSeen = 0;
+                    store.playerChampion.fireTimer = Math.max(0, store.playerChampion.fireTimer || 0);
+                }
+            } else if (prop === 'championMinions') {
+                const savedMinions = store.savedPlayerState.championMinions;
+                store.championMinions = Array.isArray(savedMinions) ? savedMinions : [];
+                if (store.playerChampion && store.championMinions.length) {
+                    store.championMinions.forEach(minion => {
+                        if (!minion) return;
+                        minion.dead = false;
+                        minion.fireTimer = Math.max(0, minion.fireTimer || 0);
+                        minion.currentTarget = null;
+                        minion._lastTargetSeen = 0;
+                    });
+                }
             } else if (p.hasOwnProperty(prop)) {
                 p[prop] = store.savedPlayerState[prop];
             }
