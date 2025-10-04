@@ -2040,6 +2040,131 @@ function createParticle(x, y, vx, vy, color, life) {
         }
     })();
 
+        const BOSS_DEFINITIONS = Object.freeze([
+            { key: 'void_sentinel', name: 'VOID SENTINEL', baseHp: 4000, r: 55, behavior: 'sentinel', color: '#8B4A9C' },
+            { key: 'nexus_phantom', name: 'NEXUS PHANTOM', baseHp: 2200, r: 50, behavior: 'hex', color: '#66aaff' },
+            { key: 'neural_core', name: 'NEURAL CORE', baseHp: 3200, r: 60, behavior: 'malignus', color: '#2E8B57' },
+            { key: 'hive_sovereign', name: 'HIVE SOVEREIGN', baseHp: 8500, r: 85, behavior: 'broodlord', color: '#2d5016' },
+            { key: 'shadow_mirror', name: 'SHADOW MIRROR', baseHp: 7200, r: 58, behavior: 'shadow_clone', color: '#cbd4ff' },
+            { key: 'death_engine', name: 'DEATH ENGINE', baseHp: 9000, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true }
+        ]);
+
+        const BOSS_THEME_MAP = Object.freeze({
+            'VOID SENTINEL': 'void_sentinel',
+            'NEXUS PHANTOM': 'nexus_phantom',
+            'NEURAL CORE': 'neural_core',
+            'HIVE SOVEREIGN': 'hive_sovereign',
+            'SHADOW MIRROR': 'shadow_mirror',
+            'DEATH ENGINE': 'death_engine'
+        });
+
+        const DEFAULT_MAP_THEME_KEY = 'void_sentinel';
+
+        const MAP_THEME_DEFS = Object.freeze({
+            void_sentinel: {
+                key: 'void_sentinel',
+                label: 'Sentinel Breach',
+                baseFill: '#050008',
+                gradient: { type: 'radial', x: 0.5, y: 0.38, radius: 0.95, stops: [
+                    { offset: 0, color: 'rgba(120, 0, 160, 0.9)' },
+                    { offset: 0.45, color: 'rgba(35, 0, 90, 0.55)' },
+                    { offset: 1, color: 'rgba(4, 0, 12, 1)' }
+                ] },
+                starLayers: [
+                    { count: 120, speed: 26, color: 'rgba(255, 160, 255, 0.75)', pulseColor: 'rgba(255, 225, 255, 0.95)', minRadius: 0.35, maxRadius: 1.4, twinkleSpeed: 2.1, twinkleAmplitude: 0.55 },
+                    { count: 80, speed: 52, color: 'rgba(140, 60, 220, 0.6)', pulseColor: 'rgba(225, 140, 255, 0.85)', minRadius: 0.2, maxRadius: 1.9, twinkleSpeed: 1.4, twinkleAmplitude: 0.45 }
+                ],
+                auroraBands: [
+                    { y: 0.22, thickness: 0.14, alpha: 0.42, waveSpeed: 0.32, waveAmplitude: 0.12, rotation: 0.14, colorStops: ['rgba(60, 0, 120, 0)', 'rgba(240, 160, 255, 0.55)', 'rgba(10, 0, 30, 0)'] }
+                ]
+            },
+            nexus_phantom: {
+                key: 'nexus_phantom',
+                label: 'Phantom Glacial Drift',
+                baseFill: '#031024',
+                gradient: { type: 'radial', x: 0.48, y: 0.33, radius: 0.92, stops: [
+                    { offset: 0, color: 'rgba(20, 80, 180, 0.8)' },
+                    { offset: 0.6, color: 'rgba(5, 18, 50, 0.7)' },
+                    { offset: 1, color: 'rgba(3, 10, 28, 1)' }
+                ] },
+                starLayers: [
+                    { count: 140, speed: 20, color: 'rgba(140, 200, 255, 0.75)', pulseColor: 'rgba(210, 235, 255, 0.95)', minRadius: 0.3, maxRadius: 1.3, twinkleSpeed: 1.6, twinkleAmplitude: 0.5 },
+                    { count: 70, speed: 38, color: 'rgba(80, 180, 255, 0.55)', pulseColor: 'rgba(120, 220, 255, 0.8)', minRadius: 0.25, maxRadius: 1.7, twinkleSpeed: 1.1, twinkleAmplitude: 0.4 }
+                ],
+                auroraBands: [
+                    { y: 0.68, thickness: 0.18, alpha: 0.36, waveSpeed: 0.24, waveAmplitude: 0.16, rotation: -0.18, colorStops: ['rgba(0, 40, 120, 0)', 'rgba(50, 180, 255, 0.55)', 'rgba(0, 18, 60, 0)'] }
+                ]
+            },
+            neural_core: {
+                key: 'neural_core',
+                label: 'Neural Bio-Dome',
+                baseFill: '#061504',
+                gradient: { type: 'radial', x: 0.46, y: 0.4, radius: 0.9, stops: [
+                    { offset: 0, color: 'rgba(0, 120, 90, 0.75)' },
+                    { offset: 0.55, color: 'rgba(5, 40, 25, 0.7)' },
+                    { offset: 1, color: 'rgba(6, 16, 8, 1)' }
+                ] },
+                starLayers: [
+                    { count: 115, speed: 24, color: 'rgba(140, 255, 190, 0.72)', pulseColor: 'rgba(210, 255, 210, 0.92)', minRadius: 0.35, maxRadius: 1.35, twinkleSpeed: 1.9, twinkleAmplitude: 0.5 },
+                    { count: 70, speed: 44, color: 'rgba(40, 160, 110, 0.55)', pulseColor: 'rgba(120, 220, 150, 0.8)', minRadius: 0.25, maxRadius: 1.8, twinkleSpeed: 1.2, twinkleAmplitude: 0.45 }
+                ],
+                auroraBands: [
+                    { y: 0.48, thickness: 0.2, alpha: 0.32, waveSpeed: 0.36, waveAmplitude: 0.1, rotation: 0.08, colorStops: ['rgba(0, 70, 30, 0)', 'rgba(0, 200, 120, 0.5)', 'rgba(0, 50, 25, 0)'] }
+                ]
+            },
+            hive_sovereign: {
+                key: 'hive_sovereign',
+                label: 'Hive Nebular Bloom',
+                baseFill: '#1b0d04',
+                gradient: { type: 'radial', x: 0.5, y: 0.45, radius: 0.94, stops: [
+                    { offset: 0, color: 'rgba(150, 90, 10, 0.8)' },
+                    { offset: 0.5, color: 'rgba(50, 20, 4, 0.75)' },
+                    { offset: 1, color: 'rgba(14, 6, 2, 1)' }
+                ] },
+                starLayers: [
+                    { count: 130, speed: 22, color: 'rgba(255, 200, 120, 0.7)', pulseColor: 'rgba(255, 240, 180, 0.92)', minRadius: 0.3, maxRadius: 1.4, twinkleSpeed: 1.7, twinkleAmplitude: 0.55 },
+                    { count: 65, speed: 36, color: 'rgba(220, 130, 40, 0.6)', pulseColor: 'rgba(255, 180, 80, 0.85)', minRadius: 0.25, maxRadius: 1.9, twinkleSpeed: 1.3, twinkleAmplitude: 0.4 }
+                ],
+                auroraBands: [
+                    { y: 0.3, thickness: 0.22, alpha: 0.34, waveSpeed: 0.28, waveAmplitude: 0.14, rotation: -0.06, colorStops: ['rgba(120, 50, 10, 0)', 'rgba(255, 170, 60, 0.55)', 'rgba(40, 12, 3, 0)'] }
+                ]
+            },
+            shadow_mirror: {
+                key: 'shadow_mirror',
+                label: 'Shadow Cascade',
+                baseFill: '#04081a',
+                gradient: { type: 'radial', x: 0.52, y: 0.3, radius: 0.88, stops: [
+                    { offset: 0, color: 'rgba(60, 0, 140, 0.8)' },
+                    { offset: 0.55, color: 'rgba(15, 10, 45, 0.75)' },
+                    { offset: 1, color: 'rgba(4, 8, 20, 1)' }
+                ] },
+                starLayers: [
+                    { count: 150, speed: 28, color: 'rgba(180, 190, 255, 0.75)', pulseColor: 'rgba(230, 235, 255, 0.95)', minRadius: 0.3, maxRadius: 1.25, twinkleSpeed: 2.4, twinkleAmplitude: 0.6 },
+                    { count: 80, speed: 50, color: 'rgba(80, 120, 255, 0.6)', pulseColor: 'rgba(160, 180, 255, 0.85)', minRadius: 0.25, maxRadius: 1.75, twinkleSpeed: 1.5, twinkleAmplitude: 0.5 }
+                ],
+                auroraBands: [
+                    { y: 0.58, thickness: 0.18, alpha: 0.4, waveSpeed: 0.42, waveAmplitude: 0.18, rotation: 0.18, colorStops: ['rgba(10, 40, 160, 0)', 'rgba(120, 160, 255, 0.6)', 'rgba(4, 14, 40, 0)'] }
+                ]
+            },
+            death_engine: {
+                key: 'death_engine',
+                label: 'Death Engine Crucible',
+                baseFill: '#120202',
+                gradient: { type: 'radial', x: 0.5, y: 0.4, radius: 0.96, stops: [
+                    { offset: 0, color: 'rgba(190, 40, 0, 0.85)' },
+                    { offset: 0.5, color: 'rgba(80, 10, 0, 0.75)' },
+                    { offset: 1, color: 'rgba(18, 2, 2, 1)' }
+                ] },
+                starLayers: [
+                    { count: 125, speed: 30, color: 'rgba(255, 160, 120, 0.72)', pulseColor: 'rgba(255, 210, 160, 0.95)', minRadius: 0.32, maxRadius: 1.4, twinkleSpeed: 2.0, twinkleAmplitude: 0.58 },
+                    { count: 85, speed: 58, color: 'rgba(220, 80, 20, 0.62)', pulseColor: 'rgba(255, 140, 60, 0.86)', minRadius: 0.24, maxRadius: 2.0, twinkleSpeed: 1.4, twinkleAmplitude: 0.5 }
+                ],
+                auroraBands: [
+                    { y: 0.4, thickness: 0.26, alpha: 0.38, waveSpeed: 0.5, waveAmplitude: 0.2, rotation: -0.12, colorStops: ['rgba(120, 20, 0, 0)', 'rgba(255, 140, 60, 0.6)', 'rgba(40, 6, 2, 0)'] }
+                ]
+            }
+        });
+
     const store = {
         frame: 0, last: performance.now(), isGameOver: false, isPaused: false,
         isDamageOff: false,
@@ -2084,11 +2209,15 @@ function createParticle(x, y, vx, vy, color, life) {
             nextMechForgePrompt: 135,
             mechForgePromptCount: 0,
             autoForgeEnabled: storedAutoForgeEnabled,
-            autoForgeReserve: 40,
+            autoForgeReserve: 0,
             autoForgeDecisionTimer: null,
             autoForgeAnnounceCooldown: 0,
             totalForgeSpend: 0,
-            autoForgeTutorialShown: false
+            autoForgeTutorialShown: false,
+            currentThemeKey: DEFAULT_MAP_THEME_KEY,
+            targetThemeKey: DEFAULT_MAP_THEME_KEY,
+            themeTransitionProgress: 1,
+            themeTransitionActive: false
         },
         player: { ...player_initial_state },
     boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], shadowHounds: [], missiles: [], lasers: [], mines: [], activeEffects: [], starProjectiles: [], pendingStarClones: [],
@@ -2677,6 +2806,7 @@ function createParticle(x, y, vx, vy, color, life) {
         { id: 'flamethrower', name: 'LAVA CHUNKS', icon: '🌋', desc: 'Spews chunks of molten rock in a cone.', apply: () => { store.player.flamethrowerLevel++; } }
     ];
     
+
     const SHOP_UPGRADES = {
         'repair': { name: "NANO REPAIR", icon: '🔧', cost: 3, isPremium: true, category: 'health', apply: () => { if (store.player.hp < store.player.hpMax) { store.player.hp = Math.min(store.player.hpMax, store.player.hp + store.player.hpMax * 0.25); return true; } return false; }, desc: () => `Restore 25% of max HP.` },
         'vampirism': {
@@ -3215,6 +3345,7 @@ function createParticle(x, y, vx, vy, color, life) {
             }
             
             store.boss = createBoss(bossHpScale);
+            applyBossTheme(store.boss);
             store.lastBossSnapshot = null;
             store.lastBossDefeatId = null;
             store.world.bossSpawnTime = performance.now();
@@ -3367,23 +3498,44 @@ function createParticle(x, y, vx, vy, color, life) {
         }
     }
     
+    function getBossDefinitionByCycle(cycle) {
+        const total = BOSS_DEFINITIONS.length;
+        if (total === 0) return null;
+        const idx = ((cycle % total) + total) % total;
+        return BOSS_DEFINITIONS[idx];
+    }
+
     function createBoss(scale) {
-        const types = [
-            { name: 'VOID SENTINEL', baseHp: 4000, r: 55, behavior: 'sentinel', color: '#8B4A9C' },
-            { name: 'NEXUS PHANTOM', baseHp: 2200, r: 50, behavior: 'hex', color: '#66aaff'},
-            { name: 'NEURAL CORE', baseHp: 3200, r: 60, behavior: 'malignus', color: '#2E8B57' },
-            { name: 'HIVE SOVEREIGN', baseHp: 8500, r: 85, behavior: 'broodlord', color: '#2d5016' },
-            { name: 'SHADOW MIRROR', baseHp: 7200, r: 58, behavior: 'shadow_clone', color: '#cbd4ff' },
-            { name: 'DEATH ENGINE', baseHp: 9000, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true }
-        ];
         const cycleRaw = Math.floor((store.world.wave - 5) / 5);
-        const bossCycle = ((cycleRaw % types.length) + types.length) % types.length;
-        const type = types[bossCycle];
-        let hp = type.baseHp * scale * store.world.bossHealthBonus;
+        const def = getBossDefinitionByCycle(cycleRaw) || BOSS_DEFINITIONS[0];
+        let hp = def.baseHp * scale * store.world.bossHealthBonus;
     const collarBonus = calculateCollarBonus(sanitizeCollarStacks()); // Diminishing scaling per collar stack
         hp *= collarBonus;
         
-    const boss = { ...type, x: W / 2, y: -80, hpMax: hp, hp: hp, t: 0, fireT: 0, moveT: 0, vx: 100, vy: 30, patternPhase: 0, isEnraged: false, attackPhase: 0, phaseTimer: 0, dashTimer: 0, dashTrailCooldown: 0, rainEvent: null };
+    const boss = {
+            ...def,
+            themeKey: def.key,
+            x: W / 2,
+            y: -80,
+            hpMax: hp,
+            hp,
+            t: 0,
+            fireT: 0,
+            moveT: 0,
+            vx: 100,
+            vy: 30,
+            patternPhase: 0,
+            isEnraged: false,
+            attackPhase: 0,
+            phaseTimer: 0,
+            dashTimer: 0,
+            dashTrailCooldown: 0,
+            rainEvent: null,
+            phase: def.phase ?? 0,
+            isLaughing: def.isLaughing ?? false,
+            laughStartTime: def.laughStartTime ?? 0,
+            visible: def.visible ?? true
+        };
         
         // console.log(`🏆 Boss Created: ${boss.name} | Wave: ${store.world.wave} | HP: ${hp} | Scale: ${scale} | CollarStacks: ${store.world.collarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x`);
         
@@ -6588,11 +6740,15 @@ function createParticle(x, y, vx, vy, color, life) {
             nextMechForgePrompt: 135,
             mechForgePromptCount: 0,
             autoForgeEnabled: prevAutoForge,
-            autoForgeReserve: 40,
+            autoForgeReserve: 0,
             autoForgeDecisionTimer: null,
             autoForgeAnnounceCooldown: 0,
             totalForgeSpend: 0,
-            autoForgeTutorialShown: false
+            autoForgeTutorialShown: false,
+            currentThemeKey: DEFAULT_MAP_THEME_KEY,
+            targetThemeKey: DEFAULT_MAP_THEME_KEY,
+            themeTransitionProgress: 1,
+            themeTransitionActive: false
         };
         
         if (store.bullets && store.bullets.length) {
@@ -6632,51 +6788,261 @@ function createParticle(x, y, vx, vy, color, life) {
                 mechForgeBtn._forgePulseTimeout = null;
             }
         }
+        setMapThemeImmediate(DEFAULT_MAP_THEME_KEY);
         ensureName();
     }
 
     // --- RENDER & DRAW FUNCTIONS ---
-    const starCountA = 100, starCountB = 80;
-    const starsA = Array.from({ length: starCountA }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5, pulse: Math.random() * 10 }));
-    const starsB = Array.from({ length: starCountB }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 2, pulse: Math.random() * 10 }));
+    const TAU = Math.PI * 2;
+    const THEME_TRANSITION_DURATION = 3.3;
 
-    // Optimized background star rendering
-    function renderBackgroundStars(dt) {
-        // Batch star operations to reduce context state changes
-        ctx.globalAlpha = 0.8;
-        
-        // Render starsA in a single pass
-        for (let i = 0; i < starsA.length; i++) {
-            const s = starsA[i];
-            s.y += 30 * dt; 
-            if (s.y > H) s.y -= H;
-            
-            const alpha = 0.5 + 0.5 * Math.sin(frameTime * 2 + s.pulse);
-            ctx.fillStyle = `rgba(255,0,255,${alpha})`;
-            ctx.beginPath();
-            ctx.arc(s.x, s.y, s.r, 0, 6.283185307179586); // Use constant instead of Math.PI * 2
-            ctx.fill();
+    let activeMapThemeState = null;
+    let transitioningMapThemeState = null;
+    let themeTransitionTimer = 0;
+
+    function ensureValidThemeKey(themeKey) {
+        if (themeKey && MAP_THEME_DEFS[themeKey]) return themeKey;
+        return DEFAULT_MAP_THEME_KEY;
+    }
+
+    function randRange(min, max) {
+        return min + Math.random() * (max - min);
+    }
+
+    function instantiateMapThemeState(themeKey) {
+        const key = ensureValidThemeKey(themeKey);
+        const def = MAP_THEME_DEFS[key] || MAP_THEME_DEFS[DEFAULT_MAP_THEME_KEY];
+        return {
+            key,
+            def,
+            starLayers: (def.starLayers || []).map(layer => ({
+                config: layer,
+                stars: Array.from({ length: layer.count || 0 }, () => ({
+                    x: Math.random() * W,
+                    y: Math.random() * H,
+                    radius: randRange(layer.minRadius || 0.25, layer.maxRadius || 1.4),
+                    twinkleSeed: Math.random() * TAU
+                }))
+            })),
+            auroraBands: def.auroraBands ? def.auroraBands.map(band => ({
+                config: band,
+                phase: Math.random() * TAU
+            })) : null
+        };
+    }
+
+    function createThemeGradient(def) {
+        if (!def || !def.stops || def.stops.length === 0) return null;
+        if (def.type === 'radial') {
+            const radius = Math.min(W, H) * (def.radius !== undefined ? def.radius : 1);
+            const cx = W * (def.x !== undefined ? def.x : 0.5);
+            const cy = H * (def.y !== undefined ? def.y : 0.5);
+            const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+            def.stops.forEach(stop => gradient.addColorStop(stop.offset, stop.color));
+            return gradient;
         }
-        
-        ctx.globalAlpha = 0.6;
-        
-        // Render starsB in a single pass
-        for (let i = 0; i < starsB.length; i++) {
-            const s = starsB[i];
-            s.y += 60 * dt; 
-            if (s.y > H) s.y -= H;
-            
-            const pulse = Math.sin(frameTime * 1.5 + s.pulse);
-            const alpha = 0.4 + 0.6 * pulse;
-            const radius = Math.max(0.1, s.r * (0.4 + 0.6 * pulse));
-            
-            ctx.fillStyle = `rgba(204,0,255,${alpha})`;
-            ctx.beginPath();
-            ctx.arc(s.x, s.y, radius, 0, 6.283185307179586);
-            ctx.fill();
+        const angle = def.angle !== undefined ? def.angle : 0;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const half = Math.max(W, H);
+        const cx = W / 2;
+        const cy = H / 2;
+        const gradient = ctx.createLinearGradient(cx - cos * half, cy - sin * half, cx + cos * half, cy + sin * half);
+        def.stops.forEach(stop => gradient.addColorStop(stop.offset, stop.color));
+        return gradient;
+    }
+
+    function renderThemeStarLayers(state, dt, alpha) {
+        if (!state || !state.starLayers || state.starLayers.length === 0 || alpha <= 0) return;
+        const alphaClamp = Math.max(0, Math.min(1, alpha));
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        for (let l = 0; l < state.starLayers.length; l++) {
+            const layer = state.starLayers[l];
+            const cfg = layer.config || {};
+            const stars = layer.stars;
+            const speed = cfg.speed || 28;
+            const driftX = cfg.driftX || 0;
+            const twinkleSpeed = cfg.twinkleSpeed || 1.4;
+            const twinkleAmp = cfg.twinkleAmplitude || 0.45;
+            const baseAlpha = alphaClamp * (cfg.baseAlpha !== undefined ? cfg.baseAlpha : 1);
+            const baseColor = cfg.color || 'rgba(255,255,255,0.7)';
+            const pulseColor = cfg.pulseColor || baseColor;
+            for (let i = 0; i < stars.length; i++) {
+                const star = stars[i];
+                star.y += speed * dt;
+                star.x += driftX * dt;
+                if (star.y > H + 20) star.y -= (H + 40);
+                if (star.y < -20) star.y += (H + 40);
+                if (star.x > W + 20) star.x -= (W + 40);
+                if (star.x < -20) star.x += (W + 40);
+                const twinkle = Math.sin(frameTime * twinkleSpeed + star.twinkleSeed);
+                const radius = Math.max(0.05, star.radius * (1 + Math.abs(twinkle) * twinkleAmp));
+                const glowAlpha = baseAlpha * (0.7 + Math.abs(twinkle) * 0.3);
+                ctx.globalAlpha = glowAlpha;
+                ctx.fillStyle = twinkle >= 0 ? pulseColor : baseColor;
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, radius, 0, TAU);
+                ctx.fill();
+            }
         }
-        
-        ctx.globalAlpha = 1;
+        ctx.restore();
+    }
+
+    function renderThemeAurora(state, dt, alpha) {
+        if (!state || !state.auroraBands || state.auroraBands.length === 0 || alpha <= 0) return;
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        for (let i = 0; i < state.auroraBands.length; i++) {
+            const band = state.auroraBands[i];
+            const cfg = band.config || {};
+            const stops = cfg.colorStops || [];
+            if (stops.length === 0) continue;
+            band.phase += (cfg.waveSpeed || 0) * dt;
+            const bandAlpha = (cfg.alpha !== undefined ? cfg.alpha : 0.4) * alpha;
+            if (bandAlpha <= 0) continue;
+            const baseY = (cfg.y !== undefined ? cfg.y : 0.5) * H;
+            const waveOffset = Math.sin(band.phase) * (cfg.waveAmplitude || 0) * H;
+            const thickness = Math.max(6, (cfg.thickness || 0.16) * H);
+            const gradient = ctx.createLinearGradient(0, 0, W, 0);
+            if (stops.length === 1) {
+                gradient.addColorStop(0, stops[0]);
+                gradient.addColorStop(1, stops[0]);
+            } else {
+                for (let s = 0; s < stops.length; s++) {
+                    gradient.addColorStop(stops.length === 1 ? 0.5 : s / (stops.length - 1), stops[s]);
+                }
+            }
+            ctx.save();
+            ctx.translate(W * 0.5, baseY + waveOffset);
+            if (cfg.rotation) ctx.rotate(cfg.rotation);
+            ctx.globalAlpha = bandAlpha;
+            ctx.fillStyle = gradient;
+            ctx.fillRect(-W * 0.8, -thickness * 0.5, W * 1.6, thickness);
+            ctx.restore();
+        }
+        ctx.restore();
+    }
+
+    function renderMapThemeState(state, dt, alpha) {
+        if (!state || alpha <= 0) return;
+        const def = state.def || {};
+        const gradient = createThemeGradient(def.gradient);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = gradient || def.baseFill || '#050008';
+        ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+        renderThemeStarLayers(state, dt, alpha);
+        renderThemeAurora(state, dt, alpha);
+    }
+
+    function setMapThemeImmediate(themeKey) {
+        const key = ensureValidThemeKey(themeKey);
+        activeMapThemeState = instantiateMapThemeState(key);
+        transitioningMapThemeState = null;
+        themeTransitionTimer = THEME_TRANSITION_DURATION;
+        if (store && store.world) {
+            store.world.currentThemeKey = key;
+            store.world.targetThemeKey = key;
+            store.world.themeTransitionProgress = 1;
+            store.world.themeTransitionActive = false;
+        }
+    }
+
+    function finalizeMapThemeTransition() {
+        if (!transitioningMapThemeState) return;
+        activeMapThemeState = transitioningMapThemeState;
+        transitioningMapThemeState = null;
+        themeTransitionTimer = THEME_TRANSITION_DURATION;
+        if (store && store.world) {
+            store.world.currentThemeKey = activeMapThemeState.key;
+            store.world.themeTransitionActive = false;
+            store.world.themeTransitionProgress = 1;
+        }
+    }
+
+    function transitionMapTheme(themeKey, options = {}) {
+        const { immediate = false, force = false } = options;
+        const key = ensureValidThemeKey(themeKey);
+        if (immediate || !activeMapThemeState) {
+            setMapThemeImmediate(key);
+            return;
+        }
+        if (!force && activeMapThemeState && activeMapThemeState.key === key && !transitioningMapThemeState) {
+            return;
+        }
+        transitioningMapThemeState = instantiateMapThemeState(key);
+        themeTransitionTimer = 0;
+        if (store && store.world) {
+            store.world.targetThemeKey = key;
+            store.world.themeTransitionActive = true;
+            store.world.themeTransitionProgress = 0;
+        }
+    }
+
+    function queueMapThemeTransition(themeKey, options) {
+        transitionMapTheme(themeKey, options);
+    }
+
+    function ensureActiveTheme() {
+        const desiredKey = ensureValidThemeKey(store?.world?.currentThemeKey);
+        if (!activeMapThemeState) {
+            setMapThemeImmediate(desiredKey);
+        } else if (activeMapThemeState.key !== desiredKey && !transitioningMapThemeState) {
+            transitionMapTheme(desiredKey, { immediate: true, force: true });
+        }
+    }
+
+    function advanceMapTheme(dt) {
+        ensureActiveTheme();
+        if (transitioningMapThemeState) {
+            themeTransitionTimer = Math.min(THEME_TRANSITION_DURATION, themeTransitionTimer + dt);
+            const progress = Math.min(1, themeTransitionTimer / THEME_TRANSITION_DURATION);
+            const fadeOutAlpha = Math.max(0, 1 - progress);
+            if (fadeOutAlpha > 0 && activeMapThemeState) {
+                renderMapThemeState(activeMapThemeState, dt, fadeOutAlpha);
+            }
+            renderMapThemeState(transitioningMapThemeState, dt, progress);
+            if (store && store.world) {
+                store.world.themeTransitionProgress = progress;
+            }
+            if (progress >= 1) {
+                finalizeMapThemeTransition();
+            }
+        } else if (activeMapThemeState) {
+            renderMapThemeState(activeMapThemeState, dt, 1);
+        } else {
+            ctx.fillStyle = MAP_THEME_DEFS[DEFAULT_MAP_THEME_KEY]?.baseFill || '#050008';
+            ctx.fillRect(0, 0, W, H);
+        }
+    }
+
+    function getActiveMapThemeKey() {
+        if (transitioningMapThemeState) {
+            return transitioningMapThemeState.key;
+        }
+        if (activeMapThemeState) {
+            return activeMapThemeState.key;
+        }
+        return ensureValidThemeKey(store?.world?.currentThemeKey);
+    }
+
+    function getBossThemeKey(boss) {
+        if (!boss) return DEFAULT_MAP_THEME_KEY;
+        if (boss.themeKey && MAP_THEME_DEFS[boss.themeKey]) {
+            return boss.themeKey;
+        }
+        if (boss.name && BOSS_THEME_MAP[boss.name]) {
+            return ensureValidThemeKey(BOSS_THEME_MAP[boss.name]);
+        }
+        return DEFAULT_MAP_THEME_KEY;
+    }
+
+    function applyBossTheme(boss, options = {}) {
+        const themeKey = getBossThemeKey(boss);
+        const mergedOptions = { force: true, ...options };
+        queueMapThemeTransition(themeKey, mergedOptions);
     }
 
 // Cache for gradient objects to avoid recreation
@@ -6702,8 +7068,8 @@ function render(dt) {
     ctx.fillRect(0, 0, W, H);
     frameTime = performance.now() / 1000;
     
-    // Render background stars with optimized drawing
-    renderBackgroundStars(dt);
+    // Render boss-themed background with transitions
+    advanceMapTheme(dt);
     
 
 
@@ -12759,24 +13125,29 @@ function render(dt) {
 
     let shopItemOrder = [];
 
-    const AUTO_FORGE_CORE_PRIORITY = Object.freeze(['hp', 'max_shield', 'vampirism', 'crit_chance']);
-    const AUTO_FORGE_CORE_CAPS = Object.freeze({ hp: 6, max_shield: 6, vampirism: 2, crit_chance: 3 });
     const AUTO_FORGE_FUN_POOL = Object.freeze([
-        'gravity_well',
-        'ghost_hounds',
-        'star_cannon',
-        'launcher',
-        'iceman',
         'magnet_pull',
-        'grenade',
-        'lazarus_beam'
+        'ghost_hounds',
+        'launcher',
+        'gravity_well',
+        'star_cannon',
+        'lazarus_beam',
+        'iceman',
+        'grenade'
     ]);
-    const AUTO_FORGE_FUN_CHANCE = 0.3;
-    const AUTO_FORGE_FUN_WAVE_THRESHOLD = 3;
-    const AUTO_FORGE_SKIP_CHANCE = 0.25;
-    const AUTO_FORGE_MIN_DECISION_TIME = 4.5;
-    const AUTO_FORGE_MAX_DECISION_TIME = 9.5;
-    const AUTO_FORGE_MAX_PURCHASES_PER_TICK = 1;
+    const AUTO_FORGE_FALLBACK_POOL = Object.freeze([
+        'luck_boost',
+        'nano_save',
+        'hp',
+        'max_shield',
+        'vampirism',
+        'crit_chance',
+        'speed',
+        'dmg'
+    ]);
+    const AUTO_FORGE_MIN_DECISION_TIME = 2.9;
+    const AUTO_FORGE_MAX_DECISION_TIME = 6.1;
+    const AUTO_FORGE_REPAIR_WASTE_THRESHOLD = 0.82;
 
     function scheduleNextAutoForgeDecision(world, extraDelay = 0) {
         if (!world) return;
@@ -12785,16 +13156,60 @@ function render(dt) {
         world.autoForgeDecisionTimer = base + (extraDelay || 0);
     }
 
-    function canAutoForgeCore(key) {
-        const caps = AUTO_FORGE_CORE_CAPS[key];
-        if (caps === undefined) return true;
-        const player = store.player;
-        if (!player) return false;
-        if (key === 'vampirism') {
-            return (player.vampirismLevel || 0) < caps;
+    function getAffordableUpgrades(keys, gold) {
+        if (!Array.isArray(keys)) return [];
+        const seen = new Set();
+        const results = [];
+        for (const key of keys) {
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const info = getNextUpgradeCost(key);
+            if (!info || !isFinite(info.cost)) continue;
+            if (gold >= info.cost) {
+                results.push({ key, info });
+            }
         }
-        const levels = player.upgradeLevels || {};
-        return (levels[key] || 0) < caps;
+        return results;
+    }
+
+    function pickMaximallySuboptimalUpgrade(gold) {
+        if (!Number.isFinite(gold) || gold <= 0) return null;
+        const player = store.player;
+        if (!player) return null;
+
+        const repairInfo = getNextUpgradeCost('repair');
+        if (repairInfo && isFinite(repairInfo.cost) && gold >= repairInfo.cost) {
+            const hpRatio = player.hpMax > 0 ? player.hp / player.hpMax : 1;
+            if (hpRatio >= AUTO_FORGE_REPAIR_WASTE_THRESHOLD || (hpRatio > 0.4 && Math.random() < 0.5)) {
+                return { key: 'repair', info: repairInfo, isFun: true, reason: 'spiteRepair' };
+            }
+        }
+
+        const funCandidates = getAffordableUpgrades(AUTO_FORGE_FUN_POOL, gold);
+        if (funCandidates.length) {
+            funCandidates.sort((a, b) => {
+                const costDiff = b.info.cost - a.info.cost;
+                return costDiff !== 0 ? costDiff : (Math.random() - 0.5);
+            });
+            return { key: funCandidates[0].key, info: funCandidates[0].info, isFun: true, reason: 'fun' };
+        }
+
+        const fallbackCandidates = getAffordableUpgrades(AUTO_FORGE_FALLBACK_POOL, gold);
+        if (fallbackCandidates.length) {
+            fallbackCandidates.sort((a, b) => {
+                const costDiff = b.info.cost - a.info.cost;
+                return costDiff !== 0 ? costDiff : (Math.random() - 0.5);
+            });
+            return { key: fallbackCandidates[0].key, info: fallbackCandidates[0].info, isFun: false, reason: 'fallback' };
+        }
+
+        const everything = getAffordableUpgrades(Object.keys(SHOP_UPGRADES), gold);
+        if (everything.length) {
+            everything.sort((a, b) => b.info.cost - a.info.cost || (Math.random() - 0.5));
+            return { key: everything[0].key, info: everything[0].info, isFun: false, reason: 'lastResort' };
+        }
+
+        return null;
     }
 
     function getNextUpgradeCost(key) {
@@ -12953,87 +13368,54 @@ function render(dt) {
             world.autoForgeDecisionTimer = Math.max(0, world.autoForgeDecisionTimer - dt);
         }
 
+        if (world.autoForgeDecisionTimer > 0) {
+            return;
+        }
+
+        const gold = store.world.gold;
+        if (!Number.isFinite(gold) || gold <= 0) {
+            scheduleNextAutoForgeDecision(world, 1.25);
+            return;
+        }
+
+        const decision = pickMaximallySuboptimalUpgrade(gold);
+        if (!decision) {
+            scheduleNextAutoForgeDecision(world, 1.4);
+            return;
+        }
+
         const purchases = [];
-
-        const repairInfo = getNextUpgradeCost('repair');
-        if (store.player.hp < store.player.hpMax * 0.6 && repairInfo.cost <= store.world.gold) {
-            const result = attemptPurchaseUpgrade('repair', { silent: true });
-            if (result.success) {
-                purchases.push(result);
-                scheduleNextAutoForgeDecision(world, 1.5);
-            }
+        const result = attemptPurchaseUpgrade(decision.key, { silent: true });
+        if (result.success) {
+            result.isFun = !!decision.isFun;
+            result.reason = decision.reason;
+            purchases.push(result);
         }
 
-    const reachedPurchaseLimit = purchases.length >= AUTO_FORGE_MAX_PURCHASES_PER_TICK;
-    const readyForCore = world.autoForgeDecisionTimer <= 0 && !reachedPurchaseLimit;
-        let funPurchase = false;
+        const hadPurchase = purchases.length > 0;
+        const extraDelay = hadPurchase ? (purchases.some(p => p.isFun) ? 3.6 : 2.45) : 1.35;
+        scheduleNextAutoForgeDecision(world, extraDelay);
 
-        if (readyForCore) {
-            const reserve = Math.max(0, store.world.autoForgeReserve ?? 0);
-            const availableGold = store.world.gold - reserve;
-            const wave = store.world.wave || 1;
-
-            let candidateKey = null;
-
-            const funChoices = AUTO_FORGE_FUN_POOL
-                .map(key => ({ key, info: getNextUpgradeCost(key) }))
-                .filter(entry => entry.info && isFinite(entry.info.cost) && availableGold >= entry.info.cost);
-            const shouldGoFun = funChoices.length > 0 && wave >= AUTO_FORGE_FUN_WAVE_THRESHOLD && Math.random() < AUTO_FORGE_FUN_CHANCE;
-
-            if (shouldGoFun) {
-                const pick = funChoices[Math.floor(Math.random() * funChoices.length)];
-                candidateKey = pick.key;
-                funPurchase = true;
-            }
-
-            if (!candidateKey) {
-                const skipCore = Math.random() < AUTO_FORGE_SKIP_CHANCE;
-                if (!skipCore) {
-                    const coreOrder = AUTO_FORGE_CORE_PRIORITY.slice();
-                    for (let i = coreOrder.length - 1; i > 0; i--) {
-                        const j = Math.floor(Math.random() * (i + 1));
-                        [coreOrder[i], coreOrder[j]] = [coreOrder[j], coreOrder[i]];
-                    }
-                    for (const key of coreOrder) {
-                        if (!canAutoForgeCore(key)) continue;
-                        const info = getNextUpgradeCost(key);
-                        if (!info || !isFinite(info.cost)) continue;
-                        if (availableGold < info.cost) continue;
-                        candidateKey = key;
-                        break;
-                    }
-                }
-            }
-
-            if (candidateKey) {
-                const result = attemptPurchaseUpgrade(candidateKey, { silent: true });
-                if (result.success) {
-                    result.isFun = funPurchase;
-                    purchases.push(result);
-                }
-            }
-
-            const extraDelay = purchases.some(p => p.isFun) ? 3.5 : purchases.length ? 2.25 : 1.25;
-            scheduleNextAutoForgeDecision(world, extraDelay);
+        if (!hadPurchase) {
+            return;
         }
 
-        if (purchases.length) {
-            if (!store.world.autoForgeTutorialShown) {
-                store.world.autoForgeTutorialShown = true;
-                announce('Auto-forge is spending gold for you! Expect comfy picks and the occasional wild card. Toggle it in the Mech Forge menu.');
-            } else if ((store.world.autoForgeAnnounceCooldown || 0) <= 0) {
-                const names = purchases.map(p => p.name).join(', ');
-                if (purchases.every(p => p.key === 'repair')) {
-                    announce('Auto-forge patched your hull with a quick repair.');
-                } else if (purchases.some(p => p.isFun)) {
-                    announce(`Auto-forge got whimsical: ${names}`);
-                } else {
-                    announce(`Auto-forged: ${names}`);
-                }
-                store.world.autoForgeAnnounceCooldown = purchases.some(p => p.isFun) ? 5 : 4;
+        if (!store.world.autoForgeTutorialShown) {
+            store.world.autoForgeTutorialShown = true;
+            announce('Auto-forge engaged. Expect lavish spending and questionable priorities.');
+        } else if ((store.world.autoForgeAnnounceCooldown || 0) <= 0) {
+            const names = purchases.map(p => p.name).join(', ');
+            if (purchases.length === 1 && purchases[0].key === 'repair') {
+                announce('Auto-forge splurged on hull polish you absolutely did not need.');
+            } else if (purchases.some(p => p.isFun)) {
+                announce(`Auto-forge squandered credits on ${names}. Chaos reigns.`);
+            } else {
+                announce(`Auto-forge emptied the vault for ${names}. Dubious value achieved.`);
             }
-            flashForgeButton(900);
+            store.world.autoForgeAnnounceCooldown = purchases.some(p => p.isFun) ? 5.5 : 4.2;
         }
+
+        flashForgeButton(1100 + (purchases.some(p => p.isFun) ? 450 : 0));
     }
 
     function showShop() {
