@@ -2029,6 +2029,24 @@
     // --- CORE SETUP ---
     const W = 960, H = 540;
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const MISSILE_THROTTLE = Object.freeze({
+        softCap: 220,
+        hardCap: 340,
+        fireworksSoftCap: 260
+    });
+    const pad = (value, digits = 2, padChar = '0') => {
+        const width = Number.isFinite(digits) ? Math.max(0, Math.floor(digits)) : 0;
+        const fill = typeof padChar === 'string' && padChar.length ? padChar[0] : '0';
+        const numeric = Number(value);
+        if (Number.isFinite(numeric)) {
+            const negative = numeric < 0;
+            const abs = Math.abs(Math.floor(numeric));
+            const padded = abs.toString().padStart(width, fill);
+            return negative ? `-${padded}` : padded;
+        }
+        const str = value == null ? '' : String(value);
+        return width > str.length ? str.padStart(width, fill) : str;
+    };
     const withAlpha = (color, alpha) => {
         if (!color) return `rgba(255,255,255,${alpha})`;
         const normAlpha = Math.max(0, Math.min(1, alpha));
@@ -6052,34 +6070,70 @@ function createParticle(x, y, vx, vy, color, life) {
         if (p.powerupTimers['missile'] && !p.empDisabled) {
             p.missileFireT -= dt;
             if (p.missileFireT <= 0) {
-                p.missileFireT = p.pilotGenome === 'rocketman' ? 1.0 : 1.2;
+                const isRocketman = p.pilotGenome === 'rocketman';
+                const missileLoad = store.missiles ? store.missiles.length : 0;
+                const baseInterval = isRocketman ? 1.0 : 1.2;
+                const overloadRatio = missileLoad > MISSILE_THROTTLE.softCap
+                    ? (missileLoad - MISSILE_THROTTLE.softCap) / Math.max(1, MISSILE_THROTTLE.softCap * 0.65)
+                    : 0;
+                const throttleMultiplier = overloadRatio > 0 ? Math.min(2.5, 1 + overloadRatio) : 1;
+                p.missileFireT = baseInterval * throttleMultiplier;
+
+                if (missileLoad >= MISSILE_THROTTLE.hardCap) {
+                    return;
+                }
+
                 let closest = null, closestDist = Infinity;
                 const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
-                potentialTargets.forEach(e => {
-                    if (e.dead || e.hp <= 0 || e.y < 0) return;
-                    const dist = (p.x - e.x)**2 + (p.y - e.y)**2;
-                    if (dist < closestDist) { closest = e; closestDist = dist; }
-                });
+                if (potentialTargets && potentialTargets.length) {
+                    const maxChecks = Math.min(potentialTargets.length, isRocketman ? 140 : 200);
+                    const startIndex = potentialTargets.length > 0 ? ((store.frame || 0) % potentialTargets.length) : 0;
+                    let checked = 0;
+                    for (let i = 0; checked < maxChecks && i < potentialTargets.length; i++) {
+                        const idx = (startIndex + i) % potentialTargets.length;
+                        const e = potentialTargets[idx];
+                        if (!e || e.dead || e.hp <= 0 || e.y < 0) continue;
+                        checked++;
+                        const dist = (p.x - e.x)**2 + (p.y - e.y)**2;
+                        if (dist < closestDist) {
+                            closest = e;
+                            closestDist = dist;
+                            if (dist < 120 * 120) break;
+                        }
+                    }
+                }
+
                 if (closest) {
-                    const isRocketman = p.pilotGenome === 'rocketman';
                     let baseMissileDmg = isRocketman ? (95 * p.dmgMult * 0.7) : (95 * p.dmgMult);
                     let baseSpeed = 200;
-                    
-                    // Apply stealth rocket upgrades
+
                     if (p.stealthRockets) {
                         baseMissileDmg *= (p.stealthRocketDamage || 1.25);
                         baseSpeed *= (p.stealthRocketSpeed || 1.5);
                     }
-                    
-                    const volleySize = p.missileVolley || 2;
-                    
+
+                    let volleySize = p.missileVolley || 2;
+                    if (missileLoad >= MISSILE_THROTTLE.softCap) {
+                        const overload = missileLoad - MISSILE_THROTTLE.softCap;
+                        volleySize = Math.max(1, volleySize - Math.ceil(overload / 25));
+                    }
+
+                    const availableSlots = Math.max(0, MISSILE_THROTTLE.hardCap - missileLoad);
+                    volleySize = Math.min(volleySize, availableSlots);
+                    if (volleySize <= 0) {
+                        return;
+                    }
+
+                    const allowCluster = isRocketman && p.missileCluster && missileLoad < (MISSILE_THROTTLE.softCap + 60);
+
                     for (let i = 0; i < volleySize; i++) {
+                        if (store.missiles.length >= MISSILE_THROTTLE.hardCap) break;
                         const spreadAngle = (i - (volleySize - 1) / 2) * 0.2;
                         const dx = closest.x - p.x;
                         const dy = closest.y - p.y;
                         const baseAngle = Math.atan2(dy, dx);
                         const finalAngle = baseAngle + spreadAngle;
-                        
+
                         const missile = {
                             x: p.x, y: p.y - 10,
                             vx: Math.cos(finalAngle) * baseSpeed,
@@ -6087,7 +6141,7 @@ function createParticle(x, y, vx, vy, color, life) {
                             speed: baseSpeed, turnRate: 4.5,
                             target: closest, life: 0,
                             dmg: baseMissileDmg,
-                            cluster: isRocketman && p.missileCluster,
+                            cluster: allowCluster,
                             pierce: isRocketman ? (p.missilePierce || 0) : 0,
                             isIceman: false,
                             isStealth: p.stealthRockets || false,
@@ -6342,9 +6396,20 @@ function createParticle(x, y, vx, vy, color, life) {
             return;
         }
 
+        const missileLoad = store.missiles ? store.missiles.length : 0;
+        if (missileLoad >= MISSILE_THROTTLE.hardCap) {
+            return;
+        }
+
         const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
         const liveTargets = potentialTargets.filter(target => !target.dead && target.hp > 0);
-        const burstCount = 5;
+
+        let burstCount = 5;
+        if (missileLoad >= MISSILE_THROTTLE.fireworksSoftCap) {
+            const overload = missileLoad - MISSILE_THROTTLE.fireworksSoftCap;
+            burstCount = Math.max(1, burstCount - Math.ceil(overload / 35));
+        }
+        burstCount = Math.min(burstCount, Math.max(0, MISSILE_THROTTLE.hardCap - missileLoad));
         if (burstCount <= 0) return;
 
         const baseSpeed = (baseMissile ? baseMissile.speed : 250) * 1.1;
@@ -6384,6 +6449,9 @@ function createParticle(x, y, vx, vy, color, life) {
                 travelDistance: 0
             };
 
+            if (store.missiles.length >= MISSILE_THROTTLE.hardCap) {
+                break;
+            }
             store.missiles.push(miniRocket);
         }
 
