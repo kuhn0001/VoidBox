@@ -161,6 +161,9 @@
             overflow-y: auto;
             padding-right: 8px;
         }
+        #shopGrid {
+            display: block;
+        }
         .character-sheet-body {
             font-family: 'Orbitron', 'Audiowide', 'Courier New', monospace;
             font-size: 12px;
@@ -316,6 +319,59 @@
             display:grid;
             gap:8px;
             grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));
+        }
+        .shop-section {
+            margin-bottom: 18px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid rgba(178, 102, 255, 0.24);
+        }
+        .shop-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        .shop-section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 12px;
+        }
+        .shop-section-title {
+            margin: 0;
+            font-size: clamp(14px, 1.8vw, 18px);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #f6e4ff;
+        }
+        .shop-section-subtitle {
+            margin: 0;
+            font-size: clamp(10px, 1.4vw, 12px);
+            letter-spacing: 0.06em;
+            color: rgba(214, 190, 255, 0.78);
+            flex: 1 1 auto;
+            text-align: right;
+            font-family: 'Orbitron', 'Audiowide', ui-sans-serif;
+        }
+        .shop-section-grid {
+            margin-top: 10px;
+            display: grid;
+            gap: 8px;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        }
+        .shop-item-cost {
+            color: var(--accent);
+            margin-top: 4px;
+            font-size: 11px;
+            letter-spacing: 0.05em;
+        }
+        .shop-empty {
+            text-align: center;
+            padding: 16px;
+            border: 1px dashed rgba(214, 190, 255, 0.35);
+            border-radius: 12px;
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            color: rgba(230, 210, 255, 0.75);
         }
         
         /* Character Sheet Panel */
@@ -2029,24 +2085,6 @@
     // --- CORE SETUP ---
     const W = 960, H = 540;
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-    const MISSILE_THROTTLE = Object.freeze({
-        softCap: 220,
-        hardCap: 340,
-        fireworksSoftCap: 260
-    });
-    const pad = (value, digits = 2, padChar = '0') => {
-        const width = Number.isFinite(digits) ? Math.max(0, Math.floor(digits)) : 0;
-        const fill = typeof padChar === 'string' && padChar.length ? padChar[0] : '0';
-        const numeric = Number(value);
-        if (Number.isFinite(numeric)) {
-            const negative = numeric < 0;
-            const abs = Math.abs(Math.floor(numeric));
-            const padded = abs.toString().padStart(width, fill);
-            return negative ? `-${padded}` : padded;
-        }
-        const str = value == null ? '' : String(value);
-        return width > str.length ? str.padStart(width, fill) : str;
-    };
     const withAlpha = (color, alpha) => {
         if (!color) return `rgba(255,255,255,${alpha})`;
         const normAlpha = Math.max(0, Math.min(1, alpha));
@@ -6070,70 +6108,34 @@ function createParticle(x, y, vx, vy, color, life) {
         if (p.powerupTimers['missile'] && !p.empDisabled) {
             p.missileFireT -= dt;
             if (p.missileFireT <= 0) {
-                const isRocketman = p.pilotGenome === 'rocketman';
-                const missileLoad = store.missiles ? store.missiles.length : 0;
-                const baseInterval = isRocketman ? 1.0 : 1.2;
-                const overloadRatio = missileLoad > MISSILE_THROTTLE.softCap
-                    ? (missileLoad - MISSILE_THROTTLE.softCap) / Math.max(1, MISSILE_THROTTLE.softCap * 0.65)
-                    : 0;
-                const throttleMultiplier = overloadRatio > 0 ? Math.min(2.5, 1 + overloadRatio) : 1;
-                p.missileFireT = baseInterval * throttleMultiplier;
-
-                if (missileLoad >= MISSILE_THROTTLE.hardCap) {
-                    return;
-                }
-
+                p.missileFireT = p.pilotGenome === 'rocketman' ? 1.0 : 1.2;
                 let closest = null, closestDist = Infinity;
                 const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
-                if (potentialTargets && potentialTargets.length) {
-                    const maxChecks = Math.min(potentialTargets.length, isRocketman ? 140 : 200);
-                    const startIndex = potentialTargets.length > 0 ? ((store.frame || 0) % potentialTargets.length) : 0;
-                    let checked = 0;
-                    for (let i = 0; checked < maxChecks && i < potentialTargets.length; i++) {
-                        const idx = (startIndex + i) % potentialTargets.length;
-                        const e = potentialTargets[idx];
-                        if (!e || e.dead || e.hp <= 0 || e.y < 0) continue;
-                        checked++;
-                        const dist = (p.x - e.x)**2 + (p.y - e.y)**2;
-                        if (dist < closestDist) {
-                            closest = e;
-                            closestDist = dist;
-                            if (dist < 120 * 120) break;
-                        }
-                    }
-                }
-
+                potentialTargets.forEach(e => {
+                    if (e.dead || e.hp <= 0 || e.y < 0) return;
+                    const dist = (p.x - e.x)**2 + (p.y - e.y)**2;
+                    if (dist < closestDist) { closest = e; closestDist = dist; }
+                });
                 if (closest) {
+                    const isRocketman = p.pilotGenome === 'rocketman';
                     let baseMissileDmg = isRocketman ? (95 * p.dmgMult * 0.7) : (95 * p.dmgMult);
                     let baseSpeed = 200;
-
+                    
+                    // Apply stealth rocket upgrades
                     if (p.stealthRockets) {
                         baseMissileDmg *= (p.stealthRocketDamage || 1.25);
                         baseSpeed *= (p.stealthRocketSpeed || 1.5);
                     }
-
-                    let volleySize = p.missileVolley || 2;
-                    if (missileLoad >= MISSILE_THROTTLE.softCap) {
-                        const overload = missileLoad - MISSILE_THROTTLE.softCap;
-                        volleySize = Math.max(1, volleySize - Math.ceil(overload / 25));
-                    }
-
-                    const availableSlots = Math.max(0, MISSILE_THROTTLE.hardCap - missileLoad);
-                    volleySize = Math.min(volleySize, availableSlots);
-                    if (volleySize <= 0) {
-                        return;
-                    }
-
-                    const allowCluster = isRocketman && p.missileCluster && missileLoad < (MISSILE_THROTTLE.softCap + 60);
-
+                    
+                    const volleySize = p.missileVolley || 2;
+                    
                     for (let i = 0; i < volleySize; i++) {
-                        if (store.missiles.length >= MISSILE_THROTTLE.hardCap) break;
                         const spreadAngle = (i - (volleySize - 1) / 2) * 0.2;
                         const dx = closest.x - p.x;
                         const dy = closest.y - p.y;
                         const baseAngle = Math.atan2(dy, dx);
                         const finalAngle = baseAngle + spreadAngle;
-
+                        
                         const missile = {
                             x: p.x, y: p.y - 10,
                             vx: Math.cos(finalAngle) * baseSpeed,
@@ -6141,7 +6143,7 @@ function createParticle(x, y, vx, vy, color, life) {
                             speed: baseSpeed, turnRate: 4.5,
                             target: closest, life: 0,
                             dmg: baseMissileDmg,
-                            cluster: allowCluster,
+                            cluster: isRocketman && p.missileCluster,
                             pierce: isRocketman ? (p.missilePierce || 0) : 0,
                             isIceman: false,
                             isStealth: p.stealthRockets || false,
@@ -6396,20 +6398,9 @@ function createParticle(x, y, vx, vy, color, life) {
             return;
         }
 
-        const missileLoad = store.missiles ? store.missiles.length : 0;
-        if (missileLoad >= MISSILE_THROTTLE.hardCap) {
-            return;
-        }
-
         const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
         const liveTargets = potentialTargets.filter(target => !target.dead && target.hp > 0);
-
-        let burstCount = 5;
-        if (missileLoad >= MISSILE_THROTTLE.fireworksSoftCap) {
-            const overload = missileLoad - MISSILE_THROTTLE.fireworksSoftCap;
-            burstCount = Math.max(1, burstCount - Math.ceil(overload / 35));
-        }
-        burstCount = Math.min(burstCount, Math.max(0, MISSILE_THROTTLE.hardCap - missileLoad));
+        const burstCount = 5;
         if (burstCount <= 0) return;
 
         const baseSpeed = (baseMissile ? baseMissile.speed : 250) * 1.1;
@@ -6449,9 +6440,6 @@ function createParticle(x, y, vx, vy, color, life) {
                 travelDistance: 0
             };
 
-            if (store.missiles.length >= MISSILE_THROTTLE.hardCap) {
-                break;
-            }
             store.missiles.push(miniRocket);
         }
 
@@ -10789,6 +10777,66 @@ function render(dt) {
                 trail: '#1b6a92'
             }
         },
+        aurora: {
+            key: 'aurora',
+            label: 'Aurora Helix',
+            body: {
+                top: '#1d2c66',
+                mid: '#243a85',
+                bottom: '#3b64b8',
+                outline: '#9fdfff',
+                interior: '#142046',
+                accent: '#8ff4ff'
+            },
+            visor: {
+                left: 'rgba(120, 220, 255, 0.9)',
+                center: 'rgba(200, 240, 255, 0.96)',
+                right: 'rgba(255, 180, 240, 0.9)'
+            },
+            aura: {
+                inner: 'rgba(120, 220, 255, 0.28)',
+                mid: 'rgba(180, 140, 255, 0.45)',
+                outer: 'rgba(30, 40, 90, 0)'
+            },
+            trail: '#8fe7ff',
+            bullet: 'rgba(180, 235, 255, 0.96)',
+            bulletPierce: 'rgba(225, 250, 255, 0.98)',
+            minion: {
+                core: '#d0f6ff',
+                aura: '#8ec2ff',
+                trail: '#3d6fb4'
+            }
+        },
+        bastion: {
+            key: 'bastion',
+            label: 'Obsidian Bastion',
+            body: {
+                top: '#1b1f2a',
+                mid: '#141720',
+                bottom: '#343746',
+                outline: '#ff9160',
+                interior: '#0a0d16',
+                accent: '#ffb27a'
+            },
+            visor: {
+                left: 'rgba(255, 150, 90, 0.92)',
+                center: 'rgba(255, 190, 130, 0.95)',
+                right: 'rgba(255, 120, 80, 0.9)'
+            },
+            aura: {
+                inner: 'rgba(255, 150, 90, 0.26)',
+                mid: 'rgba(255, 100, 70, 0.38)',
+                outer: 'rgba(40, 20, 10, 0)'
+            },
+            trail: '#ff8654',
+            bullet: 'rgba(255, 168, 120, 0.96)',
+            bulletPierce: 'rgba(255, 210, 180, 0.98)',
+            minion: {
+                core: '#ffd0b5',
+                aura: '#ff976a',
+                trail: '#703a24'
+            }
+        },
         umbra: {
             key: 'umbra',
             label: 'Umbral Regent',
@@ -10825,6 +10873,8 @@ function render(dt) {
         { id: 'default', name: 'Void Vanguard', icon: '💠', cost: 0, desc: 'Baseline guardian plating.', theme: 'default' },
         { id: 'solstice', name: 'Solstice Radiant', icon: '🌞', cost: 120, desc: 'Gilded solar alloys with ember trails.', theme: 'solstice' },
         { id: 'tempest', name: 'Tempest Breaker', icon: '🌩️', cost: 120, desc: 'Ionized teal plating that crackles with stormlight.', theme: 'tempest' },
+        { id: 'aurora', name: 'Aurora Helix', icon: '🌌', cost: 140, desc: 'Prismatic plating braided from polar light flows.', theme: 'aurora' },
+        { id: 'bastion', name: 'Obsidian Bastion', icon: '🛡️', cost: 180, desc: 'Heavy dusk armor with molten core vents.', theme: 'bastion' },
         { id: 'umbra', name: 'Umbral Regent', icon: '🌑', cost: 150, desc: 'Abyssal crystal armor forged from void echoes.', theme: 'umbra' }
     ]);
 
@@ -15910,9 +15960,8 @@ function render(dt) {
         const shopItems = shopItemOrder
             .map(key => currentItems.find(item => item && item.key === key))
             .filter(Boolean);
-        
-        let content = "";
-        for (const entry of shopItems) {
+
+        const buildCard = (entry) => {
             const { key, upgrade, info } = entry;
             const category = upgrade.category || 'utility';
             const icon = upgrade.icon ?? '💠';
@@ -15926,9 +15975,49 @@ function render(dt) {
             if (isDisabled && info && info.reason) {
                 desc = info.reason;
             }
-            content += `<div class="skill-card shop-item ${isDisabled?'disabled':''} shop-item-${category}" data-key="${key}"><div class="skill-icon">${icon}</div><div><div class="skill-title">${name || ''}</div><div class="skill-desc">${desc || ''}</div></div><div style="color:var(--accent);margin-top:4px;font-size:11px;">Cost: ${costText}</div></div>`;
+            return `<div class="skill-card shop-item ${isDisabled ? 'disabled' : ''} shop-item-${category}" data-key="${key}">
+                <div class="skill-icon">${icon}</div>
+                <div>
+                    <div class="skill-title">${name || ''}</div>
+                    <div class="skill-desc">${desc || ''}</div>
+                </div>
+                <div class="shop-item-cost">Cost: ${costText}</div>
+            </div>`;
+        };
+
+        const championUnlocked = !!store.player?.championUnlocked;
+        const playerCards = [];
+        const championCards = [];
+
+        for (const entry of shopItems) {
+            if (entry.upgrade?.category === 'champion') {
+                championCards.push(buildCard(entry));
+            } else {
+                playerCards.push(buildCard(entry));
+            }
         }
-        grid.innerHTML = content;
+
+        const renderSection = (title, subtitle, cards, extraClass = '') => {
+            if (!cards.length) return '';
+            const headerSubtitle = subtitle ? `<p class="shop-section-subtitle">${subtitle}</p>` : '';
+            return `<div class="shop-section ${extraClass}">
+                <div class="shop-section-header">
+                    <h3 class="shop-section-title">${title}</h3>
+                    ${headerSubtitle}
+                </div>
+                <div class="shop-section-grid">${cards.join('')}</div>
+            </div>`;
+        };
+
+        const sections = [];
+        sections.push(renderSection('Pilot Systems', 'Enhance your fighter and core modules.', playerCards));
+        sections.push(renderSection('Champion Arsenal', championUnlocked ? 'Refine your bound guardian.' : 'Recover the champion sigil to access these upgrades.', championCards, 'champion-section'));
+
+        if (sections.filter(Boolean).length === 0) {
+            grid.innerHTML = '<div class="shop-empty">No upgrades available right now.</div>';
+        } else {
+            grid.innerHTML = sections.filter(Boolean).join('');
+        }
         grid.querySelectorAll(".shop-item").forEach(item => {
             item.addEventListener("click", () => {
                 if (item.classList.contains('disabled')) return;
