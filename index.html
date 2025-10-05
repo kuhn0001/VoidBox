@@ -905,6 +905,64 @@
             font-weight: bold;
             color: var(--accent2);
         }
+
+        .ability-icon {
+            font-size: 12px;
+            margin-right: 6px;
+            opacity: 0.85;
+        }
+
+        .loadout-section {
+            margin-bottom: 12px;
+        }
+
+        .loadout-section h4 {
+            margin: 0 0 8px 0;
+            font-family: 'Orbitron', ui-sans-serif;
+            color: var(--accent2);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .loadout-list {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .loadout-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(26, 0, 45, 0.4);
+            border: 1px solid rgba(178,102,255,.12);
+            border-radius: 5px;
+            padding: 5px 8px;
+            font-size: 10px;
+            color: #e0d4ff;
+        }
+
+        .loadout-label {
+            color: #c0b4ff;
+            font-family: 'Orbitron', ui-sans-serif;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .loadout-value {
+            font-weight: 600;
+            color: #ffddff;
+        }
+
+        .champion-class {
+            font-family: 'Orbitron', ui-sans-serif;
+            font-size: 9px;
+            color: rgba(255, 230, 255, 0.9);
+            letter-spacing: 0.08em;
+            margin-top: 2px;
+        }
         
         .dressing-room-footer {
             display: flex;
@@ -2254,6 +2312,7 @@
                             <canvas id="championPreviewCanvas" width="200" height="200"></canvas>
                             <div class="preview-overlay">
                                 <div class="champion-name" id="previewChampionName">SHADOW GUARDIAN</div>
+                                <div class="champion-class" id="previewChampionClass"></div>
                             </div>
                         </div>
                         
@@ -2294,6 +2353,32 @@
                             <div class="stat-item">
                                 <span class="stat-label">Experience</span>
                                 <span class="stat-value" id="championExpStat">0/100</span>
+                            </div>
+                        </div>
+
+                        <div class="loadout-section">
+                            <h4>Loadout Highlights</h4>
+                            <div class="loadout-list">
+                                <div class="loadout-item">
+                                    <span class="loadout-label">Skin</span>
+                                    <span class="loadout-value" id="championSkinLabel">Void Vanguard</span>
+                                </div>
+                                <div class="loadout-item">
+                                    <span class="loadout-label">Attack Module</span>
+                                    <span class="loadout-value" id="championAttackModuleLabel">Standard Volley</span>
+                                </div>
+                                <div class="loadout-item">
+                                    <span class="loadout-label">Cadence Core</span>
+                                    <span class="loadout-value" id="championCadenceLabel">Baseline Cadence</span>
+                                </div>
+                                <div class="loadout-item">
+                                    <span class="loadout-label">Minion Protocol</span>
+                                    <span class="loadout-value" id="championProtocolLabel">Escort Drones</span>
+                                </div>
+                                <div class="loadout-item">
+                                    <span class="loadout-label">Signature</span>
+                                    <span class="loadout-value" id="championSignatureLabel">Adaptive Void Sentinel</span>
+                                </div>
                             </div>
                         </div>
                         
@@ -3238,6 +3323,10 @@ function createParticle(x, y, vx, vy, color, life) {
             lowHealthTutorialShown: false, 
             bossSpawnTime: 0, 
             waveStartTime: 0,
+            activeBossToken: null,
+            activeBossWave: null,
+            completedBossTokens: Object.create(null),
+            lastBossAwardToken: null,
             waveTransitionTimer: null, 
             enemyHealthBonus: 1.0, 
             bossHealthBonus: 1.0, 
@@ -4018,9 +4107,12 @@ function createParticle(x, y, vx, vy, color, life) {
             } else {
                 spawnGibs(e.x, e.y, e.color);
                 const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
-                store.world.score += Math.floor(e.score * collarBonus);
-                store.world.gold += Math.floor(e.gold * collarBonus);
-                store.world.xp += Math.floor(e.xp * collarBonus);
+                const scoreGain = Math.floor((Number.isFinite(e.score) ? e.score : 0) * collarBonus);
+                const goldGain = Math.floor((Number.isFinite(e.gold) ? e.gold : 0) * collarBonus);
+                const xpGain = Math.floor((Number.isFinite(e.xp) ? e.xp : 0) * collarBonus);
+                if (scoreGain) store.world.score += scoreGain;
+                if (goldGain) addWorldGold(goldGain);
+                if (xpGain) store.world.xp += xpGain;
                 store.world.kills++;
 
                 if (e.type !== 'shadow_champion') {
@@ -4295,7 +4387,7 @@ function createParticle(x, y, vx, vy, color, life) {
             name: "VAMPIRIC ROUNDS", icon: '🩸', isPremium: true, max: 4, category: 'utility',
             apply: () => {
                 const p = store.player; const cost = 12 + (p.vampirismLevel * 5);
-                if (store.world.gold >= cost && p.vampirismLevel < 4) { store.world.gold -= cost; p.vampirismLevel++; p.vampirism += 0.03; p.dmgMult += 0.04; return true; } return false;
+                if (getWorldGold() >= cost && p.vampirismLevel < 4) { addWorldGold(-cost); p.vampirismLevel++; p.vampirism += 0.03; p.dmgMult += 0.04; return true; } return false;
             },
             desc: () => {
                 const p = store.player; if (p.vampirismLevel >= 4) return `Max Level Reached (${(p.vampirism * 100).toFixed(0)}% Lifesteal, +${p.vampirismLevel * 4}% Dmg)`;
@@ -4886,8 +4978,10 @@ function createParticle(x, y, vx, vy, color, life) {
             const baseGoldValue = 80;
             const waveScaling = Math.max(1, store.world.wave * 1.5);
             const goldAmount = Math.floor(baseGoldValue * waveScaling);
-            store.world.gold = (store.world.gold || 0) + goldAmount;
-            announce(`💰 CASH INFUSION +${goldAmount} GOLD! 💰`);
+            if (goldAmount > 0) {
+                addWorldGold(goldAmount);
+                announce(`💰 CASH INFUSION +${goldAmount} GOLD! 💰`);
+            }
             return;
         }
         if (typeKey === 'attack_speed') {
@@ -5092,7 +5186,9 @@ function createParticle(x, y, vx, vy, color, life) {
             entryTargetYBase = 110,
             entryYOffset = 0
         } = {}) {
-            const champion = spawnEnemy('void_champion', { hpScale, damageMult });
+            const playerState = typeof getChampionUpgradeState === 'function' ? getChampionUpgradeState() : null;
+            const attackModule = (store?.playerChampion?.attackModule) || (playerState?.attackModule) || 'default';
+            const champion = spawnEnemy('void_champion', { hpScale, damageMult, attackModule });
             if (!champion) return null;
 
             applySpawnSpecToEnemy(champion, { lateGameScaling });
@@ -5161,6 +5257,14 @@ function createParticle(x, y, vx, vy, color, life) {
             
             store.boss = createBoss(bossHpScale);
             applyBossTheme(store.boss);
+            if (store.world) {
+                if (!store.world.completedBossTokens || typeof store.world.completedBossTokens !== 'object') {
+                    store.world.completedBossTokens = Object.create(null);
+                }
+                store.world.activeBossToken = (store.boss && store.boss.instanceId) || null;
+                store.world.activeBossWave = store.world.wave;
+                store.world.lastBossAwardToken = null;
+            }
             store.lastBossSnapshot = null;
             store.lastBossDefeatId = null;
             store.world.bossSpawnTime = performance.now();
@@ -5352,6 +5456,13 @@ function createParticle(x, y, vx, vy, color, life) {
             visible: def.visible ?? true
         };
         
+        const waveIndex = store && store.world ? store.world.wave : 0;
+        const instanceSuffix = Math.random().toString(36).slice(2, 8);
+        boss.instanceId = `boss-${waveIndex}-${Date.now().toString(36)}-${instanceSuffix}`;
+        boss._instanceId = boss.instanceId;
+        boss.spawnWave = waveIndex;
+        boss.spawnedAt = performance.now();
+
         // console.log(`🏆 Boss Created: ${boss.name} | Wave: ${store.world.wave} | HP: ${hp} | Scale: ${scale} | CollarStacks: ${store.world.collarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x`);
         
         // Create Boss class instance for DEATH ENGINE
@@ -5444,6 +5555,13 @@ function createParticle(x, y, vx, vy, color, life) {
             e.isDodging = false;
         }
         if (e.type === 'void_champion') {
+            e.attackModule = props.attackModule || e.attackModule || 'default';
+            if (typeof getChampionMinionAbilityTheme === 'function') {
+                e.abilityTheme = props.abilityTheme || getChampionMinionAbilityTheme(e.attackModule);
+            }
+            if (!props.colorScheme && !e.colorScheme && typeof VOID_CHAMPION_SCHEME_BY_MODULE !== 'undefined') {
+                e.colorScheme = VOID_CHAMPION_SCHEME_BY_MODULE[e.attackModule] || VOID_CHAMPION_SCHEME_BY_MODULE.default;
+            }
             e.fireCooldown = c.fireCooldown || 1.8;
             e.fireT = e.fireCooldown * (0.4 + Math.random() * 0.6);
             e.vx = (Math.random() < 0.5 ? -1 : 1) * (40 + Math.random() * 30);
@@ -5475,6 +5593,8 @@ function createParticle(x, y, vx, vy, color, life) {
                 for (let i = 0; i < minionCount; i++) {
                     const angle = (i / minionCount) * Math.PI * 2;
                     const ringRadius = 42;
+                    const minionAbilityTheme = e.abilityTheme || (typeof getChampionMinionAbilityTheme === 'function' ? getChampionMinionAbilityTheme(e.attackModule) : null);
+                    const minionTrailColor = minionAbilityTheme?.trail || e.color;
                     const minion = spawnEnemy('void_champion_orb', {
                         x: e.x + Math.cos(angle) * ringRadius,
                         y: e.y + Math.sin(angle) * ringRadius,
@@ -5482,10 +5602,12 @@ function createParticle(x, y, vx, vy, color, life) {
                         orbitAngle: angle,
                         orbitRadius: ringRadius,
                         orbitSpeed: 1.3 + i * 0.12,
-                        parentColor: e.color,
+                        parentColor: minionTrailColor,
                         fireT: Math.random() * 0.6,
                         damageMult: Math.max(1, (e.damageMult || 1) * 0.65),
-                        hpScale: Math.max(1, (e.damageMult || 1) * 0.7)
+                        hpScale: Math.max(1, (e.damageMult || 1) * 0.7),
+                        attackModule: e.attackModule,
+                        abilityTheme: minionAbilityTheme
                     });
                     if (minion) {
                         const minionDrop = 140;
@@ -5536,6 +5658,13 @@ function createParticle(x, y, vx, vy, color, life) {
             if (props.parentColor) {
                 e.color = props.parentColor;
             }
+            e.attackModule = props.attackModule || e.attackModule || 'default';
+            if (props.abilityTheme) {
+                e.abilityTheme = props.abilityTheme;
+            } else if (!e.abilityTheme && typeof getChampionMinionAbilityTheme === 'function') {
+                e.abilityTheme = getChampionMinionAbilityTheme(e.attackModule);
+            }
+            e.trailColor = e.color || e.abilityTheme?.trail || '#ff7deb';
             e.fireCooldown = c.fireCooldown || 1.15;
             e.fireT = props.fireT !== undefined ? props.fireT : e.fireCooldown;
             e.v = 0;
@@ -6362,12 +6491,11 @@ function createParticle(x, y, vx, vy, color, life) {
             }
         }
         if (p.hasIceman && store.iceman) { store.iceman.x = p.x - 50; store.iceman.y = p.y + 40; }
-        if (p.hasBeefClone && store.beefClone) {
-            if (store.beefClone.mode === 'juggernaut_bomber') {
+        if (p.hasBeefClone) {
+            if (store.beefClone && store.beefClone.mode === 'juggernaut_bomber') {
                 updateJuggernautClone(dt);
             } else {
-                store.beefClone.x = p.x + 50;
-                store.beefClone.y = p.y + 40;
+                updateMirrorClone(dt);
             }
         }
         p.fireT -= dt;
@@ -6507,7 +6635,7 @@ function createParticle(x, y, vx, vy, color, life) {
             p.championUnlocked = true;
             
             // Add lots of gold for upgrades
-            store.world.gold += 5000;
+            addWorldGold(5000);
             
             // Give champion upgrades if they exist in the upgrade system
             if (!p.upgradeLevels.champion_health) p.upgradeLevels.champion_health = 0;
@@ -7936,13 +8064,16 @@ function createParticle(x, y, vx, vy, color, life) {
                     case 'void_champion_orb': {
                         const angle = Math.atan2(store.player.y - e.y, store.player.x - e.x);
                         const speed = 220;
+                        const module = e.attackModule || 'default';
+                        const abilityTheme = e.abilityTheme || getChampionMinionAbilityTheme(module);
+                        const projectileColor = abilityTheme?.trail || abilityTheme?.ring || e.color || '#ff6ad5';
                         store.eBullets.push({
                             x: e.x,
                             y: e.y,
                             vx: Math.cos(angle) * speed,
                             vy: Math.sin(angle) * speed,
                             r: 4,
-                            col: '#ff6ad5',
+                            col: projectileColor,
                             dmg: 6 * dmgScale * damageMult,
                             life: 4
                         });
@@ -7965,7 +8096,8 @@ function createParticle(x, y, vx, vy, color, life) {
                     e.dashVY = 0;
                     e.fireT = Math.max(e.fireT, 0.8);
                 } else {
-                    store.world.gold += e.gold;
+                    const contactGold = Number.isFinite(e.gold) ? e.gold : 0;
+                    if (contactGold) addWorldGold(contactGold);
                     e.dead = true;
                 }
             }
@@ -8065,7 +8197,7 @@ function createParticle(x, y, vx, vy, color, life) {
                         
                         if (puddle.hp <= 0) {
                             // Puddle destroyed - award rewards
-                            store.world.gold += 1;
+                            addWorldGold(1);
                             store.world.xp += 1;
                             
                             // Small explosion effect
@@ -8407,10 +8539,22 @@ function createParticle(x, y, vx, vy, color, life) {
             return;
         }
 
-        const bossId = snapshot.id || snapshot._instanceId || snapshot.behavior || snapshot.name;
-        if (bossId && store.lastBossDefeatId === bossId) {
+        const world = store.world || {};
+        const completedTokens = world.completedBossTokens || (world.completedBossTokens = Object.create(null));
+        const activeToken = world.activeBossToken || null;
+        const snapshotToken = snapshot.instanceId || snapshot.id || snapshot._instanceId || null;
+        const fallbackToken = snapshot.behavior || snapshot.name || null;
+        const awardToken = snapshotToken || activeToken || fallbackToken || `legacy-${world.wave || 0}-${world.bosses || 0}`;
+
+        if (completedTokens[awardToken]) {
             return;
         }
+
+        if (activeToken && awardToken !== activeToken) {
+            return;
+        }
+
+        const bossId = snapshotToken || fallbackToken || snapshot.name || 'UNKNOWN';
 
     const playerRef = store.player || {};
     const fallbackX = Number.isFinite(playerRef.x) ? playerRef.x : W / 2;
@@ -8419,8 +8563,11 @@ function createParticle(x, y, vx, vy, color, life) {
     const bossY = ensureFiniteNumber(snapshot.y, fallbackY);
         const bossName = snapshot.name || 'UNKNOWN';
 
-        store.lastBossSnapshot = { x: bossX, y: bossY, name: bossName, id: bossId };
-        store.lastBossDefeatId = bossId;
+        store.lastBossSnapshot = { x: bossX, y: bossY, name: bossName, id: bossId, instanceId: awardToken };
+        store.lastBossDefeatId = awardToken;
+        completedTokens[awardToken] = true;
+        world.activeBossToken = null;
+        world.lastBossAwardToken = awardToken;
         if (activeBoss) {
             activeBoss.dead = true;
         }
@@ -8432,8 +8579,14 @@ function createParticle(x, y, vx, vy, color, life) {
         // Use progression logic with point award
         checkProgressionLogic(true);
         
-        const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
-        store.world.score += Math.floor(2000 * collarBonus); store.world.gold += Math.floor(25 * collarBonus); store.world.xp += Math.floor(100 * collarBonus); store.world.bosses++;
+    const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
+    const scoreBonus = Math.floor(2000 * collarBonus);
+    const goldBonus = Math.floor(25 * collarBonus);
+    const xpBonus = Math.floor(100 * collarBonus);
+    if (scoreBonus) store.world.score += scoreBonus;
+    if (goldBonus) addWorldGold(goldBonus);
+    if (xpBonus) store.world.xp += xpBonus;
+    store.world.bosses++;
         if (store.goldenOrbs) {
             store.goldenOrbs.length = 0;
         }
@@ -8698,6 +8851,10 @@ function createParticle(x, y, vx, vy, color, life) {
             mechForgePulseTimeout: null,
             bossSpawnTime: 0, 
             waveStartTime: 0, 
+            activeBossToken: null,
+            activeBossWave: null,
+            completedBossTokens: Object.create(null),
+            lastBossAwardToken: null,
             enemyHealthBonus: 1.0, 
             bossHealthBonus: 1.0, 
             enemyDensityBonus: 1.0, 
@@ -9328,9 +9485,13 @@ function render(dt) {
             ctx.save();
             minions.forEach(minion => {
                 if (!minion || minion.dead) return;
+                const abilityModule = minion.abilityModule || champion.attackModule || getChampionUpgradeState().attackModule || 'default';
+                const abilityTheme = minion.abilityTheme || getChampionMinionAbilityTheme(abilityModule);
+                const trailColor = abilityTheme?.trail || '#b4c3ff';
+                const ringColor = abilityTheme?.ring || trailColor;
                 const gradient = ctx.createLinearGradient(champion.x, champion.y, minion.x, minion.y);
-                gradient.addColorStop(0, 'rgba(180, 190, 255, 0.6)');
-                gradient.addColorStop(1, 'rgba(255, 255, 255, 0.2)');
+                gradient.addColorStop(0, withAlpha(trailColor, 0.55));
+                gradient.addColorStop(1, withAlpha(ringColor, 0.18));
                 ctx.strokeStyle = gradient;
                 ctx.lineWidth = 1.4;
                 ctx.globalAlpha = 0.4 + Math.min(0.35, (champion.level || 1) * 0.05);
@@ -9887,7 +10048,8 @@ function render(dt) {
 
         pilotTitle.textContent = store.name ? `◢ ${store.name} ◣` : "◢ UNIDENTIFIED ◣";
         scoreNum.textContent = store.world.score;
-        goldNum.textContent = store.world.gold;
+        const worldGold = getWorldGold();
+        goldNum.textContent = worldGold;
         const mechForgeBtn = q('shopBtn');
         if (mechForgeBtn) {
             const label = store.world.autoForgeEnabled ? 'UPGRADE HANGAR (AUTO)' : 'UPGRADE HANGAR';
@@ -9896,7 +10058,7 @@ function render(dt) {
             }
         }
         const nextForgePrompt = store.world.nextMechForgePrompt ?? 135;
-        if (store.world.gold >= nextForgePrompt && !store.world.mechForgePromptActive) {
+        if (worldGold >= nextForgePrompt && !store.world.mechForgePromptActive) {
             triggerMechForgeGoldMilestone();
         }
 
@@ -10537,7 +10699,7 @@ function render(dt) {
             } else {
                 spawnGibs(target.x, target.y, target.color);
                 store.world.score += target.score;
-                store.world.gold += target.gold;
+                addWorldGold(target.gold);
                 store.world.xp += target.xp;
                 store.world.kills++;
 
@@ -10595,6 +10757,156 @@ function render(dt) {
         }
     }
 
+    function createMirrorClone(player, existingClone = null) {
+        const margin = 60;
+        const clone = existingClone && existingClone.mode === 'mirror' ? { ...existingClone } : {};
+        clone.mode = 'mirror';
+        clone.state = 'orbit';
+        clone.orbitRadius = clone.orbitRadius || 120;
+        clone.orbitSpeed = clone.orbitSpeed || 1.1;
+        clone.orbitDirection = clone.orbitDirection || (Math.random() < 0.5 ? -1 : 1);
+        clone.orbitAngle = typeof clone.orbitAngle === 'number' ? clone.orbitAngle : Math.random() * Math.PI * 2;
+        clone.runCooldown = 1.8 + Math.random() * 1.6;
+        clone.runDuration = clone.runDuration || 1.7;
+        clone.runSpeed = clone.runSpeed || 320;
+        clone.bombInterval = clone.bombInterval || 0.55;
+        clone.bombDamageScale = clone.bombDamageScale ?? 0.45;
+        clone.bombRadiusScale = clone.bombRadiusScale ?? 0.65;
+        clone.bombSpeedScale = clone.bombSpeedScale ?? 0.85;
+        clone.bobPhase = clone.bobPhase || Math.random() * Math.PI * 2;
+        clone.bobSpeed = clone.bobSpeed || 1.7;
+        clone.altitude = clamp(player.y - 120, 60, H * 0.55);
+        const baseX = player.x + Math.cos(clone.orbitAngle) * clone.orbitRadius;
+        const baseY = player.y - 80 + Math.sin(clone.orbitAngle) * clone.orbitRadius * 0.55;
+        clone.x = clamp(baseX, margin, W - margin);
+        clone.y = clamp(baseY, 50, H * 0.75);
+        clone.direction = clone.orbitDirection;
+        clone.returnTimer = 0;
+        clone.runTimer = 0;
+        clone.bombTimer = clone.bombInterval;
+        return clone;
+    }
+
+    function startMirrorCloneRun(clone, player) {
+        const margin = 60;
+        clone.state = 'run';
+        clone.runTimer = clone.runDuration || 1.7;
+        let direction = clone.runDirection;
+        if (!direction) {
+            direction = player.x < W / 2 ? 1 : -1;
+            if (clone.x < margin + 40) direction = 1;
+            if (clone.x > W - margin - 40) direction = -1;
+            if (Math.random() < 0.35) direction *= -1;
+        }
+        clone.runDirection = Math.sign(direction) || 1;
+        clone.direction = clone.runDirection;
+        clone.altitude = clamp(player.y - 160, 60, H * 0.45);
+        clone.bombTimer = Math.min(clone.bombInterval || 0.5, 0.12);
+        clone.runCooldown = 4 + Math.random() * 2.5;
+    }
+
+    function beginMirrorCloneReturn(clone) {
+        clone.state = 'return';
+        clone.returnTimer = 0;
+        clone.runTimer = 0;
+        clone.bombTimer = clone.bombInterval || 0.5;
+    }
+
+    function updateMirrorClone(dt) {
+        const player = store.player;
+        if (!player || player.dead) return;
+        if (!store.beefClone) {
+            store.beefClone = createMirrorClone(player);
+        }
+        const clone = store.beefClone;
+        if (!clone || clone.mode === 'juggernaut_bomber') return;
+        if (clone.mode !== 'mirror') {
+            store.beefClone = createMirrorClone(player, clone);
+            return;
+        }
+
+        const margin = 60;
+        const enemies = store.enemies || [];
+        clone.orbitRadius = clone.orbitRadius || 120;
+        clone.orbitSpeed = clone.orbitSpeed || 1.1;
+        clone.orbitAngle = typeof clone.orbitAngle === 'number' ? clone.orbitAngle : Math.random() * Math.PI * 2;
+        clone.orbitDirection = clone.orbitDirection || 1;
+        clone.runCooldown = clone.runCooldown ?? (2.8 + Math.random() * 1.4);
+        clone.runDuration = clone.runDuration || 1.7;
+        clone.runSpeed = clone.runSpeed || 320;
+        clone.bombInterval = clone.bombInterval || 0.55;
+        clone.bombDamageScale = clone.bombDamageScale ?? 0.45;
+        clone.bombRadiusScale = clone.bombRadiusScale ?? 0.65;
+        clone.bombSpeedScale = clone.bombSpeedScale ?? 0.85;
+        clone.state = clone.state || 'orbit';
+        clone.bobSpeed = clone.bobSpeed || 1.7;
+        clone.bobPhase = (clone.bobPhase || 0) + dt * clone.bobSpeed;
+        const bobOffset = Math.sin(clone.bobPhase) * 10;
+        const clampY = (value) => clamp(value, 45, H * 0.8);
+
+        if (clone.state === 'orbit') {
+            const centerX = clamp(player.x, margin, W - margin);
+            const centerY = clamp(player.y - 80, 50, H * 0.65);
+            clone.orbitAngle += dt * clone.orbitSpeed * clone.orbitDirection;
+            if (clone.orbitAngle > Math.PI * 2) clone.orbitAngle -= Math.PI * 2;
+            if (clone.orbitAngle < 0) clone.orbitAngle += Math.PI * 2;
+            clone.x = clamp(centerX + Math.cos(clone.orbitAngle) * clone.orbitRadius, margin, W - margin);
+            clone.y = clampY(centerY + Math.sin(clone.orbitAngle) * clone.orbitRadius * 0.55 + bobOffset);
+            clone.direction = clone.orbitDirection >= 0 ? 1 : -1;
+            clone.runCooldown -= dt;
+            if (clone.runCooldown <= 0 && (enemies.length || store.boss)) {
+                startMirrorCloneRun(clone, player);
+            }
+        } else if (clone.state === 'run') {
+            clone.runTimer -= dt;
+            const altitude = clone.altitude || clamp(player.y - 160, 60, H * 0.45);
+            clone.y += (altitude - clone.y) * Math.min(1, dt * 2.6);
+            clone.direction = clone.runDirection || 1;
+            clone.x += (clone.runDirection || 1) * clone.runSpeed * dt;
+            if (clone.x < margin) {
+                clone.x = margin;
+                clone.runTimer = Math.min(clone.runTimer, 0.2);
+            } else if (clone.x > W - margin) {
+                clone.x = W - margin;
+                clone.runTimer = Math.min(clone.runTimer, 0.2);
+            }
+
+            clone.bombTimer -= dt;
+            if (clone.bombTimer <= 0) {
+                spawnJuggernautBomb(clone, player, {
+                    damageScale: clone.bombDamageScale,
+                    radiusScale: clone.bombRadiusScale,
+                    speedScale: clone.bombSpeedScale,
+                    gravityScale: 0.85
+                });
+                clone.bombTimer = clone.bombInterval;
+            }
+
+            if (clone.runTimer <= 0) {
+                beginMirrorCloneReturn(clone);
+            }
+        } else if (clone.state === 'return') {
+            clone.returnTimer += dt;
+            const centerX = clamp(player.x, margin, W - margin);
+            const centerY = clamp(player.y - 80, 50, H * 0.65);
+            const targetX = clamp(centerX + Math.cos(clone.orbitAngle) * clone.orbitRadius, margin, W - margin);
+            const targetY = clampY(centerY + Math.sin(clone.orbitAngle) * clone.orbitRadius * 0.55);
+            clone.x += (targetX - clone.x) * Math.min(1, dt * 3.2);
+            clone.y += (targetY - clone.y) * Math.min(1, dt * 3.1);
+            clone.direction = clone.x < targetX ? 1 : -1;
+            if (clone.returnTimer >= 0.35 && Math.abs(clone.x - targetX) < 6 && Math.abs(clone.y - targetY) < 6) {
+                clone.state = 'orbit';
+                clone.returnTimer = 0;
+                clone.orbitAngle = Math.atan2(clone.y - centerY, clone.x - centerX);
+                if (clone.orbitAngle < 0) clone.orbitAngle += Math.PI * 2;
+                if (Math.random() < 0.3) clone.orbitDirection *= -1;
+            }
+        }
+
+        clone.x = clamp(clone.x, margin, W - margin);
+        clone.y = clampY(clone.y);
+    }
+
     function activateJuggernautClone(p) {
         const altitudeTarget = Math.max(80, p.y - 150);
         store.juggernautBombs = [];
@@ -10647,17 +10959,23 @@ function render(dt) {
         }
     }
 
-    function spawnJuggernautBomb(clone, player) {
+    function spawnJuggernautBomb(clone, player, options = null) {
         const unstoppableBonus = player.beefUnstoppableForce ? 1.4 : 1;
         const eliteBonus = player.beefEliteCombat ? 1.15 : 1;
-        const damage = 180 * player.dmgMult * unstoppableBonus * eliteBonus;
-        const radius = 100 + (player.beefExplosionRadius ? 35 : 0);
+        const opts = options || {};
+        const damageScale = opts.damageScale ?? 1;
+        const radiusScale = opts.radiusScale ?? 1;
+        const speedScale = opts.speedScale ?? 1;
+        const gravityScale = opts.gravityScale ?? 1;
+        const damage = 180 * player.dmgMult * unstoppableBonus * eliteBonus * damageScale;
+        const radius = (100 + (player.beefExplosionRadius ? 35 : 0)) * radiusScale;
+        if (!Array.isArray(store.juggernautBombs)) store.juggernautBombs = [];
         const bomb = {
             x: clone.x,
             y: clone.y + 18,
-            vx: (clone.direction || 1) * 45,
+            vx: (clone.direction || 1) * 45 * speedScale,
             vy: 30,
-            gravity: 520,
+            gravity: 520 * gravityScale,
             radius,
             damage,
             bossDamageScale: 0.48,
@@ -11052,6 +11370,121 @@ function render(dt) {
         { level: 2, name: 'SINGULARITY LANCES', cost: 230, fireRateMult: 0.75, damageMult: 1.22, novaDamageScale: 0.45, desc: 'Minion hits collapse into micro novas dealing splash damage.' }
     ]);
 
+    const CHAMPION_MINION_ABILITY_THEMES = Object.freeze({
+        default: {
+            aura: {
+                inner: 'rgba(150, 200, 255, 0.8)',
+                mid: 'rgba(80, 140, 220, 0.55)',
+                outer: 'rgba(20, 40, 80, 0)'
+            },
+            tail: {
+                start: 'rgba(25, 28, 52, 0)',
+                mid: 'rgba(70, 80, 150, 0.28)',
+                end: 'rgba(150, 160, 245, 0.72)'
+            },
+            ring: 'rgba(150, 160, 240, 0.9)',
+            swirlPrimary: 'rgba(100, 160, 255, 0.8)',
+            swirlSecondary: 'rgba(60, 120, 200, 0.65)',
+            highlight: 'rgba(140, 190, 255, 0.92)',
+            core: {
+                inner: '#f2f6ff',
+                mid: '#96b8ff',
+                outer: '#2a3c6f',
+                edge: '#162138'
+            },
+            thruster: {
+                inner: 'rgba(120, 180, 255, 0.85)',
+                outer: 'rgba(40, 80, 160, 0)'
+            },
+            trail: '#4362a8',
+            spark: '#c7d3ff'
+        },
+        ember: {
+            aura: {
+                inner: 'rgba(255, 190, 120, 0.82)',
+                mid: 'rgba(255, 110, 40, 0.6)',
+                outer: 'rgba(60, 18, 0, 0)'
+            },
+            tail: {
+                start: 'rgba(75, 18, 0, 0)',
+                mid: 'rgba(255, 120, 45, 0.35)',
+                end: 'rgba(255, 215, 140, 0.82)'
+            },
+            ring: 'rgba(255, 205, 135, 0.92)',
+            swirlPrimary: 'rgba(255, 170, 90, 0.82)',
+            swirlSecondary: 'rgba(255, 120, 40, 0.66)',
+            highlight: 'rgba(255, 200, 120, 0.94)',
+            core: {
+                inner: '#fff3c4',
+                mid: '#ffb347',
+                outer: '#5a1b0a',
+                edge: '#3a0d05'
+            },
+            thruster: {
+                inner: 'rgba(255, 185, 105, 0.88)',
+                outer: 'rgba(90, 20, 0, 0)'
+            },
+            trail: '#b6451a',
+            spark: '#ffe2b2'
+        },
+        tempest: {
+            aura: {
+                inner: 'rgba(120, 235, 255, 0.8)',
+                mid: 'rgba(45, 160, 220, 0.58)',
+                outer: 'rgba(5, 35, 60, 0)'
+            },
+            tail: {
+                start: 'rgba(8, 30, 52, 0)',
+                mid: 'rgba(60, 185, 240, 0.36)',
+                end: 'rgba(180, 250, 255, 0.84)'
+            },
+            ring: 'rgba(120, 210, 255, 0.9)',
+            swirlPrimary: 'rgba(90, 220, 255, 0.82)',
+            swirlSecondary: 'rgba(60, 160, 220, 0.64)',
+            highlight: 'rgba(150, 240, 255, 0.92)',
+            core: {
+                inner: '#e3feff',
+                mid: '#6ed8ff',
+                outer: '#0f344a',
+                edge: '#082330'
+            },
+            thruster: {
+                inner: 'rgba(115, 230, 255, 0.9)',
+                outer: 'rgba(10, 80, 120, 0)'
+            },
+            trail: '#1b6a92',
+            spark: '#d6faff'
+        },
+        void: {
+            aura: {
+                inner: 'rgba(205, 165, 255, 0.8)',
+                mid: 'rgba(120, 60, 200, 0.58)',
+                outer: 'rgba(25, 5, 45, 0)'
+            },
+            tail: {
+                start: 'rgba(22, 6, 40, 0)',
+                mid: 'rgba(140, 70, 220, 0.32)',
+                end: 'rgba(230, 190, 255, 0.85)'
+            },
+            ring: 'rgba(210, 170, 255, 0.94)',
+            swirlPrimary: 'rgba(190, 120, 255, 0.84)',
+            swirlSecondary: 'rgba(140, 80, 220, 0.68)',
+            highlight: 'rgba(215, 185, 255, 0.93)',
+            core: {
+                inner: '#f2e8ff',
+                mid: '#b088ff',
+                outer: '#2c1546',
+                edge: '#1b0a2d'
+            },
+            thruster: {
+                inner: 'rgba(200, 140, 255, 0.9)',
+                outer: 'rgba(40, 10, 70, 0)'
+            },
+            trail: '#4e2c7a',
+            spark: '#f0daff'
+        }
+    });
+
     const CHAMPION_SKIN_THEMES = Object.freeze({
         default: {
             key: 'default',
@@ -11235,6 +11668,66 @@ function render(dt) {
         }
     });
 
+    const CHAMPION_PREVIEW_PROFILES = Object.freeze({
+        default: {
+            title: 'Shadow Guardian',
+            classLabel: 'Adaptive Void Sentinel',
+            signature: 'Void harmonics auto-adjust to pilot focus.',
+            icon: '💠',
+            abilityHighlights: [
+                { id: 'standard-volley', name: 'Energy Volley', icon: '🔹', description: 'Adaptive plasma bolts that scale with guardian level.' },
+                { id: 'dash', name: 'Shadow Dash', icon: '💨', description: 'Short-range blink that phases through threats.' }
+            ],
+            previewEffects: {
+                attack: 'core-flare',
+                special: 'void-rings'
+            }
+        },
+        beef: {
+            title: 'Shadow Guardian',
+            classLabel: 'Titan Vanguard',
+            signature: 'Armored spearhead that mirrors Juggernaut aggression.',
+            icon: '🛡️',
+            abilityHighlights: [
+                { id: 'charge', name: 'Titan Charge', icon: '💥', description: 'Accelerates and slams through clustered targets.' },
+                { id: 'volley', name: 'Energy Volley', icon: '🔹', description: 'Heavy plasma bolts stagger foes at medium range.' }
+            ],
+            previewEffects: {
+                attack: 'shockwave',
+                special: 'overdrive'
+            }
+        },
+        rocketman: {
+            title: 'Shadow Guardian',
+            classLabel: 'Aerial Artillery',
+            signature: 'Guided ordnance suite pairs with stealth rocket arrays.',
+            icon: '🚀',
+            abilityHighlights: [
+                { id: 'rockets', name: 'Stealth Rockets', icon: '🚀', description: 'Guided munitions fan out before converging on priority threats.' },
+                { id: 'volley', name: 'Energy Volley', icon: '🔹', description: 'Standard plasma volley keeps pressure between salvos.' }
+            ],
+            previewEffects: {
+                attack: 'rocket-trail',
+                special: 'missile-burst'
+            }
+        },
+        voidmancer: {
+            title: 'Shadow Guardian',
+            classLabel: 'Void Arcanist',
+            signature: 'Conducts stormlight and void lasers in alternating cadence.',
+            icon: '⚡',
+            abilityHighlights: [
+                { id: 'lightning', name: 'Chain Lightning', icon: '⚡', description: 'Arcs between clustered enemies, escalating with each jump.' },
+                { id: 'laser', name: 'Void Laser', icon: '🔱', description: 'Focus beam that pierces armor after a short channel.' },
+                { id: 'dash', name: 'Shadow Dash', icon: '💨', description: 'Blink strike shreds armor during phase transitions.' }
+            ],
+            previewEffects: {
+                attack: 'lightning-arc',
+                special: 'laser-sweep'
+            }
+        }
+    });
+
     const CHAMPION_SKIN_OPTIONS = Object.freeze([
         { id: 'default', name: 'Void Vanguard', icon: '💠', cost: 0, desc: 'Baseline guardian plating.', theme: 'default' },
         { id: 'solstice', name: 'Solstice Radiant', icon: '🌞', cost: 120, desc: 'Gilded solar alloys with ember trails.', theme: 'solstice' },
@@ -11411,12 +11904,20 @@ function render(dt) {
         return CHAMPION_SKIN_THEMES[key] || CHAMPION_SKIN_THEMES.default;
     }
 
+    function getChampionMinionAbilityTheme(moduleId) {
+        const key = (moduleId && CHAMPION_MINION_ABILITY_THEMES[moduleId]) ? moduleId : 'default';
+        return CHAMPION_MINION_ABILITY_THEMES[key] || CHAMPION_MINION_ABILITY_THEMES.default;
+    }
+
     function refreshChampionMinionsFromState(owner, tuning = null) {
         if (!owner || !Array.isArray(store.championMinions) || !store.championMinions.length) {
             return;
         }
-        const protocol = tuning || (CHAMPION_MINION_PROTOCOL_LEVELS[getChampionUpgradeState().minionProtocols] || CHAMPION_MINION_PROTOCOL_LEVELS[0]);
-        const theme = owner.skinTheme ? owner.skinTheme.minion : getChampionSkinTheme('default').minion;
+        const state = getChampionUpgradeState();
+        const protocol = tuning || (CHAMPION_MINION_PROTOCOL_LEVELS[state.minionProtocols] || CHAMPION_MINION_PROTOCOL_LEVELS[0]);
+        const abilityModule = owner.attackModule || state.attackModule || 'default';
+        const abilityTheme = getChampionMinionAbilityTheme(abilityModule);
+        const theme = owner.skinTheme ? owner.skinTheme.minion : getChampionSkinTheme(state.skin || 'default').minion;
         const ownerLevel = owner.level || 1;
         const baseCooldown = Math.max(0.9, 1.4 - ownerLevel * 0.12);
         const baseDamageScale = 1 + Math.max(0, ownerLevel - 1) * 0.18;
@@ -11432,6 +11933,8 @@ function render(dt) {
             minion.protocolSlowFactor = protocol.slowFactor || null;
             minion.protocolNovaDamageScale = protocol.novaDamageScale || 0;
             minion.skinTheme = theme;
+            minion.abilityModule = abilityModule;
+            minion.abilityTheme = abilityTheme;
         }
     }
 
@@ -11505,8 +12008,10 @@ function render(dt) {
         minion.fireCooldownBase = minion.fireCooldown;
         minion.damageScaleBase = minion.damageScale;
 
-        const upgrades = getChampionUpgradeState();
-        const protocol = CHAMPION_MINION_PROTOCOL_LEVELS[upgrades.minionProtocols] || CHAMPION_MINION_PROTOCOL_LEVELS[0];
+    const upgrades = getChampionUpgradeState();
+    const protocol = CHAMPION_MINION_PROTOCOL_LEVELS[upgrades.minionProtocols] || CHAMPION_MINION_PROTOCOL_LEVELS[0];
+    const abilityModule = owner.attackModule || upgrades.attackModule || 'default';
+    const abilityTheme = getChampionMinionAbilityTheme(abilityModule);
         minion.fireCooldown = Math.max(0.24, minion.fireCooldownBase * (protocol.fireRateMult || 1));
         minion.damageScale = minion.damageScaleBase * (protocol.damageMult || 1);
         minion.protocolLevel = protocol.level || 0;
@@ -11514,6 +12019,8 @@ function render(dt) {
         minion.protocolNovaDamageScale = protocol.novaDamageScale || 0;
         const minionTheme = owner?.skinTheme ? owner.skinTheme.minion : getChampionSkinTheme(upgrades.skin).minion;
         minion.skinTheme = minionTheme;
+    minion.abilityModule = abilityModule;
+    minion.abilityTheme = abilityTheme;
         store.championMinions.push(minion);
         store.activeEffects.push(createEffect('spawnTeleport', owner.x, owner.y, owner.r * 1.6, {
             duration: 0.6,
@@ -14248,6 +14755,13 @@ function render(dt) {
 
         ctx.restore();
     }
+    const VOID_CHAMPION_SCHEME_BY_MODULE = Object.freeze({
+        default: 'purple',
+        ember: 'crimson',
+        tempest: 'azure',
+        void: 'purple'
+    });
+
     const VOID_CHAMPION_COLOR_SCHEMES = {
         purple: {
             name: 'Void Wraith',
@@ -14768,40 +15282,67 @@ function render(dt) {
             const time = performance.now() / 1000;
             const flicker = 0.6 + 0.4 * Math.sin(time * 10 + c * 8);
             const radius = a * (0.85 + 0.15 * flicker);
+            const module = e.attackModule || 'default';
+            const abilityTheme = e.abilityTheme || getChampionMinionAbilityTheme(module);
+            const aura = abilityTheme?.aura || {};
+            const core = abilityTheme?.core || {};
+            const swirlPrimary = abilityTheme?.swirlPrimary || e.color || '#ff7deb';
+            const swirlSecondary = abilityTheme?.swirlSecondary || swirlPrimary;
+            const ringColor = abilityTheme?.ring || e.color || '#ff7deb';
+            const trailColor = abilityTheme?.trail || e.trailColor || e.color || '#ff7deb';
+            const auraInner = aura.inner || withAlpha(trailColor, 0.8);
+            const auraMid = aura.mid || withAlpha(trailColor, 0.5);
+            const auraOuter = aura.outer || withAlpha(trailColor, 0);
+            const coreOuter = core.outer || trailColor;
+            const coreMid = core.mid || ringColor;
+            const coreInner = core.inner || '#ffffff';
 
-            ctx.fillStyle = `rgba(255, 122, 229, ${0.35 + 0.4 * flicker})`;
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            const auraGradient = ctx.createRadialGradient(0, 0, radius * 0.35, 0, 0, radius * 1.7);
+            auraGradient.addColorStop(0, withAlpha(auraInner, 0.7));
+            auraGradient.addColorStop(0.55, withAlpha(auraMid, 0.45 + 0.25 * flicker));
+            auraGradient.addColorStop(1, withAlpha(auraOuter, 0));
+            ctx.fillStyle = auraGradient;
             ctx.beginPath();
-            ctx.arc(0, 0, radius * 1.6, 0, Math.PI * 2);
+            ctx.arc(0, 0, radius * (1.6 + 0.08 * flicker), 0, Math.PI * 2);
             ctx.fill();
+            ctx.restore();
 
-            ctx.fillStyle = '#ff7deb';
-            ctx.strokeStyle = '#ffe0f8';
+            ctx.fillStyle = withAlpha(coreOuter, 0.85);
+            ctx.strokeStyle = withAlpha(ringColor, 0.95);
             ctx.lineWidth = 1.2;
             ctx.beginPath();
-            ctx.moveTo(-radius * 0.6, -radius * 0.2);
-            ctx.lineTo(radius * 0.9, 0);
-            ctx.lineTo(-radius * 0.6, radius * 0.2);
+            ctx.moveTo(-radius * 0.65, -radius * 0.22);
+            ctx.lineTo(radius * 0.95, 0);
+            ctx.lineTo(-radius * 0.65, radius * 0.22);
             ctx.closePath();
             ctx.fill();
             ctx.stroke();
 
-            ctx.fillStyle = '#fff';
+            ctx.fillStyle = withAlpha(coreMid, 0.92);
             ctx.beginPath();
-            ctx.arc(radius * 0.25, 0, radius * 0.4, 0, Math.PI * 2);
+            ctx.arc(radius * 0.28, 0, radius * 0.48, 0, Math.PI * 2);
             ctx.fill();
 
-            ctx.fillStyle = '#ff4fb5';
+            ctx.fillStyle = withAlpha(coreInner, 0.96);
             ctx.beginPath();
-            ctx.arc(radius * 0.25, 0, radius * 0.18, 0, Math.PI * 2);
+            ctx.arc(radius * 0.28, 0, radius * 0.22, 0, Math.PI * 2);
             ctx.fill();
 
-            // trailing spark
-            ctx.strokeStyle = `rgba(255, 125, 235, ${0.4 + 0.3 * flicker})`;
-            ctx.lineWidth = 1.8;
+            ctx.strokeStyle = withAlpha(swirlPrimary, 0.65 + 0.25 * flicker);
+            ctx.lineWidth = 1.6;
             ctx.beginPath();
             ctx.moveTo(-radius * 1.2, 0);
-            ctx.lineTo(-radius * 2, 0);
+            ctx.lineTo(-radius * 2.2, 0);
             ctx.stroke();
+
+            ctx.strokeStyle = withAlpha(swirlSecondary, 0.55);
+            ctx.lineWidth = 1.1;
+            ctx.beginPath();
+            ctx.arc(0, 0, radius * (1.05 + 0.15 * flicker), Math.PI * 0.6, Math.PI * 1.4);
+            ctx.stroke();
+
             break;
         }
         case "angler": {
@@ -15793,6 +16334,31 @@ function render(dt) {
         store.activeEffects.push(createEffect("grenadeExplosion", mine.x, mine.y, 55));
     }
 
+    function sanitizeGoldValue(value) {
+        if (!Number.isFinite(value)) return 0;
+        return Math.max(0, Math.round(value));
+    }
+
+    function getWorldGold() {
+        const world = store.world || (store.world = {});
+        world.gold = sanitizeGoldValue(world.gold);
+        return world.gold;
+    }
+
+    function setWorldGold(value) {
+        const world = store.world || (store.world = {});
+        world.gold = sanitizeGoldValue(value);
+        return world.gold;
+    }
+
+    function addWorldGold(delta = 0) {
+        const world = store.world || (store.world = {});
+        const current = sanitizeGoldValue(world.gold);
+        const change = Number.isFinite(delta) ? delta : 0;
+        const next = sanitizeGoldValue(current + change);
+        world.gold = next;
+        return next;
+    }
 
     let shopItemOrder = [...SHOP_DISPLAY_ORDER];
 
@@ -15938,7 +16504,8 @@ function render(dt) {
     function getNextUpgradeCost(key) {
         const upgrade = SHOP_UPGRADES[key];
         if (!upgrade) return { cost: Infinity, available: false };
-        const world = store.world || { gold: 0 };
+        const world = store.world || (store.world = {});
+        const availableGold = getWorldGold();
         const player = store.player || {};
 
         if (typeof upgrade.getCost === 'function') {
@@ -15947,7 +16514,7 @@ function render(dt) {
                 return { cost: Infinity, available: false, premium: !!upgrade.isPremium };
             }
             const cost = Number.isFinite(raw.cost) ? raw.cost : Infinity;
-            const available = raw.available !== undefined ? !!raw.available : (Number.isFinite(cost) && world.gold >= cost);
+            const available = raw.available !== undefined ? !!raw.available : (Number.isFinite(cost) && availableGold >= cost);
             return {
                 cost,
                 available,
@@ -15963,7 +16530,7 @@ function render(dt) {
                 if (!player.hpMax || player.hp >= player.hpMax) {
                     return { cost: Infinity, available: false, premium: true, reason: 'Health is already full.' };
                 }
-                return { cost: upgrade.cost, available: world.gold >= upgrade.cost, premium: true };
+                return { cost: upgrade.cost, available: availableGold >= upgrade.cost, premium: true };
             }
             if (key === 'vampirism') {
                 const currentLevel = player.vampirismLevel || 0;
@@ -15971,19 +16538,19 @@ function render(dt) {
                     return { cost: Infinity, available: false, premium: true, reason: 'Max level reached.' };
                 }
                 const cost = 12 + (currentLevel * 5);
-                return { cost, available: world.gold >= cost, premium: true, level: currentLevel };
+                return { cost, available: availableGold >= cost, premium: true, level: currentLevel };
             }
             if (key === 'nano_save') {
                 if (player.nanoSaves >= upgrade.max) {
                     return { cost: Infinity, available: false, premium: true, reason: 'Max charges reached.' };
                 }
-                return { cost: upgrade.cost, available: world.gold >= upgrade.cost, premium: true };
+                return { cost: upgrade.cost, available: availableGold >= upgrade.cost, premium: true };
             }
             if (key === 'grenade') {
                 if (player.grenades >= upgrade.max) {
                     return { cost: Infinity, available: false, premium: true, reason: 'At maximum capacity.' };
                 }
-                return { cost: upgrade.cost, available: world.gold >= upgrade.cost, premium: true };
+                return { cost: upgrade.cost, available: availableGold >= upgrade.cost, premium: true };
             }
             if (upgrade.isUnlock) {
                 const alreadyUnlocked =
@@ -15998,7 +16565,7 @@ function render(dt) {
                     return { cost: Infinity, available: false, premium: true, reason: 'Already unlocked.' };
                 }
             }
-            return { cost: upgrade.cost, available: world.gold >= upgrade.cost, premium: true };
+            return { cost: upgrade.cost, available: availableGold >= upgrade.cost, premium: true };
         } else {
             const currentLevel = (player.upgradeLevels && player.upgradeLevels[key]) || 0;
             if (upgrade.maxLevel && currentLevel >= upgrade.maxLevel) {
@@ -16007,7 +16574,7 @@ function render(dt) {
             const cost = upgrade.increment
                 ? upgrade.baseCost + (currentLevel * upgrade.increment)
                 : Math.floor(upgrade.baseCost * Math.pow(upgrade.scale, currentLevel));
-            return { cost, available: world.gold >= cost, level: currentLevel };
+            return { cost, available: availableGold >= cost, level: currentLevel };
         }
     }
 
@@ -16021,30 +16588,31 @@ function render(dt) {
         if (upgrade.isPremium) {
             if (key === 'vampirism') {
                 const info = getNextUpgradeCost(key);
-                if (isFinite(info.cost) && store.world.gold >= info.cost) {
-                    const prevGold = store.world.gold;
+                if (isFinite(info.cost) && getWorldGold() >= info.cost) {
+                    const prevGold = getWorldGold();
                     success = upgrade.apply();
                     if (success) {
-                        cost = prevGold - store.world.gold;
+                        const currentGold = getWorldGold();
+                        cost = Math.max(0, prevGold - currentGold);
                     }
                 }
             } else {
                 const info = getNextUpgradeCost(key);
-                if (info && info.available && Number.isFinite(info.cost) && store.world.gold >= info.cost) {
-                    store.world.gold -= info.cost;
+                if (info && info.available && Number.isFinite(info.cost) && getWorldGold() >= info.cost) {
+                    addWorldGold(-info.cost);
                     cost = info.cost;
                     success = upgrade.apply(info);
                     if (!success) {
-                        store.world.gold += info.cost;
+                        addWorldGold(info.cost);
                         cost = 0;
                     }
                 }
             }
         } else {
             const info = getNextUpgradeCost(key);
-            if (isFinite(info.cost) && store.world.gold >= info.cost) {
+            if (isFinite(info.cost) && getWorldGold() >= info.cost) {
                 const currentLevel = store.player.upgradeLevels[key] || 0;
-                store.world.gold -= info.cost;
+                addWorldGold(-info.cost);
                 cost = info.cost;
                 upgrade.effect(currentLevel);
                 store.player.upgradeLevels[key] = currentLevel + 1;
@@ -16239,7 +16807,7 @@ function render(dt) {
             return;
         }
 
-        const gold = store.world.gold;
+        const gold = getWorldGold();
         if (!Number.isFinite(gold) || gold <= 0) {
             scheduleNextAutoForgeDecision(world, 1.25);
             return;
@@ -16294,7 +16862,7 @@ function render(dt) {
             grid = q("shopGrid"),
             goldEl = q("shopgold"),
             autoStatusEl = q('autoForgeStatusLabel');
-        goldEl.textContent = store.world.gold;
+        goldEl.textContent = getWorldGold();
         if (autoStatusEl) {
             autoStatusEl.textContent = getAutoForgeStatusText();
         }
@@ -16535,8 +17103,9 @@ function render(dt) {
             return;
         }
 
-        const player = store.player || {};
-        const world = store.world || {};
+    const player = store.player || {};
+    const world = store.world || {};
+    const gold = getWorldGold();
 
         const toNumber = (value, fallback = 0) => {
             const num = Number(value);
@@ -16588,7 +17157,7 @@ function render(dt) {
         const summaryLines = [
             `GENOME ROUTE ▸ ${genomeName} ➜ ${subclassDisplay}`,
             `MISSION STATUS ▸ W${pad(world.wave || 1)} | LV ${pad(world.level || 1)} | BOSSES ${pad(world.bosses || 0)} | KILLS ${pad(world.kills || 0, 3)}`,
-            `FORGE LEDGER ▸ GOLD ${pad(world.gold || 0, 4)} | XP ${pad(world.xp || 0, 4)} | SCORE ${pad(world.score || 0, 6)}`,
+            `FORGE LEDGER ▸ GOLD ${pad(gold, 4)} | XP ${pad(world.xp || 0, 4)} | SCORE ${pad(world.score || 0, 6)}`,
             `PROGRESSION ▸ TOTAL ${pad(player.totalProgressionPoints || 0)} | SPENT ${pad(player.skillPointsSpent || 0)} | UNSPENT ${pad(player.unspentProgressionPoints || 0)}`
         ];
 
@@ -16654,7 +17223,7 @@ function render(dt) {
         const economyRows = [
             {
                 key: 'Resources',
-                value: `Gold ${pad(world.gold || 0, 4)} • XP ${pad(world.xp || 0, 4)}`,
+                value: `Gold ${pad(gold, 4)} • XP ${pad(world.xp || 0, 4)}`,
                 detail: `Score ${pad(world.score || 0, 6)} • Threat ${fmt(world.lastThreatScale || 1, 2)}`
             },
             {
@@ -17012,7 +17581,7 @@ function render(dt) {
 
         const interval = computeNextForgePromptInterval(world.mechForgePromptInterval, promptCount);
         world.mechForgePromptInterval = interval;
-        world.nextMechForgePrompt = world.gold + interval;
+    world.nextMechForgePrompt = getWorldGold() + interval;
 
         flashForgeButton(promptCount <= 2 ? 10000 : 5000);
 
@@ -17396,31 +17965,81 @@ function render(dt) {
         updateChampionStats();
         panel.classList.remove("hide");
     }
+
+    function getChampionPresentation() {
+        const player = store.player;
+        const champion = store.playerChampion;
+        const upgradeState = getChampionUpgradeState(player);
+        const skinId = upgradeState?.skin || 'default';
+        const skinOption = CHAMPION_SKIN_OPTION_MAP[skinId] || CHAMPION_SKIN_OPTION_MAP.default;
+        const skinTheme = getChampionSkinTheme(skinOption.theme || skinOption.id || skinOption.key || 'default');
+        const profile = (player && CHAMPION_PREVIEW_PROFILES[player.pilotGenome]) || CHAMPION_PREVIEW_PROFILES.default;
+        return { player, champion, upgradeState, skinOption, skinTheme, profile };
+    }
+
+    function applyChampionLoadoutLabels(presentation) {
+        if (!presentation) return;
+        const { profile, skinOption, upgradeState, player } = presentation;
+        const nameEl = q('previewChampionName');
+        if (nameEl) {
+            const profileTitle = profile?.title || 'Shadow Guardian';
+            const skinName = skinOption?.name || 'Void Vanguard';
+            nameEl.textContent = `${profileTitle} · ${skinName}`;
+        }
+
+        const classEl = q('previewChampionClass');
+        if (classEl) {
+            const subclass = player?.subclass ? player.subclass.replace(/_/g, ' ').toUpperCase() : '';
+            const baseLabel = profile?.classLabel || '';
+            classEl.textContent = subclass ? `${baseLabel}${baseLabel ? ' — ' : ''}${subclass}` : baseLabel;
+        }
+
+        const skinLabel = q('championSkinLabel');
+        if (skinLabel) skinLabel.textContent = skinOption?.name || 'Void Vanguard';
+
+    const attackModuleLabel = q('championAttackModuleLabel');
+    const attackModule = (upgradeState?.attackModule && CHAMPION_ATTACK_MODULE_MAP[upgradeState.attackModule]) || null;
+    if (attackModuleLabel) attackModuleLabel.textContent = attackModule?.name || 'Standard Volley';
+
+        const cadenceLabel = q('championCadenceLabel');
+        const cadenceOption = CHAMPION_CADENCE_LEVELS[upgradeState?.cadenceLevel || 0] || CHAMPION_CADENCE_LEVELS[0];
+        if (cadenceLabel) cadenceLabel.textContent = cadenceOption?.name || 'BASELINE CADENCE';
+
+        const protocolLabel = q('championProtocolLabel');
+        const protocolOption = CHAMPION_MINION_PROTOCOL_LEVELS[upgradeState?.minionProtocols || 0] || CHAMPION_MINION_PROTOCOL_LEVELS[0];
+        if (protocolLabel) protocolLabel.textContent = protocolOption?.name || 'ESCORT DRONES';
+
+        const signatureLabel = q('championSignatureLabel');
+        if (signatureLabel) signatureLabel.textContent = profile?.signature || 'Adaptive Void Sentinel';
+    }
     
     function updateChampionPreview(animationType = 'idle') {
         const canvas = q("championPreviewCanvas");
         if (!canvas) return;
         
         const ctx = canvas.getContext('2d');
-        const champion = store.playerChampion;
-        const player = store.player;
+        const presentation = getChampionPresentation();
+        const { champion, skinTheme, profile, upgradeState } = presentation;
+        applyChampionLoadoutLabels(presentation);
         
         // Clear canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
         // Draw background
-        const gradient = ctx.createRadialGradient(100, 100, 0, 100, 100, 100);
-        gradient.addColorStop(0, 'rgba(51, 0, 68, 0.3)');
-        gradient.addColorStop(1, 'rgba(5, 0, 15, 0.8)');
+        const gradient = ctx.createRadialGradient(100, 110, 20, 100, 110, 120);
+        const aura = skinTheme?.aura || CHAMPION_SKIN_THEMES.default.aura;
+        gradient.addColorStop(0, withAlpha(aura.inner || 'rgba(51, 0, 68, 0.4)', 0.65));
+        gradient.addColorStop(0.55, withAlpha(aura.mid || 'rgba(51, 0, 68, 0.3)', 0.55));
+        gradient.addColorStop(1, withAlpha(aura.outer || 'rgba(5, 0, 15, 0.8)', 0.9));
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
         if (!champion) {
             // Draw placeholder champion
-            drawPlaceholderChampion(ctx, animationType);
+            drawPlaceholderChampion(ctx, animationType, presentation);
         } else {
             // Draw actual champion
-            drawChampionPreview(ctx, champion, animationType);
+            drawChampionPreview(ctx, presentation, animationType);
         }
         
         // Update preview button states
@@ -17429,426 +18048,554 @@ function render(dt) {
         if (activeBtn) activeBtn.classList.add('active');
     }
     
-    function drawPlaceholderChampion(ctx, animationType) {
+    function drawChampionPreview(ctx, presentation, animationType, options = {}) {
+        const { champion, skinTheme, profile, upgradeState } = presentation;
         const centerX = 100;
-        const centerY = 120;
+        const centerY = 118;
         const time = performance.now() / 1000;
-        
-        // Animation offsets
+        const isPlaceholder = options.forcePlaceholder || !champion;
+
+        const level = champion?.level || 1;
+        const health = champion?.hp ?? champion?.hpMax ?? (160 + level * 40);
+        const maxHealth = champion?.hpMax ?? (180 + level * 45);
+        const shield = champion?.shield ?? Math.max(0, (upgradeState?.champion_shield || 0) * 30);
+        const auraPhase = (champion?.auraPulse || 0) + time * 2.1;
+
         let offsetY = 0;
         let scale = 1;
         let rotation = 0;
-        
+
         switch (animationType) {
-            case 'idle':
-                offsetY = Math.sin(time * 2) * 2;
-                break;
             case 'attack':
-                scale = 1 + Math.sin(time * 8) * 0.1;
-                rotation = Math.sin(time * 8) * 0.1;
+                offsetY = Math.sin(time * 7.5) * 2.6;
+                scale = 1 + Math.sin(time * 9) * 0.12;
+                rotation = Math.sin(time * 8) * 0.12;
                 break;
             case 'special':
-                offsetY = Math.sin(time * 4) * 3;
-                scale = 1 + Math.sin(time * 6) * 0.15;
+                offsetY = Math.sin(time * 4.2) * 3.5;
+                scale = 1 + Math.sin(time * 5.4) * 0.18;
+                rotation = Math.sin(time * 3.3) * 0.11;
+                break;
+            default:
+                offsetY = Math.sin(time * 2.4) * 2.2;
+                scale = 1 + Math.sin(time * 1.8) * 0.06;
+                rotation = Math.sin(time * 1.7) * 0.04;
                 break;
         }
-        
+
+        const bodyTheme = skinTheme?.body || CHAMPION_SKIN_THEMES.default.body;
+        const visorTheme = skinTheme?.visor || CHAMPION_SKIN_THEMES.default.visor;
+        const auraTheme = skinTheme?.aura || CHAMPION_SKIN_THEMES.default.aura;
+        const trailColor = skinTheme?.trail || '#78b4ff';
+
+        const baseSize = 20 + Math.min(5, level) * 2.2;
+        const accentColor = bodyTheme.accent || trailColor;
+
         ctx.save();
         ctx.translate(centerX, centerY + offsetY);
         ctx.scale(scale, scale);
         ctx.rotate(rotation);
-        
-        // Draw champion body (orb-like with shadow aesthetic)
-        const bodyGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 25);
-        bodyGradient.addColorStop(0, 'rgba(120, 60, 180, 0.9)');
-        bodyGradient.addColorStop(0.7, 'rgba(80, 40, 120, 0.8)');
-        bodyGradient.addColorStop(1, 'rgba(40, 20, 60, 0.6)');
-        
+
+        // Aura
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const auraRadius = baseSize * (2.1 + Math.sin(auraPhase) * 0.28);
+        const auraGradient = ctx.createRadialGradient(0, 0, baseSize * 0.35, 0, 0, auraRadius);
+        auraGradient.addColorStop(0, withAlpha(auraTheme.inner || '#7ab0ff', isPlaceholder ? 0.5 : 0.85));
+        auraGradient.addColorStop(0.55, withAlpha(auraTheme.mid || '#2d559f', isPlaceholder ? 0.35 : 0.55));
+        auraGradient.addColorStop(1, withAlpha(auraTheme.outer || '#0f1732', 0));
+        ctx.fillStyle = auraGradient;
         ctx.beginPath();
-        ctx.arc(0, 0, 20, 0, Math.PI * 2);
-        ctx.fillStyle = bodyGradient;
+        ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
         ctx.fill();
-        
-        // Draw champion aura
-        ctx.beginPath();
-        ctx.arc(0, 0, 25 + Math.sin(time * 3) * 3, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(178, 102, 255, ${0.3 + Math.sin(time * 2) * 0.2})`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        
-        // Draw eyes/core
-        ctx.beginPath();
-        ctx.arc(-6, -5, 3, 0, Math.PI * 2);
-        ctx.arc(6, -5, 3, 0, Math.PI * 2);
-        ctx.fillStyle = '#ff99cc';
-        ctx.fill();
-        
         ctx.restore();
-        
-        // Draw floating elements for special animation
-        if (animationType === 'special') {
-            for (let i = 0; i < 3; i++) {
-                const angle = (time * 2) + (i * Math.PI * 2 / 3);
-                const x = centerX + Math.cos(angle) * 40;
-                const y = centerY + Math.sin(angle) * 20;
-                
-                ctx.beginPath();
-                ctx.arc(x, y, 3, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(178, 102, 255, ${0.6 + Math.sin(time * 4 + i) * 0.3})`;
-                ctx.fill();
-            }
+
+        // Body
+        const bodyGradient = ctx.createLinearGradient(0, -baseSize * 1.1, 0, baseSize * 1.05);
+        bodyGradient.addColorStop(0, bodyTheme.top || '#2a3560');
+        bodyGradient.addColorStop(0.45, bodyTheme.mid || bodyTheme.top || '#1e2845');
+        bodyGradient.addColorStop(1, bodyTheme.bottom || bodyTheme.mid || '#3c4f78');
+
+        ctx.globalAlpha = isPlaceholder ? 0.85 : 1;
+        ctx.fillStyle = bodyGradient;
+        ctx.strokeStyle = bodyTheme.outline || accentColor;
+        ctx.lineWidth = 2.1;
+        ctx.beginPath();
+        ctx.moveTo(0, -baseSize * 1.1);
+        ctx.lineTo(baseSize * 0.92, -baseSize * 0.12);
+        ctx.lineTo(baseSize * 0.58, baseSize * 0.92);
+        ctx.lineTo(0, baseSize * 1.06);
+        ctx.lineTo(-baseSize * 0.58, baseSize * 0.92);
+        ctx.lineTo(-baseSize * 0.92, -baseSize * 0.12);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Interior panel
+        ctx.globalAlpha = 0.75;
+        ctx.fillStyle = bodyTheme.interior || '#1a2440';
+        ctx.beginPath();
+        ctx.moveTo(-baseSize * 0.28, -baseSize * 0.28);
+        ctx.lineTo(baseSize * 0.28, -baseSize * 0.28);
+        ctx.lineTo(baseSize * 0.42, baseSize * 0.16);
+        ctx.lineTo(-baseSize * 0.42, baseSize * 0.16);
+        ctx.closePath();
+        ctx.fill();
+
+        // Visor
+        ctx.globalAlpha = 0.92;
+        const visorGradient = ctx.createLinearGradient(-baseSize * 0.42, -baseSize * 0.26, baseSize * 0.42, 0);
+        visorGradient.addColorStop(0, visorTheme.left || 'rgba(80, 150, 255, 0.85)');
+        visorGradient.addColorStop(0.5, visorTheme.center || 'rgba(120, 180, 255, 0.95)');
+        visorGradient.addColorStop(1, visorTheme.right || 'rgba(60, 120, 200, 0.8)');
+        ctx.fillStyle = visorGradient;
+        ctx.beginPath();
+        ctx.moveTo(0, -baseSize * 0.48);
+        ctx.lineTo(baseSize * 0.42, -baseSize * 0.22);
+        ctx.lineTo(baseSize * 0.32, 0);
+        ctx.lineTo(-baseSize * 0.32, 0);
+        ctx.lineTo(-baseSize * 0.42, -baseSize * 0.22);
+        ctx.closePath();
+        ctx.fill();
+
+        // Accent struts
+        ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = withAlpha(accentColor, level >= 4 ? 0.95 : 0.8);
+        ctx.lineWidth = 1.9;
+        ctx.beginPath();
+        ctx.moveTo(-baseSize * 0.36, baseSize * 0.26);
+        ctx.lineTo(baseSize * 0.36, baseSize * 0.26);
+        ctx.moveTo(-baseSize * 0.25, baseSize * 0.62);
+        ctx.lineTo(baseSize * 0.25, baseSize * 0.62);
+        ctx.stroke();
+
+        // Core glow
+        ctx.globalAlpha = 0.78;
+        const coreGradient = ctx.createRadialGradient(0, baseSize * 0.18, 0, 0, baseSize * 0.18, baseSize * 0.52);
+        coreGradient.addColorStop(0, withAlpha(accentColor, 0.85));
+        coreGradient.addColorStop(1, withAlpha(trailColor, 0.26));
+        ctx.fillStyle = coreGradient;
+        ctx.beginPath();
+        ctx.arc(0, baseSize * 0.18, baseSize * 0.48, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Level indicators
+        ctx.globalAlpha = 0.85;
+        const levelCount = Math.min(6, level);
+        for (let i = 0; i < levelCount; i++) {
+            const angle = (i / levelCount) * Math.PI * 2 + auraPhase * 0.18;
+            const lx = Math.cos(angle) * (baseSize + 6);
+            const ly = Math.sin(angle) * (baseSize + 6);
+            ctx.fillStyle = withAlpha(accentColor, 0.88);
+            ctx.beginPath();
+            ctx.arc(lx, ly, 2.2, 0, Math.PI * 2);
+            ctx.fill();
         }
+
+        // Shield ring
+        if (shield > 0) {
+            ctx.globalAlpha = 0.7;
+            ctx.strokeStyle = withAlpha(trailColor, 0.85);
+            ctx.lineWidth = 2.4;
+            const shieldRatio = Math.min(1, shield / (champion?.shieldMax || shield + 60));
+            ctx.beginPath();
+            ctx.arc(0, 0, baseSize * 1.28, -Math.PI / 2, -Math.PI / 2 + shieldRatio * Math.PI * 2);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+
+        drawChampionPreviewMinions(ctx, centerX, centerY + offsetY, presentation, baseSize, time);
+        drawChampionPreviewEffect(ctx, centerX, centerY + offsetY, animationType, presentation, baseSize, time);
     }
-    
-    function drawChampionPreview(ctx, champion, animationType) {
-        const centerX = 100;
-        const centerY = 120;
-        const time = performance.now() / 1000;
-        
-        // Use champion's actual properties for more detailed rendering
-        const level = champion.level || 1;
-        const health = champion.hp || champion.hpMax || 100;
-        const maxHealth = champion.hpMax || 100;
-        
-        // Animation offsets based on champion state
-        let offsetY = 0;
-        let scale = 1;
-        let rotation = 0;
-        
-        switch (animationType) {
-            case 'idle':
-                offsetY = Math.sin(time * 2) * 3;
-                scale = 1 + Math.sin(time * 1.5) * 0.05;
-                break;
-            case 'attack':
-                scale = 1 + Math.sin(time * 10) * 0.15;
-                rotation = Math.sin(time * 10) * 0.15;
-                offsetY = Math.sin(time * 8) * 2;
-                break;
-            case 'special':
-                offsetY = Math.sin(time * 4) * 4;
-                scale = 1 + Math.sin(time * 6) * 0.2;
-                rotation = Math.sin(time * 3) * 0.1;
-                break;
-        }
-        
-        ctx.save();
-        ctx.translate(centerX, centerY + offsetY);
-        ctx.scale(scale, scale);
-        ctx.rotate(rotation);
-        
-        // Draw champion with upgrades
-        const size = 18 + (level * 2);
-        const bodyGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, size);
-        
-        // Color based on health
-        const healthRatio = health / maxHealth;
-        if (healthRatio > 0.7) {
-            bodyGradient.addColorStop(0, 'rgba(120, 180, 255, 0.9)');
-            bodyGradient.addColorStop(0.7, 'rgba(60, 120, 200, 0.8)');
-            bodyGradient.addColorStop(1, 'rgba(30, 60, 100, 0.6)');
-        } else if (healthRatio > 0.3) {
-            bodyGradient.addColorStop(0, 'rgba(255, 180, 60, 0.9)');
-            bodyGradient.addColorStop(0.7, 'rgba(200, 120, 40, 0.8)');
-            bodyGradient.addColorStop(1, 'rgba(100, 60, 20, 0.6)');
+
+    function drawPlaceholderChampion(ctx, animationType, presentation) {
+        drawChampionPreview(ctx, presentation, animationType, { forcePlaceholder: true });
+    }
+
+    function drawChampionPreviewMinions(ctx, x, y, presentation, baseSize, time) {
+        const { skinTheme, champion, upgradeState } = presentation;
+        const theme = skinTheme?.minion || CHAMPION_SKIN_THEMES.default.minion;
+        let minionCount = 0;
+
+        if (champion && Array.isArray(store.championMinions) && store.championMinions.length) {
+            minionCount = Math.min(5, store.championMinions.length);
         } else {
-            bodyGradient.addColorStop(0, 'rgba(255, 80, 80, 0.9)');
-            bodyGradient.addColorStop(0.7, 'rgba(200, 40, 40, 0.8)');
-            bodyGradient.addColorStop(1, 'rgba(100, 20, 20, 0.6)');
+            minionCount = 2 + (upgradeState?.minionProtocols || 0);
         }
-        
-        ctx.beginPath();
-        ctx.arc(0, 0, size, 0, Math.PI * 2);
-        ctx.fillStyle = bodyGradient;
-        ctx.fill();
-        
-        // Draw level indicators
-        for (let i = 0; i < level && i < 5; i++) {
-            const angle = (i / 5) * Math.PI * 2;
-            const x = Math.cos(angle) * (size + 5);
-            const y = Math.sin(angle) * (size + 5);
-            
-            ctx.beginPath();
-            ctx.arc(x, y, 2, 0, Math.PI * 2);
-            ctx.fillStyle = '#ffff99';
-            ctx.fill();
-        }
-        
-        // Draw aura with pulse based on activity
-        const auraPulse = (champion.auraPulse || 0) + time * 2;
-        ctx.beginPath();
-        ctx.arc(0, 0, size + 8 + Math.sin(auraPulse) * 4, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(178, 102, 255, ${0.4 + Math.sin(auraPulse) * 0.3})`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        
-        ctx.restore();
-        
-        // Draw special effects for different animations
-        if (animationType === 'attack') {
-            drawAttackEffects(ctx, centerX, centerY + offsetY, time);
-        } else if (animationType === 'special') {
-            drawSpecialEffects(ctx, centerX, centerY + offsetY, time, champion);
-        }
-    }
-    
-    function drawAttackEffects(ctx, x, y, time) {
-        // Draw muzzle flash or energy discharge
-        const flash = Math.sin(time * 12);
-        if (flash > 0.5) {
+
+        if (minionCount <= 0) return;
+
+        const radius = baseSize * (1.9 + minionCount * 0.14);
+        for (let i = 0; i < minionCount; i++) {
+            const angle = time * 0.9 + (i / minionCount) * Math.PI * 2;
+            const px = x + Math.cos(angle) * radius;
+            const py = y + Math.sin(angle) * radius * 0.6;
+
             ctx.save();
-            ctx.translate(x + 25, y);
-            
-            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 15);
-            gradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
-            gradient.addColorStop(0.5, 'rgba(255, 200, 100, 0.6)');
-            gradient.addColorStop(1, 'rgba(255, 100, 100, 0.2)');
-            
+            ctx.globalAlpha = 0.5;
+            ctx.strokeStyle = withAlpha(theme.trail || '#4362a8', 0.4);
+            ctx.lineWidth = 1;
             ctx.beginPath();
-            ctx.arc(0, 0, 8, 0, Math.PI * 2);
-            ctx.fillStyle = gradient;
+            ctx.moveTo(x, y);
+            ctx.lineTo(px, py);
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.save();
+            ctx.translate(px, py);
+            ctx.globalAlpha = 0.82;
+            ctx.fillStyle = withAlpha(theme.core || '#bcd4ff', 0.9);
+            ctx.beginPath();
+            ctx.arc(0, 0, baseSize * 0.32, 0, Math.PI * 2);
             ctx.fill();
-            
+
+            ctx.globalAlpha = 0.7;
+            ctx.strokeStyle = withAlpha(theme.aura || '#82a7ff', 0.75);
+            ctx.lineWidth = 1.5;
+            const pulse = 1 + Math.sin(time * 3.2 + i) * 0.18;
+            ctx.beginPath();
+            ctx.arc(0, 0, baseSize * 0.44 * pulse, 0, Math.PI * 2);
+            ctx.stroke();
             ctx.restore();
         }
     }
-    
-    function drawSpecialEffects(ctx, x, y, time, champion) {
-        const player = store.player;
-        if (!player) return;
-        
-        // Draw effects based on player class
-        if (player.pilotGenome === 'voidmancer') {
-            // Lightning effects
-            for (let i = 0; i < 4; i++) {
-                const angle = (time * 3) + (i * Math.PI / 2);
-                const startX = x + Math.cos(angle) * 30;
-                const startY = y + Math.sin(angle) * 30;
-                const endX = x + Math.cos(angle) * 60;
-                const endY = y + Math.sin(angle) * 60;
-                
-                ctx.strokeStyle = `rgba(200, 200, 255, ${0.8 + Math.sin(time * 8 + i) * 0.2})`;
-                ctx.lineWidth = 2;
+
+    function drawChampionPreviewEffect(ctx, x, y, animationType, presentation, baseSize, time) {
+        const effectType = presentation.profile?.previewEffects?.[animationType];
+        const trailColor = presentation.skinTheme?.trail || '#78b4ff';
+        const accent = presentation.skinTheme?.body?.accent || trailColor;
+
+        switch (effectType) {
+            case 'shockwave': {
+                const waveCount = 3;
+                for (let i = 0; i < waveCount; i++) {
+                    const progress = (time * 1.4 + i * 0.4) % 1;
+                    const radius = baseSize * (1.4 + progress * 1.6);
+                    ctx.globalAlpha = 0.35 * (1 - progress);
+                    ctx.strokeStyle = withAlpha(accent, 0.7);
+                    ctx.lineWidth = 2.2;
+                    ctx.beginPath();
+                    ctx.arc(x, y + baseSize * 0.2, radius, Math.PI * 0.1, Math.PI - Math.PI * 0.1);
+                    ctx.stroke();
+                }
+                ctx.globalAlpha = 1;
+                break;
+            }
+            case 'overdrive': {
+                const plume = 3;
+                for (let i = 0; i < plume; i++) {
+                    const offset = (i - (plume - 1) / 2) * baseSize * 0.34;
+                    const scale = 1 + Math.sin(time * 6 + i) * 0.25;
+                    ctx.save();
+                    ctx.translate(x + offset, y + baseSize * 1.2);
+                    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, baseSize * 0.7 * scale);
+                    gradient.addColorStop(0, withAlpha(accent, 0.8));
+                    gradient.addColorStop(1, withAlpha(trailColor, 0));
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, baseSize * 0.34, baseSize * 0.86 * scale, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+                break;
+            }
+            case 'rocket-trail': {
+                for (let i = 0; i < 3; i++) {
+                    const offset = i * 8;
+                    ctx.globalAlpha = 0.7 - i * 0.2;
+                    ctx.fillStyle = withAlpha('#ffb380', 0.8 - i * 0.2);
+                    ctx.beginPath();
+                    ctx.arc(x - baseSize * 1.2 - offset, y + Math.sin(time * 4 + i) * 3, baseSize * (0.18 - i * 0.03), 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.globalAlpha = 1;
+                break;
+            }
+            case 'missile-burst': {
+                const burstCount = 4;
+                for (let i = 0; i < burstCount; i++) {
+                    const angle = time * 2 + i * (Math.PI * 2 / burstCount);
+                    const px = x + Math.cos(angle) * baseSize * 1.2;
+                    const py = y + Math.sin(angle) * baseSize * 0.8;
+                    ctx.save();
+                    ctx.translate(px, py);
+                    ctx.rotate(angle + Math.PI / 2);
+                    ctx.globalAlpha = 0.8;
+                    ctx.fillStyle = withAlpha('#ffd27b', 0.9);
+                    ctx.beginPath();
+                    ctx.moveTo(0, -baseSize * 0.26);
+                    ctx.lineTo(baseSize * 0.12, baseSize * 0.26);
+                    ctx.lineTo(-baseSize * 0.12, baseSize * 0.26);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.restore();
+                }
+                break;
+            }
+            case 'lightning-arc': {
+                const bolts = 4;
+                ctx.globalAlpha = 0.75;
+                ctx.lineWidth = 2.2;
+                ctx.strokeStyle = withAlpha('#d4e6ff', 0.9);
+                for (let i = 0; i < bolts; i++) {
+                    const angle = time * 2.4 + i * (Math.PI / 2);
+                    const ex = x + Math.cos(angle) * baseSize * 1.7;
+                    const ey = y + Math.sin(angle) * baseSize * 1.3;
+                    ctx.beginPath();
+                    ctx.moveTo(x, y - baseSize * 0.3);
+                    ctx.lineTo((x + ex) / 2 + Math.sin(time * 8 + i) * 6, (y + ey) / 2 + Math.cos(time * 7 + i) * 4);
+                    ctx.lineTo(ex, ey);
+                    ctx.stroke();
+                }
+                ctx.globalAlpha = 1;
+                break;
+            }
+            case 'laser-sweep': {
+                ctx.save();
+                ctx.globalAlpha = 0.8;
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.strokeStyle = withAlpha('#c6a4ff', 0.7);
+                ctx.lineWidth = 3.2;
                 ctx.beginPath();
-                ctx.moveTo(startX, startY);
-                ctx.lineTo(endX, endY);
+                ctx.moveTo(x, y - baseSize * 0.4);
+                ctx.lineTo(x, y - baseSize * 3.6);
                 ctx.stroke();
+                ctx.restore();
+                break;
             }
-        } else if (player.pilotGenome === 'rocketman') {
-            // Rocket trail effects
-            for (let i = 0; i < 3; i++) {
-                const trailX = x - i * 8;
-                const trailY = y + Math.sin(time * 4 + i) * 3;
-                
-                ctx.beginPath();
-                ctx.arc(trailX, trailY, 3 - i, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(255, 150, 50, ${0.8 - i * 0.2})`;
-                ctx.fill();
+            case 'core-flare':
+            default: {
+                const flash = Math.sin(time * 10);
+                if (flash > 0.45) {
+                    ctx.save();
+                    ctx.translate(x + baseSize * 1.1, y - baseSize * 0.25);
+                    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, baseSize * 0.6);
+                    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
+                    gradient.addColorStop(0.6, withAlpha(accent, 0.65));
+                    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, baseSize * 0.6, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                if (animationType === 'special') {
+                    const ringCount = 3;
+                    for (let i = 0; i < ringCount; i++) {
+                        const progress = (time * 0.9 + i * 0.2) % 1;
+                        ctx.globalAlpha = 0.4 * (1 - progress);
+                        ctx.strokeStyle = withAlpha(trailColor, 0.75);
+                        ctx.lineWidth = 1.6;
+                        ctx.beginPath();
+                        ctx.arc(x, y, baseSize * (1.2 + progress * 1.1), 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                    ctx.globalAlpha = 1;
+                }
+                break;
             }
-        } else if (player.pilotGenome === 'beef') {
-            // Charge energy effects
-            const pulse = Math.sin(time * 6);
-            ctx.strokeStyle = `rgba(255, 100, 100, ${0.6 + pulse * 0.3})`;
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.arc(x, y, 35 + pulse * 5, 0, Math.PI * 2);
-            ctx.stroke();
         }
     }
     
     function updateChampionStats() {
-        const champion = store.playerChampion;
-        const player = store.player;
-        
-        // Default stats for when champion is not yet spawned
-        let stats = {
-            health: 100,
-            maxHealth: 100,
+        const presentation = getChampionPresentation();
+        const { champion, player } = presentation;
+        const levels = player?.upgradeLevels || {};
+
+        const stats = {
+            health: 180,
+            maxHealth: 180,
             shield: 0,
             maxShield: 0,
-            attackPower: 25,
-            fireRate: 1.5,
-            level: 1,
-            experience: 0,
-            maxExp: 100
+            attackPower: 28,
+            fireRate: 1.4,
+            level: champion?.level || 1,
+            experience: champion?.xp || 0,
+            maxExp: getChampionLevelUpCost(champion?.level || 1)
         };
-        
-        // Update with actual champion stats if available
+
         if (champion) {
             stats.health = Math.floor(champion.hp || 0);
-            stats.maxHealth = Math.floor(champion.hpMax || 100);
+            stats.maxHealth = Math.floor(champion.hpMax || 0) || 180;
             stats.shield = Math.floor(champion.shield || 0);
             stats.maxShield = Math.floor(champion.shieldMax || 0);
             stats.level = champion.level || 1;
             stats.experience = champion.xp || 0;
             stats.maxExp = getChampionLevelUpCost(stats.level);
-            stats.fireRate = 1 / (champion.fireCooldown || 1.5);
-            
-            // Calculate attack power based on level and upgrades
-            const baseDamage = 25 + (stats.level * 8);
+            stats.fireRate = 1 / Math.max(0.2, champion.fireCooldown || 1.5);
+
+            const baseDamage = 25 + stats.level * 8;
             const damageScale = champion.damageScale || 1;
             stats.attackPower = Math.floor(baseDamage * damageScale);
+        } else {
+            const healthBonus = 1 + (levels.champion_health || 0) * 0.2;
+            stats.maxHealth = Math.round(stats.maxHealth * healthBonus);
+            stats.health = stats.maxHealth;
+            stats.maxShield = (levels.champion_shield || 0) * 30;
+            stats.shield = stats.maxShield;
+            stats.attackPower = Math.round(stats.attackPower + (levels.champion_damage || 0) * 25);
+            stats.fireRate = 1.4 + (levels.champion_speed || 0) * 0.12;
         }
-        
-        // Update stat displays
+
+        applyChampionLoadoutLabels(presentation);
+
         q('championHealthStat').textContent = `${stats.health}/${stats.maxHealth}`;
         q('championShieldStat').textContent = stats.maxShield > 0 ? `${stats.shield}/${stats.maxShield}` : 'None';
         q('championAttackStat').textContent = stats.attackPower;
         q('championFireRateStat').textContent = `${stats.fireRate.toFixed(1)}/s`;
         q('championLevelStat').textContent = stats.level;
         q('championExpStat').textContent = `${stats.experience}/${stats.maxExp}`;
-        
-        // Update attack types
-        updateChampionAttackTypes();
-        
-        // Update active upgrades
-        updateChampionUpgrades();
+
+        updateChampionAttackTypes(presentation);
+        updateChampionUpgrades(presentation);
     }
     
-    function updateChampionAttackTypes() {
-        const player = store.player;
+    function updateChampionAttackTypes(presentation = getChampionPresentation()) {
         const container = q('championAttackTypesList');
         if (!container) return;
-        
+
         container.innerHTML = '';
-        
+
+        const { profile, upgradeState } = presentation;
         const attackTypes = [];
-        
-        // Base attack based on pilot class
-        if (player && player.pilotGenome) {
-            switch (player.pilotGenome) {
-                case 'beef':
-                    attackTypes.push({
-                        name: 'Charge Attack',
-                        description: 'Devastating close-range charge that deals massive damage'
-                    });
-                    attackTypes.push({
-                        name: 'Energy Volley',
-                        description: 'Standard ranged projectile attacks'
-                    });
-                    break;
-                case 'rocketman':
-                    attackTypes.push({
-                        name: 'Stealth Rockets',
-                        description: 'Guided missiles that track enemies'
-                    });
-                    attackTypes.push({
-                        name: 'Energy Volley',
-                        description: 'Standard ranged projectile attacks'
-                    });
-                    break;
-                case 'voidmancer':
-                    attackTypes.push({
-                        name: 'Chain Lightning',
-                        description: 'Lightning that jumps between multiple enemies'
-                    });
-                    attackTypes.push({
-                        name: 'Void Laser',
-                        description: 'Sustained beam weapon with high damage'
-                    });
-                    attackTypes.push({
-                        name: 'Energy Volley',
-                        description: 'Standard ranged projectile attacks'
-                    });
-                    break;
-                default:
-                    attackTypes.push({
-                        name: 'Energy Volley',
-                        description: 'Standard ranged projectile attacks'
-                    });
-                    break;
+        const seen = new Set();
+
+        if (upgradeState?.attackModule && upgradeState.attackModule !== 'default') {
+            const module = CHAMPION_ATTACK_MODULE_MAP[upgradeState.attackModule];
+            if (module) {
+                attackTypes.push({
+                    id: `module-${module.id}`,
+                    name: `${module.name}`,
+                    icon: module.icon || '🛠️',
+                    description: module.desc
+                });
+                seen.add(`module-${module.id}`);
             }
-        } else {
+        }
+
+        (profile?.abilityHighlights || []).forEach(ability => {
+            if (!ability) return;
+            const key = ability.id || ability.name;
+            if (seen.has(key)) return;
+            seen.add(key);
+            attackTypes.push(ability);
+        });
+
+        if (!attackTypes.length) {
             attackTypes.push({
                 name: 'Energy Volley',
-                description: 'Standard ranged projectile attacks'
+                icon: '🔹',
+                description: 'Adaptive plasma volley that scales with guardian level.'
             });
         }
-        
-        // Add dash ability
-        attackTypes.push({
-            name: 'Shadow Dash',
-            description: 'Quick teleport through enemies dealing damage'
-        });
-        
-        // Create attack type elements
+
         attackTypes.forEach(attack => {
             const div = document.createElement('div');
             div.className = 'attack-type-item';
+            const iconHtml = attack.icon ? `<span class="ability-icon">${attack.icon}</span>` : '';
             div.innerHTML = `
-                <div class="attack-name">${attack.name}</div>
-                <div>${attack.description}</div>
+                <div class="attack-name">${iconHtml}${attack.name}</div>
+                <div>${attack.description || ''}</div>
             `;
             container.appendChild(div);
         });
     }
     
-    function updateChampionUpgrades() {
-        const player = store.player;
-        const champion = store.playerChampion;
+    function updateChampionUpgrades(presentation = getChampionPresentation()) {
         const container = q('championUpgradesList');
         if (!container) return;
-        
+
         container.innerHTML = '';
-        
+
+        const { player, champion, upgradeState, skinOption, profile } = presentation;
+        const levels = player?.upgradeLevels || {};
         const upgrades = [];
-        
-        // Check for champion-related upgrades
-        if (player && player.upgradeLevels) {
-            const levels = player.upgradeLevels;
-            
-            if (levels.champion_health > 0) {
+
+        const cadenceOption = CHAMPION_CADENCE_LEVELS[upgradeState?.cadenceLevel || 0] || CHAMPION_CADENCE_LEVELS[0];
+        upgrades.push({
+            name: `Cadence · ${cadenceOption.name}`,
+            description: cadenceOption.desc
+        });
+
+        const protocolOption = CHAMPION_MINION_PROTOCOL_LEVELS[upgradeState?.minionProtocols || 0] || CHAMPION_MINION_PROTOCOL_LEVELS[0];
+        upgrades.push({
+            name: `Minion Protocol · ${protocolOption.name}`,
+            description: protocolOption.desc
+        });
+
+        if (upgradeState?.attackModule && upgradeState.attackModule !== 'default') {
+            const module = CHAMPION_ATTACK_MODULE_MAP[upgradeState.attackModule];
+            if (module) {
                 upgrades.push({
-                    name: 'Enhanced Vitality',
-                    description: `Health increased by ${levels.champion_health * 20}%`,
-                    level: levels.champion_health
+                    name: `Attack Module · ${module.name}`,
+                    description: module.desc
                 });
             }
-            
-            if (levels.champion_damage > 0) {
-                upgrades.push({
-                    name: 'Combat Amplifier',
-                    description: `Attack power increased by ${levels.champion_damage * 25}%`,
-                    level: levels.champion_damage
-                });
-            }
-            
-            if (levels.champion_speed > 0) {
-                upgrades.push({
-                    name: 'Mobility Enhancement',
-                    description: `Movement and attack speed increased by ${levels.champion_speed * 15}%`,
-                    level: levels.champion_speed
-                });
-            }
-            
-            if (levels.champion_shield > 0) {
-                upgrades.push({
-                    name: 'Defensive Matrix',
-                    description: `Shield capacity increased by ${levels.champion_shield * 30} points`,
-                    level: levels.champion_shield
-                });
-            }
-            
-            if (levels.champion_regen > 0) {
-                upgrades.push({
-                    name: 'Auto-Repair System',
-                    description: `Regenerates ${levels.champion_regen * 2} health per second`,
-                    level: levels.champion_regen
-                });
-            }
+        } else {
+            upgrades.push({
+                name: 'Attack Module · Standard Volley',
+                description: 'Baseline plasma barrage configured for general engagements.'
+            });
         }
-        
-        // Add champion level bonuses
+
+        if (skinOption) {
+            upgrades.push({
+                name: `Skin · ${skinOption.name}`,
+                description: skinOption.desc || profile?.signature || ''
+            });
+        }
+
+        if (levels.champion_health > 0) {
+            upgrades.push({
+                name: 'Enhanced Vitality',
+                description: `Health increased by ${levels.champion_health * 20}%`,
+                level: levels.champion_health
+            });
+        }
+
+        if (levels.champion_damage > 0) {
+            upgrades.push({
+                name: 'Combat Amplifier',
+                description: `Attack power increased by ${levels.champion_damage * 25}%`,
+                level: levels.champion_damage
+            });
+        }
+
+        if (levels.champion_speed > 0) {
+            upgrades.push({
+                name: 'Mobility Enhancement',
+                description: `Movement and attack speed increased by ${levels.champion_speed * 15}%`,
+                level: levels.champion_speed
+            });
+        }
+
+        if (levels.champion_shield > 0) {
+            upgrades.push({
+                name: 'Defensive Matrix',
+                description: `Shield capacity increased by ${levels.champion_shield * 30} points`,
+                level: levels.champion_shield
+            });
+        }
+
+        if (levels.champion_regen > 0) {
+            upgrades.push({
+                name: 'Auto-Repair System',
+                description: `Regenerates ${levels.champion_regen * 2} health per second`,
+                level: levels.champion_regen
+            });
+        }
+
         if (champion && champion.level > 1) {
             upgrades.push({
                 name: 'Combat Experience',
-                description: `Level ${champion.level} - All abilities enhanced`,
+                description: `Level ${champion.level} — Guardian combat AI unlocked new tactics`,
                 level: champion.level
             });
         }
-        
-        // If no upgrades, show placeholder
-        if (upgrades.length === 0) {
+
+        if (!upgrades.length) {
             const div = document.createElement('div');
             div.className = 'upgrade-item';
             div.innerHTML = `
@@ -17856,18 +18603,19 @@ function render(dt) {
                 <div>Visit the Upgrade Hangar to enhance your champion</div>
             `;
             container.appendChild(div);
-        } else {
-            // Create upgrade elements
-            upgrades.forEach(upgrade => {
-                const div = document.createElement('div');
-                div.className = 'upgrade-item';
-                div.innerHTML = `
-                    <div class="upgrade-name">${upgrade.name} ${upgrade.level > 1 ? `(Lv.${upgrade.level})` : ''}</div>
-                    <div>${upgrade.description}</div>
-                `;
-                container.appendChild(div);
-            });
+            return;
         }
+
+        upgrades.forEach(upgrade => {
+            const div = document.createElement('div');
+            div.className = 'upgrade-item';
+            const levelTag = upgrade.level && upgrade.level > 1 ? ` (Lv.${upgrade.level})` : '';
+            div.innerHTML = `
+                <div class="upgrade-name">${upgrade.name}${levelTag}</div>
+                <div>${upgrade.description || ''}</div>
+            `;
+            container.appendChild(div);
+        });
     }
     
     function getChampionLevelUpCost(currentLevel) {
@@ -18151,13 +18899,16 @@ function render(dt) {
                 const angle = Math.atan2(target.y - minion.y, target.x - minion.x);
                 const speed = 340 + (owner.level || 1) * 30;
                 const damage = (18 + (owner.level || 1) * 6) * (store.player?.dmgMult || 1) * (minion.damageScale || 1);
+                const abilityModule = minion.abilityModule || owner.attackModule || getChampionUpgradeState().attackModule || 'default';
+                const abilityTheme = minion.abilityTheme || getChampionMinionAbilityTheme(abilityModule);
+                const projectileColor = abilityTheme?.trail || abilityTheme?.ring || '#cdd0ff';
                 const bullet = spawnBullet({
                     x: minion.x,
                     y: minion.y,
                     vx: Math.cos(angle) * speed,
                     vy: Math.sin(angle) * speed,
                     r: 4,
-                    col: '#cdd0ff',
+                    col: projectileColor,
                     dmg: damage,
                     life: 1.6,
                     pierce: owner.level >= 4,
@@ -18544,11 +19295,39 @@ function render(dt) {
         if (!minion) return;
         const level = owner?.level || 1;
         const baseRadius = 6 + Math.min(level, 3);
-    const now = performance.now() / 1000;
-    const pulse = 0.6 + 0.35 * Math.sin(now * 6 + (minion.pulsePhase || 0));
-    const swirl = now * 5.2 + (minion.swirlPhase || 0);
+        const now = performance.now() / 1000;
+        const pulse = 0.6 + 0.35 * Math.sin(now * 6 + (minion.pulsePhase || 0));
+        const swirl = now * 5.2 + (minion.swirlPhase || 0);
         const fireCooldown = Math.max(0.12, minion.fireCooldown || 0.6);
         const fireRatio = Math.max(0, Math.min(1, (minion.fireTimer || 0) / fireCooldown));
+
+        const upgrades = getChampionUpgradeState();
+        const abilityModule = minion.abilityModule || owner?.attackModule || (upgrades ? upgrades.attackModule : 'default') || 'default';
+        const abilityTheme = minion.abilityTheme || getChampionMinionAbilityTheme(abilityModule);
+        const fallbackSkin = owner?.skinTheme?.minion || (upgrades ? getChampionSkinTheme(upgrades.skin).minion : getChampionSkinTheme('default').minion);
+        const skinTheme = minion.skinTheme || fallbackSkin || {};
+
+        const auraTheme = abilityTheme.aura || {};
+        const tailTheme = abilityTheme.tail || {};
+        const thrusterTheme = abilityTheme.thruster || {};
+        const coreTheme = abilityTheme.core || {};
+        const swirlPrimary = abilityTheme.swirlPrimary || withAlpha(skinTheme.aura || '#82a7ff', 0.75);
+        const swirlSecondary = abilityTheme.swirlSecondary || withAlpha(skinTheme.trail || '#4362a8', 0.6);
+        const highlightFill = abilityTheme.highlight || withAlpha(skinTheme.core || '#bcd4ff', 0.9);
+        const ringColor = abilityTheme.ring || withAlpha(skinTheme.aura || '#82a7ff', level >= 5 ? 0.9 : 0.8);
+        const thrusterInner = thrusterTheme.inner || withAlpha(skinTheme.aura || '#82a7ff', 0.85);
+        const thrusterOuter = thrusterTheme.outer || 'rgba(20, 40, 80, 0)';
+        const trailColor = abilityTheme.trail || skinTheme.trail || '#4362a8';
+        const tailStart = tailTheme.start || withAlpha(trailColor, 0);
+        const tailMid = tailTheme.mid || withAlpha(trailColor, 0.35);
+        const tailEnd = tailTheme.end || withAlpha(trailColor, 0.75);
+        const auraInner = auraTheme.inner || withAlpha(skinTheme.aura || '#82a7ff', 0.78);
+        const auraMid = auraTheme.mid || withAlpha(skinTheme.aura || '#82a7ff', 0.5);
+        const auraOuter = auraTheme.outer || 'rgba(20, 40, 80, 0)';
+        const coreInner = coreTheme.inner || skinTheme.core || '#f2f6ff';
+        const coreMid = coreTheme.mid || withAlpha(skinTheme.core || '#bcd4ff', 0.9);
+        const coreOuter = coreTheme.outer || withAlpha(skinTheme.trail || '#4362a8', 0.95);
+        const coreEdge = coreTheme.edge || withAlpha(trailColor, 1);
 
         ctx.save();
         ctx.translate(minion.x, minion.y);
@@ -18561,9 +19340,9 @@ function render(dt) {
             ctx.rotate(angleToOwner + Math.PI);
             ctx.globalAlpha = 0.32 + 0.28 * (1 - fireRatio);
             const tailGradient = ctx.createLinearGradient(-tailLength, 0, 0, 0);
-            tailGradient.addColorStop(0, 'rgba(25, 28, 52, 0)');
-            tailGradient.addColorStop(0.9, 'rgba(70, 80, 150, 0.28)');
-            tailGradient.addColorStop(1, 'rgba(150, 160, 245, 0.72)');
+            tailGradient.addColorStop(0, tailStart);
+            tailGradient.addColorStop(0.85, tailMid);
+            tailGradient.addColorStop(1, tailEnd);
             ctx.fillStyle = tailGradient;
             ctx.beginPath();
             ctx.moveTo(-tailLength, -baseRadius * 0.55);
@@ -18580,9 +19359,9 @@ function render(dt) {
         ctx.globalAlpha = 0.4 + 0.25 * (1 - fireRatio);
         const auraRadius = baseRadius * (1.9 + pulse * 0.35 + level * 0.1);
         const auraGradient = ctx.createRadialGradient(0, 0, baseRadius * 0.2, 0, 0, auraRadius);
-        auraGradient.addColorStop(0, 'rgba(150, 200, 255, 0.7)');
-        auraGradient.addColorStop(0.52, `rgba(80, 140, 220, ${0.4 + level * 0.05})`);
-        auraGradient.addColorStop(1, 'rgba(20, 40, 80, 0)');
+        auraGradient.addColorStop(0, auraInner);
+        auraGradient.addColorStop(0.55, auraMid);
+        auraGradient.addColorStop(1, auraOuter);
         ctx.fillStyle = auraGradient;
         ctx.beginPath();
         ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
@@ -18593,7 +19372,7 @@ function render(dt) {
         ctx.rotate(swirl * 0.4);
         ctx.globalAlpha = 0.4 + 0.2 * (1 - fireRatio);
         ctx.lineWidth = 1.25;
-        ctx.strokeStyle = 'rgba(100, 160, 255, 0.7)';
+        ctx.strokeStyle = swirlPrimary;
         ctx.beginPath();
         ctx.ellipse(0, 0, baseRadius * (1.18 + 0.08 * Math.sin(swirl)), baseRadius * (0.62 + 0.1 * Math.cos(swirl * 1.3)), 0, 0, Math.PI * 2);
         ctx.stroke();
@@ -18603,7 +19382,7 @@ function render(dt) {
         ctx.rotate(-swirl * 0.45);
         ctx.globalAlpha = 0.25 + 0.2 * (1 - fireRatio);
         ctx.lineWidth = 0.9;
-        ctx.strokeStyle = 'rgba(60, 120, 200, 0.6)';
+        ctx.strokeStyle = swirlSecondary;
         ctx.beginPath();
         ctx.ellipse(0, 0, baseRadius * 1.45, baseRadius * 0.78, 0, 0, Math.PI * 2);
         ctx.stroke();
@@ -18611,10 +19390,10 @@ function render(dt) {
 
         ctx.globalAlpha = 0.95;
         const coreGradient = ctx.createRadialGradient(0, 0, baseRadius * 0.22, 0, 0, baseRadius * 0.92);
-        coreGradient.addColorStop(0, 'rgba(180, 220, 255, 0.95)');
-        coreGradient.addColorStop(0.4, 'rgba(100, 160, 240, 0.9)');
-        coreGradient.addColorStop(0.75, 'rgba(40, 80, 160, 0.95)');
-        coreGradient.addColorStop(1, 'rgba(20, 35, 70, 1)');
+        coreGradient.addColorStop(0, withAlpha(coreInner, 0.98));
+        coreGradient.addColorStop(0.42, withAlpha(coreMid, 0.92));
+        coreGradient.addColorStop(0.78, withAlpha(coreOuter, 0.96));
+        coreGradient.addColorStop(1, withAlpha(coreEdge, 1));
         ctx.fillStyle = coreGradient;
         ctx.beginPath();
         ctx.arc(0, 0, baseRadius * (0.95 + pulse * 0.05), 0, Math.PI * 2);
@@ -18622,7 +19401,7 @@ function render(dt) {
 
         ctx.globalAlpha = 0.8;
         ctx.lineWidth = 1.6;
-        ctx.strokeStyle = level >= 5 ? 'rgba(120, 180, 255, 0.9)' : 'rgba(80, 140, 220, 0.85)';
+        ctx.strokeStyle = level >= 5 ? withAlpha(ringColor, 1) : ringColor;
         ctx.beginPath();
         ctx.arc(0, 0, baseRadius * 1.1, 0, Math.PI * 2);
         ctx.stroke();
@@ -18630,7 +19409,7 @@ function render(dt) {
         ctx.save();
         ctx.rotate(0.12 * Math.sin(swirl));
         ctx.globalAlpha = 0.9;
-        ctx.fillStyle = 'rgba(140, 190, 255, 0.9)';
+        ctx.fillStyle = highlightFill;
         ctx.beginPath();
         ctx.moveTo(-baseRadius * 0.52, -baseRadius * 0.12);
         ctx.quadraticCurveTo(-baseRadius * 0.12, -baseRadius * 0.58, baseRadius * 0.48, -baseRadius * 0.05);
@@ -18638,15 +19417,15 @@ function render(dt) {
         ctx.closePath();
         ctx.fill();
         ctx.globalAlpha = 0.65;
-        ctx.strokeStyle = 'rgba(60, 120, 200, 0.85)';
+        ctx.strokeStyle = withAlpha(trailColor, 0.85);
         ctx.lineWidth = 0.9;
         ctx.stroke();
         ctx.restore();
 
         ctx.globalAlpha = 0.6 * (1 - fireRatio);
         const thrusterGradient = ctx.createRadialGradient(0, baseRadius * 0.95, baseRadius * 0.1, 0, baseRadius * 1.25, baseRadius * 0.6);
-        thrusterGradient.addColorStop(0, 'rgba(120, 180, 255, 0.8)');
-        thrusterGradient.addColorStop(1, 'rgba(40, 80, 160, 0)');
+        thrusterGradient.addColorStop(0, thrusterInner);
+        thrusterGradient.addColorStop(1, thrusterOuter);
         ctx.fillStyle = thrusterGradient;
         ctx.beginPath();
         ctx.ellipse(0, baseRadius * 1.05, baseRadius * 0.6, baseRadius * 0.36, 0, 0, Math.PI * 2);
@@ -18923,6 +19702,11 @@ function render(dt) {
         const { x, y, mode } = beefClone;
         ctx.save();
         ctx.translate(x, y);
+
+        const facing = beefClone.direction || 1;
+        if (facing < 0) {
+            ctx.scale(-1, 1);
+        }
 
         if (mode === 'juggernaut_bomber') {
             const time = performance.now();
@@ -21649,7 +22433,7 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
             case 'marauder_clone':
                 p.hasBeefClone = true;
                 p.juggernautCloneActive = false;
-                store.beefClone = { x: p.x, y: p.y + 50, t: 0, mode: 'mirror' };
+                store.beefClone = createMirrorClone(p, store.beefClone);
                 announce('BATTLE CLONE ACTIVATED - Green ally summoned!');
                 break;
                 
@@ -22393,9 +23177,7 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
         champion.fireTimer = Math.max(0.05, (champion.fireCooldown || PLAYER_CHAMPION_CONFIG.baseFireCooldown) * 0.15);
         champion.dashCooldown = Math.max(0.6, champion.dashCooldownBase * (CHAMPION_CADENCE_LEVELS[upgrades.cadenceLevel]?.dashCooldownMult || 1));
 
-        if (store.world) {
-            store.world.gold = Math.max(store.world.gold || 0, 600);
-        }
+        setWorldGold(Math.max(getWorldGold(), 600));
 
         announce(`CHEAT: Champion test loadout (${rotation.label}) online!`);
         playSound('epicHorn');
@@ -22407,7 +23189,7 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
         store.cheatsUsed = true;
         announce('CHEAT: POWER UP!');
         resetGame();
-        store.world.gold = 2000;
+    setWorldGold(2000);
         store.player.multishot = 5;
         initWave();
         cheatCodeBuffer = "";
