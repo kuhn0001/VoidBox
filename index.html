@@ -2454,6 +2454,7 @@ function createParticle(x, y, vx, vy, color, life) {
     let lastExplosionSoundTime = 0;
     let lastBossHitSoundTime = 0;
     let lastClusterSoundTime = 0;
+    let lastChampionThunderTime = 0;
     const SOUND_COOLDOWNS = {
         thunder: 1500,
         epicHorn: 2500
@@ -16941,8 +16942,13 @@ function render(dt) {
     }
 
     function championCastLightning(champion, target, dmgMult) {
-        // Play thunder sound
-        playSound('thunder');
+        // Play thunder sound with extended cooldown for champions to prevent constant spam
+        // This is separate from the global thunder cooldown to allow boss/ability sounds while limiting champion spam
+        const now = performance.now();
+        if (now - lastChampionThunderTime >= 3000) { // 3 second cooldown for champion thunder specifically
+            playSound('thunder');
+            lastChampionThunderTime = now;
+        }
         
         const damage = (35 + (champion.level || 1) * 10) * dmgMult;
         const maxJumps = 2 + Math.floor((champion.level || 1) / 2);
@@ -17188,8 +17194,8 @@ function render(dt) {
                     addShadowEcho(champion.x, champion.y);
                     champion.fireTimer = 0.4;
                 } else {
-                    // 30% chance to use special class ability instead of normal volley
-                    if (Math.random() < 0.3) {
+                    // 15% chance to use special class ability instead of normal volley (reduced from 30% to prevent spam)
+                    if (Math.random() < 0.15) {
                         championUseSpecialAbility(champion, target);
                     } else {
                         championFireVolley(champion, target);
