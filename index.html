@@ -1956,7 +1956,7 @@
                         <div class="forge-menu-section">
                             <div class="forge-menu-grid">
                                 <button id="openShopFromMenu" class="forge-menu-btn" type="button">
-                                    <span class="forge-menu-btn-title">💰 UPGRADE HANGAR</span>
+                                    <span class="forge-menu-btn-title">🏆 SHIP UPGRADES and ABILITIES 🏆</span>
                                     <div class="forge-menu-desc">Upgrade systems and equipment, or spend saved gold.</div>
                                 </button>
                                 <button id="openCharacterSheet" class="forge-menu-btn" type="button">
@@ -21184,7 +21184,31 @@ function performBlinkSlash(player, bullet, now = performance.now()) {
     // Upgrade Hangar menu event listeners
     q("closeMechForgeMenu").addEventListener("click", () => { q("mechForgeMenuPanel").classList.add("hide"); resumeGame(); });
     q("closeMechForgeMenuBtn").addEventListener("click", () => { q("mechForgeMenuPanel").classList.add("hide"); resumeGame(); });
-    q("openShopFromMenu").addEventListener("click", () => { q("mechForgeMenuPanel").classList.add("hide"); showShop(); });
+    q("openShopFromMenu").addEventListener("click", () => { 
+        // Hide the menu first
+        q("mechForgeMenuPanel").classList.add("hide");
+        
+        // Add a small delay to ensure menu is hidden and no conflicting modals are open
+        setTimeout(() => {
+            // Close any potentially conflicting modals/panels
+            const subclassPanel = q("subclassPanel");
+            const pilotPanel = q("pilotSelectPanel");
+            const scorePanel = q("scorePanel");
+            
+            if (subclassPanel && !subclassPanel.classList.contains("hide")) {
+                subclassPanel.classList.add("hide");
+            }
+            if (pilotPanel && !pilotPanel.classList.contains("hide")) {
+                pilotPanel.classList.add("hide");
+            }
+            if (scorePanel && !scorePanel.classList.contains("hide")) {
+                scorePanel.classList.add("hide");
+            }
+            
+            // Now show the shop
+            showShop();
+        }, 50);
+    });
     q("openCharacterSheet").addEventListener("click", () => { q("mechForgeMenuPanel").classList.add("hide"); showCharacterSheet(); });
     q("openSkillTreeReadonly").addEventListener("click", () => { q("mechForgeMenuPanel").classList.add("hide"); showSkillTreeReadonly(); });
     q("openShopTutorial").addEventListener("click", () => {
