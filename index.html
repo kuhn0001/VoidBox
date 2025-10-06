@@ -6937,77 +6937,265 @@
                 };
                 const BOSS_CHAMPION_LOOP = 6;
 
+                // ═══════════════════════════════════════════════════════════════════════
+                // ENHANCED WAVE SYSTEM: Themed Tactical Challenges
+                // ═══════════════════════════════════════════════════════════════════════
+                // Each wave presents a unique tactical scenario designed to reward specific
+                // playstyles and challenge different ability sets:
+                //
+                // PLAYSTYLE TESTS:
+                // • AOE Damage (E-bullets, Multishot) → Excels in SWARM_HELL waves
+                // • Single-Target DPS (Phase Striker) → Critical in TANK_RUSH/ELITE_ASSAULT
+                // • Multi-Target (Chain Lightning, Railgunner) → Shines in PRECISION_TEST
+                // • Melee/Close Range (Flamethrower) → Effective vs SWARM_HELL
+                //
+                // VULNERABILITY SYSTEM:
+                // • Juggernaut (fire/explosive) → Bonus vs Mech
+                // • Marauder (kinetic/concussive) → Bonus vs Manta
+                // • Railgunner (kinetic/explosive) → Bonus vs Phantom
+                // • Demolitioner (fire/explosive) → Bonus vs Void Champion Orb
+                // • Phasestriker (void/magic) → Bonus vs Void Champion
+                // • Stormbringer (lightning/magic) → Bonus vs Angler
+                //
+                // WAVE THEMES PROGRESSION:
+                // Waves 1-2:   TUTORIAL - Basic mechanics
+                // Waves 3-5:   MIXED_BASICS - Enemy variety introduction
+                // Waves 6-8:   TANK_INTRO - First tanky enemies
+                // Waves 9-12:  SWARM_HELL - Mass targets for AOE builds
+                // Waves 13-15: PRECISION_TEST - Spread formations for multi-target
+                // Waves 16-19: TANK_RUSH - High HP enemies for sustained DPS
+                // Waves 20-24: MIXED_TACTICS - Adaptability test
+                // Waves 25-29: VULNERABILITY_TEST - Class synergy critical
+                // Waves 30-34: DODGE_HELL - Evasive enemies stress tracking
+                // Waves 35-39: ELITE_ASSAULT - Heavy hitters with support
+                // Waves 40+:   ULTIMATE_CHAOS - All systems engaged
+                //
+                // MOVEMENT PROTOCOLS:
+                // • SWARM: Fast homing (construct_gold, avian_hatchling)
+                // • PURSUIT: Aggressive tracking (hunter)
+                // • BASIC: Simple downward with light tracking (drone)
+                // • TANK: Slow, steady, horizontal tracking (angler, mech)
+                // • WEAVE: Sinusoidal patterns (manta)
+                // • DODGE: Unpredictable phase-shift (phantom)
+                // • CHARGE: Periodic dash attacks (void_champion)
+                // ═══════════════════════════════════════════════════════════════════════
+                
                 const WAVE_SPAWN_PROFILES = [
+                    // WAVES 40+: ULTIMATE GAUNTLET - All systems tested simultaneously
+                    {
+                        minWave: 40,
+                        theme: 'ULTIMATE_CHAOS',
+                        description: 'All enemy types, maximum chaos',
+                        forced: ['manta', 'angler', 'mech', 'phantom'],
+                        weights: {
+                            manta: 3.2,
+                            angler: 3.0,
+                            mech: 2.6,
+                            phantom: 2.0,
+                            hunter: 1.8,
+                            avian_hatchling: 1.4,
+                            construct_gold: 1.4,
+                            drone: 1.0
+                        },
+                        special: [
+                            { interval: 4, offset: 0, types: ['manta', 'angler'] },
+                            { interval: 5, offset: 2, types: ['phantom', 'mech'] },
+                            { interval: 6, offset: 1, types: ['avian_hatchling', 'construct_gold'] }
+                        ]
+                    },
+                    
+                    // WAVES 35-39: ELITE ASSAULT - Heavy hitters dominate
                     {
                         minWave: 35,
+                        theme: 'ELITE_ASSAULT',
+                        description: 'Tanky elites with support swarms - tests single-target DPS',
                         forced: ['manta', 'manta', 'angler', 'mech'],
                         weights: {
-                            manta: 3.4,
-                            angler: 2.8,
-                            mech: 2.4,
-                            phantom: 1.4,
-                            construct_gold: 1.25,
-                            avian_hatchling: 1.1,
-                            hunter: 0.6,
-                            drone: 0.35
+                            manta: 3.0,      // Dodge tanks (Marauder weak)
+                            angler: 2.8,      // Slow tanks (Stormbringer weak)
+                            mech: 2.4,        // Heavy tanks (Juggernaut weak)
+                            phantom: 1.4,     // Phase dodgers (Railgunner weak)
+                            construct_gold: 1.2,
+                            avian_hatchling: 1.0,
+                            hunter: 0.7,
+                            drone: 0.4
                         },
                         special: [
                             { interval: 5, offset: 1, types: ['construct_gold', 'avian_hatchling'] },
-                            { interval: 7, offset: 0, types: ['manta', 'angler'] }
+                            { interval: 6, offset: 0, types: ['manta', 'angler'] }
                         ]
                     },
+                    
+                    // WAVES 30-34: DODGE GAUNTLET - Evasive enemies stress tracking
                     {
-                        minWave: 24,
+                        minWave: 30,
+                        theme: 'DODGE_HELL',
+                        description: 'Evasive enemies that dodge attacks - rewards AOE and prediction',
+                        forced: ['manta', 'phantom', 'phantom'],
+                        weights: {
+                            manta: 2.8,       // Sinusoidal dodge
+                            phantom: 2.6,     // Phase shift
+                            avian_hatchling: 2.0,  // Erratic fast
+                            hunter: 1.4,
+                            construct_gold: 1.2,
+                            mech: 0.8,
+                            drone: 0.6,
+                            angler: 0.4
+                        },
+                        special: [
+                            { interval: 4, offset: 1, types: ['phantom'] },
+                            { interval: 5, offset: 3, types: ['manta'] }
+                        ]
+                    },
+                    
+                    // WAVES 25-29: VULNERABILITY MASTERS - Class synergy critical
+                    {
+                        minWave: 25,
+                        theme: 'VULNERABILITY_TEST',
+                        description: 'Mixed enemies with vulnerability focus - rewards class-specific builds',
                         forced: ['angler', 'mech', 'phantom'],
                         weights: {
-                            manta: 2.2,
-                            angler: 2.2,
+                            angler: 2.2,      // Stormbringer target
+                            mech: 2.0,        // Juggernaut target
+                            phantom: 1.8,     // Railgunner target
+                            manta: 1.6,       // Marauder target
+                            hunter: 1.2,
+                            construct_gold: 1.0,
+                            avian_hatchling: 0.9,
+                            drone: 0.5
+                        },
+                        special: [
+                            { interval: 5, offset: 0, types: ['angler', 'mech'] },
+                            { interval: 6, offset: 3, types: ['phantom', 'manta'] }
+                        ]
+                    },
+                    
+                    // WAVES 20-24: MIXED TACTICS - Balanced challenge
+                    {
+                        minWave: 20,
+                        theme: 'MIXED_TACTICS',
+                        description: 'Balanced mix - tests adaptability',
+                        forced: ['angler', 'mech', 'phantom'],
+                        weights: {
+                            manta: 2.0,
+                            angler: 1.8,
                             mech: 1.6,
                             phantom: 1.5,
-                            construct_gold: 1.05,
-                            avian_hatchling: 0.95,
-                            hunter: 0.9,
-                            drone: 0.45
+                            hunter: 1.2,
+                            construct_gold: 1.0,
+                            avian_hatchling: 0.9,
+                            drone: 0.5
                         },
                         special: [
-                            { interval: 6, offset: 3, types: ['construct_gold'] }
+                            { interval: 6, offset: 3, types: ['construct_gold', 'avian_hatchling'] },
+                            { interval: 5, offset: 0, types: ['mech', 'angler'] }
                         ]
                     },
+                    
+                    // WAVES 16-19: TANK RUSH - High HP enemies test sustained DPS
                     {
                         minWave: 16,
-                        forced: ['mech', 'phantom'],
+                        theme: 'TANK_RUSH',
+                        description: 'Fewer but tankier enemies - tests single-target damage',
+                        forced: ['mech', 'mech'],
                         weights: {
-                            mech: 1.8,
-                            phantom: 1.6,
-                            hunter: 1.4,
-                            avian_hatchling: 0.75,
-                            construct_gold: 0.6,
-                            drone: 0.9
+                            mech: 2.4,        // Slow, tanky, high damage
+                            angler: 1.6,      // Very tanky
+                            phantom: 1.4,     // Medium tank
+                            hunter: 1.0,
+                            manta: 0.6,
+                            construct_gold: 0.5,
+                            avian_hatchling: 0.4,
+                            drone: 0.3
                         },
                         special: [
-                            { interval: 5, offset: 2, types: ['avian_hatchling'] }
+                            { interval: 4, offset: 1, types: ['mech'] },
+                            { interval: 7, offset: 3, types: ['angler'] }
                         ]
                     },
+                    
+                    // WAVES 13-15: PRECISION TEST - Spaced targets reward accuracy
+                    {
+                        minWave: 13,
+                        theme: 'PRECISION_TEST',
+                        description: 'Spread formation - tests multi-target abilities',
+                        forced: ['phantom', 'hunter'],
+                        weights: {
+                            phantom: 2.0,     // Phase enemies spread out
+                            hunter: 1.8,      // Fast, spread targeting
+                            mech: 1.2,
+                            avian_hatchling: 0.8,
+                            construct_gold: 0.7,
+                            drone: 0.6
+                        },
+                        special: [
+                            { interval: 5, offset: 2, types: ['phantom'] },
+                            { interval: 6, offset: 0, types: ['hunter'] }
+                        ]
+                    },
+                    
+                    // WAVES 9-12: SWARM HELL - Many weak enemies test AOE damage
                     {
                         minWave: 9,
-                        forced: ['phantom'],
+                        theme: 'SWARM_HELL',
+                        description: 'Many weak, fast enemies - AOE abilities shine',
+                        forced: ['construct_gold', 'avian_hatchling'],
                         weights: {
-                            phantom: 1.5,
-                            hunter: 1.2,
-                            mech: 0.95,
-                            construct_gold: 0.5,
-                            drone: 1
+                            construct_gold: 2.2,  // Fast homing
+                            avian_hatchling: 2.0, // Very fast homing
+                            drone: 1.8,           // Basic swarm
+                            hunter: 1.4,          // Fast tracking
+                            phantom: 0.8,
+                            mech: 0.3
+                        },
+                        special: [
+                            { interval: 3, offset: 0, types: ['construct_gold', 'avian_hatchling'] },
+                            { interval: 4, offset: 2, types: ['drone', 'hunter'] }
+                        ]
+                    },
+                    
+                    // WAVES 6-8: INTRODUCTION TO TANKS - First tanky enemy
+                    {
+                        minWave: 6,
+                        theme: 'TANK_INTRO',
+                        description: 'Introducing tanky mechs mixed with basic enemies',
+                        forced: ['mech'],
+                        weights: {
+                            mech: 1.4,        // First tank enemy
+                            hunter: 1.6,
+                            drone: 1.8,
+                            phantom: 0.6
+                        },
+                        special: [
+                            { interval: 5, offset: 2, types: ['mech'] }
+                        ]
+                    },
+                    
+                    // WAVES 3-5: MIXED BASICS - Learning enemy variety
+                    {
+                        minWave: 3,
+                        theme: 'MIXED_BASICS',
+                        description: 'Introduction to enemy variety',
+                        forced: ['hunter'],
+                        weights: {
+                            drone: 2.0,
+                            hunter: 1.6,
+                            phantom: 0.4
                         },
                         special: [
                             { interval: 4, offset: 1, types: ['hunter'] }
                         ]
                     },
+                    
+                    // WAVES 1-2: TUTORIAL - Pure basics
                     {
                         minWave: 1,
+                        theme: 'TUTORIAL',
+                        description: 'Basic drones only - learning the ropes',
                         forced: [],
                         weights: {
-                            drone: 2.5,
-                            hunter: 1.1
+                            drone: 3.0,
+                            hunter: 0.8
                         },
                         special: []
                     }
@@ -7207,6 +7395,7 @@
                     store.pendingSpawnCount = 0;
 
                     // NEW SCALING SYSTEM: After wave 35, stop increasing spawn count and increase enemy stats instead
+                    // ENHANCED: Wave themes modify spawn counts for tactical variety
                     let baseSpawnCount, spawnCount, lateGameScaling = 1;
 
                     if (store.world.wave <= 35) {
@@ -7221,6 +7410,37 @@
                         // Calculate what the spawn count WOULD have been, use that as scaling factor
                         const theoreticalSpawnCount = Math.floor((7 + Math.floor(store.world.wave * 1.8)) * store.world.enemyDensityBonus);
                         lateGameScaling = theoreticalSpawnCount / baseSpawnCount; // This becomes our health/damage multiplier
+                    }
+
+                    // WAVE THEME MODIFIERS: Adjust spawn count and enemy stats based on wave archetype
+                    const currentWaveProfile = getSpawnProfileForWave(store.world.wave);
+                    if (currentWaveProfile && currentWaveProfile.theme) {
+                        switch (currentWaveProfile.theme) {
+                            case 'SWARM_HELL':
+                                // More enemies, but each slightly weaker
+                                spawnCount = Math.floor(spawnCount * 1.4);
+                                lateGameScaling *= 0.85;
+                                break;
+                            case 'TANK_RUSH':
+                            case 'ELITE_ASSAULT':
+                                // Fewer enemies, but each significantly stronger
+                                spawnCount = Math.floor(spawnCount * 0.65);
+                                lateGameScaling *= 1.45;
+                                break;
+                            case 'DODGE_HELL':
+                                // Normal count, enemies have more evasion (handled in movement)
+                                spawnCount = Math.floor(spawnCount * 0.9);
+                                break;
+                            case 'PRECISION_TEST':
+                                // Moderate count, spread formation
+                                spawnCount = Math.floor(spawnCount * 1.1);
+                                lateGameScaling *= 0.95;
+                                break;
+                            case 'VULNERABILITY_TEST':
+                                // Balanced count, rewards class builds
+                                lateGameScaling *= 1.1;
+                                break;
+                        }
                     }
 
                     // Store late-game scaling factor globally for damage calculations
@@ -7310,6 +7530,28 @@
 
                     store.world.waveStartTime = performance.now();
                     announce(`◢ SECTOR ${store.world.wave} ◣`);
+                    
+                    // Announce wave theme for tactical context
+                    const waveProfile = getSpawnProfileForWave(store.world.wave);
+                    if (waveProfile && waveProfile.theme && store.world.wave >= 6) {
+                        const themeAnnouncements = {
+                            'TUTORIAL': '',  // Skip announcement for tutorial waves
+                            'MIXED_BASICS': '',
+                            'TANK_INTRO': '⚠️ HEAVY ARMOR DETECTED ⚠️',
+                            'SWARM_HELL': '⚡ SWARM INBOUND // AOE RECOMMENDED ⚡',
+                            'PRECISION_TEST': '🎯 SCATTERED TARGETS // MULTI-TARGET OPTIMAL 🎯',
+                            'TANK_RUSH': '🛡️ REINFORCED HOSTILES // HIGH HP THREATS 🛡️',
+                            'MIXED_TACTICS': '⚔️ COMBINED ARMS ASSAULT ⚔️',
+                            'VULNERABILITY_TEST': '💎 EXPLOIT WEAKNESSES // CLASS SYNERGY KEY 💎',
+                            'DODGE_HELL': '🌀 EVASIVE MANEUVERS // PREDICTION CRITICAL 🌀',
+                            'ELITE_ASSAULT': '👑 ELITE SQUADRON // FOCUS FIRE ADVISED 👑',
+                            'ULTIMATE_CHAOS': '💀 MAXIMUM THREAT LEVEL // ALL SKILLS REQUIRED 💀'
+                        };
+                        const themeMessage = themeAnnouncements[waveProfile.theme];
+                        if (themeMessage) {
+                            setTimeout(() => announce(themeMessage), 800);
+                        }
+                    }
                 }
             }
 
@@ -7611,13 +7853,65 @@
             function spawnClusterEnemies(event) {
                 const clusterSize = event.enemies.length;
                 const centerX = Math.max(80, Math.min(W - 80, 80 + Math.random() * (W - 160)));
-                const spacing = Math.max(40, 140 - clusterSize * 10);
+                
+                // THEMED SPAWN FORMATIONS based on current wave profile
+                const waveProfile = getSpawnProfileForWave(store.world.wave);
+                let spacing = Math.max(40, 140 - clusterSize * 10);
+                let formationStyle = 'line'; // default: horizontal line
+                
+                if (waveProfile && waveProfile.theme) {
+                    switch (waveProfile.theme) {
+                        case 'SWARM_HELL':
+                            // Tight clusters for overwhelming swarms
+                            spacing *= 0.6;
+                            formationStyle = 'cluster';
+                            break;
+                        case 'TANK_RUSH':
+                        case 'ELITE_ASSAULT':
+                            // Wide spread for tanky enemies
+                            spacing *= 1.4;
+                            formationStyle = 'spread';
+                            break;
+                        case 'PRECISION_TEST':
+                            // Maximum spread to test multi-target
+                            spacing *= 1.8;
+                            formationStyle = 'spread';
+                            break;
+                        case 'DODGE_HELL':
+                            // Staggered formation
+                            formationStyle = 'stagger';
+                            break;
+                    }
+                }
+                
                 let spawnedThisCluster = 0;
 
                 event.enemies.forEach((spec, idx) => {
-                    const lateralOffset = (idx - (clusterSize - 1) / 2) * spacing + (Math.random() - 0.5) * 35;
+                    let lateralOffset, spawnY;
+                    
+                    // Apply formation-specific positioning
+                    switch (formationStyle) {
+                        case 'cluster':
+                            // Tight cluster with more randomness
+                            lateralOffset = (idx - (clusterSize - 1) / 2) * spacing + (Math.random() - 0.5) * 60;
+                            spawnY = -140 - Math.random() * 80;
+                            break;
+                        case 'spread':
+                            // Wide spread, minimal randomness
+                            lateralOffset = (idx - (clusterSize - 1) / 2) * spacing + (Math.random() - 0.5) * 20;
+                            spawnY = -180 - Math.random() * 100;
+                            break;
+                        case 'stagger':
+                            // Alternating heights for dodge patterns
+                            lateralOffset = (idx - (clusterSize - 1) / 2) * spacing + (Math.random() - 0.5) * 35;
+                            spawnY = -140 - (idx % 2 === 0 ? 0 : 80) - Math.random() * 60;
+                            break;
+                        default: // 'line'
+                            lateralOffset = (idx - (clusterSize - 1) / 2) * spacing + (Math.random() - 0.5) * 35;
+                            spawnY = -160 - Math.random() * 120;
+                    }
+                    
                     const spawnX = Math.max(40, Math.min(W - 40, centerX + lateralOffset));
-                    const spawnY = -160 - Math.random() * 120;
                     const props = { ...(spec.props || {}), x: spawnX, y: spawnY };
                     const enemy = spawnEnemy(spec.type, props);
                     store.pendingSpawnCount = Math.max(0, (store.pendingSpawnCount || 0) - 1);
@@ -9704,22 +9998,85 @@
                             speedMultiplier *= 0.6;
                         }
 
+                        // SWARM PROTOCOL: Fast homing enemies (construct_gold, avian_hatchling)
                         if (e.type === 'construct_gold' || e.type === 'avian_hatchling') {
                             const dx = store.player.x - e.x, dy = store.player.y - e.y, dist = Math.sqrt(dx * dx + dy * dy);
                             if (dist > 1) {
-                                e.x += (dx / dist) * e.v * speedMultiplier * dt;
-                                e.y += (dy / dist) * e.v * speedMultiplier * dt;
+                                // Swarm enemies move directly toward player with slight randomness
+                                const wobble = Math.sin(e.t * 8) * 15; // Add micro-dodges
+                                const perpX = -dy / dist;
+                                const perpY = dx / dist;
+                                e.x += ((dx / dist) * e.v + perpX * wobble) * speedMultiplier * dt;
+                                e.y += ((dy / dist) * e.v + perpY * wobble) * speedMultiplier * dt;
+                            }
+                        } else if (e.type === 'drone') {
+                            // BASIC PROTOCOL: Simple downward movement with slight tracking
+                            const wave = store.world.wave || 1;
+                            if (wave >= 9) {
+                                // In swarm waves, drones get basic homing
+                                const dx = store.player.x - e.x;
+                                const trackingStrength = 0.3; // Gentle tracking
+                                if (Math.abs(dx) > 20) {
+                                    e.x += Math.sign(dx) * 25 * trackingStrength * speedMultiplier * dt;
+                                }
+                            }
+                            e.y += e.v * speedMultiplier * dt;
+                        } else if (e.type === 'hunter') {
+                            // PURSUIT PROTOCOL: Aggressive tracking
+                            const dx = store.player.x - e.x;
+                            const dy = store.player.y - e.y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            if (dist > 1) {
+                                // Hunters actively pursue with full 2D movement
+                                const pursueFactor = 0.6; // 60% toward player, 40% downward
+                                e.x += (dx / dist) * e.v * pursueFactor * speedMultiplier * dt;
+                                e.y += ((dy / dist) * e.v * pursueFactor + e.v * (1 - pursueFactor)) * speedMultiplier * dt;
+                            } else {
+                                e.y += e.v * speedMultiplier * dt;
                             }
                         } else if (e.type === 'angler') {
+                            // TANK PROTOCOL: Slow, steady, horizontal tracking only
                             const dx = store.player.x - e.x;
                             if (Math.abs(dx) > 10) e.x += Math.sign(dx) * 30 * speedMultiplier * dt;
+                            e.y += e.v * speedMultiplier * dt;
+                        } else if (e.type === 'phantom') {
+                            // DODGE PROTOCOL: Unpredictable phase-shifting movement
+                            const wave = store.world.wave || 1;
+                            if (wave >= 13) {
+                                // In precision/dodge waves, phantoms weave horizontally
+                                const weaveSpeed = 40;
+                                const weavePattern = Math.sin(e.t * 2.5) * weaveSpeed;
+                                e.x += weavePattern * speedMultiplier * dt;
+                                // Clamp to screen
+                                e.x = Math.max(e.r + 10, Math.min(W - e.r - 10, e.x));
+                            }
+                            // Phantoms also move down like normal
+                            e.y += e.v * speedMultiplier * dt;
+                        } else if (e.type === 'mech') {
+                            // HEAVY TANK PROTOCOL: Methodical advance with minimal deviation
+                            // Mechs are slow and steady, tracking player horizontally
+                            const dx = store.player.x - e.x;
+                            const trackSpeed = 20; // Slower than angler
+                            if (Math.abs(dx) > 15) {
+                                e.x += Math.sign(dx) * trackSpeed * speedMultiplier * dt;
+                            }
                             e.y += e.v * speedMultiplier * dt;
                         } else if (e.type === 'manta') {
                             e.t += dt;
 
-                            // DISABLED DODGE SYSTEM - was causing enemies to jump off-screen and become unkillable
-                            // Simple sinusoidal snake movement only
-                            e.x = e.startX + e.amplitude * Math.sin(e.t * e.frequency);
+                            // WEAVE PROTOCOL: Sinusoidal snake movement
+                            // Enhanced for dodge-focused waves
+                            const wave = store.world.wave || 1;
+                            let waveAmplitude = e.amplitude;
+                            let waveFrequency = e.frequency;
+                            
+                            if (wave >= 30) {
+                                // In dodge hell waves, mantas weave more aggressively
+                                waveAmplitude *= 1.3;
+                                waveFrequency *= 1.2;
+                            }
+                            
+                            e.x = e.startX + waveAmplitude * Math.sin(e.t * waveFrequency);
                             e.y += e.v * speedMultiplier * dt;
                         } else if (e.type === 'shadow_champion') {
                             const boss = store.boss && store.boss.behavior === 'shadow_clone' ? store.boss : null;
