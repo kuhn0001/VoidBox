@@ -9056,27 +9056,11 @@
                         p.y += joystickState.input.y * moveSpeed * dt;
                         p.x = clamp(p.x, 20, W - 20); p.y = clamp(p.y, 20, H - 20);
                     } else {
-                        // Mouse Movement (Original Logic) with Free Cursor Zone at Bottom
-                        // Calculate free cursor zone height (ability bar + buttons + margins)
-                        // Ability bar: 10px bottom + 14px padding + 18px font + 14px padding = ~56px
-                        // Corner buttons: 20px bottom + 14.4px padding + 16px font + 14.4px padding = ~65px
-                        // Use the larger of the two plus some buffer
-                        const freeCursorZoneHeight = 80;
-                        const adjustedMouseY = mouse.y < H - freeCursorZoneHeight ? mouse.y : mouse.y;
-                        
-                        let targetX = mouse.x;
-                        let targetY = mouse.y;
-                        
-                        // If mouse is in the free cursor zone, don't follow it vertically
-                        if (mouse.y > H - freeCursorZoneHeight) {
-                            targetY = Math.min(p.y, H - freeCursorZoneHeight);
-                        }
-                        
-                        const vx = targetX - p.x, vy = targetY - p.y;
+                        const vx = mouse.x - p.x, vy = mouse.y - p.y;
                         const dist = Math.sqrt(vx * vx + vy * vy);
                         if (dist < 15) {
-                            p.x = targetX;
-                            p.y = targetY;
+                            p.x = mouse.x;
+                            p.y = mouse.y;
                         } else {
                             const accelFactor = 0.0125;
                             p.x += vx * p.speed * dt * accelFactor;
