@@ -6366,7 +6366,7 @@
                         return `Calibration Mk${pad(upcomingLevel)} ▸ ${bursts} alternating blasts • ${cooldown}s reload.`;
                     }
                 },
-                'iceman': { name: "THE ICEMAN", icon: '❄️', cost: 118, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.hasIceman) { store.player.hasIceman = true; store.iceman = { x: store.player.x, y: store.player.y + 50, t: 0 }; return true; } return false; }, desc: () => `A clone mirrors your attacks.` },
+                'iceman': { name: "THE ICEMAN", icon: '❄️', cost: 118, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.hasIceman) { store.player.hasIceman = true; const isMini = store.player.miniAbilities && store.player.miniAbilities.has('iceman'); store.iceman = { x: store.player.x, y: store.player.y + 50, t: 0, isMini }; return true; } return false; }, desc: () => `A clone mirrors your attacks.` },
                 'lazarus_beam': { name: "LORD LAZARUS", icon: '☢️☄️☢️', baseCost: 200, scale: 3, maxLevel: 2, category: 'attack', effect: (level) => { if (level === 0) { store.player.hasLazarusBeam = true; store.player.lazarusBeamCooldown = 15; } }, desc: level => { if (level === 0) return 'Lazarus smites foes twice as often.'; if (level === 1) return 'Lazarus fires two beams at once.'; return 'Max Level'; } },
                 'magnet_pull': { name: "GRAV-PULSE", icon: '🧲', cost: 90, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (store.player.magnetRadius <= 0) { store.player.magnetRadius = 150; return true; } return false; }, desc: () => `Pulls in nearby powerups.` },
                 'gravity_well': { name: "GRAVITY WELL", icon: '🕳️', baseCost: 300, scale: 2, maxLevel: 2, category: 'attack', effect: (level) => { if (level === 0) { store.player.hasVoidBeam = true; store.player.voidBeamCooldown = 15; } }, desc: level => { if (level === 0) return 'Unleash a singularity that traps and crushes foes.'; if (level === 1) return 'Summon a second, smaller singularity.'; return 'Max Level'; } },
@@ -6382,16 +6382,17 @@
                             store.hounds = [];
                         }
 
+                        const isMini = store.player.miniAbilities && store.player.miniAbilities.has('ghost_hounds');
                         if (level === 0) {
                             store.player.hasHounds = true;
-                            store.hounds.push(createHound(-1));
-                            store.hounds.push(createHound(1));
+                            store.hounds.push(createHound(-1, isMini));
+                            store.hounds.push(createHound(1, isMini));
                         } else if (level === 1) {
-                            store.hounds.push(createHound(-2));
-                            store.hounds.push(createHound(2));
+                            store.hounds.push(createHound(-2, isMini));
+                            store.hounds.push(createHound(2, isMini));
                         } else if (level === 2) {
-                            store.hounds.push(createHound(3));
-                            store.hounds.push(createHound(4));
+                            store.hounds.push(createHound(3, isMini));
+                            store.hounds.push(createHound(4, isMini));
                         }
 
                         playSound('dogs');
@@ -7024,6 +7025,14 @@
                 
                 // Apply the upgrade for free
                 const result = attemptPurchaseUpgrade(selectedKey, { silent: true, free: true });
+                
+                // Mark boss-tier abilities as mini versions
+                if (result.success && tier === 'bossTier') {
+                    if (!store.player.miniAbilities) store.player.miniAbilities = new Set();
+                    if (['gravity_well', 'lazarus_beam', 'ghost_hounds', 'launcher', 'iceman', 'grenade'].includes(selectedKey)) {
+                        store.player.miniAbilities.add(selectedKey);
+                    }
+                }
                 
                 if (result.success) {
                     // Show popup with upgrade details
@@ -9432,8 +9441,8 @@
                     }
                 }
                 if (p.hasRearGuard && p.rearGuardCooldown > 0) { p.rearGuardCooldown -= dt; if (p.rearGuardCooldown <= 0) { p.rearGuardReady = true; } }
-                if (p.hasVoidBeam) { p.voidBeamCooldown -= dt; if (p.voidBeamCooldown <= 0) { activateGravityWell(); p.voidBeamCooldown = 30; } }
-                if (p.hasLazarusBeam) { p.lazarusBeamCooldown -= dt; if (p.lazarusBeamCooldown <= 0) { activateLazarus(); p.lazarusBeamCooldown = 30 / (p.upgradeLevels.lazarus_beam > 0 ? 2 : 1); } }
+                if (p.hasVoidBeam) { p.voidBeamCooldown -= dt; if (p.voidBeamCooldown <= 0) { const isMini = p.miniAbilities && p.miniAbilities.has('gravity_well'); activateGravityWell(isMini ? 0.4 : 1.0); p.voidBeamCooldown = 30; } }
+                if (p.hasLazarusBeam) { p.lazarusBeamCooldown -= dt; if (p.lazarusBeamCooldown <= 0) { const isMini = p.miniAbilities && p.miniAbilities.has('lazarus_beam'); activateLazarus(isMini ? 0.5 : 1.0); p.lazarusBeamCooldown = 30 / (p.upgradeLevels.lazarus_beam > 0 ? 2 : 1); } }
                 // Handle poison effects
                 if (p.isPoisoned && performance.now() > p.poisonEndTime) {
                     p.isPoisoned = false;
@@ -13357,18 +13366,20 @@
                 }));
                 if (p.hasLauncher) {
                     const speed = 350;
+                    const isMini = p.miniAbilities && p.miniAbilities.has('launcher');
+                    const fragmentRadius = isMini ? 2.5 : 4; // Mini fragments are smaller
                     const numPairs = store.player.upgradeLevels.launcher || 1;
                     for (let i = 0; i < numPairs; i++) {
                         const spread = 15 + i * 10;
                         const vx_offset = 50 + i * 20;
-                        spawnBullet({ x: p.x - spread, y: p.y, vx: -vx_offset, vy: -speed, r: 4, col: '#ff8080', dmg: 2 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true });
-                        spawnBullet({ x: p.x + spread, y: p.y, vx: vx_offset, vy: -speed, r: 4, col: '#ff8080', dmg: 2 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true });
+                        spawnBullet({ x: p.x - spread, y: p.y, vx: -vx_offset, vy: -speed, r: fragmentRadius, col: '#ff8080', dmg: 2 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true });
+                        spawnBullet({ x: p.x + spread, y: p.y, vx: vx_offset, vy: -speed, r: fragmentRadius, col: '#ff8080', dmg: 2 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true });
                         if (p.hasIceman && store.iceman) {
-                            spawnBullet({ x: store.iceman.x - spread, y: store.iceman.y, vx: -vx_offset, vy: -speed, r: 4, col: '#66aaff', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true });
-                            spawnBullet({ x: store.iceman.x + spread, y: store.iceman.y, vx: vx_offset, vy: -speed, r: 4, col: '#66aaff', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true });
+                            spawnBullet({ x: store.iceman.x - spread, y: store.iceman.y, vx: -vx_offset, vy: -speed, r: fragmentRadius, col: '#66aaff', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true });
+                            spawnBullet({ x: store.iceman.x + spread, y: store.iceman.y, vx: vx_offset, vy: -speed, r: fragmentRadius, col: '#66aaff', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true });
                         }
                         if (p.hasBeefClone && store.beefClone && store.beefClone.mode !== 'juggernaut_bomber') {
-                            spawnBullet({ x: store.beefClone.x - spread, y: store.beefClone.y, vx: -vx_offset, vy: -speed, r: 4, col: '#66ff66', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isBeefClone: true });
+                            spawnBullet({ x: store.beefClone.x - spread, y: store.beefClone.y, vx: -vx_offset, vy: -speed, r: fragmentRadius, col: '#66ff66', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isBeefClone: true });
                             spawnBullet({ x: store.beefClone.x + spread, y: store.beefClone.y, vx: vx_offset, vy: -speed, r: 4, col: '#66ff66', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isBeefClone: true });
                         }
                     }
@@ -20508,20 +20519,25 @@
                         };
                         break;
                     case "gravityWell":
+                        // Use radius parameter as scale factor (default 1.0 for normal, 0.4 for mini)
+                        const scale = radius || 1.0;
+                        effect.scale = scale;
                         effect.maxLife = 7;
                         effect.life = 7;
                         effect.radius = 0;
-                        effect.maxRadius = 150;
+                        effect.maxRadius = scale < 1.0 ? 60 : 150; // Mini version much smaller visual
+                        effect.effectRadius = scale < 1.0 ? 90 : 150; // Mini has larger effective area than visual
                         effect.damagePulseT = 1;
                         effect.totalDamageDealtToBoss = 0;
                         effect.stars = [];
-                        for (let i = 0; i < 50; i++) {
+                        const starCount = scale < 1.0 ? 20 : 50; // Fewer stars for mini version
+                        for (let i = 0; i < starCount; i++) {
                             const angle = Math.random() * Math.PI * 2;
                             const dist = Math.random() * effect.maxRadius;
                             effect.stars.push({
                                 x: Math.cos(angle) * dist,
                                 y: Math.sin(angle) * dist,
-                                r: Math.random() * 1.5,
+                                r: scale < 1.0 ? Math.random() * 0.8 : Math.random() * 1.5, // Smaller stars for mini
                                 initialDist: dist
                             });
                         }
@@ -20543,7 +20559,8 @@
                             }
 
                             const pullStrength = 300;
-                            const damageRadiusSq = (this.maxRadius * 0.7) ** 2;
+                            const effectiveRadius = this.effectRadius || this.maxRadius;
+                            const damageRadiusSq = (effectiveRadius * 0.7) ** 2;
 
                             store.enemies.forEach(e => {
                                 if (e.dead) {
@@ -20553,7 +20570,7 @@
                                 const dy = this.y - e.y;
                                 const distSq = dx * dx + dy * dy;
 
-                                if (distSq < this.radius ** 2) {
+                                if (distSq < effectiveRadius ** 2) {
                                     const dist = Math.sqrt(distSq);
                                     if (dist > 10) {
                                         const resistance = (e.type === 'mech' || e.type === 'hunter') ? 0.7 : 1.0;
@@ -20581,7 +20598,8 @@
                                 const dx = this.x - b.x;
                                 const dy = this.y - b.y;
                                 const distSq = dx * dx + dy * dy;
-                                if (distSq < this.radius ** 2) {
+                                const effectiveRadius = this.effectRadius || this.maxRadius;
+                                if (distSq < effectiveRadius ** 2) {
                                     const dist = Math.sqrt(distSq);
                                     if (dist > 50) {
                                         b.x += (dx / dist) * pullStrength * 0.5 * dt;
@@ -20643,14 +20661,15 @@
                                 ctx.stroke();
                             }
 
-                            const corePulse = 3 + Math.sin(time / 100) * 2;
+                            const coreScale = this.scale < 1.0 ? 0.5 : 1.0; // Much smaller core for mini version
+                            const corePulse = (3 + Math.sin(time / 100) * 2) * coreScale;
                             const coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, corePulse * 2);
                             coreGrad.addColorStop(0, 'rgba(255, 255, 255, 1)');
                             coreGrad.addColorStop(0.5, 'rgba(200, 220, 255, 0.7)');
                             coreGrad.addColorStop(1, 'rgba(150, 150, 255, 0)');
                             ctx.fillStyle = coreGrad;
                             ctx.shadowColor = 'white';
-                            ctx.shadowBlur = 15;
+                            ctx.shadowBlur = 15 * coreScale;
                             ctx.beginPath();
                             ctx.arc(0, 0, corePulse * 2, 0, Math.PI * 2);
                             ctx.fill();
@@ -24336,7 +24355,7 @@
                 }
             }
 
-            function createHound(side) {
+            function createHound(side, isMini = false) {
                 const isTuxedo = side === -1 || side === -2;
                 let color = isTuxedo ? { main: '#222222', accent: '#FFFFFF' } : { main: '#F0E68C', accent: '#BDB76B' };
 
@@ -24345,7 +24364,7 @@
                 let expression = 'normal';
                 let breed = 'standard';
                 let eyeConfig = null;
-                let radius = 12;
+                let radius = isMini ? 8 : 12; // Mini hounds are smaller
 
                 if (Math.abs(side) > 1) {
                     isUpgraded = true;
@@ -24360,7 +24379,7 @@
                     } else if (side === 3 || side === 4) {
                         breed = 'bernese';
                         color = { main: '#1C1C1C', accent: '#FFFFFF', tan: '#6E4C2E' };
-                        radius = 14;
+                        radius = isMini ? 10 : 14; // Mini bernese are smaller too
                         if (side === 3) {
                             eyeType = 'heterochromia';
                             eyeConfig = { type: 'heterochromia', colors: ['#5DADE2', '#8B4513'] };
@@ -24385,7 +24404,8 @@
                     eyeType,
                     eyeConfig,
                     expression,
-                    breed
+                    breed,
+                    isMini
                 };
             }
             function stepHounds(dt) { if (!store.player.hasHounds) return; store.hounds.forEach(h => { if (!h.target || h.target.dead || h.target.hp <= 0) { let closest = null, closestDist = Infinity; const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies; potentialTargets.forEach(e => { if (e.dead || e.hp <= 0) return; const dist = (h.x - e.x) ** 2 + (h.y - e.y) ** 2; if (dist < closestDist) { closestDist = dist; closest = e; } }); h.target = closest; } if (h.target) { const tx = h.target.x, ty = h.target.y; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); const speed = 350; if (dist > 30) { h.x += (dx / dist) * speed * dt; h.y += (dy / dist) * speed * dt; } else { h.attackT -= dt; if (h.attackT <= 0) { h.attackT = 0.25; let dmg = 8 * store.player.dmgMult; if (h.target === store.boss) dmg *= 0.3; if (!h.target.dead && h.target.hp > 0) { h.target.hp -= dmg; if (store.player.vampirism > 0) { let healAmount = dmg * store.player.vampirism; healAmount = Math.max(healAmount, 0.5); healAmount = Math.min(healAmount, 2); store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount); } if (h.target.hp <= 0) { h.killCount++; if (h.killCount > 0 && h.killCount % 12 === 0) { playSound('dogs'); } } } } } } else { const tx = store.player.x + h.side * 50, ty = store.player.y + 20; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); if (dist > 5) { h.x += dx * 5 * dt; h.y += dy * 5 * dt; } } }); }
@@ -25262,9 +25282,11 @@
             }
 
             function drawIceman(iceman) {
-                const { x, y } = iceman;
+                const { x, y, isMini } = iceman;
                 ctx.save();
                 ctx.translate(x, y);
+                const scale = isMini ? 0.6 : 1.0; // Mini iceman is 60% the size
+                ctx.scale(scale, scale);
                 ctx.globalAlpha = 0.6 + 0.2 * Math.sin(performance.now() / 200);
 
                 ctx.beginPath();
@@ -25494,25 +25516,26 @@
                 ctx.restore();
             }
 
-            function activateGravityWell() {
+            function activateGravityWell(scale = 1.0) {
                 if (!store.isPaused) {
                     const spawnX = W * 0.2 + Math.random() * W * 0.6;
                     const spawnY = H * 0.2 + Math.random() * H * 0.6;
-                    store.activeEffects.push(createEffect("gravityWell", spawnX, spawnY));
-                    announce('GRAVITY WELL ACTIVATED');
+                    store.activeEffects.push(createEffect("gravityWell", spawnX, spawnY, scale));
+                    announce(scale < 1.0 ? 'MINI GRAVITY WELL ACTIVATED' : 'GRAVITY WELL ACTIVATED');
                     screenFlash(2, 250, 'rgba(255, 255, 255, 0.7)');
                 }
             }
-            function activateLazarus() {
+            function activateLazarus(scale = 1.0) {
                 if (store.player.hasLazarusBeam && !store.isPaused) {
                     const angle = Math.random() * 2 * Math.PI,
                         speed = 800,
                         p = store.player;
-                    store.lasers.push({ x: p.x, y: p.y, prevX: p.x, prevY: p.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 6, r: 12, hitEnemies: new Set });
+                    const laserRadius = scale < 1.0 ? 6 : 12; // Mini version has half the width
+                    store.lasers.push({ x: p.x, y: p.y, prevX: p.x, prevY: p.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 6, r: laserRadius, hitEnemies: new Set, isMini: scale < 1.0 });
 
                     if (p.upgradeLevels.lazarus_beam > 1) {
                         const oppositeAngle = angle + Math.PI;
-                        store.lasers.push({ x: p.x, y: p.y, prevX: p.x, prevY: p.y, vx: Math.cos(oppositeAngle) * speed, vy: Math.sin(oppositeAngle) * speed, life: 6, r: 12, hitEnemies: new Set });
+                        store.lasers.push({ x: p.x, y: p.y, prevX: p.x, prevY: p.y, vx: Math.cos(oppositeAngle) * speed, vy: Math.sin(oppositeAngle) * speed, life: 6, r: laserRadius, hitEnemies: new Set, isMini: scale < 1.0 });
                     }
                 }
             }
@@ -25539,10 +25562,12 @@
                 playSound('thunder');
                 p.grenades--;
 
+                const isMini = p.miniAbilities && p.miniAbilities.has('grenade');
+                const radius = isMini ? EMP_BURST_CONFIG.radius * 0.6 : EMP_BURST_CONFIG.radius; // Mini EMP is 60% radius
                 screenFlash(1, 140, 'rgba(100, 200, 255, 0.2)');
-                store.activeEffects.push(createEffect('empShockwave', p.x, p.y, EMP_BURST_CONFIG.radius));
+                store.activeEffects.push(createEffect('empShockwave', p.x, p.y, radius));
 
-                const radiusSq = EMP_BURST_CONFIG.radius * EMP_BURST_CONFIG.radius;
+                const radiusSq = radius * radius;
                 const targets = store.boss ? [...store.enemies, store.boss] : store.enemies;
 
                 targets.forEach(enemy => {
