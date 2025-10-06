@@ -3612,6 +3612,19 @@
         </div>
     </div>
 
+    <!-- Upgrade Popup Panel -->
+    <div id="upgradePopupPanel" class="panel panel-floating-close hide">
+        <div style="text-align: center; padding: 20px;">
+            <div id="upgradePopupIcon" style="font-size: 48px; margin-bottom: 15px;">⚡</div>
+            <h2 id="upgradePopupTitle" style="font-family:'Orbitron';color:var(--accent);margin:0 0 10px 0;">UPGRADE ACQUIRED</h2>
+            <p id="upgradePopupDesc" style="color:#ffddff;font-size:14px;line-height:1.5;margin-bottom:20px;">
+                Enhancement applied to your systems.
+            </p>
+            <div id="upgradePopupTier" style="color:#b19cd9;font-size:12px;margin-bottom:20px;text-transform:uppercase;letter-spacing:1px;"></div>
+            <button id="upgradePopupOkBtn" class="btn btn-primary" type="button">ACKNOWLEDGED</button>
+        </div>
+    </div>
+
     <audio id="bgmAudio" loop></audio>
     <audio id="audioExplosion" src="Explosion.m4a" preload="auto"></audio>
     <audio id="audioHorn" src="Horn.wav" preload="auto"></audio>
@@ -4193,6 +4206,7 @@
             const player_initial_state = {
                 x: W / 2, y: H * 0.8, r: 14, hp: 80, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1.2, fireRate: 0.16,
                 vampirism: 0, shield: 25, shieldMax: 50, multishot: 2, isInvincible: false, piercing: 0, explosive: false,
+                timeShardStacks: 0, timeShardTimer: 0, timeShardMultiplier: 1,
                 hasShieldBubble: false, powerupTimers: {},
                 swirlShots: false, attackSpeedStacks: 0,
                 upgradeLevels: { dmg: 0, speed: 0, hp: 0, max_shield: 0, crit_chance: 0, ghost_hounds: 0, launcher: 0, lazarus_beam: 0, gravity_well: 0, star_cannon: 0 },
@@ -4533,19 +4547,21 @@
             const BOSS_DEFINITIONS = Object.freeze([
                 { key: 'void_sentinel', name: 'VOID SENTINEL', baseHp: 4000, r: 55, behavior: 'sentinel', color: '#8B4A9C' },
                 { key: 'nexus_phantom', name: 'NEXUS PHANTOM', baseHp: 2200, r: 50, behavior: 'hex', color: '#66aaff' },
-                { key: 'neural_core', name: 'NEURAL CORE', baseHp: 3200, r: 60, behavior: 'malignus', color: '#2E8B57' },
+                { key: 'aegis_architect', name: 'AEGIS ARCHITECT', baseHp: 3600, r: 68, behavior: 'aegis_architect', color: '#5dd0ff' },
                 { key: 'hive_sovereign', name: 'HIVE SOVEREIGN', baseHp: 8500, r: 85, behavior: 'broodlord', color: '#2d5016' },
                 { key: 'shadow_mirror', name: 'SHADOW MIRROR', baseHp: 7200, r: 58, behavior: 'shadow_clone', color: '#cbd4ff' },
-                { key: 'death_engine', name: 'DEATH ENGINE', baseHp: 9000, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true }
+                { key: 'death_engine', name: 'DEATH ENGINE', baseHp: 9000, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true },
+                { key: 'asynchronos', name: 'ASYNCHRONOS', baseHp: 7800, r: 62, behavior: 'asynchronos', color: '#6ff2ff' }
             ]);
 
             const BOSS_THEME_MAP = Object.freeze({
                 'VOID SENTINEL': 'void_sentinel',
                 'NEXUS PHANTOM': 'nexus_phantom',
-                'NEURAL CORE': 'neural_core',
+                'AEGIS ARCHITECT': 'aegis_architect',
                 'HIVE SOVEREIGN': 'hive_sovereign',
                 'SHADOW MIRROR': 'shadow_mirror',
-                'DEATH ENGINE': 'death_engine'
+                'DEATH ENGINE': 'death_engine',
+                'ASYNCHRONOS': 'asynchronos'
             });
 
             const DEFAULT_MAP_THEME_KEY = 'void_sentinel';
@@ -4589,23 +4605,23 @@
                         { y: 0.68, thickness: 0.18, alpha: 0.36, waveSpeed: 0.24, waveAmplitude: 0.16, rotation: -0.18, colorStops: ['rgba(0, 40, 120, 0)', 'rgba(50, 180, 255, 0.55)', 'rgba(0, 18, 60, 0)'] }
                     ]
                 },
-                neural_core: {
-                    key: 'neural_core',
-                    label: 'Neural Bio-Dome',
-                    baseFill: '#061504',
+                aegis_architect: {
+                    key: 'aegis_architect',
+                    label: 'Aegis Vault Nexus',
+                    baseFill: '#04111c',
                     gradient: {
-                        type: 'radial', x: 0.46, y: 0.4, radius: 0.9, stops: [
-                            { offset: 0, color: 'rgba(0, 120, 90, 0.75)' },
-                            { offset: 0.55, color: 'rgba(5, 40, 25, 0.7)' },
-                            { offset: 1, color: 'rgba(6, 16, 8, 1)' }
+                        type: 'radial', x: 0.48, y: 0.42, radius: 0.92, stops: [
+                            { offset: 0, color: 'rgba(30, 180, 255, 0.78)' },
+                            { offset: 0.5, color: 'rgba(10, 70, 120, 0.7)' },
+                            { offset: 1, color: 'rgba(4, 12, 20, 1)' }
                         ]
                     },
                     starLayers: [
-                        { count: 115, speed: 24, color: 'rgba(140, 255, 190, 0.72)', pulseColor: 'rgba(210, 255, 210, 0.92)', minRadius: 0.35, maxRadius: 1.35, twinkleSpeed: 1.9, twinkleAmplitude: 0.5 },
-                        { count: 70, speed: 44, color: 'rgba(40, 160, 110, 0.55)', pulseColor: 'rgba(120, 220, 150, 0.8)', minRadius: 0.25, maxRadius: 1.8, twinkleSpeed: 1.2, twinkleAmplitude: 0.45 }
+                        { count: 130, speed: 26, color: 'rgba(120, 220, 255, 0.75)', pulseColor: 'rgba(200, 240, 255, 0.95)', minRadius: 0.3, maxRadius: 1.4, twinkleSpeed: 1.9, twinkleAmplitude: 0.52 },
+                        { count: 75, speed: 48, color: 'rgba(90, 180, 255, 0.6)', pulseColor: 'rgba(140, 210, 255, 0.85)', minRadius: 0.25, maxRadius: 1.85, twinkleSpeed: 1.3, twinkleAmplitude: 0.44 }
                     ],
                     auroraBands: [
-                        { y: 0.48, thickness: 0.2, alpha: 0.32, waveSpeed: 0.36, waveAmplitude: 0.1, rotation: 0.08, colorStops: ['rgba(0, 70, 30, 0)', 'rgba(0, 200, 120, 0.5)', 'rgba(0, 50, 25, 0)'] }
+                        { y: 0.46, thickness: 0.2, alpha: 0.34, waveSpeed: 0.38, waveAmplitude: 0.14, rotation: 0.12, colorStops: ['rgba(20, 120, 200, 0)', 'rgba(80, 200, 255, 0.55)', 'rgba(6, 28, 48, 0)'] }
                     ]
                 },
                 hive_sovereign: {
@@ -4663,6 +4679,26 @@
                     ],
                     auroraBands: [
                         { y: 0.4, thickness: 0.26, alpha: 0.38, waveSpeed: 0.5, waveAmplitude: 0.2, rotation: -0.12, colorStops: ['rgba(120, 20, 0, 0)', 'rgba(255, 140, 60, 0.6)', 'rgba(40, 6, 2, 0)'] }
+                    ]
+                },
+                asynchronos: {
+                    key: 'asynchronos',
+                    label: 'Chronoshift Expanse',
+                    baseFill: '#04030a',
+                    gradient: {
+                        type: 'radial', x: 0.5, y: 0.36, radius: 0.94, stops: [
+                            { offset: 0, color: 'rgba(90, 240, 255, 0.82)' },
+                            { offset: 0.48, color: 'rgba(32, 60, 160, 0.7)' },
+                            { offset: 1, color: 'rgba(8, 10, 26, 1)' }
+                        ]
+                    },
+                    starLayers: [
+                        { count: 140, speed: 24, color: 'rgba(160, 255, 245, 0.75)', pulseColor: 'rgba(220, 255, 250, 0.95)', minRadius: 0.28, maxRadius: 1.3, twinkleSpeed: 2.1, twinkleAmplitude: 0.48 },
+                        { count: 90, speed: 46, color: 'rgba(110, 180, 255, 0.6)', pulseColor: 'rgba(180, 220, 255, 0.86)', minRadius: 0.24, maxRadius: 1.8, twinkleSpeed: 1.5, twinkleAmplitude: 0.42 }
+                    ],
+                    auroraBands: [
+                        { y: 0.28, thickness: 0.18, alpha: 0.36, waveSpeed: 0.36, waveAmplitude: 0.16, rotation: -0.14, colorStops: ['rgba(20, 200, 255, 0)', 'rgba(150, 240, 255, 0.55)', 'rgba(10, 30, 80, 0)'] },
+                        { y: 0.64, thickness: 0.2, alpha: 0.28, waveSpeed: 0.42, waveAmplitude: 0.2, rotation: 0.18, colorStops: ['rgba(140, 100, 255, 0)', 'rgba(220, 180, 255, 0.5)', 'rgba(30, 0, 70, 0)'] }
                     ]
                 }
             });
@@ -4726,7 +4762,12 @@
                     targetThemeKey: DEFAULT_MAP_THEME_KEY,
                     themeTransitionProgress: 1,
                     themeTransitionActive: false,
-                    autoForgeProfileId: initialAutoForgeProfileId
+                    autoForgeProfileId: initialAutoForgeProfileId,
+                    voidReaperSpawnedThisWave: false,
+                    lastVoidReaperWave: 0,
+                    voidReaperCooldown: 0,
+                    pendingVoidReaper: null,
+                    voidReaperWarningIssued: false
                 },
                 settings: {
                     showShopTutorial: storedShopTutorialEnabled,
@@ -4747,6 +4788,9 @@
                 poisonPuddles: [],
                 goldenOrbs: [],
                 shadowEchoes: [],
+                temporalEchoes: [],
+                timeShards: [],
+                temporalBeam: null,
                 championMinions: [],
                 playerChampion: null,
                 shadowChampionId: null,
@@ -5725,6 +5769,24 @@
                 burn.lastApplied = performance.now();
             }
 
+            function applyBossDamage(boss, amount, options = {}) {
+                if (!boss || amount <= 0) return { amount: 0, blocked: false };
+
+                if (!options.skipShield && boss.behavior === 'aegis_architect') {
+                    const result = applyAegisShieldDamage(boss, amount, options);
+                    if (result && result.blocked) {
+                        return { amount: result.damageApplied || 0, blocked: true };
+                    }
+                }
+
+                boss.hp = Math.max(0, boss.hp - amount);
+                store.world.totalDamage += amount;
+                if (boss.hp <= 0) {
+                    handleBossDefeat();
+                }
+                return { amount, blocked: false };
+            }
+
             function handleBulletImpact(b, e) {
                 if (b.isFlame) e.slowTimer = 1.0;
 
@@ -5783,65 +5845,101 @@
                     baseDamage: dmg
                 });
                 dmg = vulnBullet.damage;
-                e.hp -= dmg;
-
-                const impactAngle = Math.atan2(e.y - b.y, e.x - b.x);
-                registerEnemyHit(e, {
-                    angle: impactAngle,
-                    knockbackStrength: 0,
-                    shakeIntensity: b.explosive ? 6 : 3.5,
-                    shakeDuration: b.explosive ? 0.22 : 0.14,
-                    slowFactor: b.explosive ? 0.8 : 0.9,
-                    slowDuration: b.explosive ? 0.22 : 0.12,
-                    crit: didCrit,
-                    effect: false
-                });
-
-                if (store.player.pilotGenome === 'beef') {
-                    store.player.beefShieldDamageDealt += dmg;
-                }
-
-                if (store.player.vampirism > 0) {
-                    let healAmount = dmg * store.player.vampirism;
-                    healAmount = Math.max(healAmount, 1);
-                    healAmount = Math.min(healAmount, 5);
-                    store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
-                }
-
-                if (b.isChampionShot) {
-                    applyChampionOnHitEffects(b, e, {
-                        baseDamage: b.dmg || dmg,
-                        finalDamage: dmg,
-                        championLevel: b.championLevel || (store.playerChampion?.level || 1)
-                    });
-                }
-
-                if (e.hp <= 0) {
-                    e.dead = true;
-                    if (e.type === 'void_champion') {
-                        store.enemies.forEach(minion => {
-                            if (minion.orbitTargetId === e.id && !minion.dead) {
-                                spawnGibs(minion.x, minion.y, minion.color);
-                                minion.dead = true;
-                            }
-                        });
-                        handleVoidChampionReward(e);
-                    }
-
-                    if (e.type === 'shadow_champion') {
-                        store.shadowChampionDefeated = true;
-                        store.shadowChampionLastPos = { x: e.x, y: e.y };
-                        store.shadowChampionId = null;
-                        if (!store.shadowChampionTokenDropped) {
-                            addShadowEcho(e.x, e.y);
-                            announce('Champion sigil destabilized!');
+                if (e === store.boss && e.behavior === 'aegis_architect') {
+                    const interceptResult = tryAegisShieldInterceptBullet(e, b, dmg);
+                    if (interceptResult && interceptResult.blocked) {
+                        if (store.player.pilotGenome === 'beef') {
+                            store.player.beefShieldDamageDealt += interceptResult.damageApplied;
                         }
+                        if (store.player.vampirism > 0) {
+                            let healAmount = interceptResult.damageApplied * store.player.vampirism;
+                            healAmount = Math.max(healAmount, 1);
+                            healAmount = Math.min(healAmount, 5);
+                            store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                        }
+                        if (b.isChampionShot) {
+                            applyChampionOnHitEffects(b, e, {
+                                baseDamage: b.dmg || dmg,
+                                finalDamage: interceptResult.damageApplied,
+                                championLevel: b.championLevel || (store.playerChampion?.level || 1)
+                            });
+                        }
+                        return;
+                    }
+                }
+
+                if (e === store.boss) {
+                    const bossDamageResult = applyBossDamage(e, dmg, {
+                        point: { x: b.x, y: b.y },
+                        skipShield: true
+                    });
+                    dmg = bossDamageResult.amount;
+                } else {
+                    e.hp -= dmg;
+                }
+
+                if (dmg > 0) {
+                    const impactAngle = Math.atan2(e.y - b.y, e.x - b.x);
+                    registerEnemyHit(e, {
+                        angle: impactAngle,
+                        knockbackStrength: 0,
+                        shakeIntensity: b.explosive ? 6 : 3.5,
+                        shakeDuration: b.explosive ? 0.22 : 0.14,
+                        slowFactor: b.explosive ? 0.8 : 0.9,
+                        slowDuration: b.explosive ? 0.22 : 0.12,
+                        crit: didCrit,
+                        effect: false
+                    });
+
+                    if (store.player.pilotGenome === 'beef') {
+                        store.player.beefShieldDamageDealt += dmg;
                     }
 
-                    if (e === store.boss) {
-                        handleBossDefeat();
-                    } else {
-                        spawnGibs(e.x, e.y, e.color);
+                    if (store.player.vampirism > 0) {
+                        let healAmount = dmg * store.player.vampirism;
+                        healAmount = Math.max(healAmount, 1);
+                        healAmount = Math.min(healAmount, 5);
+                        store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                    }
+
+                    if (b.isChampionShot) {
+                        applyChampionOnHitEffects(b, e, {
+                            baseDamage: b.dmg || dmg,
+                            finalDamage: dmg,
+                            championLevel: b.championLevel || (store.playerChampion?.level || 1)
+                        });
+                    }
+
+                    if (e !== store.boss && e.hp <= 0) {
+                        e.dead = true;
+                        if (e.type === 'void_champion') {
+                            store.enemies.forEach(minion => {
+                                if (minion.orbitTargetId === e.id && !minion.dead) {
+                                    spawnGibs(minion.x, minion.y, minion.color);
+                                    minion.dead = true;
+                                }
+                            });
+                            handleVoidChampionReward(e);
+                        }
+
+                        if (e.type === 'shadow_champion') {
+                            store.shadowChampionDefeated = true;
+                            store.shadowChampionLastPos = { x: e.x, y: e.y };
+                            store.shadowChampionId = null;
+                            if (!store.shadowChampionTokenDropped) {
+                                addShadowEcho(e.x, e.y);
+                                announce('Champion sigil destabilized!');
+                            }
+                        }
+
+                        const isVoidReaper = e.type === 'void_reaper';
+                        if (isVoidReaper) {
+                            finalizeVoidReaperDefeat(e, { preemptive: !e.lungeStarted });
+                        }
+
+                        if (!isVoidReaper) {
+                            spawnGibs(e.x, e.y, e.color);
+                        }
                         const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
                         const scoreGain = Math.floor((Number.isFinite(e.score) ? e.score : 0) * collarBonus);
                         const goldGain = Math.floor((Number.isFinite(e.gold) ? e.gold : 0) * collarBonus);
@@ -6034,19 +6132,34 @@
                     if (distSq <= radius * radius) {
                         let dmg = damage;
                         if (enemy === store.boss) dmg *= 0.35;
-                        const result = applySubclassVulnerability(enemy, dmg, {
+                        const vuln = applySubclassVulnerability(enemy, dmg, {
                             subclass: 'demolitioner',
                             damageTags: ['fire', 'explosive'],
                             player: context.player,
                             source: 'demolitionPulse',
                             disableVulnerability: true
                         });
-                        enemy.hp -= result.damage;
-                        for (let i = 0; i < 4; i++) {
-                            store.flameParticles.push(new FlameParticle(
-                                x + (Math.random() - 0.5) * radius * 0.6,
-                                y + (Math.random() - 0.5) * radius * 0.6
-                            ));
+                        let applied = vuln.damage;
+                        if (enemy === store.boss) {
+                            const result = applyBossDamage(enemy, applied, {
+                                point: { x, y }
+                            });
+                            if (result.blocked || result.amount <= 0) {
+                                applied = 0;
+                            } else {
+                                applied = result.amount;
+                            }
+                        } else {
+                            enemy.hp -= applied;
+                        }
+
+                        if (applied > 0) {
+                            for (let i = 0; i < 4; i++) {
+                                store.flameParticles.push(new FlameParticle(
+                                    x + (Math.random() - 0.5) * radius * 0.6,
+                                    y + (Math.random() - 0.5) * radius * 0.6
+                                ));
+                            }
                         }
                     }
                 });
@@ -6598,6 +6711,7 @@
                 'shield': { name: 'SHIELD BUBBLE', icon: '🛡️', duration: 0, type: 'instant' },
                 'repair': { name: 'REPAIR KIT', icon: '❤️', duration: 0, type: 'instant' },
                 'missile': { name: 'HOMING MISSILES', icon: '🚀', duration: 20, type: 'timed' },
+                'upgrade': { name: 'UPGRADE CORE', icon: '⚡', duration: 0, type: 'instant', isSpecial: true },
                 'void_core': { name: 'VOID CORE', icon: '🌀', duration: 25, type: 'timed' },
                 'cash': { name: 'CASH INFUSION', icon: '💰', duration: 0, type: 'instant', isSpecial: true },
                 'attack_speed': { name: 'HYPER DRIVE', icon: '⚡', duration: 0, type: 'instant', isSpecial: true },
@@ -6659,6 +6773,18 @@
                 golden: 'cash_bundle'
             };
 
+            // Upgrade tier definitions for powerup drops
+            const UPGRADE_TIERS = {
+                midTier: [
+                    'hp', 'max_shield', 'speed', 'dmg', 'crit_chance', 'luck_boost',
+                    'magnet_pull', 'rear_guard', 'repair', 'nano_save'
+                ],
+                bossTier: [
+                    'vampirism', 'grenade', 'launcher', 'star_cannon', 'ghost_hounds',
+                    'iceman', 'lazarus_beam', 'gravity_well'
+                ]
+            };
+
             function spawnMultishotBundle(x, y) {
                 if (!store.powerups) store.powerups = [];
                 const offsets = [-36, 0, 36];
@@ -6675,6 +6801,17 @@
             function spawnSpecialPowerup(type, x, y) {
                 if (!store.powerups) store.powerups = [];
                 store.powerups.push({ x, y, r: 14, type });
+            }
+
+            function spawnUpgradePowerup(x, y, tier = 'midTier') {
+                if (!store.powerups) store.powerups = [];
+                store.powerups.push({ 
+                    x, 
+                    y, 
+                    r: 14, 
+                    type: 'upgrade',
+                    upgradeTier: tier
+                });
             }
 
             function spawnCashBundle(x, y) {
@@ -6830,6 +6967,13 @@
                     announce(powerup.name);
                     return;
                 }
+                if (typeKey === 'upgrade') {
+                    // Handle upgrade powerup collection - need to find the tier from the powerup being collected
+                    // This will be passed through the collection system
+                    applyRandomUpgrade(store.currentUpgradeTier || 'midTier');
+                    delete store.currentUpgradeTier; // Clean up
+                    return;
+                }
                 if (powerup.type === 'timed') {
                     if (p.powerupTimers[typeKey]) { p.powerupTimers[typeKey].remaining += powerup.duration; }
                     else {
@@ -6846,6 +6990,63 @@
                     }
                 }
                 announce(powerup.name);
+            }
+
+            function applyRandomUpgrade(forcedTier = null) {
+                const tier = forcedTier || 'midTier';
+                const availableUpgrades = UPGRADE_TIERS[tier] || UPGRADE_TIERS.midTier;
+                
+                // Filter to upgrades that aren't maxed out (ignore cost for free upgrades)
+                const eligibleUpgrades = availableUpgrades.filter(key => {
+                    const upgrade = SHOP_UPGRADES[key];
+                    if (!upgrade) return false;
+                    
+                    const info = getNextUpgradeCost(key);
+                    return info && Number.isFinite(info.cost);
+                });
+                
+                if (eligibleUpgrades.length === 0) {
+                    // If no eligible upgrades, give gold instead
+                    const goldAmount = tier === 'bossTier' ? 200 : 100;
+                    addWorldGold(goldAmount);
+                    showUpgradePopup({
+                        name: 'GOLD CACHE',
+                        icon: '💰',
+                        desc: `+${goldAmount} Gold (No upgrades available)`,
+                        tier: tier
+                    });
+                    return;
+                }
+                
+                // Select random upgrade from eligible options
+                const selectedKey = eligibleUpgrades[Math.floor(Math.random() * eligibleUpgrades.length)];
+                const upgrade = SHOP_UPGRADES[selectedKey];
+                
+                // Apply the upgrade for free
+                const result = attemptPurchaseUpgrade(selectedKey, { silent: true, free: true });
+                
+                if (result.success) {
+                    // Show popup with upgrade details
+                    const level = (store.player?.upgradeLevels && store.player.upgradeLevels[selectedKey]) || 0;
+                    const name = typeof upgrade.getName === 'function' ? upgrade.getName(null, level - 1) : upgrade.name;
+                    const desc = typeof upgrade.desc === 'function' ? upgrade.desc(level - 1) : upgrade.desc;
+                    
+                    showUpgradePopup({
+                        name: name,
+                        icon: upgrade.icon || '⚡',
+                        desc: desc,
+                        tier: tier
+                    });
+                } else {
+                    // Fallback to gold if upgrade failed
+                    const goldAmount = tier === 'bossTier' ? 150 : 75;
+                    addWorldGold(goldAmount);
+                    showUpgradePopup({
+                        name: 'COMPENSATION CACHE',
+                        icon: '💰',
+                        desc: `+${goldAmount} Gold (Upgrade failed)`
+                    });
+                }
             }
 
             function sanitizeCollarStacks() {
@@ -6945,6 +7146,12 @@
                 if (store.goldenOrbs) {
                     store.goldenOrbs.length = 0;
                 }
+                if (store.world) {
+                    store.world.voidReaperSpawnedThisWave = false;
+                    if (store.world.voidReaperCooldown && store.world.voidReaperCooldown > 0) {
+                        store.world.voidReaperCooldown = Math.max(0, store.world.voidReaperCooldown - 1);
+                    }
+                }
                 const isBossWave = store.world.wave % 5 === 0;
                 const isPreBossWave = !isBossWave && store.world.wave % 5 === 4;
 
@@ -6965,7 +7172,8 @@
                     manta: '#7acbff',
                     construct_gold: '#ffc35c',
                     avian_hatchling: '#c297ff',
-                    void_champion: '#a864ff'
+                    void_champion: '#a864ff',
+                    void_reaper: '#5a1b80'
                 };
                 const spawnDurationByType = {
                     phantom: 0.7,
@@ -6974,7 +7182,8 @@
                     manta: 0.85,
                     construct_gold: 0.65,
                     avian_hatchling: 0.62,
-                    void_champion: 1.05
+                    void_champion: 1.05,
+                    void_reaper: 0
                 };
                 const dropDistanceByType = {
                     mech: 200,
@@ -6982,7 +7191,8 @@
                     manta: 180,
                     construct_gold: 140,
                     avian_hatchling: 130,
-                    void_champion: 220
+                    void_champion: 220,
+                    void_reaper: 0
                 };
                 const BOSS_CHAMPION_LOOP = 6;
 
@@ -7256,6 +7466,95 @@
                     window.WAVE_SPAWN_PROFILES = WAVE_SPAWN_PROFILES;
                 }
 
+                const WAVE_TRANSMISSION_LIBRARY = window.WAVE_TRANSMISSION_LIBRARY || {
+                    DEFAULT: [
+                        ({ wave }) => `📡 [Command Relay] "Sector ${wave}: Signal patchy. Stay loose."`,
+                        ({ wave }) => `📡 [Ops Channel] "Sector ${wave}: Static and ghost returns. Trust your instincts."`
+                    ],
+                    TUTORIAL: [
+                        ({ wave }) => `📡 [Sierra-6] "Sector ${wave}: Nothing on the radar... either calm or bait."`,
+                        ({ wave }) => `📡 [Training Relay] "Sector ${wave}: Quiet run logged. Keep your guard anyway."`
+                    ],
+                    MIXED_BASICS: [
+                        ({ wave }) => `📡 [Command Relay] "Sector ${wave}: Nothing on the radar... locals whisper about flickers."`,
+                        ({ wave }) => `📡 [Wingmate Echo] "Sector ${wave}: Chatter thin, but expect opportunists."`
+                    ],
+                    TANK_INTRO: [
+                        ({ wave }) => `📡 [Armory Net] "Sector ${wave}: Sluggish returns with obscene mass. Hulks lining up."`,
+                        ({ wave }) => `📡 [Command Relay] "Sector ${wave}: Heavy hull signatures grinding through the dust."`
+                    ],
+                    SWARM_HELL: [
+                        ({ wave }) => `🛰️ [Scout Drone] "Sector ${wave}: Micro-signatures stitching across the grid. Too many to tag."`,
+                        ({ wave }) => `📡 [Ops Channel] "Sector ${wave}: Sensor bloom looks like a living fog. Burn it out."`
+                    ],
+                    PRECISION_TEST: [
+                        ({ wave }) => `📡 [Longshot-Actual] "Sector ${wave}: Contacts fanning wide. Every shot needs purpose."`,
+                        ({ wave }) => `📡 [Raven Post] "Sector ${wave}: Targets spacing out—glass them before they regroup."`
+                    ],
+                    TANK_RUSH: [
+                        ({ wave }) => `📡 [Command Relay] "Sector ${wave}: Armor-clad silhouettes pushing in. This will be a grind."`,
+                        ({ wave }) => `📡 [Armory Net] "Sector ${wave}: Density spike ahead. Break their plates."`
+                    ],
+                    MIXED_TACTICS: [
+                        ({ wave }) => `📡 [Ops Intel] "Sector ${wave}: Composite signatures in every band. Expect improvisation."`,
+                        ({ wave }) => `📡 [Command Relay] "Sector ${wave}: Nothing consistent. Adapt on the fly."`
+                    ],
+                    VULNERABILITY_TEST: [
+                        ({ wave }) => `📡 [Analyst Node] "Sector ${wave}: Spectral reads all over. Match strengths to theirs."`,
+                        ({ wave }) => `📡 [Command Relay] "Sector ${wave}: Mixed frequencies. Lean into whatever bites hardest."`
+                    ],
+                    DODGE_HELL: [
+                        ({ wave }) => `📡 [Recon Whisper] "Sector ${wave}: Contacts flicker between frames. Tracking unstable."`,
+                        ({ wave }) => `📡 [Wingmate Echo] "Sector ${wave}: They're slipping between scans. Predict the pattern."`
+                    ],
+                    ELITE_ASSAULT: [
+                        ({ wave }) => `📡 [Wingmate Echo] "Sector ${wave}: High-value signatures with escorts. They're hunting you."`,
+                        ({ wave }) => `📡 [Command Relay] "Sector ${wave}: Elite strike package confirmed. Keep moving."`
+                    ],
+                    ULTIMATE_CHAOS: [
+                        ({ wave }) => `📡 [Distress Relay] "Sector ${wave}: Every alarm screaming at once. Assume nothing."`,
+                        ({ wave }) => `📡 [Emergency Beacon] "Sector ${wave}: Chaos in all channels. Survive first, analyze later."`
+                    ]
+                };
+
+                if (!window.WAVE_TRANSMISSION_LIBRARY) {
+                    window.WAVE_TRANSMISSION_LIBRARY = WAVE_TRANSMISSION_LIBRARY;
+                }
+
+                function pickTransmission(entries, context) {
+                    if (!entries || !entries.length) return null;
+                    const idx = Math.floor(Math.random() * entries.length);
+                    const choice = entries[idx];
+                    if (typeof choice === 'function') {
+                        try {
+                            return choice(context) || null;
+                        } catch (err) {
+                            console.error('Transmission composer failed', err);
+                            return null;
+                        }
+                    }
+                    if (typeof choice === 'string') {
+                        return choice.replace('{wave}', context.wave);
+                    }
+                    return null;
+                }
+
+                function composeWaveTransmission(theme, wave) {
+                    const context = { wave, theme };
+                    const themed = theme && WAVE_TRANSMISSION_LIBRARY[theme];
+                    const entries = themed && themed.length ? themed : WAVE_TRANSMISSION_LIBRARY.DEFAULT;
+                    return pickTransmission(entries, context) || pickTransmission(WAVE_TRANSMISSION_LIBRARY.DEFAULT, context);
+                }
+
+                function broadcastTransmission(message, delay = 0) {
+                    if (!message) return;
+                    if (delay > 0) {
+                        setTimeout(() => announce(message), delay);
+                    } else {
+                        announce(message);
+                    }
+                }
+
                 function getSpawnProfileForWave(wave) {
                     for (let i = 0; i < WAVE_SPAWN_PROFILES.length; i++) {
                         const profile = WAVE_SPAWN_PROFILES[i];
@@ -7336,6 +7635,242 @@
                     return specs;
                 }
 
+                const VOID_REAPER_CONFIG = Object.freeze({
+                    warningDuration: 2.0,
+                    emergeDuration: 0.55,
+                    lungeSpeed: 640,
+                    lungePadding: 260,
+                    scytheArc: Math.PI * 0.95,
+                    scytheReach: 150,
+                    minWaveGap: 3,
+                    preemptiveGoldBonus: 0.6,
+                    bonusScoreRatio: 0.5,
+                    bonusXpRatio: 0.45
+                });
+
+                function chooseVoidReaperSpawnPosition(player) {
+                    const marginX = 80;
+                    const marginY = 70;
+                    const theme = getSpawnProfileForWave(store.world.wave)?.theme;
+                    const pools = {
+                        SWARM_HELL: ['top', 'bottom', 'top', 'left', 'right'],
+                        TANK_RUSH: ['left', 'right', 'left', 'right', 'top'],
+                        ELITE_ASSAULT: ['left', 'right', 'bottom', 'top'],
+                        PRECISION_TEST: ['left', 'right', 'top', 'bottom'],
+                        DODGE_HELL: ['top', 'bottom', 'left', 'right', 'top']
+                    };
+                    const pool = pools[theme] || ['top', 'left', 'right', 'bottom'];
+                    const edge = pool[Math.floor(Math.random() * pool.length)];
+                    const jitterX = (Math.random() - 0.5) * 120;
+                    const jitterY = (Math.random() - 0.5) * 120;
+                    let x;
+                    let y;
+                    switch (edge) {
+                        case 'left':
+                            x = marginX;
+                            y = clamp(player.y + jitterY, marginY, H - marginY);
+                            break;
+                        case 'right':
+                            x = W - marginX;
+                            y = clamp(player.y + jitterY, marginY, H - marginY);
+                            break;
+                        case 'bottom':
+                            x = clamp(player.x + jitterX, marginX, W - marginX);
+                            y = H - marginY;
+                            break;
+                        default:
+                            x = clamp(player.x + jitterX, marginX, W - marginX);
+                            y = marginY;
+                            break;
+                    }
+                    return { edge, x, y };
+                }
+
+                function spawnVoidReaper({ hpScale = 1, damageMult = 1, lateGameScaling = 1 } = {}) {
+                    if (!store || !store.player) return null;
+                    const player = store.player;
+                    const pos = chooseVoidReaperSpawnPosition(player);
+                    const heading = Math.atan2(player.y - pos.y, player.x - pos.x);
+                    const enemy = spawnEnemy('void_reaper', {
+                        x: pos.x,
+                        y: pos.y,
+                        hpScale,
+                        damageMult,
+                        spawnEdge: pos.edge,
+                        entryAngle: heading,
+                        warningTimer: VOID_REAPER_CONFIG.warningDuration,
+                        lungeSpeed: VOID_REAPER_CONFIG.lungeSpeed,
+                        lungePadding: VOID_REAPER_CONFIG.lungePadding,
+                        scytheArc: VOID_REAPER_CONFIG.scytheArc,
+                        scytheReach: VOID_REAPER_CONFIG.scytheReach
+                    });
+                    if (!enemy) return null;
+
+                    applySpawnSpecToEnemy(enemy, { lateGameScaling });
+
+                    enemy.warningDuration = VOID_REAPER_CONFIG.warningDuration;
+                    enemy.emergeDuration = VOID_REAPER_CONFIG.emergeDuration;
+                    enemy.phase = 'warning';
+                    enemy.isInvulnerable = true;
+                    enemy.heading = heading;
+                    enemy.riftSeed = Math.random() * Math.PI * 2;
+
+                    store.activeEffects.push(createEffect('voidReaperRift', enemy.x, enemy.y, (enemy.r || 24) * 2.6, {
+                        duration: enemy.warningDuration,
+                        edge: pos.edge
+                    }));
+
+                    store.enemies.push(enemy);
+                    store.world.voidReaperSpawnedThisWave = true;
+                    store.world.lastVoidReaperWave = store.world.wave;
+                    store.world.voidReaperCooldown = Math.max(VOID_REAPER_CONFIG.minWaveGap || 3, 1);
+
+                    return enemy;
+                }
+
+                function finalizeVoidReaperDefeat(enemy, { preemptive = false } = {}) {
+                    if (!enemy || enemy.reaperDefeated) return;
+                    enemy.reaperDefeated = true;
+                    enemy.dead = true;
+                    enemy.hp = 0;
+
+                    if (!store || !store.world) return;
+
+                    if (preemptive) {
+                        const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
+                        const baseGold = Number.isFinite(enemy.gold) ? enemy.gold : 0;
+                        const bonusGold = Math.max(12, Math.floor(baseGold * VOID_REAPER_CONFIG.preemptiveGoldBonus * collarBonus));
+                        const bonusScore = Math.floor((enemy.score || 0) * VOID_REAPER_CONFIG.bonusScoreRatio);
+                        const bonusXp = Math.floor((enemy.xp || 0) * VOID_REAPER_CONFIG.bonusXpRatio);
+                        if (bonusGold) addWorldGold(bonusGold);
+                        if (bonusScore) store.world.score += bonusScore;
+                        if (bonusXp) store.world.xp += bonusXp;
+                        announce('VOID REAPER SHATTERED! MASSIVE CACHE SECURED.');
+                        store.activeEffects.push(createEffect('voidReaperReward', enemy.x, enemy.y, (enemy.r || 24) * 3.2, { gold: bonusGold }));
+                        
+                        // Chance to drop upgrade powerup from void reapers
+                        if (Math.random() < 0.25) { // 25% chance for upgrade drop
+                            const tier = Math.random() < 0.6 ? 'midTier' : 'bossTier'; // 60% mid-tier, 40% boss-tier
+                            spawnUpgradePowerup(enemy.x + Math.random() * 40 - 20, enemy.y + Math.random() * 40 - 20, tier);
+                        }
+                    } else {
+                        store.activeEffects.push(createEffect('voidReaperDissolve', enemy.x, enemy.y, (enemy.r || 24) * 2.2));
+                    }
+                }
+
+                function updateVoidReaper(enemy, dt) {
+                    if (!enemy || enemy.dead) return;
+
+                    if (enemy.hitPulseTimer && enemy.hitPulseTimer > 0) {
+                        enemy.hitPulseTimer = Math.max(0, enemy.hitPulseTimer - dt);
+                    }
+                    if (enemy.hitShakeTimer && enemy.hitShakeTimer > 0) {
+                        enemy.hitShakeTimer = Math.max(0, enemy.hitShakeTimer - dt);
+                        if (enemy.hitShakeTimer <= 0) {
+                            enemy.hitShakeIntensity = 0;
+                        }
+                    }
+
+                    if (enemy.hp <= 0 && !enemy.reaperDefeated) {
+                        finalizeVoidReaperDefeat(enemy, { preemptive: !enemy.lungeStarted });
+                        return;
+                    }
+
+                    const warningDuration = enemy.warningDuration || VOID_REAPER_CONFIG.warningDuration;
+                    const emergeDuration = enemy.emergeDuration || VOID_REAPER_CONFIG.emergeDuration;
+                    enemy.isInvulnerable = enemy.phase === 'warning';
+
+                    switch (enemy.phase) {
+                        case 'warning': {
+                            enemy.warningTimer = (enemy.warningTimer ?? warningDuration) - dt;
+                            enemy.riftPulse = (enemy.riftPulse || 0) + dt;
+                            enemy.riftProgress = Math.min(1, 1 - Math.max(0, enemy.warningTimer) / Math.max(0.001, warningDuration));
+                            if (enemy.warningTimer <= 0) {
+                                enemy.phase = 'emerging';
+                                enemy.isInvulnerable = false;
+                                enemy.emergeTimer = emergeDuration;
+                                enemy.emergeProgress = 0;
+                                enemy.lockedTarget = { x: store.player.x, y: store.player.y };
+                                enemy.heading = Math.atan2(enemy.lockedTarget.y - enemy.y, enemy.lockedTarget.x - enemy.x);
+                                store.activeEffects.push(createEffect('voidReaperStrike', enemy.x, enemy.y, (enemy.r || 24) * 1.45, {
+                                    heading: enemy.heading,
+                                    duration: emergeDuration,
+                                    warmup: true
+                                }));
+                            }
+                            break;
+                        }
+                        case 'emerging': {
+                            enemy.emergeTimer = (enemy.emergeTimer ?? emergeDuration) - dt;
+                            const current = Math.max(0, enemy.emergeTimer);
+                            enemy.emergeProgress = Math.min(1, 1 - current / Math.max(0.001, emergeDuration));
+                            if (enemy.emergeTimer <= 0) {
+                                enemy.phase = 'lunge';
+                                enemy.lungeStarted = true;
+                                const target = enemy.lockedTarget || { x: store.player.x, y: store.player.y };
+                                const dx = target.x - enemy.x;
+                                const dy = target.y - enemy.y;
+                                const dist = Math.max(60, Math.sqrt(dx * dx + dy * dy));
+                                enemy.lungeDirX = dx / dist;
+                                enemy.lungeDirY = dy / dist;
+                                enemy.heading = Math.atan2(enemy.lungeDirY, enemy.lungeDirX);
+                                enemy.totalLungeDistance = dist + (enemy.lungePadding || VOID_REAPER_CONFIG.lungePadding);
+                                enemy.lungeDistanceTravelled = 0;
+                                enemy.lungeSpeed = enemy.lungeSpeed || VOID_REAPER_CONFIG.lungeSpeed;
+                                store.activeEffects.push(createEffect('voidReaperStrike', enemy.x, enemy.y, (enemy.r || 24) * 1.35, {
+                                    heading: enemy.heading,
+                                    duration: 0.32
+                                }));
+                                playSound('horn');
+                            }
+                            break;
+                        }
+                        case 'lunge': {
+                            enemy.hitSlowTimer = 0;
+                            enemy.slowTimer = 0;
+                            const speed = enemy.lungeSpeed || VOID_REAPER_CONFIG.lungeSpeed;
+                            const dirX = enemy.lungeDirX || Math.cos(enemy.heading || 0);
+                            const dirY = enemy.lungeDirY || Math.sin(enemy.heading || 0);
+                            enemy.x += dirX * speed * dt;
+                            enemy.y += dirY * speed * dt;
+                            enemy.lungeDistanceTravelled = (enemy.lungeDistanceTravelled || 0) + speed * dt;
+                            const total = Math.max(1, enemy.totalLungeDistance || 1);
+                            enemy.lungeProgress = Math.min(1.15, enemy.lungeDistanceTravelled / total);
+
+                            const player = store.player;
+                            if (player && !player.isInvincible && !playerIsInvulnerable()) {
+                                const px = player.x - enemy.x;
+                                const py = player.y - enemy.y;
+                                const dist = Math.sqrt(px * px + py * py);
+                                const reach = enemy.scytheReach || VOID_REAPER_CONFIG.scytheReach;
+                                if (dist <= reach) {
+                                    const angleToPlayer = Math.atan2(py, px);
+                                    let diff = angleToPlayer - (enemy.heading || 0);
+                                    if (diff > Math.PI) diff -= Math.PI * 2;
+                                    if (diff < -Math.PI) diff += Math.PI * 2;
+                                    const arc = (enemy.scytheArc || VOID_REAPER_CONFIG.scytheArc) * (0.7 + 0.3 * Math.min(1, enemy.lungeProgress || 0));
+                                    if (Math.abs(diff) <= arc * 0.5) {
+                                        takeDamage(player.hp + player.shield + player.hpMax + 999);
+                                    }
+                                }
+                            }
+
+                            if (
+                                enemy.lungeDistanceTravelled >= total ||
+                                enemy.x < -220 || enemy.x > W + 220 ||
+                                enemy.y < -220 || enemy.y > H + 220
+                            ) {
+                                enemy.phase = 'finished';
+                                enemy.dead = true;
+                                store.activeEffects.push(createEffect('voidReaperDissolve', enemy.x, enemy.y, (enemy.r || 24) * 1.8));
+                            }
+                            break;
+                        }
+                        default:
+                            enemy.dead = true;
+                    }
+                }
+
                 function spawnVoidChampion({
                     hpScale = 1,
                     damageMult = 1,
@@ -7399,6 +7934,8 @@
 
                 if (isBossWave) {
                     store.enemies = [];
+                    store.world.pendingVoidReaper = null;
+                    store.world.voidReaperWarningIssued = false;
 
                     // FIXED: Balanced boss scaling instead of aggressive exponential growth
                     // Old: 1 + (wave/5 - 1) * 1.5 caused 4x HP by wave 15
@@ -7432,11 +7969,11 @@
                     store.world.lastSpawnFallback = false;
                     if (store.boss.name === 'VOID SENTINEL') playSound('trap');
                     else if (store.boss.name === 'NEURAL CORE') playSound('horn');
-                    announce(`⚡ GUARDIAN: ${store.boss.name} ⚡`);
+                    announce(`📡 [Command Relay] "Sector ${store.world.wave}: Guardian signature ${store.boss.name}. That's your mark."`);
                     if (!store.world.firstBossOrbsGifted && store.world.bosses === 0 && store.boss.name === 'VOID SENTINEL') {
                         spawnGoldenSentinelOrbs(3);
                         store.world.firstBossOrbsGifted = true;
-                        setTimeout(() => announce('Collect GOLDEN ORBS to shatter the guardian!'), 750);
+                        setTimeout(() => announce('📡 [Command Relay] "Collect GOLDEN ORBS to shatter the guardian!"'), 750);
                     }
 
                     const bossesDefeated = ensureFiniteNumber(store.world.bosses, 0);
@@ -7583,30 +8120,38 @@
                         jitter: spawnTempo * 0.6
                     });
 
-                    store.world.waveStartTime = performance.now();
-                    announce(`◢ SECTOR ${store.world.wave} ◣`);
-                    
-                    // Announce wave theme for tactical context
-                    const waveProfile = getSpawnProfileForWave(store.world.wave);
-                    if (waveProfile && waveProfile.theme && store.world.wave >= 6) {
-                        const themeAnnouncements = {
-                            'TUTORIAL': '',  // Skip announcement for tutorial waves
-                            'MIXED_BASICS': '',
-                            'TANK_INTRO': '⚠️ HEAVY ARMOR DETECTED ⚠️',
-                            'SWARM_HELL': '⚡ SWARM INBOUND // AOE RECOMMENDED ⚡',
-                            'PRECISION_TEST': '🎯 SCATTERED TARGETS // MULTI-TARGET OPTIMAL 🎯',
-                            'TANK_RUSH': '🛡️ REINFORCED HOSTILES // HIGH HP THREATS 🛡️',
-                            'MIXED_TACTICS': '⚔️ COMBINED ARMS ASSAULT ⚔️',
-                            'VULNERABILITY_TEST': '💎 EXPLOIT WEAKNESSES // CLASS SYNERGY KEY 💎',
-                            'DODGE_HELL': '🌀 EVASIVE MANEUVERS // PREDICTION CRITICAL 🌀',
-                            'ELITE_ASSAULT': '👑 ELITE SQUADRON // FOCUS FIRE ADVISED 👑',
-                            'ULTIMATE_CHAOS': '💀 MAXIMUM THREAT LEVEL // ALL SKILLS REQUIRED 💀'
-                        };
-                        const themeMessage = themeAnnouncements[waveProfile.theme];
-                        if (themeMessage) {
-                            setTimeout(() => announce(themeMessage), 800);
+                    const cooldownReady = !store.world.voidReaperCooldown || store.world.voidReaperCooldown <= 0;
+                    const recentWaveGap = store.world.lastVoidReaperWave ? (store.world.wave - store.world.lastVoidReaperWave) : Infinity;
+                    const eligibleForVoidReaper = store.world.wave >= 12 && cooldownReady && recentWaveGap >= (VOID_REAPER_CONFIG.minWaveGap || 3) && !store.world.voidReaperSpawnedThisWave;
+                    if (eligibleForVoidReaper) {
+                        const baseChance = 0.14;
+                        const waveBonus = Math.min(0.18, Math.max(0, store.world.wave - 12) * 0.012);
+                        const loopBonus = Math.min(0.12, (store.world.loop || 0) * 0.02);
+                        const spawnChance = Math.min(0.42, baseChance + waveBonus + loopBonus);
+                        if (Math.random() < spawnChance) {
+                            const spawnDelay = 4.5 + Math.random() * 5.5;
+                            const hpScale = Math.min(3.2, threatScale * (0.88 + Math.random() * 0.25));
+                            const damageMult = Math.min(2.4, threatScale * (1 + Math.random() * 0.2));
+                            store.world.pendingVoidReaper = {
+                                timer: spawnDelay,
+                                hpScale,
+                                damageMult,
+                                lateGameScaling
+                            };
+                            store.world.voidReaperWarningIssued = false;
+                        } else {
+                            store.world.pendingVoidReaper = null;
+                            store.world.voidReaperWarningIssued = false;
                         }
+                    } else {
+                        store.world.pendingVoidReaper = null;
+                        store.world.voidReaperWarningIssued = false;
                     }
+
+                    store.world.waveStartTime = performance.now();
+                    const waveProfile = currentWaveProfile || getSpawnProfileForWave(store.world.wave);
+                    const openingTransmission = composeWaveTransmission(waveProfile?.theme, store.world.wave);
+                    broadcastTransmission(openingTransmission);
                 }
             }
 
@@ -7682,7 +8227,8 @@
                     manta: { r: 26, v: 50, vx: 0, hp: 175, color: '#53B6FF', xp: 22, score: 220, gold: 5, fireRateChance: 0.009, contactDamage: 10 },
                     shadow_champion: { r: 18, v: 70, vx: 0, hp: 620, color: '#cbd4ff', xp: 60, score: 480, gold: 12, fireRateChance: 1, fireCooldown: 1.45, contactDamage: 14 },
                     void_champion: { r: 16, v: 48, vx: 0, hp: 190, color: '#5A28D8', xp: 32, score: 325, gold: 9, fireRateChance: 0.75, fireCooldown: 1.65, contactDamage: 10 },
-                    void_champion_orb: { r: 6, v: 0, vx: 0, hp: 22, color: '#FF7DEB', xp: 2, score: 24, gold: 0, fireRateChance: 0.55, fireCooldown: 1.25, contactDamage: 4 }
+                    void_champion_orb: { r: 6, v: 0, vx: 0, hp: 22, color: '#FF7DEB', xp: 2, score: 24, gold: 0, fireRateChance: 0.55, fireCooldown: 1.25, contactDamage: 4 },
+                    void_reaper: { r: 20, v: 0, vx: 0, hp: 165, color: '#9f74ff', xp: 55, score: 520, gold: 15, contactDamage: 22 }
                 };
                 const baseCfg = cfgs[type];
                 if (!baseCfg) {
@@ -7779,7 +8325,7 @@
                     }
                     if (store && store.world && !store.world.seenVoidChampion) {
                         store.world.seenVoidChampion = true;
-                        announce('⚙️ VOID CHAMPION ONLINE // SINGULARITY KNIGHT ⚙️');
+                        announce('📡 [Command Relay] "Intercepted: Void champion signature just came online."');
                     }
                     if (store && store.enemies) {
                         const minionCount = 3;
@@ -7861,6 +8407,30 @@
                     e.fireCooldown = c.fireCooldown || 1.15;
                     e.fireT = props.fireT !== undefined ? props.fireT : e.fireCooldown;
                     e.v = 0;
+                }
+                if (e.type === 'void_reaper') {
+                    e.isVoidReaper = true;
+                    e.hp = Math.max(40, e.hp * 0.85);
+                    e.hpMax = e.hp;
+                    e.v = 0;
+                    e.vx = 0;
+                    e.contactDamage = Math.max(e.contactDamage || 1, 28);
+                    e.gold = Math.max(12, e.gold || 12);
+                    e.score = Math.max(420, e.score || 420);
+                    e.xp = Math.max(40, e.xp || 40);
+                    e.fireRateChance = 0;
+                    e.fireT = Infinity;
+                    e.hitPulseDuration = props.hitPulseDuration || 0.18;
+                    e.hitPulseTimer = 0;
+                    e.cannotBeFrozen = true;
+                    e.cannotBeKnocked = true;
+                    e.knockback = null;
+                    e.stunTimer = 0;
+                    e.topClampDelay = 0;
+                    e.alphaPulseSeed = Math.random() * Math.PI * 2;
+                    e.spawnTargetY = props.y !== undefined ? props.y : e.y;
+                    e.spawnEdge = props.spawnEdge || 'top';
+                    e.entryAngle = props.entryAngle || 0;
                 }
                 return e;
             }
@@ -8159,38 +8729,43 @@
                 const enemy = segment.enemy;
                 if (enemy && !enemy.dead) {
                     segment.fallbackX = enemy.x;
-                    segment.fallbackY = enemy.y;
-                    return { x: enemy.x, y: enemy.y };
-                }
+                const duration = impact.duration ?? enemy.hitPulseDuration ?? 0.22;
+                const isVoidReaper = !!enemy.isVoidReaper;
+                const pulseDuration = isVoidReaper ? Math.min(0.18, duration) : duration;
+                enemy.hitPulseDuration = pulseDuration;
+                enemy.hitPulseTimer = pulseDuration;
                 return { x: segment.fallbackX, y: segment.fallbackY };
-            }
-
-            function findClosestEnemyInRange(origin, potentialTargets, rangeSq, excludeSet = new Set()) {
-                let best = null;
-                let bestDistSq = rangeSq;
-                potentialTargets.forEach(enemy => {
-                    if (!enemy || enemy.dead || excludeSet.has(enemy) || enemy.stunTimer > 0) return;
+                const shakeIntensity = impact.shakeIntensity ?? 0;
+                if (shakeIntensity > 0) {
+                    const shakeDuration = Math.max(impact.shakeDuration ?? 0.16, 0);
+                    const cappedIntensity = isVoidReaper ? Math.min(shakeIntensity, 3.5) : shakeIntensity;
+                    enemy.hitShakeDuration = Math.max(enemy.hitShakeDuration || 0, shakeDuration);
+                    enemy.hitShakeTimer = Math.max(enemy.hitShakeTimer || 0, shakeDuration);
+                    enemy.hitShakeIntensity = Math.max(enemy.hitShakeIntensity || 0, cappedIntensity);
+                }
                     const dx = enemy.x - origin.x;
-                    const dy = enemy.y - origin.y;
-                    const distSq = dx * dx + dy * dy;
-                    if (distSq < bestDistSq) {
-                        bestDistSq = distSq;
-                        best = enemy;
+                if (!isVoidReaper && impact.slowFactor !== undefined && impact.slowFactor < 1) {
+                    const slowDuration = Math.max(impact.slowDuration ?? 0.12, 0);
+                    if (slowDuration > 0) {
+                        enemy.hitSlowFactor = Math.min(enemy.hitSlowFactor || 1, impact.slowFactor);
+                        enemy.hitSlowTimer = Math.max(enemy.hitSlowTimer || 0, slowDuration);
                     }
-                });
+                }
                 return best;
-            }
-
-            function buildBeefChargePlan(p, primaryEnemy, potentialTargets) {
-                if (!primaryEnemy) return null;
-
-                const context = computeBeefChargeContext(p);
-                const origin = { x: p.x, y: p.y };
-                const rangeSq = 150 * 150;
-                const segments = [];
-                const used = new Set();
-
-                const pushEnemySegment = (enemy, label) => {
+                if (!isVoidReaper) {
+                    const strength = impact.knockbackStrength ?? 140;
+                    if (strength && strength > 0) {
+                        const angle = impact.angle ?? impact.knockbackAngle ?? Math.atan2(enemy.y - store.player.y, enemy.x - store.player.x);
+                        const decay = impact.knockbackDecay ?? 0.92;
+                        const durationKB = impact.knockbackDuration ?? 0.15;
+                        enemy.knockback = {
+                            x: Math.cos(angle) * strength,
+                            y: Math.sin(angle) * strength,
+                            duration: durationKB,
+                            decay: decay > 0 && decay < 1 ? decay : 0.92
+                        };
+                    }
+                }
                     if (!enemy) return;
                     segments.push({
                         enemy,
@@ -8743,8 +9318,16 @@
                         updateMirrorClone(dt);
                     }
                 }
+                if (p.timeShardTimer > 0) {
+                    p.timeShardTimer = Math.max(0, p.timeShardTimer - dt);
+                    if (p.timeShardTimer <= 0) {
+                        p.timeShardStacks = 0;
+                        p.timeShardMultiplier = 1;
+                    }
+                }
                 p.fireT -= dt;
-                if (p.fireT <= 0 && !p.empDisabled) { firePlayer(); p.fireT = p.fireRate; }
+                const timeShardRate = p.timeShardMultiplier && p.timeShardMultiplier > 0 ? p.timeShardMultiplier : 1;
+                if (p.fireT <= 0 && !p.empDisabled) { firePlayer(); p.fireT = p.fireRate * timeShardRate; }
 
                 // Separate flamethrower system (unaffected by overclock)
                 if (p.flamethrowerLevel > 0 && !p.empDisabled) {
@@ -8852,107 +9435,6 @@
                 if (p.hasRearGuard && p.rearGuardCooldown > 0) { p.rearGuardCooldown -= dt; if (p.rearGuardCooldown <= 0) { p.rearGuardReady = true; } }
                 if (p.hasVoidBeam) { p.voidBeamCooldown -= dt; if (p.voidBeamCooldown <= 0) { activateGravityWell(); p.voidBeamCooldown = 30; } }
                 if (p.hasLazarusBeam) { p.lazarusBeamCooldown -= dt; if (p.lazarusBeamCooldown <= 0) { activateLazarus(); p.lazarusBeamCooldown = 30 / (p.upgradeLevels.lazarus_beam > 0 ? 2 : 1); } }
-                if (store.cheatInvincibilityCooldown > 0) store.cheatInvincibilityCooldown -= dt;
-                if (store.cheatDogHealCooldown > 0) store.cheatDogHealCooldown -= dt;
-                if (store.cheatChampionCooldown > 0) store.cheatChampionCooldown -= dt;
-
-                if (p.x < 50 && p.y < 50 && store.cheatInvincibilityCooldown <= 0) {
-                    store.cheatsUsed = true; p.isInvincible = true; p.cheatMultishotBonus = 2; announce('TEST: INVINCIBILITY ACTIVE');
-                    setTimeout(() => { p.isInvincible = false; p.cheatMultishotBonus = 0; announce('TEST: INVINCIBILITY ENDS'); store.cheatInvincibilityCooldown = 10; }, 15000);
-                    store.cheatInvincibilityCooldown = 15 + 10;
-                }
-                if (p.x > W - 50 && p.y < 50 && store.cheatDogHealCooldown <= 0) {
-                    store.cheatsUsed = true; p.hp = Math.min(p.hpMax, p.hp + p.hpMax * 0.20);
-                    if (!p.hasHounds) { p.hasHounds = true; }
-                    if (!Array.isArray(store.hounds)) { store.hounds = []; }
-                    const maxPackSize = 6;
-                    let houndsToAdd = Math.min(2, Math.max(0, maxPackSize - store.hounds.length));
-                    if (houndsToAdd > 0) {
-                        const existingSides = new Set(store.hounds.map(h => h.side)); const potentialSides = [-1, 1, -2, 2, 3, 4];
-                        for (const side of potentialSides) { if (houndsToAdd > 0 && !existingSides.has(side)) { store.hounds.push(createHound(side)); houndsToAdd--; } }
-                    }
-                    store.cheatDogHealCooldown = 10; announce('TEST: HEAL & HOUNDS');
-                }
-
-                // Champion unlock cheat - bottom left corner
-                if (p.x < 50 && p.y > H - 50 && store.cheatChampionCooldown <= 0) {
-                    store.cheatsUsed = true;
-
-                    // Unlock champion
-                    p.championUnlocked = true;
-
-                    // Add lots of gold for upgrades
-                    addWorldGold(5000);
-
-                    // Give champion upgrades if they exist in the upgrade system
-                    if (!p.upgradeLevels.champion_health) p.upgradeLevels.champion_health = 0;
-                    if (!p.upgradeLevels.champion_damage) p.upgradeLevels.champion_damage = 0;
-                    if (!p.upgradeLevels.champion_speed) p.upgradeLevels.champion_speed = 0;
-                    if (!p.upgradeLevels.champion_shield) p.upgradeLevels.champion_shield = 0;
-                    if (!p.upgradeLevels.champion_regen) p.upgradeLevels.champion_regen = 0;
-
-                    p.upgradeLevels.champion_health = Math.min(5, p.upgradeLevels.champion_health + 3);
-                    p.upgradeLevels.champion_damage = Math.min(5, p.upgradeLevels.champion_damage + 3);
-                    p.upgradeLevels.champion_speed = Math.min(5, p.upgradeLevels.champion_speed + 2);
-                    p.upgradeLevels.champion_shield = Math.min(5, p.upgradeLevels.champion_shield + 2);
-                    p.upgradeLevels.champion_regen = Math.min(5, p.upgradeLevels.champion_regen + 1);
-
-                    // Spawn champion if not already present
-                    if (!store.playerChampion) {
-                        grantChampionCompanion();
-                    } else {
-                        // Level up existing champion
-                        const champion = store.playerChampion;
-                        champion.level = Math.min(10, (champion.level || 1) + 3);
-                        champion.xp = champion.xp || 0;
-
-                        // Update champion stats based on new level and upgrades
-                        champion.hpMax = Math.floor(100 + (champion.level * 20) + (p.upgradeLevels.champion_health * 20));
-                        champion.hp = champion.hpMax;
-                        champion.shieldMax = Math.floor(50 + (p.upgradeLevels.champion_shield * 30));
-                        champion.shield = champion.shieldMax;
-                        champion.damageScale = 1 + (p.upgradeLevels.champion_damage * 0.25) + ((champion.level - 1) * 0.1);
-                        champion.fireCooldown = Math.max(0.5, 1.5 - (p.upgradeLevels.champion_speed * 0.15) - ((champion.level - 1) * 0.05));
-                    }
-
-                    announce('CHEAT: CHAMPION UNLOCKED WITH UPGRADES!');
-                    store.cheatChampionCooldown = 5; // 5 second cooldown
-                }
-
-                // Pilot class cycling cheat - bottom right corner
-                if (p.x > W - 50 && p.y > H - 50 && store.cheatChampionCooldown <= 0) {
-                    store.cheatsUsed = true;
-
-                    // Cycle through pilot classes
-                    const classes = ['beef', 'rocketman', 'voidmancer'];
-                    const currentIndex = classes.indexOf(p.pilotGenome);
-                    const nextIndex = (currentIndex + 1) % classes.length;
-                    const nextClass = classes[nextIndex];
-
-                    p.pilotGenome = nextClass;
-
-                    // Update class-specific bonuses
-                    if (nextClass === 'beef') {
-                        p.hp = Math.min(p.hpMax, p.hp + 50);
-                        announce('CHEAT: SWITCHED TO BEEF CLASS - TANK SPECIALIST');
-                    } else if (nextClass === 'rocketman') {
-                        p.missileVolley = Math.min(5, p.missileVolley + 2);
-                        announce('CHEAT: SWITCHED TO ROCKETMAN CLASS - MISSILE SPECIALIST');
-                    } else if (nextClass === 'voidmancer') {
-                        p.hasChainLightning = true;
-                        p.hasVoidBeam = true;
-                        announce('CHEAT: SWITCHED TO VOIDMANCER CLASS - ENERGY SPECIALIST');
-                    }
-
-                    // Give some progression points to unlock abilities
-                    if (!p.totalProgressionPoints) p.totalProgressionPoints = 0;
-                    if (!p.unspentProgressionPoints) p.unspentProgressionPoints = 0;
-                    p.totalProgressionPoints += 3;
-                    p.unspentProgressionPoints += 3;
-
-                    store.cheatChampionCooldown = 3; // 3 second cooldown
-                }
-
                 // Handle poison effects
                 if (p.isPoisoned && performance.now() > p.poisonEndTime) {
                     p.isPoisoned = false;
@@ -9053,6 +9535,9 @@
                         // Auto-collect if very close to prevent vibration
                         if (dist < p.r + powerup.r + 5) {
                             powerup.dead = true;
+                            if (powerup.type === 'upgrade' && powerup.upgradeTier) {
+                                store.currentUpgradeTier = powerup.upgradeTier;
+                            }
                             applyPowerup(powerup.type);
                             return;
                         }
@@ -9066,6 +9551,9 @@
 
                     if (collide(p, powerup)) {
                         powerup.dead = true;
+                        if (powerup.type === 'upgrade' && powerup.upgradeTier) {
+                            store.currentUpgradeTier = powerup.upgradeTier;
+                        }
                         applyPowerup(powerup.type);
                     }
                 });
@@ -9469,25 +9957,25 @@
                     });
                     if (store.boss && !laser.hitEnemies.has(store.boss) && collide(laser, store.boss)) {
                         const bossLaserDmg = 500 * store.player.dmgMult;
-                        store.boss.hp -= bossLaserDmg;
+                        const result = applyBossDamage(store.boss, bossLaserDmg, { point: { x: laser.x, y: laser.y } });
                         laser.hitEnemies.add(store.boss);
 
-                        registerEnemyHit(store.boss, {
-                            angle: Math.atan2(store.boss.y - laser.y, store.boss.x - laser.x),
-                            knockbackStrength: 70,
-                            knockbackDuration: 0.08
-                        });
-
-                        // Track damage dealt for beef shield system
-                        if (store.player.pilotGenome === 'beef') {
-                            store.player.beefShieldDamageDealt += bossLaserDmg;
+                        if (result.amount > 0 && !result.blocked) {
+                            registerEnemyHit(store.boss, {
+                                angle: Math.atan2(store.boss.y - laser.y, store.boss.x - laser.x),
+                                knockbackStrength: 70,
+                                knockbackDuration: 0.08
+                            });
                         }
 
-                        // Apply vampirism healing for laser damage on boss
-                        if (store.player.vampirism > 0) {
-                            let healAmount = bossLaserDmg * store.player.vampirism;
-                            healAmount = Math.max(healAmount, 2); // Minimum 2 HP for laser
-                            healAmount = Math.min(healAmount, 10); // Cap at 10 HP for laser
+                        if (store.player.pilotGenome === 'beef') {
+                            store.player.beefShieldDamageDealt += result.amount;
+                        }
+
+                        if (store.player.vampirism > 0 && result.amount > 0) {
+                            let healAmount = result.amount * store.player.vampirism;
+                            healAmount = Math.max(healAmount, 2);
+                            healAmount = Math.min(healAmount, 10);
                             store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
                         }
                     }
@@ -9520,17 +10008,28 @@
                         } else {
                             p.x = p.attachedEnemy.x;
                             p.y = p.attachedEnemy.y;
-                            p.attachedEnemy.hp -= p.damage;
+                            let appliedDamage = p.damage;
+                            if (p.attachedEnemy === store.boss) {
+                                const result = applyBossDamage(p.attachedEnemy, p.damage, {
+                                    point: { x: p.attachedEnemy.x, y: p.attachedEnemy.y },
+                                    skipShield: true
+                                });
+                                appliedDamage = result.amount;
+                            } else {
+                                p.attachedEnemy.hp -= appliedDamage;
+                            }
 
                             // Apply vampirism healing for attached flame damage
-                            if (store.player.vampirism > 0) {
-                                let healAmount = p.damage * store.player.vampirism;
+                            if (appliedDamage > 0 && store.player.vampirism > 0) {
+                                let healAmount = appliedDamage * store.player.vampirism;
                                 healAmount = Math.max(healAmount, 0.2); // Minimum 0.2 HP
                                 healAmount = Math.min(healAmount, 1); // Cap at 1 HP
                                 store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
                             }
 
-                            p.attachedEnemy.slowTimer = 2.0;
+                            if (appliedDamage > 0) {
+                                p.attachedEnemy.slowTimer = 2.0;
+                            }
                         }
                     }
                     if (p.update && !p.update(dt)) {
@@ -9681,13 +10180,11 @@
 
                         if (dist <= (boss.r || 70) + 12) {
                             const damage = boss.hpMax * 0.2;
-                            boss.hp = Math.max(0, boss.hp - damage);
-                            store.world.totalDamage += damage;
+                            const result = applyBossDamage(boss, damage, { point: { x: orb.x, y: orb.y } });
                             store.activeEffects.push(createEffect('goldenOrbDetonation', orb.x, orb.y, 140));
                             playSound('explosion');
                             orbs.splice(i, 1);
                             if (boss.hp <= 0) {
-                                handleBossDefeat();
                                 return;
                             }
                         }
@@ -9714,10 +10211,36 @@
                 stepMines(dt);
                 stepFlameParticles(dt);
                 updateShadowEchoes(dt);
+                updateTemporalEchoes(dt);
+                updateTimeShards(dt);
                 stepLightning(dt);
                 stepEmpNovas(dt);
                 processWaveSpawnQueue(dt);
                 processVulnerabilityEvents(dt);
+
+                if (store.world.pendingVoidReaper) {
+                    store.world.pendingVoidReaper.timer -= dt;
+                    const plan = store.world.pendingVoidReaper;
+                    if (!store.world.voidReaperWarningIssued && plan.timer <= 2.4) {
+                        store.world.voidReaperWarningIssued = true;
+                        announce('📡 [Encrypted Relay] "A pair of anomalies traveling at an infeasible rate was detected..."');
+                        playSound('thunder');
+                    }
+                    if (plan.timer <= 0) {
+                        const spawned = spawnVoidReaper({
+                            hpScale: plan.hpScale,
+                            damageMult: plan.damageMult,
+                            lateGameScaling: plan.lateGameScaling
+                        });
+                        if (spawned) {
+                            store.world.pendingVoidReaper = null;
+                            store.world.voidReaperWarningIssued = false;
+                        } else {
+                            // Retry slightly later if spawn failed
+                            plan.timer = 1.5;
+                        }
+                    }
+                }
 
                 // Update beef shield system
                 updateBeefShield();
@@ -9762,7 +10285,7 @@
                 let autoBlinkTriggeredThisFrame = false;
 
                 store.eBullets.forEach(b => {
-                    if (b.path === 'malignus_sine') {
+                    if (b.path === 'aegis_spiral') {
                         const amplitude = ensureFiniteNumber(b.amplitude, 120);
                         const frequency = ensureFiniteNumber(b.frequency, 2.9);
                         const fallSpeed = ensureFiniteNumber(b.fallSpeed, 165);
@@ -9782,6 +10305,36 @@
                         if (!b.dead && b.pulseOffset !== undefined) {
                             const pulseScale = 1 + Math.sin(performance.now() / 220 + b.pulseOffset) * 0.12;
                             b.r = b.baseRadius * pulseScale;
+                        }
+                    } else if (b.path === 'aegis_gravity') {
+                        const target = store.player;
+                        const homingStrength = ensureFiniteNumber(b.homingStrength, 110);
+                        const maxSpeed = ensureFiniteNumber(b.maxSpeed, 260);
+                        const vx = ensureFiniteNumber(b.vx, 0);
+                        const vy = ensureFiniteNumber(b.vy, 0);
+                        const angleToPlayer = Math.atan2((target.y ?? b.y) - b.y, (target.x ?? b.x) - b.x);
+                        const accelX = Math.cos(angleToPlayer) * homingStrength * dt;
+                        const accelY = Math.sin(angleToPlayer) * homingStrength * dt;
+                        let nextVx = vx + accelX;
+                        let nextVy = vy + accelY;
+                        const speed = Math.hypot(nextVx, nextVy) || 0;
+                        if (speed > maxSpeed) {
+                            const scale = maxSpeed / speed;
+                            nextVx *= scale;
+                            nextVy *= scale;
+                        }
+                        b.vx = nextVx;
+                        b.vy = nextVy;
+                        b.x += nextVx * dt;
+                        b.y += nextVy * dt;
+                        if (b.life) {
+                            b.life -= dt;
+                            if (b.life <= 0) b.dead = true;
+                        }
+                        if (b.pulseOffset !== undefined) {
+                            b.rBase = b.rBase || b.r || 8;
+                            const pulseScale = 1 + Math.sin(performance.now() / 200 + b.pulseOffset) * 0.1;
+                            b.r = b.rBase * pulseScale;
                         }
                     } else {
                         b.x += b.vx * dt;
@@ -9835,8 +10388,12 @@
                         }
                     }
 
-                    if (b.path === 'malignus_sine') {
+                    if (b.path === 'aegis_spiral') {
                         if (b.y > H + 70) {
+                            b.dead = true;
+                        }
+                    } else if (b.path === 'aegis_gravity') {
+                        if (b.x < -40 || b.x > W + 40 || b.y < -40 || b.y > H + 40) {
                             b.dead = true;
                         }
                     } else if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) {
@@ -9883,6 +10440,8 @@
                     }
                 });
 
+                applyTemporalBeamEffects(dt, dmgScale);
+
                 if (store.boss && store.boss.mines) {
                     store.boss.mines.forEach(mine => {
                         mine.fuse -= dt;
@@ -9905,6 +10464,11 @@
                 // CONSOLIDATED enemy processing - flame collision + movement in single loop for performance
                 store.enemies.forEach(e => {
                     if (e.dead) return;
+
+                    if (e.isVoidReaper) {
+                        updateVoidReaper(e, dt);
+                        return;
+                    }
 
                     if (e.hitPulseTimer && e.hitPulseTimer > 0) {
                         e.hitPulseTimer = Math.max(0, e.hitPulseTimer - dt);
@@ -10461,13 +11025,12 @@
                         if (distSq < collisionRadiusSq) {
                             store.boss.stunTimer = Math.max(store.boss.stunTimer || 0, 0.3);
                             const bossFlameDmg = flame.damage * 0.5;
-                            store.boss.hp -= bossFlameDmg;
+                            const result = applyBossDamage(store.boss, bossFlameDmg, { point: { x: flame.x, y: flame.y } });
 
-                            // Apply vampirism healing for flamethrower damage on boss
-                            if (store.player.vampirism > 0) {
-                                let healAmount = bossFlameDmg * store.player.vampirism;
-                                healAmount = Math.max(healAmount, 0.3); // Minimum 0.3 HP for flame
-                                healAmount = Math.min(healAmount, 2); // Cap at 2 HP for flame
+                            if (store.player.vampirism > 0 && result.amount > 0) {
+                                let healAmount = result.amount * store.player.vampirism;
+                                healAmount = Math.max(healAmount, 0.3);
+                                healAmount = Math.min(healAmount, 2);
                                 store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
                             }
 
@@ -10521,6 +11084,34 @@
                             handleBulletImpact(b, enemy);
                             return b.dead && !b.pierce;
                         });
+                    }
+
+                    if (!b.dead && store.timeShards && store.timeShards.length) {
+                        for (let si = store.timeShards.length - 1; si >= 0; si--) {
+                            const shard = store.timeShards[si];
+                            if (!shard || shard.dead) continue;
+                            const hitRadius = (shard.r || 14) + (b.r || 3);
+                            const dx = b.x - shard.x;
+                            const dy = b.y - shard.y;
+                            if (dx * dx + dy * dy > hitRadius * hitRadius) continue;
+
+                            const damage = b.dmg || 12;
+                            shard.hp -= damage;
+                            shard.hitPulse = 0.22;
+                            store.activeEffects.push(createEffect('hitSpark', shard.x, shard.y, (shard.r || 14) * 1.6, { strength: 32 }));
+
+                            if (shard.hp <= 0) {
+                                applyTimeShardBuff(shard.buffStacks || 1);
+                                store.activeEffects.push(createEffect('spawnTeleport', shard.x, shard.y, 36, { color: '#9df7ff', duration: 0.32 }));
+                                playSound('stargun');
+                                store.timeShards.splice(si, 1);
+                            }
+
+                            if (!b.pierce) {
+                                b.dead = true;
+                            }
+                            break;
+                        }
                     }
 
                     // Check bullet collision with mech puddles (make puddles killable)
@@ -10622,6 +11213,7 @@
                 removeDeadObjects(store.lightningBolts);
                 removeDeadObjects(store.empNovas);
                 removeDeadObjects(store.shadowEchoes);
+                removeDeadObjects(store.timeShards);
                 if (store.playerChampion && store.playerChampion.dead) {
                     store.playerChampion = null;
                 }
@@ -11051,7 +11643,15 @@
 
             function explode(x, y, isBoss = false, isSmall = false) {
                 playSound('explosion');
-                if (isBoss) for (let i = 0; i < 5; i++) setTimeout(() => spawnPowerup(x, y), i * 300);
+                if (isBoss) {
+                    // Spawn regular powerups
+                    for (let i = 0; i < 5; i++) setTimeout(() => spawnPowerup(x, y), i * 300);
+                    
+                    // Guaranteed boss-tier upgrade drop with delay
+                    setTimeout(() => {
+                        spawnUpgradePowerup(x + Math.random() * 60 - 30, y + Math.random() * 60 - 30, 'bossTier');
+                    }, 1500);
+                }
                 if (isSmall) {
                     const radius = 60;
                     const dmg = 25 * store.player.dmgMult;
@@ -11575,6 +12175,7 @@
                 });
 
                 store.powerups.forEach(p => drawPowerup(p));
+                drawTimeShards();
                 drawGoldenOrbs();
                 store.missiles.forEach(m => drawMissile(m));
                 store.lightningBolts.forEach(l => drawLightningBolt(l));
@@ -11803,7 +12404,9 @@
 
                 store.enemies.forEach(e => drawEnemy(e));
                 drawGibs(ctx); // <-- ADD THIS LINE TO DRAW THE GIBS
+                drawTemporalEchoes();
                 drawShadowEchoes();
+                drawTemporalBeam();
                 if (store.boss && store.boss.visible !== false) drawBoss(store.boss);
                 store.flameParticles.forEach(p => {
                     if (p.draw) p.draw();
@@ -11923,7 +12526,6 @@
                     ctx.restore();
                 }
 
-                // ...existing code...
                 // Draw voidmancer laser beam (Phasestriker only)
                 if (store.player.hasVoidLaser && store.player.voidLaserTarget && !store.player.voidLaserTarget.dead) {
                     const p = store.player;
@@ -12190,7 +12792,6 @@
 
                     ctx.restore();
                 }
-                // ...existing code...
 
 
                 closeBullets.forEach(item => {
@@ -12360,7 +12961,6 @@
 
             function escapeHtml(s) { s = String(s ?? ''); return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
             function announce(text) { const el = q('announce'); el.textContent = text; el.classList.remove('hide'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('hide'), 2500); }
-            // ...existing code...
             function updateHUD() {
                 const player = store.player;
                 if (!player) return;
@@ -12554,7 +13154,6 @@
                     */
                 }
             }
-            // ...existing code...
             function normalizeLeaderboardEntries(source) {
                 if (!source) return null;
 
@@ -13467,6 +14066,58 @@
                 ctx.globalAlpha = 1;
             }
 
+            function drawTemporalEchoes() {
+                const echoes = store.temporalEchoes;
+                if (!Array.isArray(echoes) || echoes.length === 0) return;
+                const time = performance.now() / 1000;
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                for (const echo of echoes) {
+                    if (!echo || echo.dead) continue;
+                    const lifeRatio = echo.maxLife ? Math.max(0, Math.min(1, echo.life / echo.maxLife)) : 1;
+                    if (lifeRatio <= 0) continue;
+
+                    const baseRadius = echo.radius || 18;
+                    const pulse = 1 + Math.sin(time * 5.2 + (echo.pulseOffset || 0)) * 0.08;
+                    const auraRadius = baseRadius * (1.7 + (echo.stage === 'dash' ? 0.28 : 0));
+                    const coreColor = echo.color || '#8cf5ff';
+                    const trailColor = echo.trailColor || '#2a9dff';
+
+                    const auraGradient = ctx.createRadialGradient(echo.x, echo.y, 0, echo.x, echo.y, auraRadius * pulse);
+                    auraGradient.addColorStop(0, addAlpha(coreColor, 0.72 * lifeRatio));
+                    auraGradient.addColorStop(0.55, addAlpha(coreColor, 0.32 * lifeRatio));
+                    auraGradient.addColorStop(1, addAlpha(coreColor, 0));
+                    ctx.fillStyle = auraGradient;
+                    ctx.globalAlpha = 1;
+                    ctx.beginPath();
+                    ctx.arc(echo.x, echo.y, auraRadius * pulse, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.lineWidth = 2.2;
+                    ctx.strokeStyle = addAlpha(trailColor, 0.55 * lifeRatio);
+                    ctx.beginPath();
+                    ctx.arc(echo.x, echo.y, baseRadius * (1.05 + pulse * 0.2), 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    if (echo.stage === 'dash') {
+                        const vx = echo.vx || 0;
+                        const vy = echo.vy || 0;
+                        const speed = Math.hypot(vx, vy) || 0;
+                        if (speed > 0) {
+                            const tailLength = Math.min(120, Math.max(55, speed * 0.24));
+                            ctx.lineWidth = 3;
+                            ctx.strokeStyle = addAlpha(trailColor, 0.4 * lifeRatio);
+                            ctx.beginPath();
+                            ctx.moveTo(echo.x, echo.y);
+                            ctx.lineTo(echo.x - (vx / speed) * tailLength, echo.y - (vy / speed) * tailLength);
+                            ctx.stroke();
+                        }
+                    }
+                }
+                ctx.restore();
+                ctx.globalAlpha = 1;
+            }
+
             function drawStarShape(ctx, cx, cy, spikes, outerRadius, innerRadius) {
                 let rot = Math.PI / 2 * 3;
                 let x = cx;
@@ -13564,6 +14215,60 @@
 
                     ctx.restore();
                 }
+                ctx.globalAlpha = 1;
+            }
+
+            function drawTimeShards() {
+                const shards = store.timeShards;
+                if (!Array.isArray(shards) || shards.length === 0) return;
+                const time = performance.now() / 1000;
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                for (const shard of shards) {
+                    if (!shard || shard.dead) continue;
+                    const lifeRatio = shard.maxLife ? Math.max(0, Math.min(1, shard.life / shard.maxLife)) : 1;
+                    if (lifeRatio <= 0) continue;
+
+                    const baseRadius = shard.r || 14;
+                    const pulse = 1 + Math.sin(time * 4.3 + (shard.sparkle || 0)) * 0.08 + (shard.hitPulse || 0) * 0.35;
+                    const glowRadius = baseRadius * (1.9 + (shard.hitPulse || 0) * 0.6);
+
+                    const glowGradient = ctx.createRadialGradient(shard.x, shard.y, 0, shard.x, shard.y, glowRadius * pulse);
+                    glowGradient.addColorStop(0, `rgba(157, 247, 255, ${0.55 * lifeRatio})`);
+                    glowGradient.addColorStop(0.65, `rgba(122, 231, 255, ${0.28 * lifeRatio})`);
+                    glowGradient.addColorStop(1, 'rgba(122, 231, 255, 0)');
+                    ctx.fillStyle = glowGradient;
+                    ctx.beginPath();
+                    ctx.arc(shard.x, shard.y, glowRadius * pulse, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.save();
+                    ctx.translate(shard.x, shard.y);
+                    ctx.rotate(time * 1.9 + (shard.sparkle || 0));
+                    ctx.globalAlpha = 0.92 * lifeRatio;
+                    ctx.fillStyle = `rgba(102, 206, 255, ${0.9 * lifeRatio})`;
+                    const w = baseRadius * 0.9 * pulse;
+                    const h = baseRadius * 1.35 * pulse;
+                    ctx.beginPath();
+                    ctx.moveTo(0, -h);
+                    ctx.lineTo(w, 0);
+                    ctx.lineTo(0, h);
+                    ctx.lineTo(-w, 0);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.restore();
+
+                    ctx.save();
+                    ctx.fillStyle = `rgba(240, 255, 255, ${0.85 * lifeRatio})`;
+                    ctx.font = 'bold 12px Orbitron';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.translate(shard.x, shard.y - baseRadius * 1.25);
+                    ctx.scale(1, 0.9);
+                    ctx.fillText(`x${shard.buffStacks || 1}`, 0, 0);
+                    ctx.restore();
+                }
+                ctx.restore();
                 ctx.globalAlpha = 1;
             }
 
@@ -14802,6 +15507,600 @@
                 }
             }
 
+            function normalizeAngle(angle) {
+                if (!Number.isFinite(angle)) return 0;
+                return Math.atan2(Math.sin(angle), Math.cos(angle));
+            }
+
+            function ensureTemporalSystems() {
+                if (!Array.isArray(store.temporalEchoes)) {
+                    store.temporalEchoes = [];
+                }
+                if (!Array.isArray(store.timeShards)) {
+                    store.timeShards = [];
+                }
+                if (!store.temporalBeam) {
+                    store.temporalBeam = {
+                        anchorBossId: null,
+                        angle: 0,
+                        width: 32,
+                        telegraph: 0,
+                        skipPulse: 0,
+                        rotationSpeed: 0,
+                        length: Math.max(W, H),
+                        originOffset: 1,
+                        active: false
+                    };
+                }
+            }
+
+            function ensureAsynchronosState(b) {
+                if (b.asynchronosState) {
+                    return b.asynchronosState;
+                }
+
+                const state = {
+                    phase: 1,
+                    motionSamples: [],
+                    motionSampleInterval: 0.14,
+                    motionSampleTimer: 0.05,
+                    bossHistory: [],
+                    bossSampleInterval: 0.08,
+                    bossSampleTimer: 0.08,
+                    historyDurationMs: 6000,
+                    echoTimer: 2.4,
+                    baseEchoCooldown: 3.8,
+                    phaseEchoCooldown: 2.5,
+                    echoSensitivity: 0.3,
+                    rewindTimer: 9.5,
+                    baseRewindInterval: 9.5,
+                    phaseRewindInterval: 6.4,
+                    rewindLookback: 2.7,
+                    phaseRewindLookback: 2.0,
+                    rewinding: false,
+                    rewindDuration: 0.65,
+                    rewindElapsed: 0,
+                    rewindPath: null,
+                    beamAngle: -Math.PI / 2,
+                    baseBeamRotationSpeed: 0.55,
+                    phaseBeamRotationSpeed: 0.82,
+                    beamRotationSpeed: 0.55,
+                    beamSkipTimer: 3.4,
+                    baseBeamSkipInterval: 3.4,
+                    phaseBeamSkipInterval: 2.3,
+                    beamTelegraphWindow: 0.75,
+                    beamTelegraphActive: false,
+                    beamSkipAngle: Math.PI / 4,
+                    skipPulseTimer: 0,
+                    skipPulseDuration: 0.45,
+                    burstTimer: 2.4,
+                    baseBurstInterval: 2.6,
+                    phaseBurstInterval: 1.8,
+                    movePhase: 0,
+                    lastPlayerSample: null,
+                    lastPlayerDirection: 0
+                };
+
+                b.asynchronosState = state;
+                return state;
+            }
+
+            function recordAsynchronosSamples(b, state, dt) {
+                const now = performance.now();
+
+                state.motionSampleTimer -= dt;
+                if (state.motionSampleTimer <= 0) {
+                    state.motionSampleTimer += state.motionSampleInterval;
+                    const player = store.player;
+                    if (player) {
+                        const last = state.lastPlayerSample;
+                        const sample = { x: player.x, y: player.y, t: now };
+                        if (last) {
+                            const dtMs = Math.max(16, now - last.t);
+                            const dtSeconds = dtMs / 1000;
+                            const dx = player.x - last.x;
+                            const dy = player.y - last.y;
+                            const dist = Math.hypot(dx, dy);
+                            const speed = dtSeconds > 0 ? dist / dtSeconds : 0;
+                            const dir = dist > 2 ? Math.atan2(dy, dx) : state.lastPlayerDirection;
+                            state.motionSamples.push({ pos: { x: player.x, y: player.y }, dir, speed, t: now });
+                            state.lastPlayerDirection = dir;
+                            while (state.motionSamples.length > 24) {
+                                state.motionSamples.shift();
+                            }
+                        }
+                        state.lastPlayerSample = sample;
+                    }
+                }
+
+                state.bossSampleTimer -= dt;
+                if (state.bossSampleTimer <= 0) {
+                    state.bossSampleTimer += state.bossSampleInterval;
+                    state.bossHistory.push({ x: b.x, y: b.y, t: now });
+                }
+
+                while (state.bossHistory.length && now - state.bossHistory[0].t > state.historyDurationMs) {
+                    state.bossHistory.shift();
+                }
+
+                while (state.motionSamples.length && now - state.motionSamples[0].t > state.historyDurationMs) {
+                    state.motionSamples.shift();
+                }
+            }
+
+            function evaluateAsynchronosEcho(state) {
+                if (state.echoTimer > 0 || state.motionSamples.length < 6) {
+                    return null;
+                }
+
+                const recent = state.motionSamples.slice(-6);
+                const active = recent.filter(sample => sample.speed > 40);
+                if (active.length < 5) {
+                    return null;
+                }
+
+                let totalDrift = 0;
+                let maxSpeed = active[0].speed;
+                let minSpeed = active[0].speed;
+                for (let i = 1; i < active.length; i++) {
+                    const prev = active[i - 1];
+                    const curr = active[i];
+                    const delta = Math.atan2(Math.sin(curr.dir - prev.dir), Math.cos(curr.dir - prev.dir));
+                    totalDrift += Math.abs(delta);
+                    maxSpeed = Math.max(maxSpeed, curr.speed);
+                    minSpeed = Math.min(minSpeed, curr.speed);
+                }
+
+                const avgDrift = totalDrift / (active.length - 1);
+                const avgSpeed = active.reduce((sum, sample) => sum + sample.speed, 0) / active.length;
+                const speedEnvelope = avgSpeed > 0 ? (maxSpeed - minSpeed) / avgSpeed : 1;
+                const driftThreshold = state.phase === 2 ? 0.22 : 0.3;
+                const speedThreshold = state.phase === 2 ? 0.5 : 0.65;
+
+                if (avgDrift <= driftThreshold && speedEnvelope <= speedThreshold) {
+                    const originIndex = Math.max(0, state.motionSamples.length - (state.phase === 2 ? 9 : 11));
+                    const originSample = state.motionSamples[originIndex];
+                    const last = active[active.length - 1];
+                    if (originSample && originSample.pos && last) {
+                        return {
+                            position: { x: originSample.pos.x, y: originSample.pos.y },
+                            dir: last.dir,
+                            speed: avgSpeed
+                        };
+                    }
+                }
+
+                return null;
+            }
+
+            function spawnTemporalEcho(b, state, trigger, dmgScale) {
+                if (!trigger || !trigger.position) {
+                    return;
+                }
+
+                ensureTemporalSystems();
+                const dashSpeed = clamp(trigger.speed * 0.9, 220, state.phase === 2 ? 520 : 460);
+                const life = 1.2;
+                const distance = dashSpeed * (life * 0.68);
+
+                store.temporalEchoes.push({
+                    bossId: b.instanceId,
+                    x: trigger.position.x,
+                    y: trigger.position.y,
+                    vx: Math.cos(trigger.dir) * dashSpeed,
+                    vy: Math.sin(trigger.dir) * dashSpeed,
+                    distance,
+                    traveled: 0,
+                    radius: 18,
+                    damage: 22 * dmgScale * (state.phase === 2 ? 1.35 : 1),
+                    life,
+                    maxLife: life,
+                    phase: state.phase,
+                    trailTimer: 0,
+                    trailInterval: 0.08,
+                    linger: 0.55,
+                    stage: 'dash',
+                    color: '#8cf5ff',
+                    trailColor: '#2a9dff'
+                });
+
+                store.activeEffects.push(createEffect('spawnTeleport', trigger.position.x, trigger.position.y, 42, {
+                    color: '#8cf5ff',
+                    duration: 0.4
+                }));
+                playSound('charge');
+            }
+
+            function dropTimeShardsAlongPath(path, b, state) {
+                ensureTemporalSystems();
+                if (!path || path.length < 2) {
+                    return;
+                }
+
+                const shardCount = state.phase === 2 ? 5 : 4;
+                const segmentCount = path.length - 1;
+                for (let i = 1; i <= shardCount; i++) {
+                    const t = i / (shardCount + 1);
+                    const position = t * segmentCount;
+                    const index = Math.floor(position);
+                    const frac = position - index;
+                    const start = path[index];
+                    const end = path[Math.min(segmentCount, index + 1)];
+                    if (!start || !end) {
+                        continue;
+                    }
+
+                    const shardX = start.x + (end.x - start.x) * frac;
+                    const shardY = start.y + (end.y - start.y) * frac;
+
+                    store.timeShards.push({
+                        bossId: b.instanceId,
+                        x: shardX,
+                        y: shardY,
+                        baseY: shardY,
+                        r: 14,
+                        pickupRadius: 24,
+                        hp: 12,
+                        maxHp: 12,
+                        life: 8,
+                        maxLife: 8,
+                        buffStacks: 1,
+                        sparkle: Math.random() * Math.PI * 2,
+                        floatPhase: Math.random() * Math.PI * 2,
+                        floatSpeed: 2.6,
+                        dead: false
+                    });
+
+                    store.activeEffects.push(createEffect('spawnTeleport', shardX, shardY, 30, {
+                        color: '#9df7ff',
+                        duration: 0.45
+                    }));
+                }
+            }
+
+            function beginAsynchronosRewind(b, state) {
+                const now = performance.now();
+                const lookbackMs = (state.phase === 2 ? state.phaseRewindLookback : state.rewindLookback) * 1000;
+                const targetTime = now - lookbackMs;
+                const path = [{ x: b.x, y: b.y }];
+
+                for (let i = state.bossHistory.length - 1; i >= 0; i--) {
+                    const sample = state.bossHistory[i];
+                    path.push({ x: sample.x, y: sample.y });
+                    if (sample.t <= targetTime) {
+                        break;
+                    }
+                }
+
+                if (path.length < 3) {
+                    state.rewindTimer = (state.phase === 2 ? state.phaseRewindInterval : state.baseRewindInterval) * 0.6;
+                    return false;
+                }
+
+                state.rewindPath = path;
+                state.rewindDuration = state.phase === 2 ? 0.5 : 0.65;
+                state.rewindElapsed = 0;
+                state.rewinding = true;
+                state.rewindTimer = state.phase === 2 ? state.phaseRewindInterval : state.baseRewindInterval;
+                b.isInvincible = true;
+
+                dropTimeShardsAlongPath(path, b, state);
+                store.activeEffects.push(createEffect('spawnTeleport', b.x, b.y, Math.max(50, (b.r || 40) + 28), {
+                    color: '#6ff2ff',
+                    duration: 0.4
+                }));
+                playSound('thunder');
+                return true;
+            }
+
+            function updateAsynchronosRewind(b, state, dt) {
+                if (!state.rewinding || !state.rewindPath || state.rewindPath.length < 2) {
+                    return;
+                }
+
+                state.rewindElapsed += dt;
+                const duration = Math.max(0.001, state.rewindDuration);
+                const progress = clamp(state.rewindElapsed / duration, 0, 1);
+                const segments = state.rewindPath.length - 1;
+                const position = progress * segments;
+                const index = Math.floor(position);
+                const frac = position - index;
+                const start = state.rewindPath[index];
+                const end = state.rewindPath[Math.min(segments, index + 1)];
+
+                if (start && end) {
+                    b.x = start.x + (end.x - start.x) * frac;
+                    b.y = start.y + (end.y - start.y) * frac;
+                }
+
+                if (progress >= 1) {
+                    state.rewinding = false;
+                    state.rewindPath = null;
+                    b.isInvincible = false;
+                    store.activeEffects.push(createEffect('spawnTeleport', b.x, b.y, Math.max(50, (b.r || 40) + 34), {
+                        color: '#6ff2ff',
+                        duration: 0.5
+                    }));
+                }
+            }
+
+            function updateAsynchronosBeam(b, state, dt) {
+                ensureTemporalSystems();
+
+                state.beamAngle = normalizeAngle(state.beamAngle + state.beamRotationSpeed * dt);
+                state.beamSkipTimer -= dt;
+
+                if (!state.beamTelegraphActive && state.beamSkipTimer <= state.beamTelegraphWindow) {
+                    state.beamTelegraphActive = true;
+                    store.activeEffects.push(createEffect('spawnTeleport', b.x, b.y, Math.max(40, (b.r || 40) + 18), {
+                        color: '#8cf5ff',
+                        duration: state.beamTelegraphWindow
+                    }));
+                    playSound('trap');
+                }
+
+                if (state.beamSkipTimer <= 0) {
+                    state.beamAngle = normalizeAngle(state.beamAngle + state.beamSkipAngle);
+                    state.beamSkipTimer += state.phase === 2 ? state.phaseBeamSkipInterval : state.baseBeamSkipInterval;
+                    state.beamTelegraphActive = false;
+                    state.skipPulseTimer = state.skipPulseDuration;
+                    store.activeEffects.push(createEffect('spawnTeleport', b.x + Math.cos(state.beamAngle) * 60, b.y + Math.sin(state.beamAngle) * 60, 48, {
+                        color: '#6ff2ff',
+                        duration: 0.4
+                    }));
+                    playSound('thunder');
+                }
+
+                if (state.skipPulseTimer > 0) {
+                    state.skipPulseTimer = Math.max(0, state.skipPulseTimer - dt);
+                }
+
+                const beam = store.temporalBeam;
+                beam.anchorBossId = b.instanceId;
+                beam.active = true;
+                beam.angle = state.beamAngle;
+                beam.width = state.phase === 2 ? 38 : 32;
+                beam.telegraph = state.beamTelegraphActive ? clamp(1 - Math.max(0, state.beamSkipTimer) / state.beamTelegraphWindow, 0, 1) : 0;
+                beam.skipPulse = state.skipPulseTimer > 0 ? state.skipPulseTimer / state.skipPulseDuration : 0;
+                beam.rotationSpeed = state.beamRotationSpeed;
+                beam.length = Math.max(W, H) + 120;
+                beam.originOffset = state.rewinding ? 0.85 : 1;
+            }
+
+            function fireAsynchronosVolley(b, dmgScale, state) {
+                const count = state.phase === 2 ? 8 : 6;
+                const speed = state.phase === 2 ? 260 : 220;
+                const baseAngle = Math.atan2(store.player.y - b.y, store.player.x - b.x);
+                const spread = state.phase === 2 ? 0.35 : 0.28;
+
+                for (let i = 0; i < count; i++) {
+                    const t = count > 1 ? i / (count - 1) : 0.5;
+                    const offset = (t - 0.5) * spread;
+                    const angle = baseAngle + offset;
+                    const bullet = getEBulletFromPool({
+                        x: b.x,
+                        y: b.y,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        r: 4.5,
+                        col: '#66eaff',
+                        dmg: 16 * dmgScale * (state.phase === 2 ? 1.2 : 1),
+                        life: 4,
+                        type: 'temporal_spear'
+                    });
+                    bullet.spin = (i - (count - 1) / 2) * 0.6;
+                    store.eBullets.push(bullet);
+                }
+
+                store.activeEffects.push(createEffect('spawnTeleport', b.x, b.y, Math.max(40, (b.r || 40) + 18), {
+                    color: '#66eaff',
+                    duration: 0.35
+                }));
+            }
+
+            function stepBossAsynchronos(dt, b, dmgScale) {
+                const state = ensureAsynchronosState(b);
+                ensureTemporalSystems();
+                recordAsynchronosSamples(b, state, dt);
+
+                const hpRatio = b.hpMax > 0 ? b.hp / b.hpMax : 1;
+                if (state.phase === 1 && hpRatio <= 0.5) {
+                    state.phase = 2;
+                    b.isEnraged = true;
+                    state.beamRotationSpeed = state.phaseBeamRotationSpeed;
+                    state.beamSkipTimer = Math.min(state.beamSkipTimer, state.phaseBeamSkipInterval);
+                    state.rewindTimer = Math.min(state.rewindTimer, state.phaseRewindInterval);
+                    state.burstTimer = Math.min(state.burstTimer, state.phaseBurstInterval);
+                    announce('ASYNCHRONOS ACCELERATES THE TIMELINE!');
+                    playSound('epicHorn');
+                }
+
+                if (state.rewinding) {
+                    updateAsynchronosRewind(b, state, dt);
+                } else if (b.y < 110) {
+                    b.y = Math.min(110, b.y + 160 * dt);
+                } else {
+                    state.movePhase += dt * (state.phase === 2 ? 1.1 : 0.85);
+                    const targetX = W / 2 + Math.sin(state.movePhase * 0.9) * (260 + (state.phase === 2 ? 40 : 0));
+                    const targetY = 120 + Math.sin(state.movePhase * 1.4) * 26;
+                    b.x += (targetX - b.x) * Math.min(1, 2.8 * dt);
+                    b.y += (targetY - b.y) * Math.min(1, 1.6 * dt);
+                }
+
+                state.echoTimer = Math.max(0, state.echoTimer - dt);
+                state.rewindTimer -= dt;
+                state.burstTimer -= dt;
+
+                const echoTrigger = evaluateAsynchronosEcho(state);
+                if (echoTrigger) {
+                    spawnTemporalEcho(b, state, echoTrigger, dmgScale);
+                    state.echoTimer = state.phase === 2 ? state.phaseEchoCooldown : state.baseEchoCooldown;
+                }
+
+                if (!state.rewinding && state.rewindTimer <= 0) {
+                    beginAsynchronosRewind(b, state);
+                }
+
+                updateAsynchronosBeam(b, state, dt);
+
+                if (state.burstTimer <= 0 && !state.rewinding) {
+                    fireAsynchronosVolley(b, dmgScale, state);
+                    state.burstTimer = state.phase === 2 ? state.phaseBurstInterval : state.baseBurstInterval;
+                }
+            }
+
+            function applyTimeShardBuff(stacks = 1) {
+                const p = store.player;
+                if (!p) return;
+                const additional = Math.max(1, Math.floor(stacks));
+                const current = Math.max(0, p.timeShardStacks || 0);
+                const newStacks = clamp(current + additional, 1, 5);
+                p.timeShardStacks = newStacks;
+                p.timeShardTimer = 6.5;
+                p.timeShardMultiplier = Math.pow(0.88, newStacks);
+
+                if (typeof announce === 'function') {
+                    const percent = Math.round((1 - p.timeShardMultiplier) * 100);
+                    announce(`Temporal surge x${newStacks}! Fire cadence +${percent}%`);
+                }
+            }
+
+            function updateTemporalEchoes(dt) {
+                const echoes = store.temporalEchoes;
+                if (!Array.isArray(echoes) || echoes.length === 0) return;
+                const player = store.player;
+
+                for (let i = echoes.length - 1; i >= 0; i--) {
+                    const echo = echoes[i];
+                    if (!echo) continue;
+
+                    echo.life -= dt;
+                    if (echo.life <= 0) {
+                        echo.dead = true;
+                    }
+
+                    if (echo.dead) {
+                        store.activeEffects.push(createEffect('spawnTeleport', echo.x, echo.y, 26, {
+                            color: '#8cf5ff',
+                            duration: 0.28
+                        }));
+                        echoes.splice(i, 1);
+                        continue;
+                    }
+
+                    if (echo.stage === 'dash') {
+                        const stepX = echo.vx * dt;
+                        const stepY = echo.vy * dt;
+                        echo.x += stepX;
+                        echo.y += stepY;
+                        echo.traveled += Math.hypot(stepX, stepY);
+                        echo.trailTimer -= dt;
+                        if (echo.trailTimer <= 0) {
+                            echo.trailTimer += echo.trailInterval || 0.08;
+                            const trail = getEBulletFromPool({
+                                x: echo.x,
+                                y: echo.y,
+                                vx: 0,
+                                vy: 0,
+                                r: 7,
+                                col: echo.trailColor || '#4de0ff',
+                                dmg: (echo.damage || 18) * 0.55,
+                                life: 0.35,
+                                type: 'temporal_trail'
+                            });
+                            store.eBullets.push(trail);
+                        }
+                        if (echo.traveled >= echo.distance) {
+                            echo.stage = 'linger';
+                            echo.vx = 0;
+                            echo.vy = 0;
+                            echo.life = Math.max(echo.life, echo.linger || 0.4);
+                        }
+                    } else if (echo.stage === 'linger') {
+                        echo.linger -= dt;
+                        if (echo.linger <= 0) {
+                            echo.dead = true;
+                        }
+                    }
+
+                    if (player && !player.isInvincible) {
+                        const radius = (player.r || 16) + (echo.radius || 18) * 0.7;
+                        const dx = player.x - echo.x;
+                        const dy = player.y - echo.y;
+                        if (dx * dx + dy * dy <= radius * radius) {
+                            takeDamage(echo.damage || 20);
+                            echo.stage = 'linger';
+                            echo.linger = Math.min(echo.linger || 0.5, 0.25);
+                            echo.vx = 0;
+                            echo.vy = 0;
+                        }
+                    }
+                }
+            }
+
+            function updateTimeShards(dt) {
+                const shards = store.timeShards;
+                if (!Array.isArray(shards) || shards.length === 0) return;
+                const player = store.player;
+                for (let i = shards.length - 1; i >= 0; i--) {
+                    const shard = shards[i];
+                    if (!shard) continue;
+                    shard.life -= dt;
+                    shard.floatPhase = (shard.floatPhase || 0) + (shard.floatSpeed || 2.4) * dt;
+                    if (shard.hitPulse) {
+                        shard.hitPulse = Math.max(0, shard.hitPulse - dt);
+                    }
+                    if (shard.baseY !== undefined) {
+                        shard.y = shard.baseY + Math.sin(shard.floatPhase) * 8;
+                    }
+
+                    if (shard.life <= 0 || shard.hp <= 0 || shard.dead) {
+                        store.activeEffects.push(createEffect('spawnTeleport', shard.x, shard.y, 24, {
+                            color: '#9df7ff',
+                            duration: 0.3
+                        }));
+                        shards.splice(i, 1);
+                    }
+                }
+            }
+
+            function applyTemporalBeamEffects(dt, dmgScale) {
+                const beam = store.temporalBeam;
+                const boss = store.boss;
+                if (!beam || !beam.active || !boss || boss.dead || boss.behavior !== 'asynchronos') return;
+
+                beam.damageCooldown = Math.max(0, (beam.damageCooldown || 0) - dt);
+
+                const player = store.player;
+                if (!player || player.isInvincible) return;
+
+                const originX = boss.x;
+                const originY = boss.y;
+                const ux = Math.cos(beam.angle || 0);
+                const uy = Math.sin(beam.angle || 0);
+                const px = player.x - originX;
+                const py = player.y - originY;
+                const along = px * ux + py * uy;
+                if (along < -(player.r || 16)) return;
+
+                const perpX = -uy;
+                const perpY = ux;
+                const dist = Math.abs(px * perpX + py * perpY);
+                const effectiveWidth = (beam.width || 32) * (beam.telegraph > 0 ? (0.45 + 0.55 * (1 - beam.telegraph)) : 1);
+
+                if (dist <= effectiveWidth) {
+                    if (beam.damageCooldown <= 0) {
+                        const damage = 22 * (dmgScale || 1);
+                        takeDamage(damage);
+                        beam.damageCooldown = 0.35;
+                        store.activeEffects.push(createEffect('hurtPulse', player.x, player.y, (player.r || 16) * 1.6, {
+                            color: '#9df7ff',
+                            duration: 0.25
+                        }));
+                    }
+                }
+            }
+
             function stepBossShadowClone(dt, b, dmgScale) {
                 ensureShadowCloneInit(b);
                 if (!b.isEnraged && b.hp / b.hpMax <= 0.35) {
@@ -15007,43 +16306,223 @@
                     b.patternPhase++;
                 }
             }
-            function fireMalignusBarrierVolley(b, dmgScale) {
-                const laneCount = 12;
-                const gapWidth = 3;
-                const skipStart = Math.floor(Math.random() * (laneCount - gapWidth));
-                for (let i = 0; i < laneCount; i++) {
-                    if (i >= skipStart && i < skipStart + gapWidth) continue;
-                    const lanePos = (W / (laneCount + 1)) * (i + 1);
-                    store.eBullets.push({
-                        x: lanePos,
-                        y: b.y,
-                        vx: 0,
-                        vy: 180,
-                        r: 6,
-                        col: b.color,
-                        dmg: 20 * dmgScale
-                    });
+            function ensureAegisArchitectState(b) {
+                if (b.aegisState) {
+                    return b.aegisState;
+                }
+
+                const rawCycle = Math.max(0, Math.floor((ensureFiniteNumber(b.spawnWave, store.world.wave) - 5) / 5));
+                const loopIndex = Math.max(0, Math.floor(rawCycle / BOSS_DEFINITIONS.length));
+                const difficultyScale = 1 + loopIndex * 0.2;
+                const segmentHp = Math.max(320, b.hpMax * 0.18 * difficultyScale);
+                const segmentDefs = [
+                    { id: 'solar', label: 'Solar Keystone', color: '#ffb347', baseAngle: 0, arc: Math.PI * 0.58, unlock: 'solar_burst', unlockMessage: 'Solar torrents ignite the field!' },
+                    { id: 'prismatic', label: 'Prismatic Keystone', color: '#7de8ff', baseAngle: (2 * Math.PI) / 3, arc: Math.PI * 0.58, unlock: 'prismatic_grid', unlockMessage: 'Prismatic lattices refract across the arena!' },
+                    { id: 'gravity', label: 'Gravimetric Keystone', color: '#c5a7ff', baseAngle: (4 * Math.PI) / 3, arc: Math.PI * 0.58, unlock: 'gravity_well', unlockMessage: 'Gravity wells distort your footing!' }
+                ];
+
+                const segments = segmentDefs.map(def => ({
+                    ...def,
+                    hp: segmentHp,
+                    maxHp: segmentHp,
+                    destroyed: false,
+                    hitPulse: 0,
+                    lastHitTime: 0
+                }));
+
+                const state = {
+                    rotationAngle: 0,
+                    rotationSpeed: 0.45,
+                    rotationDirection: 1,
+                    shieldRadius: Math.max(90, b.r * 1.08),
+                    coreRadius: Math.max(44, b.r * 0.62),
+                    segments,
+                    attackTimer: 1.6,
+                    availablePatterns: ['baseline', 'baseline'],
+                    patternIndex: -1,
+                    unlocks: Object.create(null),
+                    difficultyScale,
+                    loopIndex,
+                    corePulse: 0,
+                    enraged: false,
+                    coreExposed: false
+                };
+
+                b.aegisState = state;
+                return state;
+            }
+
+            function getAegisSegmentForAngle(state, angle) {
+                if (!state || !state.segments) return null;
+                for (const segment of state.segments) {
+                    if (!segment || segment.destroyed) continue;
+                    const center = state.rotationAngle + segment.baseAngle;
+                    const delta = Math.atan2(Math.sin(angle - center), Math.cos(angle - center));
+                    if (Math.abs(delta) <= segment.arc * 0.5) {
+                        return segment;
+                    }
+                }
+                return null;
+            }
+
+            function handleAegisSegmentDestroyed(boss, segment, state) {
+                if (!boss || !segment || !state) return;
+
+                state.rotationDirection *= -1;
+                state.rotationSpeed *= 1.1;
+                state.availablePatterns.push(segment.unlock);
+                state.availablePatterns.push('baseline');
+                state.unlocks[segment.id] = true;
+                state.attackTimer = Math.min(state.attackTimer, state.enraged ? 0.9 : 1.2);
+
+                store.activeEffects.push(createEffect('spawnTeleport', boss.x, boss.y, state.shieldRadius + 24, {
+                    color: segment.color,
+                    duration: 0.8
+                }));
+
+                if (typeof announce === 'function') {
+                    announce(`${segment.label} shattered! ${segment.unlockMessage}`);
+                }
+
+                if (state.segments.every(seg => seg.destroyed)) {
+                    if (!state.coreExposed) {
+                        state.coreExposed = true;
+                        state.availablePatterns.push('cataclysm');
+                        if (typeof announce === 'function') {
+                            announce('Architect core exposed! Cataclysm routines engaged!');
+                        }
+                    }
                 }
             }
 
-            function fireMalignusSpiralVolley(b, dmgScale) {
-                const count = 10;
+            function applyAegisShieldDamage(boss, damage, options = {}) {
+                if (!boss || boss.behavior !== 'aegis_architect' || damage <= 0) {
+                    return { blocked: false, damageApplied: 0 };
+                }
+
+                const state = options.state || ensureAegisArchitectState(boss);
+                if (!state) {
+                    return { blocked: false, damageApplied: 0 };
+                }
+
+                let angle = options.angle;
+                if (angle === undefined && options.point) {
+                    angle = Math.atan2(options.point.y - boss.y, options.point.x - boss.x);
+                }
+                if (angle === undefined || !Number.isFinite(angle)) {
+                    return { blocked: false, damageApplied: 0 };
+                }
+
+                const segment = getAegisSegmentForAngle(state, angle);
+                if (!segment) {
+                    return { blocked: false, damageApplied: 0 };
+                }
+
+                const applied = Math.max(0, damage);
+                segment.hp = Math.max(0, segment.hp - applied);
+                segment.hitPulse = 0.22;
+                segment.lastHitTime = performance.now();
+
+                const impactRadius = Math.max(18, options.hitRadius || 18);
+                const impactX = boss.x + Math.cos(angle) * state.shieldRadius;
+                const impactY = boss.y + Math.sin(angle) * state.shieldRadius;
+
+                store.activeEffects.push(createEffect('hitSpark', impactX, impactY, impactRadius, {
+                    color: segment.color
+                }));
+                store.activeEffects.push(createEffect('spawnTeleport', impactX, impactY, impactRadius + 6, {
+                    color: segment.color,
+                    duration: 0.35
+                }));
+
+                store.world.totalDamage += applied;
+
+                if (segment.hp <= 0 && !segment.destroyed) {
+                    segment.destroyed = true;
+                    handleAegisSegmentDestroyed(boss, segment, state);
+                }
+
+                return { blocked: true, damageApplied: applied, segment };
+            }
+
+            function tryAegisShieldInterceptBullet(boss, bullet, damage) {
+                if (!boss || !bullet || damage <= 0 || boss.behavior !== 'aegis_architect') {
+                    return null;
+                }
+
+                const state = ensureAegisArchitectState(boss);
+                if (!state) {
+                    return null;
+                }
+
+                const dx = bullet.x - boss.x;
+                const dy = bullet.y - boss.y;
+                const dist = Math.hypot(dx, dy);
+                if (!Number.isFinite(dist) || dist < state.coreRadius * 0.72) {
+                    return null;
+                }
+
+                const angle = Math.atan2(dy, dx);
+                const result = applyAegisShieldDamage(boss, damage, { state, angle, hitRadius: (bullet.r || 4) + 6 });
+                if (!result.blocked) {
+                    return null;
+                }
+
+                if (bullet.pierce) {
+                    bullet.pierceHits = (bullet.pierceHits || 0) + 1;
+                    if (bullet.pierceHits >= bullet.pierce) {
+                        bullet.dead = true;
+                    }
+                } else {
+                    bullet.dead = true;
+                }
+
+                return result;
+            }
+
+            function fireAegisBaselineVolley(b, dmgScale, state) {
+                const aim = Math.atan2(store.player.y - b.y, store.player.x - b.x);
+                const count = 5;
+                const spread = Math.PI / 18;
+                const speed = (state && state.enraged) ? 290 : 240;
+                for (let i = 0; i < count; i++) {
+                    const offset = (i - (count - 1) / 2) * spread;
+                    store.eBullets.push({
+                        x: b.x,
+                        y: b.y,
+                        vx: Math.cos(aim + offset) * speed,
+                        vy: Math.sin(aim + offset) * speed,
+                        r: 5,
+                        col: '#6bd6ff',
+                        dmg: 16 * dmgScale,
+                        life: 4
+                    });
+                }
+
+                store.activeEffects.push(createEffect('spawnTeleport', b.x, b.y, 34, {
+                    color: '#6bd6ff',
+                    duration: 0.4
+                }));
+            }
+
+            function fireAegisSolarBurst(b, dmgScale, state) {
                 const baseX = b.x;
-                const originY = b.y + 36;
+                const originY = b.y + 34;
+                const count = (state && state.enraged) ? 12 : 10;
                 for (let i = 0; i < count; i++) {
                     const offsetIndex = i - (count - 1) / 2;
-                    const amplitude = 110 + Math.abs(offsetIndex) * 12;
-                    const frequency = 2.6 + Math.random() * 0.45;
-                    const fallSpeed = 150 + Math.random() * 45;
-                    const phaseOffset = offsetIndex * 0.45;
+                    const amplitude = 110 + Math.abs(offsetIndex) * 14;
+                    const frequency = 2.4 + Math.random() * 0.35;
+                    const fallSpeed = 160 + Math.random() * 40;
+                    const phaseOffset = offsetIndex * 0.42;
 
                     store.eBullets.push({
-                        x: baseX + offsetIndex * 22,
+                        x: baseX + offsetIndex * 18,
                         y: originY,
-                        r: 5.5,
-                        col: '#48ffd7',
-                        dmg: 22 * dmgScale,
-                        path: 'malignus_sine',
+                        r: 6,
+                        col: '#ffb347',
+                        dmg: 18 * dmgScale * ((state && state.enraged) ? 1.15 : 1),
+                        path: 'aegis_spiral',
                         amplitude,
                         frequency,
                         fallSpeed,
@@ -15053,93 +16532,191 @@
                     });
                 }
 
-                store.activeEffects.push(createEffect('spawnTeleport', baseX, originY, 42, {
-                    color: '#48ffd7',
+                store.activeEffects.push(createEffect('spawnTeleport', baseX, originY, 44, {
+                    color: '#ffb347',
+                    duration: 0.75
+                }));
+            }
+
+            function fireAegisPrismaticGrid(b, dmgScale, state) {
+                const lanes = (state && state.enraged) ? 6 : 5;
+                const usableWidth = W - 120;
+                const baseX = 60;
+                for (let i = 0; i < lanes; i++) {
+                    const laneX = baseX + (i + 0.5) * (usableWidth / lanes);
+                    const downwardSpeed = 240 + i * 12;
+                    store.eBullets.push({
+                        x: laneX,
+                        y: b.y + 20,
+                        vx: ((i % 2 === 0) ? -1 : 1) * 80,
+                        vy: downwardSpeed,
+                        r: 5,
+                        col: '#90f2ff',
+                        dmg: 18 * dmgScale,
+                        life: 3.6
+                    });
+                    store.eBullets.push({
+                        x: laneX,
+                        y: b.y + 20,
+                        vx: 0,
+                        vy: downwardSpeed + 40,
+                        r: 7,
+                        col: '#abf5ff',
+                        dmg: 22 * dmgScale,
+                        life: 3.2
+                    });
+                }
+
+                store.activeEffects.push(createEffect('spawnTeleport', b.x, b.y + 20, 52, {
+                    color: '#90f2ff',
+                    duration: 0.6
+                }));
+            }
+
+            function fireAegisGravityAnchors(b, dmgScale, state) {
+                const orbs = (state && state.enraged) ? 3 : 2;
+                const radius = state ? state.shieldRadius : b.r + 24;
+                const baseAngle = Math.random() * Math.PI * 2;
+                for (let i = 0; i < orbs; i++) {
+                    const angle = baseAngle + (i / orbs) * Math.PI * 2;
+                    const spawnX = b.x + Math.cos(angle) * radius;
+                    const spawnY = b.y + Math.sin(angle) * radius;
+                    const speed = 90 + Math.random() * 40;
+                    store.eBullets.push({
+                        x: spawnX,
+                        y: spawnY,
+                        vx: Math.cos(angle) * speed * 0.35,
+                        vy: Math.sin(angle) * speed * 0.35,
+                        r: 9,
+                        col: '#c8b2ff',
+                        dmg: 26 * dmgScale,
+                        life: 6.5,
+                        path: 'aegis_gravity',
+                        homingStrength: 125 + (state ? state.difficultyScale : 1) * 15,
+                        maxSpeed: 260,
+                        pulseOffset: Math.random() * Math.PI * 2
+                    });
+                }
+
+                store.activeEffects.push(createEffect('spawnTeleport', b.x, b.y, radius + 18, {
+                    color: '#c8b2ff',
+                    duration: 0.7
+                }));
+            }
+
+            function fireAegisCataclysm(b, dmgScale, state) {
+                const count = (state && state.enraged) ? 18 : 14;
+                for (let i = 0; i < count; i++) {
+                    const angle = (i / count) * Math.PI * 2;
+                    const speed = (state && state.enraged) ? 320 : 250;
+                    store.eBullets.push({
+                        x: b.x,
+                        y: b.y,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        r: 5,
+                        col: '#5dd0ff',
+                        dmg: 18 * dmgScale,
+                        life: 4.2
+                    });
+                }
+
+                store.activeEffects.push(createEffect('spawnTeleport', b.x, b.y, (state ? state.shieldRadius : b.r + 24) + 30, {
+                    color: '#5dd0ff',
                     duration: 0.8
                 }));
             }
 
-            function spawnMalignusCollarFragment(b) {
-                if (!store.powerups) {
-                    store.powerups = [];
+            function nextAegisPattern(state) {
+                if (!state || !state.availablePatterns.length) {
+                    return 'baseline';
                 }
-                if (!store.activeEffects) {
-                    store.activeEffects = [];
-                }
-                const dropX = clamp(b.x + (Math.random() - 0.5) * 90, 60, W - 60);
-                const drop = {
-                    x: dropX,
-                    y: b.y + 28,
-                    r: 15,
-                    type: 'collar_fragment',
-                    vx: 0,
-                    vy: 120,
-                    life: 9,
-                    pulseOffset: Math.random() * Math.PI * 2
-                };
-                store.powerups.push(drop);
-                store.activeEffects.push(createEffect('spawnTeleport', drop.x, drop.y, drop.r + 6, {
-                    color: '#5df4d6',
-                    duration: 0.9
-                }));
-                announce('Neural collar fragment detected! Secure it to tighten the chain.');
+                state.patternIndex = (state.patternIndex + 1) % state.availablePatterns.length;
+                return state.availablePatterns[state.patternIndex];
             }
 
-            function stepBossCoreMalignus(dt, b, dmgScale) {
-                if (!b.malignusState) {
-                    const rawCycle = Math.max(0, Math.floor((ensureFiniteNumber(b.spawnWave, store.world.wave) - 5) / 5));
-                    const loopIndex = Math.max(0, Math.floor(rawCycle / BOSS_DEFINITIONS.length));
-                    b.malignusState = {
-                        loopIndex,
-                        enhanced: loopIndex >= 1,
-                        volley: 0,
-                        spiralCooldown: 0,
-                        collarDropsAwarded: 0
-                    };
+            function getAegisPatternCooldown(pattern, state) {
+                const base = state && state.enraged ? 1.4 : 2.2;
+                let cooldown = base;
+                switch (pattern) {
+                    case 'baseline':
+                        cooldown = base * 0.9;
+                        break;
+                    case 'solar_burst':
+                        cooldown = base * 1.05;
+                        break;
+                    case 'prismatic_grid':
+                        cooldown = base * 1.15;
+                        break;
+                    case 'gravity_well':
+                        cooldown = base * 1.2;
+                        break;
+                    case 'cataclysm':
+                        cooldown = Math.max(1.1, base * 0.85);
+                        break;
                 }
+                if (state && state.enraged) {
+                    cooldown *= 0.75;
+                }
+                return Math.max(0.7, cooldown);
+            }
 
-                const state = b.malignusState;
+            function stepBossCoreAegisArchitect(dt, b, dmgScale) {
+                const state = ensureAegisArchitectState(b);
+                if (!state) return;
 
-                if (b.hp / b.hpMax <= 0.07 && !b.isEnraged) {
+                const hpRatio = b.hpMax > 0 ? b.hp / b.hpMax : 1;
+                if (hpRatio <= 0.35 && !state.enraged) {
+                    state.enraged = true;
                     b.isEnraged = true;
-                    playSound('horn');
+                    state.rotationSpeed *= 1.35;
+                    if (typeof announce === 'function') {
+                        announce('Architect protocols enraged! Shield rotation accelerating!');
+                    }
                 }
 
-                if (b.y >= 100) {
+                if (b.y < 130) {
+                    b.y = Math.min(130, b.y + 140 * dt);
+                } else {
                     b.moveT += dt;
-                    if (state.enhanced) {
-                        const horizontalAmplitude = Math.max(140, (W / 2) - 140);
-                        const sway = Math.sin(b.moveT * 0.85) * horizontalAmplitude;
-                        b.x = W / 2 + sway;
-                        const verticalOscillation = Math.sin(b.moveT * 1.6) * 20;
-                        b.y = 120 + verticalOscillation;
-                    } else {
-                        b.x = W / 2 + (W / 2 - 100) * Math.sin(b.moveT * 0.5);
-                    }
+                    b.x = W / 2 + Math.sin(b.moveT * 0.55) * 150;
+                    b.y = 130 + Math.sin(b.moveT * 0.9) * 26;
                 }
 
-                if (state.spiralCooldown > 0) {
-                    state.spiralCooldown = Math.max(0, state.spiralCooldown - dt);
+                const spinMultiplier = state.enraged ? 1.35 : 1;
+                state.rotationAngle += state.rotationSpeed * dt * state.rotationDirection * spinMultiplier;
+                if (state.rotationAngle > Math.PI * 2 || state.rotationAngle < -Math.PI * 2) {
+                    state.rotationAngle = Math.atan2(Math.sin(state.rotationAngle), Math.cos(state.rotationAngle));
                 }
 
-                b.fireT -= dt;
-                if (b.fireT <= 0) {
-                    state.volley += 1;
-                    const baseCooldown = b.isEnraged ? 0.6 : 0.8;
-                    const enhancedCooldown = state.enhanced ? baseCooldown * 0.9 : baseCooldown;
-                    b.fireT = enhancedCooldown;
-
-                    const readyForSpiral = state.enhanced && state.spiralCooldown <= 0 && state.volley % 3 === 0;
-                    if (readyForSpiral) {
-                        fireMalignusSpiralVolley(b, dmgScale * (b.isEnraged ? 1.08 : 1));
-                        state.spiralCooldown = b.isEnraged ? 4 : 5;
-                        if (state.collarDropsAwarded < state.volley) {
-                            spawnMalignusCollarFragment(b);
-                            state.collarDropsAwarded = state.volley;
-                        }
-                    } else {
-                        fireMalignusBarrierVolley(b, dmgScale);
+                state.corePulse += dt * (state.enraged ? 4.0 : 2.8);
+                state.segments.forEach(segment => {
+                    if (segment.hitPulse > 0) {
+                        segment.hitPulse = Math.max(0, segment.hitPulse - dt);
                     }
+                });
+
+                state.attackTimer -= dt;
+                if (state.attackTimer <= 0) {
+                    const pattern = nextAegisPattern(state);
+                    switch (pattern) {
+                        case 'solar_burst':
+                            fireAegisSolarBurst(b, dmgScale, state);
+                            break;
+                        case 'prismatic_grid':
+                            fireAegisPrismaticGrid(b, dmgScale, state);
+                            break;
+                        case 'gravity_well':
+                            fireAegisGravityAnchors(b, dmgScale, state);
+                            break;
+                        case 'cataclysm':
+                            fireAegisCataclysm(b, dmgScale, state);
+                            break;
+                        default:
+                            fireAegisBaselineVolley(b, dmgScale, state);
+                            break;
+                    }
+                    state.attackTimer = getAegisPatternCooldown(pattern, state);
                 }
             }
             function stepBossTheHex(dt, b, dmgScale) {
@@ -15953,12 +17530,13 @@
 
                 switch (b.behavior) {
                     case 'sentinel': stepBossOmegaSentinel(dt, b, dmgScale); break;
-                    case 'malignus': stepBossCoreMalignus(dt, b, dmgScale); break;
+                    case 'aegis_architect': stepBossCoreAegisArchitect(dt, b, dmgScale); break;
                     case 'hex': stepBossTheHex(dt, b, dmgScale); break;
                     case 'construct': stepBossGeometron(dt, b, dmgScale); break;
                     case 'shadow_clone': stepBossShadowClone(dt, b, dmgScale); break;
                     case 'avian': stepBossVoidRaven(dt, b, dmgScale); break;
                     case 'broodlord': stepBossBroodlord(dt, b, dmgScale); break;
+                    case 'asynchronos': stepBossAsynchronos(dt, b, dmgScale); break;
                 }
             }
             function drawMissile(m) {
@@ -16159,6 +17737,73 @@
                 ctx.strokeStyle = `rgba(200, 220, 255, 0.8)`;
                 ctx.shadowBlur = 10;
                 ctx.stroke();
+
+                ctx.restore();
+            }
+
+            function drawTemporalBeam() {
+                const beam = store.temporalBeam;
+                const boss = store.boss;
+                if (!beam || !beam.active || !boss || boss.dead || boss.behavior !== 'asynchronos') return;
+
+                const angle = beam.angle || 0;
+                const length = beam.length || Math.max(W, H) + 160;
+                const width = beam.width || 32;
+                const telegraph = clamp(beam.telegraph || 0, 0, 1);
+                const skipPulse = clamp(beam.skipPulse || 0, 0, 1);
+                const originOffset = beam.originOffset !== undefined ? beam.originOffset : 1;
+
+                ctx.save();
+                ctx.translate(boss.x, boss.y);
+                ctx.rotate(angle);
+                ctx.globalCompositeOperation = 'lighter';
+
+                const baseWidth = width * (telegraph > 0 ? (0.45 + 0.55 * (1 - telegraph)) : 1);
+                const auraWidth = baseWidth * (1.9 + skipPulse * 0.4);
+                const startOffset = -length * 0.12 * (1 - originOffset);
+
+                const auraGradient = ctx.createLinearGradient(0, -auraWidth, 0, auraWidth);
+                auraGradient.addColorStop(0, 'rgba(140, 246, 255, 0)');
+                auraGradient.addColorStop(0.35, 'rgba(140, 246, 255, 0.24)');
+                auraGradient.addColorStop(0.65, 'rgba(140, 246, 255, 0.24)');
+                auraGradient.addColorStop(1, 'rgba(140, 246, 255, 0)');
+                ctx.fillStyle = auraGradient;
+                ctx.fillRect(startOffset, -auraWidth, length, auraWidth * 2);
+
+                const coreWidth = Math.max(6, baseWidth * 0.45);
+                const coreGradient = ctx.createLinearGradient(0, -coreWidth, 0, coreWidth);
+                coreGradient.addColorStop(0, 'rgba(255,255,255,0)');
+                coreGradient.addColorStop(0.5, `rgba(210, 255, 255, ${0.75 + skipPulse * 0.35})`);
+                coreGradient.addColorStop(1, 'rgba(255,255,255,0)');
+                ctx.fillStyle = coreGradient;
+                ctx.fillRect(startOffset, -coreWidth, length, coreWidth * 2);
+
+                if (telegraph > 0.01) {
+                    ctx.save();
+                    ctx.globalCompositeOperation = 'screen';
+                    ctx.globalAlpha = clamp(telegraph * 0.95, 0.18, 0.75);
+                    ctx.lineWidth = Math.max(2, baseWidth * 0.6);
+                    ctx.strokeStyle = addAlpha('#66eaff', 0.8);
+                    const dash = baseWidth * 1.1;
+                    ctx.setLineDash([dash, dash]);
+                    ctx.beginPath();
+                    ctx.moveTo(startOffset, 0);
+                    ctx.lineTo(startOffset + length, 0);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+
+                if (skipPulse > 0.01) {
+                    const pulseRadius = baseWidth * (1.6 + skipPulse * 1.2);
+                    const pulseCenter = Math.min(length * 0.5, length - pulseRadius * 1.2);
+                    const pulseGradient = ctx.createRadialGradient(pulseCenter, 0, 0, pulseCenter, 0, pulseRadius);
+                    pulseGradient.addColorStop(0, `rgba(210, 255, 255, ${0.55 + skipPulse * 0.4})`);
+                    pulseGradient.addColorStop(1, 'rgba(210, 255, 255, 0)');
+                    ctx.fillStyle = pulseGradient;
+                    ctx.beginPath();
+                    ctx.arc(pulseCenter, 0, pulseRadius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
 
                 ctx.restore();
             }
@@ -16542,7 +18187,145 @@
                 ctx.strokeStyle = "#fff";
                 ctx.lineWidth = 1;
                 ctx.strokeRect(-60, -t.r - 20, 120, 8);
-                if (t.behavior === "malignus") { const time = performance.now() / 1000; ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.4, 0, Math.PI * 2); ctx.fill(); const numgold = 5; for (let i = 0; i < numgold; i++) { ctx.save(); const angle = time * (0.5 + 0.1 * i) + i * (2 * Math.PI / numgold); const dist = 0.8 * t.r; ctx.rotate(angle); ctx.translate(dist, 0); ctx.rotate(2 * time); ctx.fillStyle = addAlpha(t.color, 0.67); ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2; const goldize = 0.3 * t.r; ctx.beginPath(); ctx.moveTo(0, -goldize); ctx.lineTo(goldize / 2, goldize); ctx.lineTo(-goldize / 2, goldize); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); } } else if (t.behavior === "hex") { ctx.translate(0, 30); const bodyW_top = t.r * 1.5; const bodyW_bottom = t.r * 2.5; const bodyH = t.r * 1.5; ctx.fillStyle = "#66aaff"; ctx.strokeStyle = "#5599e5"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_bottom / 2, bodyH / 2); ctx.lineTo(-bodyW_bottom / 2, bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#e03434"; ctx.strokeStyle = "#c02d2d"; const crownH = t.r * 0.8, crownW = bodyW_top * 0.9; ctx.beginPath(); ctx.moveTo(-crownW / 2, -bodyH / 2); ctx.lineTo(-crownW / 2 + crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(0, -bodyH / 2 - crownH / 2); ctx.lineTo(crownW / 2 - crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(crownW / 2, -bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#000"; ctx.fillRect(-t.r * 0.6, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(t.r * 0.2, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(-t.r * 0.4, 0, t.r * 0.8, t.r * 0.1); ctx.strokeStyle = "#ffd700"; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(0, 0, t.r * 1.1, 0.5, Math.PI - 0.5); ctx.stroke(); ctx.fillStyle = "#ffd700"; ctx.strokeStyle = "#daa520"; ctx.lineWidth = 3; const medR = t.r * 0.5; ctx.beginPath(); ctx.moveTo(0, t.r * 1.1 + medR); for (let i = 1; i <= 8; i++) { const angle = i * (2 * Math.PI / 8); ctx.lineTo(medR * Math.sin(angle), t.r * 1.1 + medR * Math.cos(angle)); } ctx.closePath(); ctx.fill(); ctx.stroke(); } else if (t.behavior === "construct") {
+                if (t.behavior === "aegis_architect") {
+                    const state = ensureAegisArchitectState(t);
+                    const now = performance.now() / 1000;
+                    const baseCoreRadius = state ? state.coreRadius : t.r * 0.6;
+                    const pulse = state ? Math.sin(state.corePulse) : Math.sin(now * 2.6);
+                    const coreRadius = baseCoreRadius * (1 + 0.08 * pulse);
+
+                    const coreGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, coreRadius);
+                    coreGradient.addColorStop(0, addAlpha('#ffffff', 0.9));
+                    coreGradient.addColorStop(0.35, addAlpha(t.color || '#5dd0ff', 0.85));
+                    coreGradient.addColorStop(1, addAlpha('#042033', 0.8));
+                    ctx.fillStyle = coreGradient;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, coreRadius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    const latticeRadius = coreRadius * 0.62;
+                    ctx.strokeStyle = addAlpha('#ffffff', 0.35);
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, latticeRadius, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    ctx.save();
+                    ctx.rotate(now * 0.6);
+                    ctx.globalAlpha = 0.75;
+                    ctx.lineWidth = 1;
+                    for (let i = 0; i < 4; i++) {
+                        ctx.beginPath();
+                        ctx.moveTo(-latticeRadius, 0);
+                        ctx.lineTo(latticeRadius, 0);
+                        ctx.stroke();
+                        ctx.rotate(Math.PI / 4);
+                    }
+                    ctx.restore();
+                    ctx.globalAlpha = 1;
+
+                    if (state) {
+                        const outerRadius = state.shieldRadius;
+                        const innerRadius = Math.max(outerRadius - 18, coreRadius + 12);
+
+                        ctx.save();
+                        ctx.rotate(state.rotationAngle);
+                        state.segments.forEach(segment => {
+                            ctx.save();
+                            ctx.rotate(segment.baseAngle);
+                            const arc = segment.arc;
+                            if (segment.destroyed) {
+                                const flicker = 0.25 + 0.25 * Math.sin(now * 4 + segment.baseAngle);
+                                ctx.globalAlpha = flicker;
+                                ctx.strokeStyle = addAlpha(segment.color, 0.6);
+                                ctx.lineWidth = 4;
+                                ctx.beginPath();
+                                ctx.arc(0, 0, outerRadius, -arc / 2, arc / 2);
+                                ctx.stroke();
+                            } else {
+                                const pulseScale = 0.65 + (segment.hitPulse || 0);
+                                ctx.globalAlpha = 0.7 + (segment.hitPulse || 0);
+                                ctx.fillStyle = addAlpha(segment.color, 0.45 + (segment.hitPulse || 0) * 0.4);
+                                ctx.strokeStyle = addAlpha(segment.color, 0.9);
+                                ctx.lineWidth = 3 + (segment.hitPulse || 0) * 10;
+                                ctx.beginPath();
+                                ctx.arc(0, 0, outerRadius, -arc / 2, arc / 2);
+                                ctx.arc(0, 0, innerRadius, arc / 2, -arc / 2, true);
+                                ctx.closePath();
+                                ctx.fill();
+                                ctx.stroke();
+
+                                const hpRatio = segment.maxHp > 0 ? clamp(segment.hp / segment.maxHp, 0, 1) : 0;
+                                const barWidth = innerRadius * 0.32;
+                                ctx.globalAlpha = 0.92;
+                                ctx.fillStyle = addAlpha('#ffffff', 0.55);
+                                ctx.fillRect(-2, -outerRadius - 12, 4, 2);
+                                ctx.fillStyle = addAlpha(segment.color, 0.9);
+                                ctx.fillRect(-barWidth / 2, -outerRadius - 20, barWidth * hpRatio, 3);
+                            }
+                            ctx.restore();
+                        });
+                        ctx.restore();
+
+                        ctx.globalAlpha = 0.4 + 0.2 * Math.sin(now * 3.4);
+                        ctx.strokeStyle = addAlpha(t.color || '#5dd0ff', 0.6);
+                        ctx.lineWidth = 3;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, outerRadius + 8, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.globalAlpha = 1;
+                    }
+                } else if (t.behavior === "hex") {
+                    ctx.translate(0, 30);
+                    const bodyW_top = t.r * 1.5;
+                    const bodyW_bottom = t.r * 2.5;
+                    const bodyH = t.r * 1.5;
+                    ctx.fillStyle = "#66aaff";
+                    ctx.strokeStyle = "#5599e5";
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(-bodyW_top / 2, -bodyH / 2);
+                    ctx.lineTo(bodyW_top / 2, -bodyH / 2);
+                    ctx.lineTo(bodyW_bottom / 2, bodyH / 2);
+                    ctx.lineTo(-bodyW_bottom / 2, bodyH / 2);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.fillStyle = "#e03434";
+                    ctx.strokeStyle = "#c02d2d";
+                    const crownH = t.r * 0.8, crownW = bodyW_top * 0.9;
+                    ctx.beginPath();
+                    ctx.moveTo(-crownW / 2, -bodyH / 2);
+                    ctx.lineTo(-crownW / 2 + crownW / 4, -bodyH / 2 - crownH);
+                    ctx.lineTo(0, -bodyH / 2 - crownH / 2);
+                    ctx.lineTo(crownW / 2 - crownW / 4, -bodyH / 2 - crownH);
+                    ctx.lineTo(crownW / 2, -bodyH / 2);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.fillStyle = "#000";
+                    ctx.fillRect(-t.r * 0.6, -t.r * 0.3, t.r * 0.4, t.r * 0.15);
+                    ctx.fillRect(t.r * 0.2, -t.r * 0.3, t.r * 0.4, t.r * 0.15);
+                    ctx.fillRect(-t.r * 0.4, 0, t.r * 0.8, t.r * 0.1);
+                    ctx.strokeStyle = "#ffd700";
+                    ctx.lineWidth = 8;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, t.r * 1.1, 0.5, Math.PI - 0.5);
+                    ctx.stroke();
+                    ctx.fillStyle = "#ffd700";
+                    ctx.strokeStyle = "#daa520";
+                    ctx.lineWidth = 3;
+                    const medR = t.r * 0.5;
+                    ctx.beginPath();
+                    ctx.moveTo(0, t.r * 1.1 + medR);
+                    for (let i = 1; i <= 8; i++) {
+                        const angle = i * (2 * Math.PI / 8);
+                        ctx.lineTo(medR * Math.sin(angle), t.r * 1.1 + medR * Math.cos(angle));
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                } else if (t.behavior === "construct") {
                     // Check if this is the DEATH ENGINE boss
                     if (t.name === 'DEATH ENGINE') {
                         // Update skull renderer position and color for red final phase
@@ -18029,6 +19812,123 @@
 
                         break;
                     }
+                    case "void_reaper": {
+                        const time = performance.now() / 1000;
+                        const warningPhase = e.phase === 'warning';
+                        const emergingPhase = e.phase === 'emerging';
+                        const lungePhase = e.phase === 'lunge';
+                        const pulse = 0.55 + 0.45 * Math.sin(time * 4.6 + (e.riftSeed || 0));
+                        const auraScale = warningPhase ? 1.3 - 0.2 * (e.riftProgress || 0) : 1.1 + 0.15 * (e.emergeProgress || 0);
+
+                        ctx.save();
+                        ctx.globalCompositeOperation = 'lighter';
+                        ctx.globalAlpha = 0.55 + 0.25 * pulse;
+                        const outerRadius = a * (1.6 * auraScale);
+                        const aura = ctx.createRadialGradient(0, 0, outerRadius * 0.25, 0, 0, outerRadius);
+                        aura.addColorStop(0, 'rgba(210, 150, 255, 0.65)');
+                        aura.addColorStop(0.65, 'rgba(115, 50, 200, 0.35)');
+                        aura.addColorStop(1, 'rgba(40, 0, 80, 0)');
+                        ctx.fillStyle = aura;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, outerRadius, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+
+                        if (warningPhase) {
+                            const rings = 3;
+                            const progress = Math.min(1, e.riftProgress || 0);
+                            for (let i = 0; i < rings; i++) {
+                                const ringProgress = progress * (1 - i * 0.25);
+                                if (ringProgress <= 0) continue;
+                                const radius = a * (0.8 + i * 0.45);
+                                ctx.save();
+                                ctx.globalAlpha = 0.45 * Math.pow(ringProgress, 0.9);
+                                ctx.strokeStyle = ringProgress > 0.9 ? '#f1e2ff' : '#a176ff';
+                                ctx.lineWidth = 2.4 - i * 0.6;
+                                ctx.beginPath();
+                                ctx.arc(0, 0, radius, 0, Math.PI * 2);
+                                ctx.stroke();
+                                ctx.restore();
+                            }
+                        }
+
+                        ctx.save();
+                        const heading = e.heading || 0;
+                        ctx.rotate(heading);
+
+                        const emergeGlow = emergingPhase ? (e.emergeProgress || 0) : 0;
+                        ctx.globalAlpha = 0.85;
+                        const cloakGradient = ctx.createLinearGradient(0, -a * 1.3, 0, a * 1.6);
+                        cloakGradient.addColorStop(0, '#f9f3ff');
+                        cloakGradient.addColorStop(0.35 + emergeGlow * 0.25, '#c5a0ff');
+                        cloakGradient.addColorStop(1, '#2d0a44');
+                        ctx.fillStyle = cloakGradient;
+                        ctx.strokeStyle = '#efd9ff';
+                        ctx.lineWidth = 2;
+
+                        ctx.beginPath();
+                        ctx.moveTo(-a * 0.4, -a * 1.2);
+                        ctx.quadraticCurveTo(0, -a * 0.35, a * 0.4, -a * 1.2);
+                        ctx.lineTo(a * 0.95, a * 0.9);
+                        ctx.quadraticCurveTo(0, a * 1.6, -a * 0.95, a * 0.9);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.stroke();
+
+                        ctx.globalAlpha = 1;
+                        ctx.fillStyle = '#ffffff';
+                        ctx.beginPath();
+                        ctx.arc(-a * 0.22, -a * 0.4, a * 0.12, 0, Math.PI * 2);
+                        ctx.arc(a * 0.22, -a * 0.4, a * 0.12, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        ctx.fillStyle = '#391062';
+                        ctx.beginPath();
+                        ctx.arc(-a * 0.22, -a * 0.4, a * 0.08, 0, Math.PI * 2);
+                        ctx.arc(a * 0.22, -a * 0.4, a * 0.08, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        const scytheArc = e.scytheArc || VOID_REAPER_CONFIG.scytheArc;
+                        const scytheReach = (e.scytheReach || VOID_REAPER_CONFIG.scytheReach) * 0.55;
+                        ctx.save();
+                        ctx.translate(a * 0.35, 0);
+                        ctx.strokeStyle = '#ffe8ff';
+                        ctx.lineWidth = 3.4;
+                        const swingProgress = lungePhase ? Math.min(1, (e.lungeProgress || 0) * 1.4) : emergeGlow * 0.8;
+                        const swingArc = scytheArc * 0.5 * swingProgress;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, scytheReach, -swingArc, swingArc);
+                        ctx.stroke();
+
+                        ctx.strokeStyle = '#c09bff';
+                        ctx.lineWidth = 1.6;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, scytheReach * 0.92, -swingArc * 0.85, swingArc * 0.85);
+                        ctx.stroke();
+                        ctx.restore();
+
+                        ctx.restore();
+
+                        if (lungePhase) {
+                            const afterImageCount = 4;
+                            const baseAlpha = 0.18 + 0.12 * pulse;
+                            for (let i = 1; i <= afterImageCount; i++) {
+                                const decay = i / (afterImageCount + 1);
+                                const offset = (e.lungeSpeed || 480) * dt * decay * 0.45;
+                                ctx.save();
+                                ctx.globalAlpha = baseAlpha * (1 - decay);
+                                ctx.translate(-Math.cos(heading) * offset, -Math.sin(heading) * offset);
+                                ctx.rotate(heading);
+                                ctx.fillStyle = `rgba(130, 70, 220, ${0.5 * (1 - decay)})`;
+                                ctx.beginPath();
+                                ctx.ellipse(0, 0, a * (1.1 - decay * 0.3), a * (0.8 - decay * 0.25), 0, 0, Math.PI * 2);
+                                ctx.fill();
+                                ctx.restore();
+                            }
+                        }
+
+                        break;
+                    }
                     case "angler": {
                         const scale = a / 20;
                         ctx.save(); ctx.scale(scale, scale);
@@ -18313,6 +20213,179 @@
                             ctx.beginPath();
                             ctx.arc(0, 0, baseRadius * (0.55 + Math.sin(performance.now() / 180 + this.clusterIndex) * 0.1), 0, Math.PI * 2);
                             ctx.stroke();
+                            ctx.restore();
+                        };
+                        break;
+                    case "voidReaperRift":
+                        effect.maxLife = opts.duration ?? 2.0;
+                        effect.life = effect.maxLife;
+                        effect.radius = radius || 80;
+                        effect.edge = opts.edge || 'top';
+                        effect.seed = Math.random() * Math.PI * 2;
+                        effect.step = function (dt) {
+                            this.life -= dt;
+                            if (this.life <= 0) this.isActive = false;
+                        };
+                        effect.draw = function () {
+                            const progress = 1 - (this.life / this.maxLife);
+                            const time = performance.now() / 1000;
+                            const spin = time * 4 + this.seed;
+                            const alpha = 0.45 + 0.35 * Math.sin(time * 6 + progress * 8);
+                            const coreRadius = this.radius * (0.45 + progress * 0.25);
+                            ctx.save();
+                            ctx.translate(this.x, this.y);
+                            ctx.globalCompositeOperation = 'lighter';
+                            ctx.globalAlpha = alpha;
+
+                            const portal = ctx.createRadialGradient(0, 0, coreRadius * 0.25, 0, 0, coreRadius * 2.1);
+                            portal.addColorStop(0, 'rgba(215, 180, 255, 0.85)');
+                            portal.addColorStop(0.35, 'rgba(145, 90, 220, 0.6)');
+                            portal.addColorStop(0.75, 'rgba(60, 20, 120, 0.35)');
+                            portal.addColorStop(1, 'rgba(20, 4, 60, 0)');
+                            ctx.fillStyle = portal;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, coreRadius * (2 + progress * 0.3), 0, Math.PI * 2);
+                            ctx.fill();
+
+                            const shardCount = 18;
+                            for (let i = 0; i < shardCount; i++) {
+                                const angle = spin + (i / shardCount) * Math.PI * 2;
+                                const length = coreRadius * (1.4 + Math.sin(time * 5 + i) * 0.25);
+                                ctx.globalAlpha = 0.25 + progress * 0.45;
+                                ctx.strokeStyle = 'rgba(240, 220, 255, 0.9)';
+                                ctx.lineWidth = 2;
+                                ctx.beginPath();
+                                ctx.moveTo(Math.cos(angle) * coreRadius * 0.6, Math.sin(angle) * coreRadius * 0.6);
+                                ctx.lineTo(Math.cos(angle) * length, Math.sin(angle) * length);
+                                ctx.stroke();
+                            }
+
+                            ctx.restore();
+                        };
+                        break;
+                    case "voidReaperStrike":
+                        effect.maxLife = opts.duration ?? 0.35;
+                        effect.life = effect.maxLife;
+                        effect.radius = radius || 36;
+                        effect.heading = opts.heading || 0;
+                        effect.warmup = opts.warmup || false;
+                        effect.step = function (dt) {
+                            this.life -= dt;
+                            if (this.life <= 0) this.isActive = false;
+                        };
+                        effect.draw = function () {
+                            const t = 1 - (this.life / this.maxLife);
+                            const eased = this.warmup ? Math.pow(t, 0.6) : t;
+                            const radius = this.radius * (1 + eased * 0.45);
+                            ctx.save();
+                            ctx.translate(this.x, this.y);
+                            ctx.rotate(this.heading);
+                            ctx.globalCompositeOperation = 'lighter';
+                            ctx.globalAlpha = this.warmup ? 0.35 + 0.4 * (1 - eased) : 0.45 * (1 - t) + 0.3;
+
+                            const gradient = ctx.createLinearGradient(-radius * 0.4, 0, radius * 1.2, 0);
+                            gradient.addColorStop(0, 'rgba(255, 220, 255, 0.65)');
+                            gradient.addColorStop(0.4, 'rgba(180, 140, 255, 0.5)');
+                            gradient.addColorStop(1, 'rgba(70, 20, 160, 0)');
+                            ctx.fillStyle = gradient;
+                            ctx.beginPath();
+                            ctx.moveTo(-radius * 0.4, -radius * 0.35);
+                            ctx.lineTo(radius * 1.2, 0);
+                            ctx.lineTo(-radius * 0.4, radius * 0.35);
+                            ctx.closePath();
+                            ctx.fill();
+
+                            ctx.strokeStyle = 'rgba(255, 240, 255, 0.85)';
+                            ctx.lineWidth = 2.5;
+                            ctx.beginPath();
+                            ctx.moveTo(-radius * 0.4, -radius * 0.42);
+                            ctx.quadraticCurveTo(radius * 0.6, 0, -radius * 0.4, radius * 0.42);
+                            ctx.stroke();
+                            ctx.restore();
+                        };
+                        break;
+                    case "voidReaperReward":
+                        effect.maxLife = 1.8;
+                        effect.life = effect.maxLife;
+                        effect.radius = radius || 90;
+                        effect.gold = opts.gold || 0;
+                        effect.shards = Array.from({ length: 28 }, (_, i) => ({
+                            angle: (i / 28) * Math.PI * 2,
+                            speed: 140 + Math.random() * 90,
+                            size: 6 + Math.random() * 4
+                        }));
+                        effect.step = function (dt) {
+                            this.life -= dt;
+                            if (this.life <= 0) this.isActive = false;
+                        };
+                        effect.draw = function () {
+                            const t = 1 - (this.life / this.maxLife);
+                            const fade = 1 - t;
+                            ctx.save();
+                            ctx.translate(this.x, this.y);
+                            ctx.globalCompositeOperation = 'lighter';
+                            ctx.globalAlpha = 0.8 * fade;
+
+                            const core = ctx.createRadialGradient(0, 0, this.radius * 0.1, 0, 0, this.radius * (0.7 + t * 0.5));
+                            core.addColorStop(0, 'rgba(255, 235, 200, 0.85)');
+                            core.addColorStop(0.55, 'rgba(210, 150, 255, 0.55)');
+                            core.addColorStop(1, 'rgba(120, 60, 200, 0)');
+                            ctx.fillStyle = core;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, this.radius * (0.8 + t * 0.4), 0, Math.PI * 2);
+                            ctx.fill();
+
+                            ctx.globalAlpha = 0.6 * fade;
+                            this.shards.forEach((shard, index) => {
+                                const dist = shard.speed * t * 0.8;
+                                const x = Math.cos(shard.angle) * dist;
+                                const y = Math.sin(shard.angle) * dist;
+                                ctx.fillStyle = index % 2 === 0 ? '#ffe6ff' : '#ffbfef';
+                                ctx.beginPath();
+                                ctx.arc(x, y, shard.size * (1 - t * 0.6), 0, Math.PI * 2);
+                                ctx.fill();
+                            });
+
+                            if (this.gold) {
+                                ctx.globalAlpha = 0.85 * fade;
+                                ctx.fillStyle = '#ffe896';
+                                ctx.font = 'bold 16px Orbitron';
+                                ctx.textAlign = 'center';
+                                ctx.fillText(`+${this.gold}G`, 0, -this.radius * 0.2);
+                            }
+                            ctx.restore();
+                        };
+                        break;
+                    case "voidReaperDissolve":
+                        effect.maxLife = opts.duration ?? 1.4;
+                        effect.life = effect.maxLife;
+                        effect.radius = radius || 70;
+                        effect.step = function (dt) {
+                            this.life -= dt;
+                            if (this.life <= 0) this.isActive = false;
+                        };
+                        effect.draw = function () {
+                            const t = 1 - (this.life / this.maxLife);
+                            ctx.save();
+                            ctx.translate(this.x, this.y);
+                            ctx.globalCompositeOperation = 'lighter';
+                            const ringRadius = this.radius * (0.6 + t * 0.7);
+                            ctx.globalAlpha = 0.55 * (1 - t);
+                            ctx.strokeStyle = 'rgba(210, 160, 255, 0.8)';
+                            ctx.lineWidth = 4 - t * 2.5;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+                            ctx.stroke();
+
+                            ctx.globalAlpha = 0.35 * (1 - t);
+                            ctx.fillStyle = 'rgba(120, 60, 200, 0.55)';
+                            for (let i = 0; i < 5; i++) {
+                                const angle = (i / 5) * Math.PI * 2 + performance.now() / 400;
+                                const offset = ringRadius * 0.65;
+                                ctx.beginPath();
+                                ctx.arc(Math.cos(angle) * offset, Math.sin(angle) * offset, 8 + Math.sin(angle * 4) * 3, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
                             ctx.restore();
                         };
                         break;
@@ -19350,11 +21423,16 @@
                         }
                     } else {
                         const info = getNextUpgradeCost(key);
-                        if (info && info.available && Number.isFinite(info.cost) && getWorldGold() >= info.cost) {
-                            addWorldGold(-info.cost);
-                            cost = info.cost;
+                        const isFree = options.free === true;
+                        const canAfford = isFree || (info && info.available && Number.isFinite(info.cost) && getWorldGold() >= info.cost);
+                        
+                        if (canAfford) {
+                            if (!isFree) {
+                                addWorldGold(-info.cost);
+                                cost = info.cost;
+                            }
                             success = upgrade.apply(info);
-                            if (!success) {
+                            if (!success && !isFree) {
                                 addWorldGold(info.cost);
                                 cost = 0;
                             }
@@ -19362,10 +21440,15 @@
                     }
                 } else {
                     const info = getNextUpgradeCost(key);
-                    if (isFinite(info.cost) && getWorldGold() >= info.cost) {
+                    const isFree = options.free === true;
+                    const canAfford = isFree || (isFinite(info.cost) && getWorldGold() >= info.cost);
+                    
+                    if (canAfford) {
                         const currentLevel = store.player.upgradeLevels[key] || 0;
-                        addWorldGold(-info.cost);
-                        cost = info.cost;
+                        if (!isFree) {
+                            addWorldGold(-info.cost);
+                            cost = info.cost;
+                        }
                         upgrade.effect(currentLevel);
                         store.player.upgradeLevels[key] = currentLevel + 1;
                         success = true;
@@ -23519,8 +25602,27 @@
                         allowVulnerabilityTrigger: true
                     });
                     const finalDamage = vulnResult.damage;
-                    enemy.hp -= finalDamage;
-                    store.world.totalDamage += finalDamage;
+                    let damageApplied = finalDamage;
+                    let shieldBlocked = false;
+
+                    if (isBoss) {
+                        const bossResult = applyBossDamage(enemy, finalDamage, {
+                            point: { x: enemy.x, y: enemy.y }
+                        });
+                        if (bossResult.blocked || bossResult.amount <= 0) {
+                            damageApplied = 0;
+                            shieldBlocked = true;
+                        } else {
+                            damageApplied = bossResult.amount;
+                        }
+                    } else {
+                        enemy.hp -= finalDamage;
+                        store.world.totalDamage += finalDamage;
+                    }
+
+                    if (shieldBlocked) {
+                        return;
+                    }
 
                     enemy.stunTimer = Math.max(enemy.stunTimer || 0, stunDuration);
                     enemy.stormShockTimer = Math.max(enemy.stormShockTimer || 0, shockDuration);
@@ -23760,7 +25862,8 @@
                         // Check collision with laser 1
                         if (isPointNearLine(enemy.x, enemy.y, p.x, p.y, laser1EndX, laser1EndY, laserWidth)) {
                             let damage = 6 * p.dmgMult; // Base wiper laser damage
-                            if (enemy === store.boss) damage *= 0.3; // Reduced damage to boss
+                            const hittingBoss = enemy === store.boss;
+                            if (hittingBoss) damage *= 0.3; // Reduced damage to boss
 
                             const wiperVuln = applySubclassVulnerability(enemy, damage, {
                                 subclass: p.subclass,
@@ -23771,12 +25874,17 @@
                             });
                             damage = wiperVuln.damage;
 
-                            enemy.hp -= damage;
-                            store.world.totalDamage += damage;
+                            let applied = damage;
+                            if (hittingBoss) {
+                                const result = applyBossDamage(store.boss, damage, { point: { x: enemy.x, y: enemy.y } });
+                                applied = result.amount;
+                            } else {
+                                enemy.hp -= damage;
+                                store.world.totalDamage += damage;
+                            }
 
-                            // Apply vampirism healing
-                            if (p.vampirism > 0) {
-                                let healAmount = damage * p.vampirism;
+                            if (p.vampirism > 0 && applied > 0) {
+                                let healAmount = applied * p.vampirism;
                                 healAmount = Math.max(healAmount, 0.1);
                                 healAmount = Math.min(healAmount, 0.4);
                                 p.hp = Math.min(p.hpMax, p.hp + healAmount);
@@ -23786,7 +25894,8 @@
                         // Check collision with laser 2
                         if (isPointNearLine(enemy.x, enemy.y, p.x, p.y, laser2EndX, laser2EndY, laserWidth)) {
                             let damage = 6 * p.dmgMult; // Base wiper laser damage
-                            if (enemy === store.boss) damage *= 0.3; // Reduced damage to boss
+                            const hittingBoss = enemy === store.boss;
+                            if (hittingBoss) damage *= 0.3; // Reduced damage to boss
 
                             const wiperVuln = applySubclassVulnerability(enemy, damage, {
                                 subclass: p.subclass,
@@ -23797,12 +25906,17 @@
                             });
                             damage = wiperVuln.damage;
 
-                            enemy.hp -= damage;
-                            store.world.totalDamage += damage;
+                            let applied = damage;
+                            if (hittingBoss) {
+                                const result = applyBossDamage(store.boss, damage, { point: { x: enemy.x, y: enemy.y } });
+                                applied = result.amount;
+                            } else {
+                                enemy.hp -= damage;
+                                store.world.totalDamage += damage;
+                            }
 
-                            // Apply vampirism healing
-                            if (p.vampirism > 0) {
-                                let healAmount = damage * p.vampirism;
+                            if (p.vampirism > 0 && applied > 0) {
+                                let healAmount = applied * p.vampirism;
                                 healAmount = Math.max(healAmount, 0.1);
                                 healAmount = Math.min(healAmount, 0.4);
                                 p.hp = Math.min(p.hpMax, p.hp + healAmount);
@@ -23901,7 +26015,8 @@
                     store.activeEffects.push(createEffect('lightningFlash', currentTarget.x, currentTarget.y));
 
                     let dmg = currentDamage;
-                    if (currentTarget === store.boss) dmg *= 0.3;
+                    const hittingBoss = currentTarget === store.boss;
+                    if (hittingBoss) dmg *= 0.3;
                     const lightningResult = applySubclassVulnerability(currentTarget, dmg, {
                         subclass: store.player.subclass,
                         player: store.player,
@@ -23910,12 +26025,18 @@
                         baseDamage: dmg
                     });
                     dmg = lightningResult.damage;
-                    currentTarget.hp -= dmg;
-                    store.world.totalDamage += dmg;
+                    let applied = dmg;
+                    if (hittingBoss) {
+                        const result = applyBossDamage(store.boss, dmg, { point: { x: currentTarget.x, y: currentTarget.y } });
+                        applied = result.amount;
+                    } else {
+                        currentTarget.hp -= dmg;
+                        store.world.totalDamage += dmg;
+                    }
 
                     // Apply vampirism healing for chain lightning damage
                     if (store.player.vampirism > 0) {
-                        let healAmount = dmg * store.player.vampirism;
+                        let healAmount = applied * store.player.vampirism;
                         healAmount = Math.max(healAmount, 0.5); // Minimum 0.5 HP for lightning
                         healAmount = Math.min(healAmount, 3); // Cap at 3 HP for lightning
                         store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
@@ -24257,8 +26378,7 @@
                     if (dist <= maxRadius) {
                         const damageFalloff = 1.0 - (dist / maxRadius) * 0.3;
                         const bossDamage = shockDamage * damageFalloff * 0.4;
-                        store.boss.hp -= bossDamage; // Reduced boss damage
-                        store.world.totalDamage += bossDamage;
+                        applyBossDamage(store.boss, bossDamage, { point: { x, y } });
                     }
                 }
             }
@@ -24368,7 +26488,7 @@
             }
 
             // --- PAUSE & MENU LOGIC ---
-            const PANELS = ['namePanel', 'pilotPanel', 'scorePanel', 'levelPanel', 'shopPanel', 'storyPanel', 'subclassPanel', 'teleportTutorialPanel', 'championDressingRoom', 'mechForgeMenuPanel', 'characterSheetPanel'];
+            const PANELS = ['namePanel', 'pilotPanel', 'scorePanel', 'levelPanel', 'shopPanel', 'storyPanel', 'subclassPanel', 'teleportTutorialPanel', 'championDressingRoom', 'mechForgeMenuPanel', 'characterSheetPanel', 'upgradePopupPanel'];
             function isAnyPanelOpen() {
                 return PANELS.some(id => !q(id).classList.contains('hide'));
             }
@@ -24387,6 +26507,28 @@
                     q('pauseBtn').classList.remove('hide');
                     q('pauseBtn').textContent = 'PAUSE';
                 }
+            }
+
+            function showUpgradePopup(upgradeInfo) {
+                if (!upgradeInfo) return;
+                
+                const panel = q('upgradePopupPanel');
+                const icon = q('upgradePopupIcon');
+                const title = q('upgradePopupTitle');
+                const desc = q('upgradePopupDesc');
+                const tier = q('upgradePopupTier');
+                
+                if (icon) icon.textContent = upgradeInfo.icon || '⚡';
+                if (title) title.textContent = upgradeInfo.name || 'UPGRADE ACQUIRED';
+                if (desc) desc.textContent = upgradeInfo.desc || 'Enhancement applied to your systems.';
+                if (tier) {
+                    const tierText = upgradeInfo.tier === 'bossTier' ? 'BOSS-TIER UPGRADE' : 'MID-TIER UPGRADE';
+                    tier.textContent = tierText;
+                    tier.style.color = upgradeInfo.tier === 'bossTier' ? '#ff6b6b' : '#4ecdc4';
+                }
+                
+                pauseGame();
+                panel.classList.remove('hide');
             }
 
             // --- EVENT LISTENERS & INITIALIZATION ---
@@ -24519,11 +26661,7 @@
                 p.missilePierce = 0;
                 p.missileCluster = false;
                 p.blinkDamage = false;
-                p.hasChainLightning = false;
-                p.stormstrikerLevel = 0;
-                p.lightningAlternate = false;
-                p.lightningCycleIndex = 0;
-                p.chainLightningDamage = 1.0;
+                resetPlayerLightningState(p);
                 p.phasestRikerLevel = 0;
                 p.voidLaserRampTime = 0;
                 p.voidLaserLastTarget = null;
@@ -25695,26 +27833,64 @@
                 return newlyUnlocked;
             }
 
-            function ensureStormbringerLoadout(p) {
-                let newlyUnlocked = false;
+            function resetPlayerLightningState(p, { preserveUnlock = false } = {}) {
+                if (!p) return;
 
-                if (!p.hasStormbringer) {
+                if (!preserveUnlock) {
+                    p.hasStormbringer = false;
+                }
+
+                const keepAbility = preserveUnlock && p.hasStormbringer;
+                if (!keepAbility) {
+                    p.hasChainLightning = false;
+                    p.chainLightningDamage = 1.0;
+                    p.stormstrikerLevel = 0;
+                    p.chainLightningEnhanced = false;
+                    p.hasDoubleStorm = false;
+                    p.chainLightningRange = undefined;
+                }
+
+                p.chainLightningCooldown = 0;
+                p.lightningAlternate = false;
+                p.lightningCycleIndex = 0;
+            }
+
+            function grantPlayerChainLightning(p, { unlock = false, initialLevel = 1 } = {}) {
+                if (!p) return false;
+
+                const wasUnlocked = !!p.hasStormbringer;
+                const hadLightning = !!p.hasChainLightning;
+
+                if (unlock) {
                     p.hasStormbringer = true;
-                    newlyUnlocked = true;
                 }
 
-                if (!p.hasChainLightning) {
-                    p.hasChainLightning = true;
-                    newlyUnlocked = true;
-                }
-
-                if (p.chainLightningCooldown === undefined) {
+                p.hasChainLightning = true;
+                if (p.chainLightningCooldown == null) {
+                    p.chainLightningCooldown = 0;
+                } else if (p.chainLightningCooldown < 0) {
                     p.chainLightningCooldown = 0;
                 }
 
-                p.stormstrikerLevel = Math.max(p.stormstrikerLevel || 0, 1);
+                if (!Number.isFinite(p.chainLightningDamage) || p.chainLightningDamage <= 0) {
+                    p.chainLightningDamage = 1.0;
+                }
 
-                return newlyUnlocked;
+                if (p.stormstrikerLevel == null || p.stormstrikerLevel < initialLevel) {
+                    p.stormstrikerLevel = initialLevel;
+                }
+
+                p.lightningAlternate = false;
+                p.lightningCycleIndex = 0;
+
+                return (unlock && !wasUnlocked) || (!hadLightning);
+            }
+
+            function ensurePlayerStormbringerLoadout(p) {
+                if (!p) return false;
+                const wasUnlocked = !!p.hasStormbringer;
+                grantPlayerChainLightning(p, { unlock: true, initialLevel: 1 });
+                return !wasUnlocked;
             }
 
             function applySkillBonus(skill) {
@@ -26007,20 +28183,20 @@
 
                     // Stormbringer Tree Skills
                     case 'stormbringer_chain_boost': {
-                        const unlocked = ensureStormbringerLoadout(p);
+                        const unlocked = ensurePlayerStormbringerLoadout(p);
                         // Add twin lightning bolts from wing guns
                         p.stormstrikerLevel = Math.max(p.stormstrikerLevel, 2); // Twin wing lightning
                         announce(unlocked ? 'CHAIN LIGHTNING CROSS-TRAINED - Twin Lightning Ready!' : 'TWIN LIGHTNING ACTIVATED - Dual Chain Lightning!');
                         break;
                     }
                     case 'stormbringer_storm_mastery':
-                        ensureStormbringerLoadout(p);
+                        ensurePlayerStormbringerLoadout(p);
                         p.chainLightningDamage = (p.chainLightningDamage || 1.0) * 1.8; // 80% damage boost
                         p.chainLightningRange = (p.chainLightningRange || 150) * 1.5; // 50% jump range boost
                         announce('STORM MASTERY ACTIVATED - Enhanced Range & Power!');
                         break;
                     case 'stormbringer_warp_boost':
-                        ensureStormbringerLoadout(p);
+                        ensurePlayerStormbringerLoadout(p);
                         if (!p.blinkRange) p.blinkRange = 200;
                         p.blinkRange *= 1.6;
                         p.blinkRecharge = Math.max((p.blinkRecharge || 5) - 1.5, 1);
@@ -26029,7 +28205,7 @@
                         announce('WARP BOOST ACTIVATED - Enhanced Teleportation!');
                         break;
                     case 'stormbringer_void_control':
-                        ensureStormbringerLoadout(p);
+                        ensurePlayerStormbringerLoadout(p);
                         p.blinkTimeRipple = true;
                         p.blinkRippleDamage = 100;
                         announce('VOID CONTROL ACTIVATED - Time Ripple Effects!');
@@ -26247,8 +28423,7 @@
                     case 'stormbringer':
                         p.subclass = 'stormbringer';
                         // Give basic chain lightning ability
-                        p.hasChainLightning = true;
-                        p.chainLightningCooldown = 0;
+                        grantPlayerChainLightning(p, { initialLevel: 1 });
                         break;
                     case 'voidmancer':
                         p.subclass = 'voidmancer';
@@ -26389,8 +28564,7 @@
                         announce('PHASESTRIKER ACTIVATED!');
                         break;
                     case 'stormbringer':
-                        p.hasStormbringer = true;
-                        p.hasChainLightning = true;
+                        grantPlayerChainLightning(p, { unlock: true, initialLevel: 1 });
                         announce('CHAIN LIGHTNING ACTIVATED!');
                         playSound('thunder');
                         break;
@@ -26986,10 +29160,7 @@
                         p.voidLaserRange = 0;
                         break;
                     case 'stormbringer':
-                        if (!p.hasStormbringer) {
-                            p.hasChainLightning = false;
-                        }
-                        p.chainLightningCooldown = 0;
+                        resetPlayerLightningState(p, { preserveUnlock: true });
                         break;
                 }
 
@@ -27622,6 +29793,18 @@
                 const loadingScreen = document.getElementById('loadingScreen');
                 if (loadingScreen) {
                     loadingScreen.style.display = 'none';
+                }
+
+                // Set up upgrade popup OK button
+                const upgradePopupOkBtn = document.getElementById('upgradePopupOkBtn');
+                if (upgradePopupOkBtn) {
+                    upgradePopupOkBtn.addEventListener('click', () => {
+                        const panel = document.getElementById('upgradePopupPanel');
+                        if (panel) {
+                            panel.classList.add('hide');
+                            resumeGame();
+                        }
+                    });
                 }
 
                 // Initialize mobile controls if the function exists (like fghfgh.html)
