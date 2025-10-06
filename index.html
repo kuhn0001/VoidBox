@@ -6257,7 +6257,39 @@
                 'lazarus_beam': { name: "LORD LAZARUS", icon: '☢️☄️☢️', baseCost: 200, scale: 3, maxLevel: 2, category: 'attack', effect: (level) => { if (level === 0) { store.player.hasLazarusBeam = true; store.player.lazarusBeamCooldown = 15; } }, desc: level => { if (level === 0) return 'Lazarus smites foes twice as often.'; if (level === 1) return 'Lazarus fires two beams at once.'; return 'Max Level'; } },
                 'magnet_pull': { name: "GRAV-PULSE", icon: '🧲', cost: 90, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (store.player.magnetRadius <= 0) { store.player.magnetRadius = 150; return true; } return false; }, desc: () => `Pulls in nearby powerups.` },
                 'gravity_well': { name: "GRAVITY WELL", icon: '🕳️', baseCost: 300, scale: 2, maxLevel: 2, category: 'attack', effect: (level) => { if (level === 0) { store.player.hasVoidBeam = true; store.player.voidBeamCooldown = 15; } }, desc: level => { if (level === 0) return 'Unleash a singularity that traps and crushes foes.'; if (level === 1) return 'Summon a second, smaller singularity.'; return 'Max Level'; } },
-                'ghost_hounds': { name: "GHOST HOUNDS", icon: '👻🐺', baseCost: 150, scale: 2, maxLevel: 2, category: 'attack', effect: () => { if (!store.player.hasHounds) { store.player.hasHounds = true; store.hounds = [createHound(-1), createHound(1)]; } else { store.hounds.push(createHound(-2)); store.hounds.push(createHound(2)); } playSound('dogs'); }, desc: level => { if (level === 0) return `Unlocks 2 spectral hounds.`; if (level === 1) return `Add 2 more hounds.`; return "Max hounds reached."; } },
+                'ghost_hounds': {
+                    name: "GHOST HOUNDS",
+                    icon: '👻🐺',
+                    baseCost: 150,
+                    scale: 2,
+                    maxLevel: 3,
+                    category: 'attack',
+                    effect: (level) => {
+                        if (!Array.isArray(store.hounds)) {
+                            store.hounds = [];
+                        }
+
+                        if (level === 0) {
+                            store.player.hasHounds = true;
+                            store.hounds.push(createHound(-1));
+                            store.hounds.push(createHound(1));
+                        } else if (level === 1) {
+                            store.hounds.push(createHound(-2));
+                            store.hounds.push(createHound(2));
+                        } else if (level === 2) {
+                            store.hounds.push(createHound(3));
+                            store.hounds.push(createHound(4));
+                        }
+
+                        playSound('dogs');
+                    },
+                    desc: level => {
+                        if (level === 0) return `Unlocks 2 spectral hounds.`;
+                        if (level === 1) return `Add 2 more hounds.`;
+                        if (level === 2) return `Add 2 Bernese Mountain hounds.`;
+                        return "Max hounds reached.";
+                    }
+                },
                 'champion_attack_module': {
                     name: 'CHAMPION MODULE',
                     icon: '⚔️',
@@ -8832,9 +8864,11 @@
                 if (p.x > W - 50 && p.y < 50 && store.cheatDogHealCooldown <= 0) {
                     store.cheatsUsed = true; p.hp = Math.min(p.hpMax, p.hp + p.hpMax * 0.20);
                     if (!p.hasHounds) { p.hasHounds = true; }
-                    let houndsToAdd = Math.min(2, 4 - store.hounds.length);
+                    if (!Array.isArray(store.hounds)) { store.hounds = []; }
+                    const maxPackSize = 6;
+                    let houndsToAdd = Math.min(2, Math.max(0, maxPackSize - store.hounds.length));
                     if (houndsToAdd > 0) {
-                        const existingSides = new Set(store.hounds.map(h => h.side)); const potentialSides = [-1, 1, -2, 2];
+                        const existingSides = new Set(store.hounds.map(h => h.side)); const potentialSides = [-1, 1, -2, 2, 3, 4];
                         for (const side of potentialSides) { if (houndsToAdd > 0 && !existingSides.has(side)) { store.hounds.push(createHound(side)); houndsToAdd--; } }
                     }
                     store.cheatDogHealCooldown = 10; announce('TEST: HEAL & HOUNDS');
@@ -22184,6 +22218,9 @@
                 let isUpgraded = false;
                 let eyeType = 'normal';
                 let expression = 'normal';
+                let breed = 'standard';
+                let eyeConfig = null;
+                let radius = 12;
 
                 if (Math.abs(side) > 1) {
                     isUpgraded = true;
@@ -22191,10 +22228,22 @@
                         color = { main: '#c4b5a0', accent: '#333' };
                         eyeType = 'swirly';
                         expression = 'silly';
-                    } else {
+                    } else if (side === 2) {
                         color = { main: '#ffb366', accent: '#000' };
                         eyeType = 'dilated';
                         expression = 'mischievous';
+                    } else if (side === 3 || side === 4) {
+                        breed = 'bernese';
+                        color = { main: '#1C1C1C', accent: '#FFFFFF', tan: '#6E4C2E' };
+                        radius = 14;
+                        if (side === 3) {
+                            eyeType = 'heterochromia';
+                            eyeConfig = { type: 'heterochromia', colors: ['#5DADE2', '#8B4513'] };
+                        } else {
+                            eyeType = 'swirly';
+                            eyeConfig = { type: 'swirly' };
+                        }
+                        expression = 'loyal';
                     }
                 }
 
@@ -22204,12 +22253,14 @@
                     side,
                     target: null,
                     attackT: 0,
-                    r: 12,
+                    r: radius,
                     killCount: 0,
                     color,
                     isUpgraded,
                     eyeType,
-                    expression
+                    eyeConfig,
+                    expression,
+                    breed
                 };
             }
             function stepHounds(dt) { if (!store.player.hasHounds) return; store.hounds.forEach(h => { if (!h.target || h.target.dead || h.target.hp <= 0) { let closest = null, closestDist = Infinity; const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies; potentialTargets.forEach(e => { if (e.dead || e.hp <= 0) return; const dist = (h.x - e.x) ** 2 + (h.y - e.y) ** 2; if (dist < closestDist) { closestDist = dist; closest = e; } }); h.target = closest; } if (h.target) { const tx = h.target.x, ty = h.target.y; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); const speed = 350; if (dist > 30) { h.x += (dx / dist) * speed * dt; h.y += (dy / dist) * speed * dt; } else { h.attackT -= dt; if (h.attackT <= 0) { h.attackT = 0.25; let dmg = 8 * store.player.dmgMult; if (h.target === store.boss) dmg *= 0.3; if (!h.target.dead && h.target.hp > 0) { h.target.hp -= dmg; if (store.player.vampirism > 0) { let healAmount = dmg * store.player.vampirism; healAmount = Math.max(healAmount, 0.5); healAmount = Math.min(healAmount, 2); store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount); } if (h.target.hp <= 0) { h.killCount++; if (h.killCount > 0 && h.killCount % 12 === 0) { playSound('dogs'); } } } } } } else { const tx = store.player.x + h.side * 50, ty = store.player.y + 20; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); if (dist > 5) { h.x += dx * 5 * dt; h.y += dy * 5 * dt; } } }); }
@@ -22250,6 +22301,183 @@
                     }
                 }
             }
+            function drawBerneseGhostHound(ctx, r, eyeConfig, timeMs) {
+                ctx.save();
+
+                const now = typeof timeMs === 'number' ? timeMs : performance.now();
+                const anim = now * 0.001;
+                const auraRadius = r * 2.2;
+
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = 0.32;
+                const auraGradient = ctx.createRadialGradient(0, 0, r * 0.4, 0, 0, auraRadius);
+                auraGradient.addColorStop(0, 'rgba(210, 230, 255, 0.9)');
+                auraGradient.addColorStop(0.6, 'rgba(140, 170, 255, 0.25)');
+                auraGradient.addColorStop(1, 'rgba(110, 150, 255, 0)');
+                ctx.fillStyle = auraGradient;
+                ctx.beginPath();
+                ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                const bodyAlpha = 0.88;
+
+                // Main body silhouette
+                ctx.globalAlpha = bodyAlpha;
+                ctx.fillStyle = 'rgba(28, 28, 36, 0.9)';
+                ctx.beginPath();
+                ctx.moveTo(-r, -r * 0.5);
+                ctx.quadraticCurveTo(0, -r * 1.55, r, -r * 0.5);
+                ctx.quadraticCurveTo(r * 1.28, 0, r, r * 1.08);
+                ctx.quadraticCurveTo(0, r * 1.38, -r, r * 1.08);
+                ctx.quadraticCurveTo(-r * 1.28, 0, -r, -r * 0.5);
+                ctx.closePath();
+                ctx.fill();
+
+                // White chest blaze
+                ctx.globalAlpha = 0.85;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+                ctx.beginPath();
+                ctx.moveTo(-r * 0.7, r * 0.42);
+                ctx.quadraticCurveTo(0, r * 1.25, r * 0.7, r * 0.42);
+                ctx.lineTo(r * 0.45, -r * 0.15);
+                ctx.quadraticCurveTo(0, r * 0.18, -r * 0.45, -r * 0.15);
+                ctx.closePath();
+                ctx.fill();
+
+                // Brown cheek and eyebrow markings
+                ctx.globalAlpha = 0.86;
+                ctx.fillStyle = 'rgba(110, 76, 46, 0.9)';
+                ctx.beginPath();
+                ctx.arc(-r * 0.4, -r * 0.7, r * 0.16, 0, Math.PI * 2);
+                ctx.arc(r * 0.4, -r * 0.7, r * 0.16, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.arc(-r * 0.6, r * 0.1, r * 0.26, 0, Math.PI * 2);
+                ctx.arc(r * 0.6, r * 0.1, r * 0.26, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Floppy ears
+                ctx.globalAlpha = 0.9;
+                ctx.fillStyle = 'rgba(22, 22, 30, 0.95)';
+                ctx.beginPath();
+                ctx.moveTo(-r, -r * 0.42);
+                ctx.lineTo(-r * 0.5, -r * 1.28);
+                ctx.lineTo(-r * 1.18, -r * 1.02);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.moveTo(r, -r * 0.42);
+                ctx.lineTo(r * 0.5, -r * 1.28);
+                ctx.lineTo(r * 1.18, -r * 1.02);
+                ctx.closePath();
+                ctx.fill();
+
+                // Snout blaze
+                ctx.globalAlpha = 0.94;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+                ctx.beginPath();
+                ctx.moveTo(0, -r * 0.62);
+                ctx.quadraticCurveTo(-r * 0.12, 0, 0, r * 0.22);
+                ctx.quadraticCurveTo(r * 0.12, 0, 0, -r * 0.62);
+                ctx.fill();
+
+                // Nose
+                ctx.globalAlpha = 0.95;
+                ctx.fillStyle = 'rgba(26, 26, 32, 0.95)';
+                ctx.beginPath();
+                ctx.moveTo(-r * 0.16, r * 0.22);
+                ctx.lineTo(r * 0.16, r * 0.22);
+                ctx.lineTo(0, r * 0.35);
+                ctx.closePath();
+                ctx.fill();
+
+                // Eyes
+                const scleraRadius = r * 0.22;
+                const pupilRadius = scleraRadius * 0.6;
+                const eyeY = -r * 0.24;
+                const step = Math.PI * 4 / 26;
+                const eyeType = eyeConfig?.type || 'normal';
+
+                ctx.globalAlpha = 0.98;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+                ctx.beginPath();
+                ctx.arc(-r * 0.4, eyeY, scleraRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(r * 0.4, eyeY, scleraRadius, 0, Math.PI * 2);
+                ctx.fill();
+
+                if (eyeType === 'heterochromia' && Array.isArray(eyeConfig?.colors)) {
+                    ctx.fillStyle = eyeConfig.colors[0] || '#5DADE2';
+                    ctx.beginPath();
+                    ctx.arc(-r * 0.4, eyeY, pupilRadius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = eyeConfig.colors[1] || '#8B4513';
+                    ctx.beginPath();
+                    ctx.arc(r * 0.4, eyeY, pupilRadius, 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (eyeType === 'swirly') {
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+                    ctx.lineWidth = Math.max(0.6, r * 0.035);
+                    ctx.beginPath();
+                    for (let t = 0; t <= Math.PI * 4; t += step) {
+                        const radiusFactor = t * r * 0.015;
+                        const sx = -r * 0.4 + Math.cos(t + anim * 2) * radiusFactor;
+                        const sy = eyeY + Math.sin(t + anim * 2) * radiusFactor;
+                        if (t === 0) ctx.moveTo(sx, sy);
+                        else ctx.lineTo(sx, sy);
+                    }
+                    ctx.stroke();
+
+                    ctx.beginPath();
+                    for (let t = 0; t <= Math.PI * 4; t += step) {
+                        const radiusFactor = t * r * 0.015;
+                        const sx = r * 0.4 + Math.cos(t - anim * 2.2) * radiusFactor;
+                        const sy = eyeY + Math.sin(t - anim * 2.2) * radiusFactor;
+                        if (t === 0) ctx.moveTo(sx, sy);
+                        else ctx.lineTo(sx, sy);
+                    }
+                    ctx.stroke();
+                } else {
+                    ctx.fillStyle = 'rgba(12, 12, 18, 0.9)';
+                    ctx.beginPath();
+                    ctx.arc(-r * 0.4, eyeY, pupilRadius * 0.7, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(r * 0.4, eyeY, pupilRadius * 0.7, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Mouth and tongue
+                ctx.globalAlpha = 0.92;
+                ctx.fillStyle = 'rgba(255, 110, 170, 0.85)';
+                ctx.beginPath();
+                ctx.moveTo(0, r * 0.4);
+                ctx.quadraticCurveTo(r * 0.22, r * 0.78, 0, r * 0.84);
+                ctx.quadraticCurveTo(-r * 0.22, r * 0.78, 0, r * 0.4);
+                ctx.fill();
+
+                ctx.strokeStyle = 'rgba(20, 20, 28, 0.95)';
+                ctx.lineWidth = Math.max(0.6, r * 0.05);
+                ctx.beginPath();
+                ctx.arc(0, r * 0.35, r * 0.22, 0, Math.PI);
+                ctx.stroke();
+
+                // Soft highlights
+                ctx.globalAlpha = 0.4;
+                ctx.fillStyle = 'rgba(240, 250, 255, 0.5)';
+                ctx.beginPath();
+                ctx.ellipse(-r * 0.2, -r * 0.2, r * 0.4, r * 0.18, 0.3, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+
             function drawHound(h) {
                 ctx.save();
                 ctx.translate(h.x, h.y);
@@ -22334,6 +22562,8 @@
                     ctx.lineTo(r * 0.2, r * 0.9);
                     ctx.closePath();
                     ctx.fill();
+                } else if (h.breed === 'bernese') {
+                    drawBerneseGhostHound(ctx, r, h.eyeConfig || { type: h.eyeType }, time);
                 } else {
                     const color = h.color.main;
                     const opacity = ctx.globalAlpha;
