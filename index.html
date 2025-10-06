@@ -6892,6 +6892,23 @@
                 return negative ? `-${padded}` : padded;
             }
 
+            // ═══════════════════════════════════════════════════════════════════════
+            // ENHANCED WAVE SYSTEM: Themed Tactical Challenges
+            // ═══════════════════════════════════════════════════════════════════════
+            // Defined globally so it can be accessed by spawn functions
+            
+            // Helper function to get wave profile - must be defined globally
+            function getSpawnProfileForWave(wave) {
+                if (!window.WAVE_SPAWN_PROFILES) return null;
+                for (let i = 0; i < window.WAVE_SPAWN_PROFILES.length; i++) {
+                    const profile = window.WAVE_SPAWN_PROFILES[i];
+                    if (wave >= profile.minWave) {
+                        return profile;
+                    }
+                }
+                return window.WAVE_SPAWN_PROFILES[window.WAVE_SPAWN_PROFILES.length - 1];
+            }
+
             function initWave() {
                 if (store.goldenOrbs) {
                     store.goldenOrbs.length = 0;
@@ -6980,7 +6997,8 @@
                 // • CHARGE: Periodic dash attacks (void_champion)
                 // ═══════════════════════════════════════════════════════════════════════
                 
-                const WAVE_SPAWN_PROFILES = [
+                // Store profiles globally for access from spawn functions
+                const WAVE_SPAWN_PROFILES = window.WAVE_SPAWN_PROFILES || [
                     // WAVES 40+: ULTIMATE GAUNTLET - All systems tested simultaneously
                     {
                         minWave: 40,
@@ -7200,6 +7218,11 @@
                         special: []
                     }
                 ];
+                
+                // Make profiles globally accessible
+                if (!window.WAVE_SPAWN_PROFILES) {
+                    window.WAVE_SPAWN_PROFILES = WAVE_SPAWN_PROFILES;
+                }
 
                 function getSpawnProfileForWave(wave) {
                     for (let i = 0; i < WAVE_SPAWN_PROFILES.length; i++) {
