@@ -3152,6 +3152,7 @@
                         <div class="hud-title">◢ EQUIPMENT ◣</div>
                         <div id="equipmentList"></div>
                     </div>
+
                     <div id="announce" class="hide" aria-live="polite"></div>
                 </div>
                 <canvas id="game" width="960" height="540"></canvas>
@@ -4013,18 +4014,18 @@
             }
 
 
-            // --- NEW FLAME PARTICLE CLASS ---
+            // --- FLAME PARTICLE CLASS ---
             class FlameParticle {
                 constructor(x, y, attachedEnemy = null) {
                     this.x = x;
                     this.y = y;
-                    this.vx = (Math.random() - 0.5) * 40; // Less horizontal spread
-                    this.vy = -20 - Math.random() * 30; // Slower upward drift
-                    this.life = 8.4 + Math.random() * 5.6; // 40% longer: 8.4-14 seconds (was 6-10)
+                    this.vx = (Math.random() - 0.5) * 40; // Horizontal spread
+                    this.vy = -20 - Math.random() * 30; // Upward drift
+                    this.life = 8.4 + Math.random() * 5.6; // 8.4-14 seconds
                     this.maxLife = this.life;
                     this.visualLife = this.life * 1.5; // Visual effect lasts 50% longer than mechanics
                     this.maxVisualLife = this.visualLife;
-                    this.size = 8 + Math.random() * 8; // Smaller, more varied sizes
+                    this.size = 8 + Math.random() * 8; // Varied sizes
                     this.attachedEnemy = attachedEnemy;
                     this.damage = 0.45;
                     this.wobble = Math.random() * Math.PI * 2;
@@ -4032,7 +4033,7 @@
                     this.heat = 0.8 + Math.random() * 0.2; // Start hot
                     this.flickerOffset = Math.random() * 1000;
                     this.baseSize = this.size;
-                    this.gravity = 15; // Slight downward pull for realistic behavior
+                    this.gravity = 15; // Slight downward pull
                     this.isDying = false;
                 }
 
@@ -4041,7 +4042,7 @@
                     this.visualLife -= dt;
                     if (this.visualLife <= 0) return false; // Remove particle when visual effect ends
 
-                    // Physics - only apply when mechanically active
+                    // Standard fire physics
                     if (this.life > 0) {
                         this.vy += this.gravity * dt;
                         this.vy -= 25 * dt;
@@ -4176,6 +4177,9 @@
             const soundLastPlayTime = {};
 
             function playSound(name) {
+                // Check if audio is muted
+                if (store.settings.audioMuted) return;
+
                 const audio = sounds[name];
                 if (!audio) return;
                 const now = performance.now();
@@ -4771,7 +4775,8 @@
                 },
                 settings: {
                     showShopTutorial: storedShopTutorialEnabled,
-                    autoForgeProfile: initialAutoForgeProfileId
+                    autoForgeProfile: initialAutoForgeProfileId,
+                    audioMuted: false
                 },
                 ui: {
                     shopSpotlightActive: false,
@@ -4784,6 +4789,7 @@
                 flameParticles: [],
                 lightningBolts: [],
                 empNovas: [],
+                flamePulses: [], // Rocketman flame pulse rings
                 mechPuddles: [], // Hazardous puddles left by mech tank attacks
                 poisonPuddles: [],
                 goldenOrbs: [],
@@ -9207,91 +9213,43 @@
                         }
                     }
                 } else if (p.pilotGenome === 'rocketman' && p.hasFirewall) {
-                    // Rocketman afterburner system
-                    if (!p.flameWallInitialized) {
-                        const baseCooldown = p.flameWallCooldownMax || p.firewallCooldown || 10;
-                        p.flameWallCooldownMax = baseCooldown;
+                    // Rocketman Flame Pulse system
+                    if (!p.flamePulseInitialized) {
+                        const baseCooldown = p.firewallCooldown || 8; // 8 second cooldown
+                        p.flamePulseCooldownMax = baseCooldown;
                         const immediateCast = Math.random() < 0.5;
-                        p.flameWallCooldown = immediateCast ? 0 : baseCooldown;
-                        p.flameWallCharge = immediateCast ? 1 : 0;
-                        p.flameWallInitialized = true;
+                        p.flamePulseCooldown = immediateCast ? 0 : baseCooldown;
+                        p.flamePulseCharge = immediateCast ? 1 : 0;
+                        p.flamePulseInitialized = true;
                     }
 
-                    const cooldownMax = p.flameWallCooldownMax || p.firewallCooldown || 10;
+                    const cooldownMax = p.flamePulseCooldownMax || 8;
 
-                    if (p.flameWallCooldown > 0) {
-                        p.flameWallCooldown = Math.max(0, p.flameWallCooldown - dt);
+                    if (p.flamePulseCooldown > 0) {
+                        p.flamePulseCooldown = Math.max(0, p.flamePulseCooldown - dt);
                     }
 
-                    const cooldownProgress = cooldownMax > 0 ? 1 - (p.flameWallCooldown / cooldownMax) : 1;
-                    p.flameWallCharge = cooldownProgress;
+                    const cooldownProgress = cooldownMax > 0 ? 1 - (p.flamePulseCooldown / cooldownMax) : 1;
+                    p.flamePulseCharge = cooldownProgress;
 
-                    // Start afterburner sequence when ready
-                    if (p.flameWallCooldown <= 0 && !p.afterburnerActive && p.flameWallActiveT <= 0) {
-                        p.afterburnerActive = true;
-                        p.afterburnerTimer = p.afterburnerMaxDuration;
-                        p.afterburnerParticleTimer = 0;
-                    }
-
-
-
-                    // Handle afterburner phase - small particles from rear boosters
-                    if (p.afterburnerActive) {
-                        p.afterburnerTimer -= dt;
-                        p.afterburnerParticleTimer -= dt;
-
-                        // Spawn small flame particles from rear boosters
-                        if (p.afterburnerParticleTimer <= 0) {
-                            p.afterburnerParticleTimer = 0.08; // Fast particle spawn rate
-
-                            // Create small particles from left and right boosters at rear of ship
-                            for (let side = -1; side <= 1; side += 2) {
-                                const particle = new FlameParticle(
-                                    p.x + side * 12, // Left/right booster positions
-                                    p.y + 20,        // Behind the ship
-                                    null
-                                );
-                                // Make afterburner particles smaller and shorter-lived
-                                particle.size *= 0.6;
-                                particle.baseSize *= 0.6;
-                                particle.life *= 0.4;
-                                particle.maxLife *= 0.4;
-                                particle.visualLife *= 0.4;
-                                particle.maxVisualLife *= 0.4;
-                                particle.damage *= 0.3; // Less damage than main flame wall
-                                // Make particles move mostly backward with slight spread
-                                particle.vx = (Math.random() - 0.5) * 20 + side * 15;
-                                particle.vy = 30 + Math.random() * 20; // Moving backward from ship
-                                store.flameParticles.push(particle);
-                            }
-                        }
-
-                        // Transition to main flame wall after afterburner duration
-                        if (p.afterburnerTimer <= 0) {
-                            p.afterburnerActive = false;
-                            p.flameWallActiveT = 0.6;
-                            p.flameWallCooldown = cooldownMax || 10;
-                            p.flameWallCharge = 1;
-                        }
-                    }
-
-                    // Main flame wall from nose (original system)
-                    if (p.flameWallActiveT > 0) {
-                        p.flameWallActiveT -= dt;
-                        p.flameWallCharge = Math.max(0, p.flameWallCharge - dt * 3.2);
-
-                        for (let i = 0; i < 2; i++) {
-                            let attachedEnemy = null;
-                            let closestDistSq = Infinity;
-                            store.enemies.forEach(enemy => {
-                                const distSq = (enemy.x - p.x) * (enemy.x - p.x) + (enemy.y - (p.y + 10)) * (enemy.y - (p.y + 10));
-                                if (distSq < 100 * 100 && distSq < closestDistSq) {
-                                    closestDistSq = distSq;
-                                    attachedEnemy = enemy;
-                                }
-                            });
-                            store.flameParticles.push(new FlameParticle(p.x, p.y + 10, attachedEnemy));
-                        }
+                    // Release flame pulse when ready
+                    if (p.flamePulseCooldown <= 0) {
+                        // Create expanding fire ring
+                        store.flamePulses.push({
+                            x: p.x,
+                            y: p.y,
+                            radius: 20, // Start small
+                            maxRadius: 200, // Expand to 200 pixels
+                            speed: 250, // Expansion speed
+                            life: 2.0, // Lasts 2 seconds
+                            damage: 0.6, // Damage per frame
+                            knockback: 300, // Knockback strength
+                            dead: false
+                        });
+                        
+                        p.flamePulseCooldown = cooldownMax;
+                        p.flamePulseCharge = 0;
+                        playSound('explosion'); // Sound effect
                     }
                 } else if (p.pilotGenome === 'voidmancer') {
                     if (p.hasChainLightning || p.hasHybridVoid) {
@@ -9884,6 +9842,80 @@
                 });
             }
 
+            function stepFlamePulses(dt) {
+                store.flamePulses.forEach(pulse => {
+                    // Expand the pulse
+                    pulse.radius += pulse.speed * dt;
+                    if (pulse.radius > pulse.maxRadius) {
+                        pulse.radius = pulse.maxRadius;
+                    }
+
+                    // Countdown life
+                    pulse.life -= dt;
+                    if (pulse.life <= 0) {
+                        pulse.dead = true;
+                        return;
+                    }
+
+                    // Damage and knockback enemies in the expanding ring
+                    const ringThickness = 30; // Width of the damage ring
+                    store.enemies.forEach(enemy => {
+                        if (enemy.dead) return;
+                        
+                        const dx = enemy.x - pulse.x;
+                        const dy = enemy.y - pulse.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        
+                        // Check if enemy is within the ring thickness
+                        if (dist >= pulse.radius - ringThickness && dist <= pulse.radius + ringThickness) {
+                            // Damage enemy
+                            enemy.hp -= pulse.damage;
+                            if (enemy.hp <= 0) {
+                                enemy.dead = true;
+                            }
+                            
+                            // Knockback effect
+                            const knockbackAngle = Math.atan2(dy, dx);
+                            enemy.x += Math.cos(knockbackAngle) * pulse.knockback * dt;
+                            enemy.y += Math.sin(knockbackAngle) * pulse.knockback * dt;
+                        }
+                    });
+
+                    // Also affect boss
+                    if (store.boss && !store.boss.dead) {
+                        const dx = store.boss.x - pulse.x;
+                        const dy = store.boss.y - pulse.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (dist >= pulse.radius - ringThickness && dist <= pulse.radius + ringThickness) {
+                            store.boss.hp -= pulse.damage * 0.5; // Reduced damage to boss
+                            
+                            // Knockback (bosses resist more)
+                            const knockbackAngle = Math.atan2(dy, dx);
+                            store.boss.x += Math.cos(knockbackAngle) * pulse.knockback * 0.3 * dt;
+                            store.boss.y += Math.sin(knockbackAngle) * pulse.knockback * 0.3 * dt;
+                        }
+                    }
+
+                    // Spawn fire particles along the ring edge for visual effect
+                    if (Math.random() < 0.3) {
+                        const angle = Math.random() * Math.PI * 2;
+                        const px = pulse.x + Math.cos(angle) * pulse.radius;
+                        const py = pulse.y + Math.sin(angle) * pulse.radius;
+                        
+                        const particle = new FlameParticle(px, py, null, 0);
+                        particle.vx = Math.cos(angle) * 30;
+                        particle.vy = Math.sin(angle) * 30;
+                        particle.life *= 0.3;
+                        particle.maxLife *= 0.3;
+                        particle.visualLife *= 0.3;
+                        particle.maxVisualLife *= 0.3;
+                        particle.isFlamethrowerParticle = false; // Use standard physics
+                        store.flameParticles.push(particle);
+                    }
+                });
+            }
+
             function stepEmpNovas(dt) {
                 store.empNovas.forEach(nova => {
                     // Expand the nova
@@ -10224,6 +10256,7 @@
                 updateTimeShards(dt);
                 stepLightning(dt);
                 stepEmpNovas(dt);
+                stepFlamePulses(dt);
                 processWaveSpawnQueue(dt);
                 processVulnerabilityEvents(dt);
 
@@ -11221,6 +11254,7 @@
                 removeDeadObjects(store.flameParticles);
                 removeDeadObjects(store.lightningBolts);
                 removeDeadObjects(store.empNovas);
+                removeDeadObjects(store.flamePulses);
                 removeDeadObjects(store.shadowEchoes);
                 removeDeadObjects(store.timeShards);
                 if (store.playerChampion && store.playerChampion.dead) {
@@ -11854,7 +11888,7 @@
                 store.lastBossSnapshot = null;
                 store.lastBossDefeatId = null;
                 store.drones = []; store.hounds = []; store.shadowHounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
-                store.lightningBolts = []; store.empNovas = []; store.poisonPuddles = []; store.goldenOrbs = []; store.shadowEchoes = [];
+                store.lightningBolts = []; store.empNovas = []; store.flamePulses = []; store.poisonPuddles = []; store.goldenOrbs = []; store.shadowEchoes = [];
                 store.championMinions = [];
                 store.playerChampion = null;
                 store.shadowChampionId = null;
@@ -12189,6 +12223,7 @@
                 store.missiles.forEach(m => drawMissile(m));
                 store.lightningBolts.forEach(l => drawLightningBolt(l));
                 store.empNovas.forEach(n => drawEmpNova(n));
+                store.flamePulses.forEach(p => drawFlamePulse(p));
                 drawStarProjectiles();
 
 
@@ -19190,6 +19225,58 @@
                     ctx.restore();
                 }
 
+                // Rocketman flame pulse cooldown gradient timer (hourglass fill effect)
+                if (player.pilotGenome === 'rocketman' && player.hasFirewall) {
+                    const cooldownProgress = player.flamePulseCharge || 0; // 0 = empty, 1 = full/ready
+                    
+                    ctx.save();
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.beginPath();
+                    ctx.moveTo(0, -20);
+                    ctx.lineTo(12, 8);
+                    ctx.lineTo(8, 14);
+                    ctx.lineTo(0, 10);
+                    ctx.lineTo(-8, 14);
+                    ctx.lineTo(-12, 8);
+                    ctx.closePath();
+                    ctx.clip();
+
+                    // Create gradient that fills from bottom to top like an hourglass
+                    const shipHeight = 34; // From nose (-20) to tail (14)
+                    const shipTop = -20;
+                    const shipBottom = 14;
+                    const fillHeight = shipTop + (shipHeight * (1 - cooldownProgress)); // Fill from bottom up
+                    
+                    const gradient = ctx.createLinearGradient(0, shipBottom, 0, shipTop);
+                    
+                    // Filled portion (orange/red glow)
+                    if (cooldownProgress < 1) {
+                        gradient.addColorStop(0, 'rgba(255, 80, 0, 0.25)'); // Bottom (filled)
+                        gradient.addColorStop(Math.max(0, cooldownProgress - 0.05), 'rgba(255, 120, 20, 0.3)');
+                        gradient.addColorStop(Math.min(1, cooldownProgress), 'rgba(255, 180, 60, 0.15)'); // Fill line
+                        gradient.addColorStop(Math.min(1, cooldownProgress + 0.05), 'rgba(0, 0, 0, 0)'); // Fade to transparent
+                        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)'); // Top (empty)
+                    } else {
+                        // Fully charged - bright glow
+                        gradient.addColorStop(0, 'rgba(255, 140, 0, 0.4)');
+                        gradient.addColorStop(0.5, 'rgba(255, 180, 60, 0.35)');
+                        gradient.addColorStop(1, 'rgba(255, 220, 100, 0.3)');
+                    }
+
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(-22, shipTop - 2, 44, shipHeight + 4);
+
+                    // Add pulsing effect when ready
+                    if (cooldownProgress >= 1) {
+                        const pulse = 0.5 + 0.5 * Math.sin(time * 4);
+                        ctx.globalAlpha = pulse * 0.3;
+                        ctx.fillStyle = 'rgba(255, 200, 80, 1)';
+                        ctx.fillRect(-22, shipTop - 2, 44, shipHeight + 4);
+                    }
+
+                    ctx.restore();
+                }
+
                 if (player.hasRearGuard && player.rearGuardReady) {
                     const pulse = 0.4 + 0.3 * Math.sin(performance.now() / 200);
                     ctx.fillStyle = `rgba(100, 255, 255, ${pulse})`;
@@ -25464,6 +25551,52 @@
                 ctx.restore();
             }
 
+            function drawFlamePulse(pulse) {
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+
+                const time = performance.now() / 1000;
+                const lifeRatio = pulse.life / 2.0;
+                const opacity = Math.min(1, lifeRatio);
+
+                // Outer fire ring (orange)
+                const outerGradient = ctx.createRadialGradient(pulse.x, pulse.y, pulse.radius - 20, pulse.x, pulse.y, pulse.radius + 10);
+                outerGradient.addColorStop(0, `rgba(255, 69, 0, 0)`);
+                outerGradient.addColorStop(0.4, `rgba(255, 120, 0, ${opacity * 0.6})`);
+                outerGradient.addColorStop(0.7, `rgba(255, 80, 0, ${opacity * 0.8})`);
+                outerGradient.addColorStop(1, `rgba(255, 40, 0, 0)`);
+
+                ctx.fillStyle = outerGradient;
+                ctx.beginPath();
+                ctx.arc(pulse.x, pulse.y, pulse.radius + 10, 0, Math.PI * 2);
+                ctx.arc(pulse.x, pulse.y, Math.max(0, pulse.radius - 20), 0, Math.PI * 2, true);
+                ctx.fill();
+
+                // Inner hot core (yellow/white)
+                const innerGradient = ctx.createRadialGradient(pulse.x, pulse.y, pulse.radius - 15, pulse.x, pulse.y, pulse.radius + 5);
+                innerGradient.addColorStop(0, `rgba(255, 255, 200, 0)`);
+                innerGradient.addColorStop(0.5, `rgba(255, 220, 100, ${opacity * 0.7})`);
+                innerGradient.addColorStop(1, `rgba(255, 150, 50, 0)`);
+
+                ctx.fillStyle = innerGradient;
+                ctx.beginPath();
+                ctx.arc(pulse.x, pulse.y, pulse.radius + 5, 0, Math.PI * 2);
+                ctx.arc(pulse.x, pulse.y, Math.max(0, pulse.radius - 15), 0, Math.PI * 2, true);
+                ctx.fill();
+
+                // Pulsing glow effect
+                const pulseEffect = 0.5 + 0.5 * Math.sin(time * 10);
+                ctx.shadowColor = 'rgba(255, 100, 0, 0.8)';
+                ctx.shadowBlur = 20 * pulseEffect;
+                ctx.strokeStyle = `rgba(255, 180, 80, ${opacity * 0.8 * pulseEffect})`;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(pulse.x, pulse.y, pulse.radius, 0, Math.PI * 2);
+                ctx.stroke();
+
+                ctx.restore();
+            }
+
             function drawEmpNova(nova) {
                 ctx.save();
 
@@ -26758,7 +26891,7 @@
                             { id: 'railgunner_precision_master', name: 'Precision Master', desc: '+50% critical chance, 2x crit damage, and full railgun mastery.', icon: 'four.png', tier: 4 }
                         ]
                     },
-                    classAbility: { id: 'firewall_unlock', name: 'FIREWALL', desc: 'UNLOCK: Deployable burning barrier for area control', icon: 'firewall.png', tier: 'class' },
+                    classAbility: { id: 'firewall_unlock', name: 'FLAME PULSE', desc: 'UNLOCK: Expanding ring of fire that damages and pushes enemies back', icon: 'firewall.png', tier: 'class' },
                     crossUnlock: { subclass: 'demolitioner', requiredInvestments: 3 },
                     ultimateAbility: { id: 'railgunner_stealth_rockets', name: 'Stealth Rockets', desc: 'More badass rockets!', icon: 'badass.png', tier: 'ultimate' }
                 },
@@ -26773,7 +26906,7 @@
                             { id: 'demolitioner_demolition_expert', name: 'Demolition Expert', desc: 'Double cluster blast radius and add a 30% mega explosion chance.', icon: 'demo4.png', tier: 4 }
                         ]
                     },
-                    classAbility: { id: 'firewall_unlock', name: 'FIREWALL', desc: 'UNLOCK: Deployable burning barrier for area control', icon: 'firewall.png', tier: 'class' },
+                    classAbility: { id: 'firewall_unlock', name: 'FLAME PULSE', desc: 'UNLOCK: Expanding ring of fire that damages and pushes enemies back', icon: 'firewall.png', tier: 'class' },
                     crossUnlock: { subclass: 'railgunner', requiredInvestments: 3 },
                     ultimateAbility: { id: 'demolitioner_stealth_rockets', name: 'Stealth Rockets', desc: 'More badass rockets!', icon: 'badass.png', tier: 'ultimate' }
                 },
@@ -27613,7 +27746,7 @@
                     { id: 'beef_shield_enhanced', name: 'Beef Shield+', desc: 'Improves the beef shield with faster regeneration and reflective plating.' },
                     { id: 'beef_charge', name: 'Beef Charge', desc: 'Unlocks a devastating beef charge rush attack.' },
                     { id: 'beef_charge_enhanced', name: 'Beef Charge+', desc: 'Boosts charge range and impact for unstoppable momentum.' },
-                    { id: 'firewall_unlock', name: 'Firewall', desc: 'Unlocks the Firewall signature ability for area-denial flame walls.' },
+                    { id: 'firewall_unlock', name: 'Flame Pulse', desc: 'Unlocks Flame Pulse: expanding fire ring that damages and pushes enemies away.' },
                     { id: 'blink_unlock', name: 'Blink', desc: 'Unlocks the Blink signature ability for instantaneous teleportation.' },
                     { id: 'beef_shield_unlock', name: 'Beef Shield', desc: 'Unlocks the Beef Shield signature ability for defensive fortification.' }
                 ].forEach(entry => addSkillDescription(entry.id, entry.name, entry.desc));
@@ -28388,19 +28521,15 @@
                         break;
                     case 'firewall_unlock':
                         p.hasFirewall = true;
-                        p.firewallDuration = 10;
-                        p.firewallCooldown = 15;
-                        p.firewallDamage = 50;
-                        p.flameWallCooldownMax = 10;
-                        p.flameWallCooldown = 0;
-                        p.flameWallActiveDuration = 0.5;
-                        p.flameWallActiveT = 0;
+                        p.firewallCooldown = 8; // Base cooldown for flame pulse
+                        p.flamePulseCooldownMax = 8;
+                        p.flamePulseCooldown = 0;
                         p.shipFlameColor = '#ff7b32';
                         p.shipHighlightColor = '#ffd166';
-                        p.flameWallCharge = 0;
-                        p.flameWallInitialized = false;
+                        p.flamePulseCharge = 1; // Start ready
+                        p.flamePulseInitialized = false;
                         playSound('powerup');
-                        announce('🔥 FIREWALL UNLOCKED! - Class Ability Activated!');
+                        announce('🔥 FLAME PULSE UNLOCKED! - Expanding fire ring ability!');
                         break;
                 }
             }
