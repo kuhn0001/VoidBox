@@ -12308,10 +12308,25 @@
                 }
             }
 
-            function updateBeefShield() {
-                if (store.player.pilotGenome !== 'beef') return;
+            function resetBeefShieldState(player) {
+                if (!player) return;
+                if (player.beefShield || player.beefShieldDamageDealt || player.beefShieldDamageTaken || player.beefShieldCooldown) {
+                    player.beefShield = 0;
+                    player.beefShieldDamageDealt = 0;
+                    player.beefShieldDamageTaken = 0;
+                    player.beefShieldCooldown = 0;
+                }
+            }
 
+            function updateBeefShield() {
                 const p = store.player;
+                if (!p) return;
+
+                if (p.pilotGenome !== 'beef') {
+                    resetBeefShieldState(p);
+                    return;
+                }
+
                 const damageDealt = p.beefShieldDamageDealt;
                 const damageTaken = p.beefShieldDamageTaken;
 
@@ -16499,7 +16514,35 @@
                     return;
                 }
 
-                ctx.save(); ctx.translate(t.x, t.y); if (t.isEnraged) { ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 50); } const hpRatio = Math.max(0, Math.min(1, ((t.hp || 0) / (t.hpMax || 1)))); ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(-60, -t.r - 20, 120, 8); const healthBarColor = t.name === 'EVIL BABYMOON' ? '#ffd700' : (t.color || '#ff4444'); ctx.fillStyle = healthBarColor; ctx.fillRect(-60, -t.r - 20, 120 * hpRatio, 8); ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.strokeRect(-60, -t.r - 20, 120, 8); if (t.behavior === "malignus") { const time = performance.now() / 1000; ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.4, 0, Math.PI * 2); ctx.fill(); const numgold = 5; for (let i = 0; i < numgold; i++) { ctx.save(); const angle = time * (0.5 + 0.1 * i) + i * (2 * Math.PI / numgold); const dist = 0.8 * t.r; ctx.rotate(angle); ctx.translate(dist, 0); ctx.rotate(2 * time); ctx.fillStyle = addAlpha(t.color, 0.67); ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2; const goldize = 0.3 * t.r; ctx.beginPath(); ctx.moveTo(0, -goldize); ctx.lineTo(goldize / 2, goldize); ctx.lineTo(-goldize / 2, goldize); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); } } else if (t.behavior === "hex") { ctx.translate(0, 30); const bodyW_top = t.r * 1.5; const bodyW_bottom = t.r * 2.5; const bodyH = t.r * 1.5; ctx.fillStyle = "#66aaff"; ctx.strokeStyle = "#5599e5"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_bottom / 2, bodyH / 2); ctx.lineTo(-bodyW_bottom / 2, bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#e03434"; ctx.strokeStyle = "#c02d2d"; const crownH = t.r * 0.8, crownW = bodyW_top * 0.9; ctx.beginPath(); ctx.moveTo(-crownW / 2, -bodyH / 2); ctx.lineTo(-crownW / 2 + crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(0, -bodyH / 2 - crownH / 2); ctx.lineTo(crownW / 2 - crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(crownW / 2, -bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#000"; ctx.fillRect(-t.r * 0.6, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(t.r * 0.2, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(-t.r * 0.4, 0, t.r * 0.8, t.r * 0.1); ctx.strokeStyle = "#ffd700"; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(0, 0, t.r * 1.1, 0.5, Math.PI - 0.5); ctx.stroke(); ctx.fillStyle = "#ffd700"; ctx.strokeStyle = "#daa520"; ctx.lineWidth = 3; const medR = t.r * 0.5; ctx.beginPath(); ctx.moveTo(0, t.r * 1.1 + medR); for (let i = 1; i <= 8; i++) { const angle = i * (2 * Math.PI / 8); ctx.lineTo(medR * Math.sin(angle), t.r * 1.1 + medR * Math.cos(angle)); } ctx.closePath(); ctx.fill(); ctx.stroke(); } else if (t.behavior === "construct") {
+                ctx.save();
+                ctx.translate(t.x, t.y);
+                if (t.isEnraged) {
+                    ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 50);
+                }
+
+                const activeBoss = (typeof store !== 'undefined' && store && store.boss) ? store.boss : null;
+                const sameBoss = !!(activeBoss && (activeBoss === t || (activeBoss.instanceId && activeBoss.instanceId === t.instanceId) || (activeBoss._instanceId && activeBoss._instanceId === t._instanceId)));
+                let bossHp = ensureFiniteNumber(t.hp, 0);
+                let bossHpMax = ensureFiniteNumber(t.hpMax, 1);
+
+                if (sameBoss) {
+                    bossHp = ensureFiniteNumber(activeBoss.hp, bossHp);
+                    bossHpMax = ensureFiniteNumber(activeBoss.hpMax, bossHpMax);
+                    t.hp = bossHp;
+                    t.hpMax = bossHpMax;
+                }
+
+                const hpRatio = bossHpMax > 0 ? clamp(bossHp / bossHpMax, 0, 1) : 0;
+
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.fillRect(-60, -t.r - 20, 120, 8);
+                const healthBarColor = t.name === 'EVIL BABYMOON' ? '#ffd700' : (t.color || '#ff4444');
+                ctx.fillStyle = healthBarColor;
+                ctx.fillRect(-60, -t.r - 20, 120 * hpRatio, 8);
+                ctx.strokeStyle = "#fff";
+                ctx.lineWidth = 1;
+                ctx.strokeRect(-60, -t.r - 20, 120, 8);
+                if (t.behavior === "malignus") { const time = performance.now() / 1000; ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.4, 0, Math.PI * 2); ctx.fill(); const numgold = 5; for (let i = 0; i < numgold; i++) { ctx.save(); const angle = time * (0.5 + 0.1 * i) + i * (2 * Math.PI / numgold); const dist = 0.8 * t.r; ctx.rotate(angle); ctx.translate(dist, 0); ctx.rotate(2 * time); ctx.fillStyle = addAlpha(t.color, 0.67); ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2; const goldize = 0.3 * t.r; ctx.beginPath(); ctx.moveTo(0, -goldize); ctx.lineTo(goldize / 2, goldize); ctx.lineTo(-goldize / 2, goldize); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); } } else if (t.behavior === "hex") { ctx.translate(0, 30); const bodyW_top = t.r * 1.5; const bodyW_bottom = t.r * 2.5; const bodyH = t.r * 1.5; ctx.fillStyle = "#66aaff"; ctx.strokeStyle = "#5599e5"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_top / 2, -bodyH / 2); ctx.lineTo(bodyW_bottom / 2, bodyH / 2); ctx.lineTo(-bodyW_bottom / 2, bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#e03434"; ctx.strokeStyle = "#c02d2d"; const crownH = t.r * 0.8, crownW = bodyW_top * 0.9; ctx.beginPath(); ctx.moveTo(-crownW / 2, -bodyH / 2); ctx.lineTo(-crownW / 2 + crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(0, -bodyH / 2 - crownH / 2); ctx.lineTo(crownW / 2 - crownW / 4, -bodyH / 2 - crownH); ctx.lineTo(crownW / 2, -bodyH / 2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#000"; ctx.fillRect(-t.r * 0.6, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(t.r * 0.2, -t.r * 0.3, t.r * 0.4, t.r * 0.15); ctx.fillRect(-t.r * 0.4, 0, t.r * 0.8, t.r * 0.1); ctx.strokeStyle = "#ffd700"; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(0, 0, t.r * 1.1, 0.5, Math.PI - 0.5); ctx.stroke(); ctx.fillStyle = "#ffd700"; ctx.strokeStyle = "#daa520"; ctx.lineWidth = 3; const medR = t.r * 0.5; ctx.beginPath(); ctx.moveTo(0, t.r * 1.1 + medR); for (let i = 1; i <= 8; i++) { const angle = i * (2 * Math.PI / 8); ctx.lineTo(medR * Math.sin(angle), t.r * 1.1 + medR * Math.cos(angle)); } ctx.closePath(); ctx.fill(); ctx.stroke(); } else if (t.behavior === "construct") {
                     // Check if this is the DEATH ENGINE boss
                     if (t.name === 'DEATH ENGINE') {
                         // Update skull renderer position and color for red final phase
