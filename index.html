@@ -4217,6 +4217,7 @@
                 hasLazarusBeam: false, lazarusBeamCooldown: 0,
                 hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 1, vampirismLevel: 0, flamethrowerLevel: 0,
                 flamethrowerT: 0, // Separate timer for lava chunks, unaffected by overclock
+                fragmentBlasters: [], // Auto-targeting shotgun blasts
                 // Shield recharge delay system
                 shieldRecharging: false,
                 shieldRechargeDelay: 0,
@@ -6277,6 +6278,34 @@
                 'crit_chance': { name: "SHINOBI REFLEXES", icon: '🥷', baseCost: 40, increment: 24, maxLevel: 10, category: 'attack', effect: () => { store.player.critChance *= 1.5; store.player.critDamage *= 1.5; }, desc: level => `+50% Crit Chance & Dmg (Lvl ${level + 1})` },
                 'speed': { name: "SPEED", icon: '🚀', baseCost: 40, scale: 1.6, maxLevel: 8, category: 'utility', effect: () => store.player.speed *= 1.10, desc: level => `+10% Speed (Lvl ${level + 1})` },
                 'grenade': { name: "EMP BURST", icon: '⚡💣', cost: 70, isPremium: true, max: 6, category: 'attack', apply: () => { if (!store.empCharges) store.empCharges = []; if (store.empCharges.length < 6) { createEmpCharge(); return true; } return false; }, desc: () => `Add orbiting EMP charge (max 6). Auto-activates near enemies.` },
+                'fragment_blast': { 
+                    name: "FRAGMENT BLAST", 
+                    icon: '💥', 
+                    baseCost: 80, 
+                    scale: 2, 
+                    maxLevel: 3, 
+                    isPremium: true, 
+                    category: 'attack',
+                    effect: (level) => {
+                        const p = store.player;
+                        if (!p.fragmentBlasters) {
+                            p.fragmentBlasters = [];
+                        }
+                        p.fragmentBlasters.push({
+                            cooldown: 0,
+                            maxCooldown: 10,
+                            barrelDelay: 0,
+                            meleeRange: 120,
+                            triggerRange: 60
+                        });
+                    },
+                    desc: level => {
+                        if (level === 0) return 'Auto-firing shotgun blast when enemies get close (10s cooldown).';
+                        if (level === 1) return 'Add 2nd barrel - fires 1s after first if enemies remain close.';
+                        if (level === 2) return 'Add 3rd barrel - independent targeting for maximum coverage.';
+                        return 'Max Level';
+                    }
+                },
                 'max_shield': {
                     name: "MAX SHIELD",
                     icon: '🛡️',
@@ -9572,6 +9601,11 @@
                         }
                     });
                 }
+
+                // Fragment Blaster auto-targeting system
+                if (p.fragmentBlasters && p.fragmentBlasters.length > 0) {
+                    stepFragmentBlasters(dt, p);
+                }
             }
             function stepPowerups(dt) {
                 const p = store.player;
@@ -11210,6 +11244,15 @@
                     const b = store.bullets[bi];
                     b.x += b.vx * dt;
                     b.y += b.vy * dt;
+                    
+                    // Handle fragment bullet lifetime
+                    if (b.isFragment) {
+                        b.lifetime = (b.lifetime || 0) + dt;
+                        if (b.lifetime >= b.maxLifetime) {
+                            b.dead = true;
+                        }
+                    }
+                    
                     if (b.isSwirl) {
                         b.life = (b.life || 0) + dt;
                         b.x += Math.sin(b.life * 15) * 150 * dt;
@@ -19115,6 +19158,112 @@
                             ctx.globalAlpha = 1;
                         }
                     }
+                } else if (t.behavior === "asynchronos") {
+                    // Chronovore boss design
+                    const time = performance.now() / 1000;
+                    const pulse = 0.95 + 0.05 * Math.sin(time / 0.4);
+                    const coreRadius = t.r;
+
+                    // Draw Horns
+                    ctx.fillStyle = '#4c1d95'; // Deep purple
+                    ctx.shadowColor = '#a78bfa';
+                    ctx.shadowBlur = 20;
+                    // Left Horn
+                    ctx.beginPath();
+                    ctx.moveTo(-coreRadius * 0.8, -coreRadius * 0.5);
+                    ctx.quadraticCurveTo(-coreRadius * 2, -coreRadius * 2, -coreRadius * 1.5, coreRadius * 1.5);
+                    ctx.quadraticCurveTo(-coreRadius, 0, -coreRadius * 0.8, -coreRadius * 0.5);
+                    ctx.fill();
+                    // Right Horn
+                    ctx.beginPath();
+                    ctx.moveTo(coreRadius * 0.8, -coreRadius * 0.5);
+                    ctx.quadraticCurveTo(coreRadius * 2, -coreRadius * 2, coreRadius * 1.5, coreRadius * 1.5);
+                    ctx.quadraticCurveTo(coreRadius, 0, coreRadius * 0.8, -coreRadius * 0.5);
+                    ctx.fill();
+
+                    // Draw Dinosaur Head Shape
+                    ctx.fillStyle = '#1e1b4b'; // Dark indigo
+                    ctx.strokeStyle = '#818cf8';
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.moveTo(0, -coreRadius * 1.5); // Top of head
+                    ctx.quadraticCurveTo(coreRadius * 1.5, -coreRadius, coreRadius, coreRadius * 1.2); // Jaw right
+                    ctx.lineTo(-coreRadius, coreRadius * 1.2); // Jaw left
+                    ctx.quadraticCurveTo(-coreRadius * 1.5, -coreRadius, 0, -coreRadius * 1.5);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+
+                    // Draw Temporal Eye (Core)
+                    const eyeRadius = coreRadius * pulse;
+                    const gradient = ctx.createRadialGradient(0, 0, eyeRadius * 0.2, 0, 0, eyeRadius);
+                    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+                    gradient.addColorStop(0.7, 'rgba(129, 140, 248, 0.8)');
+                    gradient.addColorStop(1, 'rgba(55, 48, 163, 0)');
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, eyeRadius * 1.2, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Clock tick marks
+                    ctx.strokeStyle = '#fde047'; // Gold/Yellow
+                    ctx.lineWidth = 3;
+                    for(let i = 0; i < 12; i++) {
+                        const angle = (i/12) * Math.PI * 2;
+                        const startRadius = eyeRadius * 0.9;
+                        const endRadius = eyeRadius * 1.1;
+                        ctx.beginPath();
+                        ctx.moveTo(Math.cos(angle) * startRadius, Math.sin(angle) * startRadius);
+                        ctx.lineTo(Math.cos(angle) * endRadius, Math.sin(angle) * endRadius);
+                        ctx.stroke();
+                    }
+
+                    // Draw Orbiting Clock Hands
+                    ctx.shadowColor = '#fde047';
+                    ctx.shadowBlur = 10;
+                    const state = t.asynchronosState;
+                    const beamAngle = state ? state.beam.angle : time * 0.005;
+                    // Hour hand
+                    ctx.save();
+                    ctx.rotate(beamAngle / 12);
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(eyeRadius * 0.7, 0);
+                    ctx.stroke();
+                    ctx.restore();
+                    // Minute hand
+                    ctx.save();
+                    ctx.rotate(beamAngle);
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(eyeRadius, 0);
+                    ctx.stroke();
+                    ctx.restore();
+                    ctx.shadowBlur = 0;
+
+                    // Draw Evil Eye in the Center
+                    const eyeHeight = eyeRadius * 0.7;
+                    const eyeWidth = eyeRadius * 1.2;
+                    
+                    // Iris
+                    ctx.fillStyle = '#facc15'; // Vivid yellow for the iris
+                    ctx.shadowColor = '#f59e0b'; // Amber shadow
+                    ctx.shadowBlur = 15;
+                    ctx.beginPath();
+                    ctx.moveTo(0, -eyeHeight / 2);
+                    ctx.quadraticCurveTo(eyeWidth / 2, 0, 0, eyeHeight / 2);
+                    ctx.quadraticCurveTo(-eyeWidth / 2, 0, 0, -eyeHeight / 2);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+
+                    // Pupil (vertical slit) that pulses
+                    const pupilWidth = eyeRadius * 0.15;
+                    const pupilHeight = eyeHeight * (0.9 * pulse);
+                    ctx.fillStyle = '#000000';
+                    ctx.fillRect(-pupilWidth / 2, -pupilHeight / 2, pupilWidth, pupilHeight);
+
                 } else { const time = performance.now() / 1000; ctx.fillStyle = '#2c2c54'; ctx.strokeStyle = '#40407a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, t.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#706fd3'; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.8, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#f0932b'; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.3, 0, Math.PI * 2); ctx.fill(); for (let i = 0; i < 6; i++) { ctx.save(); ctx.rotate(i * Math.PI / 3 + time * 0.3); ctx.translate(t.r * 0.6, 0); ctx.fillStyle = '#ff6348'; ctx.strokeStyle = '#2f3542'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.15, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore(); } const eyeSize = t.r * 0.12; ctx.fillStyle = '#ff3838'; ctx.beginPath(); ctx.arc(-t.r * 0.2, -t.r * 0.15, eyeSize, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(t.r * 0.2, -t.r * 0.15, eyeSize, 0, Math.PI * 2); ctx.fill(); for (let i = 0; i < 4; i++) { ctx.save(); ctx.rotate(i * Math.PI / 2 + time * -0.5); ctx.translate(t.r * 0.9, 0); ctx.fillStyle = '#3c6382'; ctx.strokeStyle = '#40407a'; ctx.lineWidth = 2; ctx.fillRect(-t.r * 0.08, -t.r * 0.06, t.r * 0.16, t.r * 0.12); ctx.strokeRect(-t.r * 0.08, -t.r * 0.06, t.r * 0.16, t.r * 0.12); ctx.restore(); } } ctx.restore();
             }
 
@@ -26069,6 +26218,84 @@
                             isEscortDrone: true,
                             isSwirl: false
                         });
+                    }
+                }
+            }
+
+            function stepFragmentBlasters(dt, p) {
+                if (!p.fragmentBlasters || p.fragmentBlasters.length === 0) return;
+
+                const meleeRange = 120; // Maximum range for fragments
+                const triggerRange = 60; // Half of melee range - when to fire
+
+                for (let i = 0; i < p.fragmentBlasters.length; i++) {
+                    const barrel = p.fragmentBlasters[i];
+                    
+                    // Update cooldowns
+                    if (barrel.cooldown > 0) {
+                        barrel.cooldown -= dt;
+                    }
+                    if (barrel.barrelDelay > 0) {
+                        barrel.barrelDelay -= dt;
+                    }
+
+                    // Skip if on cooldown or in barrel delay
+                    if (barrel.cooldown > 0 || barrel.barrelDelay > 0) continue;
+
+                    // Find nearest enemy within trigger range
+                    let nearestEnemy = null;
+                    let nearestDist = triggerRange;
+
+                    for (const e of store.enemies) {
+                        if (e.dead) continue;
+                        const dx = e.x - p.x;
+                        const dy = e.y - p.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (dist < nearestDist) {
+                            nearestDist = dist;
+                            nearestEnemy = e;
+                        }
+                    }
+
+                    // Fire if enemy found
+                    if (nearestEnemy) {
+                        // Calculate angle to target
+                        const dx = nearestEnemy.x - p.x;
+                        const dy = nearestEnemy.y - p.y;
+                        const angle = Math.atan2(dy, dx);
+
+                        // Fire a shotgun blast of fragments
+                        const fragmentCount = 10;
+                        const spreadAngle = 0.5; // ~30 degrees spread
+                        
+                        for (let j = 0; j < fragmentCount; j++) {
+                            const offsetAngle = angle + (Math.random() - 0.5) * spreadAngle;
+                            const speed = 400 + Math.random() * 100;
+                            
+                            store.bullets.push({
+                                x: p.x,
+                                y: p.y,
+                                vx: Math.cos(offsetAngle) * speed,
+                                vy: Math.sin(offsetAngle) * speed,
+                                r: 2,
+                                col: '#ff9944',
+                                dmg: 8 * p.dmgMult,
+                                pierce: p.piercing,
+                                explosive: false,
+                                isFragment: true,
+                                lifetime: 0,
+                                maxLifetime: meleeRange / speed // Die after traveling melee range
+                            });
+                        }
+
+                        // Set cooldown for this barrel
+                        barrel.cooldown = 10; // 10 second cooldown
+
+                        // Trigger barrel delay for ALL barrels
+                        for (const b of p.fragmentBlasters) {
+                            b.barrelDelay = 1.0; // 1 second delay before any barrel can fire again
+                        }
                     }
                 }
             }
