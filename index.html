@@ -14021,161 +14021,202 @@
                 }
             }
 
-            const BEEF_CLONE_SORTIE_COOLDOWN_MIN = 12;
-            const BEEF_CLONE_SORTIE_COOLDOWN_MAX = 15;
+            const BEEF_CLONE_SORTIE_COOLDOWN = 12;
 
             function rollBeefCloneSortieCooldown() {
-                return BEEF_CLONE_SORTIE_COOLDOWN_MIN + Math.random() * (BEEF_CLONE_SORTIE_COOLDOWN_MAX - BEEF_CLONE_SORTIE_COOLDOWN_MIN);
+                return BEEF_CLONE_SORTIE_COOLDOWN;
             }
 
             function createMirrorClone(player, existingClone = null) {
                 const margin = 60;
                 const clone = existingClone && existingClone.mode === 'mirror' ? { ...existingClone } : {};
                 clone.mode = 'mirror';
-                clone.state = 'orbit';
-                clone.orbitRadius = clone.orbitRadius || 120;
-                clone.orbitSpeed = clone.orbitSpeed || 1.1;
-                clone.orbitDirection = clone.orbitDirection || (Math.random() < 0.5 ? -1 : 1);
-                clone.orbitAngle = typeof clone.orbitAngle === 'number' ? clone.orbitAngle : Math.random() * Math.PI * 2;
-                clone.runCooldown = rollBeefCloneSortieCooldown();
-                clone.runDuration = clone.runDuration || 1.7;
-                clone.runSpeed = clone.runSpeed || 320;
-                clone.bombInterval = clone.bombInterval || 0.55;
+                clone.state = 'tether';
+                clone.backlineDistance = clone.backlineDistance ?? 140;
+                clone.minBacklineDistance = clone.minBacklineDistance ?? 80;
+                clone.followEase = clone.followEase ?? 7.2;
+                clone.horizontalEase = clone.horizontalEase ?? 6.3;
+                clone.topBoundary = clone.topBoundary ?? 60;
+                clone.visualScale = clone.visualScale || 0.82;
+                clone.shotDamageScale = clone.shotDamageScale ?? 0.35;
+                clone.fireRate = clone.fireRate || 0.28;
+                clone.fireCooldown = clone.fireCooldown ?? (Math.random() * clone.fireRate);
+                clone.bobPhase = typeof clone.bobPhase === 'number' ? clone.bobPhase : Math.random() * Math.PI * 2;
+                clone.bobSpeed = clone.bobSpeed || 1.6;
+                clone.direction = clone.direction || 1;
+                clone.bombCooldown = clone.bombCooldown ?? rollBeefCloneSortieCooldown();
+                clone.pendingBombs = clone.pendingBombs ?? 0;
+                clone.bombInterval = clone.bombInterval || 0.28;
                 clone.bombDamageScale = clone.bombDamageScale ?? 0.45;
                 clone.bombRadiusScale = clone.bombRadiusScale ?? 0.65;
-                clone.bombSpeedScale = clone.bombSpeedScale ?? 0.85;
-                clone.bobPhase = clone.bobPhase || Math.random() * Math.PI * 2;
-                clone.bobSpeed = clone.bobSpeed || 1.7;
-                clone.altitude = clamp(player.y - 120, 60, H * 0.55);
-                const baseX = player.x + Math.cos(clone.orbitAngle) * clone.orbitRadius;
-                const baseY = player.y - 80 + Math.sin(clone.orbitAngle) * clone.orbitRadius * 0.55;
-                clone.x = clamp(baseX, margin, W - margin);
-                clone.y = clamp(baseY, 50, H * 0.75);
-                clone.direction = clone.orbitDirection;
-                clone.returnTimer = 0;
-                clone.runTimer = 0;
-                clone.bombTimer = clone.bombInterval;
+                clone.bombSpeedScale = clone.bombSpeedScale ?? 1.05;
+                clone.bombSeekStrength = clone.bombSeekStrength ?? 520;
+                clone.bombMaxSpeed = clone.bombMaxSpeed ?? 520;
+                const clampX = clamp(player.x, margin, W - margin);
+                const backline = clone.backlineDistance;
+                const initialY = Math.max(clone.topBoundary, player.y - backline);
+                clone.x = clamp(clone.x ?? clampX, margin, W - margin);
+                clone.y = clamp(clone.y ?? initialY, clone.topBoundary, H * 0.82);
                 return clone;
             }
 
-            function startMirrorCloneRun(clone, player) {
-                const margin = 60;
-                clone.state = 'run';
-                clone.runTimer = clone.runDuration || 1.7;
-                let direction = clone.runDirection;
-                if (!direction) {
-                    direction = player.x < W / 2 ? 1 : -1;
-                    if (clone.x < margin + 40) direction = 1;
-                    if (clone.x > W - margin - 40) direction = -1;
-                    if (Math.random() < 0.35) direction *= -1;
+            function fireMirrorCloneShot(clone, player) {
+                const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
+                if (!potentialTargets || potentialTargets.length === 0) return false;
+
+                let best = null;
+                let bestDistSq = Infinity;
+                for (const enemy of potentialTargets) {
+                    if (!enemy || enemy.dead || enemy.hp <= 0) continue;
+                    const dx = enemy.x - clone.x;
+                    const dy = enemy.y - clone.y;
+                    const distSq = dx * dx + dy * dy;
+                    if (distSq < bestDistSq) {
+                        bestDistSq = distSq;
+                        best = enemy;
+                    }
                 }
-                clone.runDirection = Math.sign(direction) || 1;
-                clone.direction = clone.runDirection;
-                clone.altitude = clamp(player.y - 160, 60, H * 0.45);
-                clone.bombTimer = Math.min(clone.bombInterval || 0.5, 0.12);
-                clone.runCooldown = rollBeefCloneSortieCooldown();
+
+                if (!best) return false;
+
+                const angle = Math.atan2(best.y - clone.y, best.x - clone.x);
+                const bulletSpeed = 620;
+                const damageScale = clone.shotDamageScale ?? 0.35;
+                const baseDamage = 15 * (player?.dmgMult || 1) * damageScale;
+                const startOffset = 12;
+
+                spawnBullet({
+                    x: clone.x + Math.cos(angle) * startOffset,
+                    y: clone.y + Math.sin(angle) * startOffset,
+                    vx: Math.cos(angle) * bulletSpeed,
+                    vy: Math.sin(angle) * bulletSpeed,
+                    r: 2,
+                    col: '#6be48e',
+                    dmg: baseDamage,
+                    pierce: Math.max(0, (player?.piercing || 0) - 1),
+                    explosive: false,
+                    isBeefClone: true,
+                    isSwirl: false
+                });
+
+                if (Math.abs(Math.cos(angle)) > 0.15) {
+                    clone.direction = Math.cos(angle) >= 0 ? 1 : -1;
+                }
+
+                return true;
             }
 
-            function beginMirrorCloneReturn(clone) {
-                clone.state = 'return';
-                clone.returnTimer = 0;
-                clone.runTimer = 0;
-                clone.bombTimer = clone.bombInterval || 0.5;
+            function selectMirrorCloneBombTarget(clone) {
+                const threats = [];
+                if (store.boss && !store.boss.dead && store.boss.hp > 0) {
+                    threats.push(store.boss);
+                }
+                if (Array.isArray(store.enemies)) {
+                    for (const enemy of store.enemies) {
+                        if (!enemy || enemy.dead || enemy.hp <= 0) continue;
+                        threats.push(enemy);
+                    }
+                }
+                if (!threats.length) return null;
+                let best = null;
+                let bestDistSq = Infinity;
+                for (const threat of threats) {
+                    const dx = (threat.x ?? clone.x) - clone.x;
+                    const dy = (threat.y ?? clone.y) - clone.y;
+                    const distSq = dx * dx + dy * dy;
+                    if (distSq < bestDistSq) {
+                        bestDistSq = distSq;
+                        best = threat;
+                    }
+                }
+                return best;
             }
 
             function updateMirrorClone(dt) {
                 const player = store.player;
                 if (!player || player.dead) return;
-                if (!store.beefClone) {
-                    store.beefClone = createMirrorClone(player);
+                if (!store.beefClone || store.beefClone.mode !== 'mirror') {
+                    store.beefClone = createMirrorClone(player, store.beefClone);
                 }
                 const clone = store.beefClone;
-                if (!clone || clone.mode === 'juggernaut_bomber') return;
-                if (clone.mode !== 'mirror') {
-                    store.beefClone = createMirrorClone(player, clone);
-                    return;
-                }
+                if (!clone || clone.mode !== 'mirror') return;
 
                 const margin = 60;
-                const enemies = store.enemies || [];
-                clone.orbitRadius = clone.orbitRadius || 120;
-                clone.orbitSpeed = clone.orbitSpeed || 1.1;
-                clone.orbitAngle = typeof clone.orbitAngle === 'number' ? clone.orbitAngle : Math.random() * Math.PI * 2;
-                clone.orbitDirection = clone.orbitDirection || 1;
-                clone.runCooldown = clone.runCooldown ?? rollBeefCloneSortieCooldown();
-                clone.runDuration = clone.runDuration || 1.7;
-                clone.runSpeed = clone.runSpeed || 320;
-                clone.bombInterval = clone.bombInterval || 0.55;
-                clone.bombDamageScale = clone.bombDamageScale ?? 0.45;
-                clone.bombRadiusScale = clone.bombRadiusScale ?? 0.65;
-                clone.bombSpeedScale = clone.bombSpeedScale ?? 0.85;
-                clone.state = clone.state || 'orbit';
-                clone.bobSpeed = clone.bobSpeed || 1.7;
-                clone.bobPhase = (clone.bobPhase || 0) + dt * clone.bobSpeed;
-                const bobOffset = Math.sin(clone.bobPhase) * 10;
-                const clampY = (value) => clamp(value, 45, H * 0.8);
+                const topBoundary = clone.topBoundary ?? 60;
+                const followEase = clone.followEase ?? 7.2;
+                const horizontalEase = clone.horizontalEase ?? followEase;
+                const bobSpeed = clone.bobSpeed || 1.6;
+                clone.bobPhase = (clone.bobPhase || 0) + dt * bobSpeed;
+                const bobOffset = Math.sin(clone.bobPhase) * 8;
 
-                if (clone.state === 'orbit') {
-                    const centerX = clamp(player.x, margin, W - margin);
-                    const centerY = clamp(player.y - 80, 50, H * 0.65);
-                    clone.orbitAngle += dt * clone.orbitSpeed * clone.orbitDirection;
-                    if (clone.orbitAngle > Math.PI * 2) clone.orbitAngle -= Math.PI * 2;
-                    if (clone.orbitAngle < 0) clone.orbitAngle += Math.PI * 2;
-                    clone.x = clamp(centerX + Math.cos(clone.orbitAngle) * clone.orbitRadius, margin, W - margin);
-                    clone.y = clampY(centerY + Math.sin(clone.orbitAngle) * clone.orbitRadius * 0.55 + bobOffset);
-                    clone.direction = clone.orbitDirection >= 0 ? 1 : -1;
-                    clone.runCooldown -= dt;
-                    if (clone.runCooldown <= 0 && (enemies.length || store.boss)) {
-                        startMirrorCloneRun(clone, player);
-                    }
-                } else if (clone.state === 'run') {
-                    clone.runTimer -= dt;
-                    const altitude = clone.altitude || clamp(player.y - 160, 60, H * 0.45);
-                    clone.y += (altitude - clone.y) * Math.min(1, dt * 2.6);
-                    clone.direction = clone.runDirection || 1;
-                    clone.x += (clone.runDirection || 1) * clone.runSpeed * dt;
-                    if (clone.x < margin) {
-                        clone.x = margin;
-                        clone.runTimer = Math.min(clone.runTimer, 0.2);
-                    } else if (clone.x > W - margin) {
-                        clone.x = W - margin;
-                        clone.runTimer = Math.min(clone.runTimer, 0.2);
-                    }
+                const targetX = clamp(player.x, margin, W - margin);
+                const midfield = H * 0.5;
+                const backlineDistance = clone.backlineDistance ?? 140;
+                const minBacklineDistance = clone.minBacklineDistance ?? 80;
 
-                    clone.bombTimer -= dt;
-                    if (clone.bombTimer <= 0) {
-                        spawnJuggernautBomb(clone, player, {
-                            damageScale: clone.bombDamageScale,
-                            radiusScale: clone.bombRadiusScale,
-                            speedScale: clone.bombSpeedScale,
-                            gravityScale: 0.85
-                        });
-                        clone.bombTimer = clone.bombInterval;
-                    }
+                let dynamicDistance = backlineDistance;
+                if (player.y < midfield) {
+                    const blendStart = midfield;
+                    const blendEnd = topBoundary + 40;
+                    const denom = Math.max(1, blendStart - blendEnd);
+                    const t = clamp((blendStart - player.y) / denom, 0, 1);
+                    dynamicDistance = backlineDistance - (backlineDistance - minBacklineDistance) * t;
+                }
 
-                    if (clone.runTimer <= 0) {
-                        beginMirrorCloneReturn(clone);
-                    }
-                } else if (clone.state === 'return') {
-                    clone.returnTimer += dt;
-                    const centerX = clamp(player.x, margin, W - margin);
-                    const centerY = clamp(player.y - 80, 50, H * 0.65);
-                    const targetX = clamp(centerX + Math.cos(clone.orbitAngle) * clone.orbitRadius, margin, W - margin);
-                    const targetY = clampY(centerY + Math.sin(clone.orbitAngle) * clone.orbitRadius * 0.55);
-                    clone.x += (targetX - clone.x) * Math.min(1, dt * 3.2);
-                    clone.y += (targetY - clone.y) * Math.min(1, dt * 3.1);
-                    clone.direction = clone.x < targetX ? 1 : -1;
-                    if (clone.returnTimer >= 0.35 && Math.abs(clone.x - targetX) < 6 && Math.abs(clone.y - targetY) < 6) {
-                        clone.state = 'orbit';
-                        clone.returnTimer = 0;
-                        clone.orbitAngle = Math.atan2(clone.y - centerY, clone.x - centerX);
-                        if (clone.orbitAngle < 0) clone.orbitAngle += Math.PI * 2;
-                        if (Math.random() < 0.3) clone.orbitDirection *= -1;
+                let desiredY = player.y - dynamicDistance;
+                if (desiredY < topBoundary) desiredY = topBoundary;
+                const maxAnchor = Math.min(player.y - 30, H * 0.88);
+                const adjustedY = clamp(desiredY + bobOffset, topBoundary, maxAnchor);
+
+                const horizontalFactor = 1 - Math.exp(-dt * horizontalEase);
+                clone.x += (targetX - clone.x) * horizontalFactor;
+
+                const verticalFactor = 1 - Math.exp(-dt * followEase);
+                clone.y += (adjustedY - clone.y) * verticalFactor;
+
+                clone.x = clamp(clone.x, margin, W - margin);
+                clone.y = clamp(clone.y, topBoundary, H * 0.9);
+
+                clone.direction = clone.x <= targetX ? 1 : -1;
+
+                clone.fireRate = clone.fireRate || 0.28;
+                clone.fireCooldown = Math.max(0, (clone.fireCooldown ?? 0) - dt);
+                if (clone.fireCooldown <= 0) {
+                    const fired = fireMirrorCloneShot(clone, player);
+                    const baseRate = clone.fireRate;
+                    const jitter = Math.min(0.1, baseRate * 0.35);
+                    clone.fireCooldown = baseRate + (Math.random() - 0.5) * jitter;
+                    if (!fired) {
+                        clone.fireCooldown = Math.min(baseRate, 0.18);
                     }
                 }
 
-                clone.x = clamp(clone.x, margin, W - margin);
-                clone.y = clampY(clone.y);
+                clone.bombCooldown = (clone.bombCooldown ?? rollBeefCloneSortieCooldown()) - dt;
+                if (clone.pendingBombs > 0) {
+                    clone.bombTimer = (clone.bombTimer ?? 0) - dt;
+                    if (clone.bombTimer <= 0) {
+                        const target = selectMirrorCloneBombTarget(clone);
+                        if (target) {
+                            spawnJuggernautBomb(clone, player, {
+                                damageScale: clone.bombDamageScale,
+                                radiusScale: clone.bombRadiusScale,
+                                speedScale: clone.bombSpeedScale,
+                                target,
+                                seekStrength: clone.bombSeekStrength,
+                                maxSpeed: clone.bombMaxSpeed
+                            });
+                            clone.pendingBombs--;
+                            clone.bombTimer = clone.pendingBombs > 0 ? (clone.bombInterval || 0.28) : 0;
+                        } else {
+                            clone.pendingBombs = 0;
+                            clone.bombCooldown = Math.max(clone.bombCooldown, 0.35);
+                        }
+                    }
+                } else if (clone.bombCooldown <= 0 && ((Array.isArray(store.enemies) && store.enemies.some(e => e && !e.dead && e.hp > 0)) || (store.boss && !store.boss.dead && store.boss.hp > 0))) {
+                    clone.pendingBombs = 3;
+                    clone.bombTimer = 0;
+                    clone.bombCooldown = rollBeefCloneSortieCooldown();
+                }
             }
 
             function activateJuggernautClone(p) {
@@ -14192,7 +14233,8 @@
                     dropTimer: 0.2,
                     bobPhase: 0,
                     bobSpeed: 1.6,
-                    altitude: altitudeTarget
+                    altitude: altitudeTarget,
+                    visualScale: 0.95
                 };
             }
 
@@ -14238,22 +14280,50 @@
                 const radiusScale = opts.radiusScale ?? 1;
                 const speedScale = opts.speedScale ?? 1;
                 const gravityScale = opts.gravityScale ?? 1;
+                const target = opts.target || null;
+                const seekStrength = opts.seekStrength ?? (target ? 480 : 0);
+                const maxSpeed = opts.maxSpeed ?? (target ? 520 : 360);
                 const damage = 180 * player.dmgMult * unstoppableBonus * eliteBonus * damageScale;
                 const radius = (100 + (player.beefExplosionRadius ? 35 : 0)) * radiusScale;
                 if (!Array.isArray(store.juggernautBombs)) store.juggernautBombs = [];
+
+                const spawnX = clone.x;
+                const spawnY = clone.y + 18;
+                let vx = (clone.direction || 1) * 45 * speedScale;
+                let vy = 30;
+                let gravity = 520 * gravityScale;
+
+                if (target) {
+                    const tx = target.x ?? spawnX;
+                    const ty = target.y ?? spawnY;
+                    const dx = tx - spawnX;
+                    const dy = ty - spawnY;
+                    const dist = Math.hypot(dx, dy) || 1;
+                    const initialSpeed = maxSpeed;
+                    vx = (dx / dist) * initialSpeed;
+                    vy = (dy / dist) * initialSpeed;
+                    gravity = 0;
+                }
+
                 const bomb = {
-                    x: clone.x,
-                    y: clone.y + 18,
-                    vx: (clone.direction || 1) * 45 * speedScale,
-                    vy: 30,
-                    gravity: 520 * gravityScale,
+                    x: spawnX,
+                    y: spawnY,
+                    vx,
+                    vy,
+                    gravity,
                     radius,
                     damage,
                     bossDamageScale: 0.48,
                     life: 3.5,
                     rotation: 0,
                     rotationSpeed: (clone.direction || 1) * 5,
-                    trailTimer: 0.05
+                    trailTimer: 0.05,
+                    target: target || null,
+                    targetX: target ? target.x : undefined,
+                    targetY: target ? target.y : undefined,
+                    seek: !!target,
+                    seekStrength,
+                    maxSpeed
                 };
                 store.juggernautBombs.push(bomb);
                 store.activeEffects.push(createEffect('hitSpark', clone.x, clone.y, 24, { strength: 35 }));
@@ -14262,10 +14332,40 @@
             function stepJuggernautBombs(dt) {
                 if (!store.juggernautBombs.length) return;
                 const targets = store.boss ? [store.boss, ...store.enemies] : store.enemies;
+                const approachValue = (current, target, maxDelta) => {
+                    if (current < target) {
+                        return Math.min(target, current + maxDelta);
+                    }
+                    return Math.max(target, current - maxDelta);
+                };
                 for (let i = store.juggernautBombs.length - 1; i >= 0; i--) {
                     const bomb = store.juggernautBombs[i];
                     bomb.life -= dt;
-                    bomb.vy += bomb.gravity * dt;
+                    if (bomb.seek) {
+                        if (bomb.target && !bomb.target.dead && bomb.target.hp > 0) {
+                            bomb.targetX = bomb.target.x;
+                            bomb.targetY = bomb.target.y;
+                        }
+                        if (bomb.targetX !== undefined && bomb.targetY !== undefined) {
+                            const dx = bomb.targetX - bomb.x;
+                            const dy = bomb.targetY - bomb.y;
+                            const dist = Math.hypot(dx, dy) || 1;
+                            const desiredSpeed = bomb.maxSpeed || 480;
+                            const desiredVx = (dx / dist) * desiredSpeed;
+                            const desiredVy = (dy / dist) * desiredSpeed;
+                            const steer = (bomb.seekStrength || 420) * dt;
+                            bomb.vx = approachValue(bomb.vx, desiredVx, steer);
+                            bomb.vy = approachValue(bomb.vy, desiredVy, steer);
+                            if (dist <= (bomb.radius || 90) * 0.5) {
+                                detonateJuggernautBomb(bomb);
+                                store.juggernautBombs.splice(i, 1);
+                                continue;
+                            }
+                        }
+                    }
+                    if (bomb.gravity) {
+                        bomb.vy += bomb.gravity * dt;
+                    }
                     bomb.x += bomb.vx * dt;
                     bomb.y += bomb.vy * dt;
                     bomb.rotation = (bomb.rotation || 0) + (bomb.rotationSpeed || 0) * dt;
@@ -14275,7 +14375,7 @@
                         store.activeEffects.push(createEffect('jugFearEmber', bomb.x, bomb.y, 18));
                     }
 
-                    if (bomb.y >= H - 40 || bomb.life <= 0) {
+                    if ((!bomb.seek && bomb.y >= H - 40) || bomb.life <= 0) {
                         detonateJuggernautBomb(bomb);
                         store.juggernautBombs.splice(i, 1);
                         continue;
@@ -26362,15 +26462,18 @@
                 ctx.translate(x, y);
 
                 const facing = beefClone.direction || 1;
+                const visualScale = beefClone.visualScale || 1;
                 if (facing < 0) {
-                    ctx.scale(-1, 1);
+                    ctx.scale(-visualScale, visualScale);
+                } else {
+                    ctx.scale(visualScale, visualScale);
                 }
 
                 if (mode === 'juggernaut_bomber') {
                     const time = performance.now();
                     const tilt = (Math.sin((beefClone.bobPhase || 0) * 0.8) * 0.08) + ((beefClone.direction || 1) * 0.05);
                     ctx.rotate(tilt);
-                    ctx.globalAlpha = 0.72 + 0.16 * Math.sin(time / 140);
+                    ctx.globalAlpha = 0.6 + 0.12 * Math.sin(time / 140);
 
                     ctx.beginPath();
                     ctx.moveTo(0, -24);
@@ -26382,32 +26485,32 @@
                     ctx.closePath();
 
                     const hullGrad = ctx.createLinearGradient(0, -24, 0, 20);
-                    hullGrad.addColorStop(0, '#ffd3a0');
-                    hullGrad.addColorStop(0.45, '#ff6b3a');
-                    hullGrad.addColorStop(1, '#451616');
+                    hullGrad.addColorStop(0, '#f5c8a2');
+                    hullGrad.addColorStop(0.45, '#e28553');
+                    hullGrad.addColorStop(1, '#3a1e1e');
                     ctx.fillStyle = hullGrad;
                     ctx.fill();
 
-                    ctx.lineWidth = 2.5;
-                    ctx.strokeStyle = 'rgba(255, 175, 120, 0.9)';
+                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = 'rgba(230, 160, 115, 0.6)';
                     ctx.stroke();
 
                     // Nose glow
-                    ctx.fillStyle = 'rgba(255, 230, 180, 0.9)';
+                    ctx.fillStyle = 'rgba(245, 220, 185, 0.65)';
                     ctx.beginPath();
                     ctx.arc(0, -20, 4, 0, 2 * Math.PI);
                     ctx.fill();
 
                     // Cockpit canopy
-                    ctx.fillStyle = 'rgba(255, 245, 210, 0.85)';
+                    ctx.fillStyle = 'rgba(240, 228, 208, 0.6)';
                     ctx.beginPath();
                     ctx.ellipse(0, -8, 6, 4, 0, 0, Math.PI * 2);
                     ctx.fill();
 
                     // Thruster flames
                     const pulse = 0.7 + 0.3 * Math.sin(time / 90 + (beefClone.bobPhase || 0) * 2);
-                    const flameHeight = 16 + pulse * 10;
-                    ctx.fillStyle = `rgba(255, 140, 40, ${0.4 + 0.3 * pulse})`;
+                    const flameHeight = 12 + pulse * 6;
+                    ctx.fillStyle = `rgba(240, 140, 60, ${0.28 + 0.22 * pulse})`;
                     ctx.beginPath();
                     ctx.moveTo(-10, 12);
                     ctx.lineTo(-20, 12 + flameHeight);
@@ -26427,7 +26530,7 @@
                     ctx.ellipse(0, 8, 12, 6, 0, 0, Math.PI * 2);
                     ctx.fill();
                 } else {
-                    ctx.globalAlpha = 0.6 + 0.2 * Math.sin(performance.now() / 200);
+                    ctx.globalAlpha = 0.46 + 0.12 * Math.sin(performance.now() / 220);
 
                     ctx.beginPath();
                     ctx.moveTo(0, -20);
@@ -26439,17 +26542,17 @@
                     ctx.closePath();
 
                     const bodyGrad = ctx.createLinearGradient(0, -20, 0, 14);
-                    bodyGrad.addColorStop(0, '#a0ffa0');
-                    bodyGrad.addColorStop(1, '#3ced3c');
+                    bodyGrad.addColorStop(0, '#7dd8a3');
+                    bodyGrad.addColorStop(1, '#269960');
                     ctx.fillStyle = bodyGrad;
                     ctx.fill();
 
-                    ctx.lineWidth = 2;
-                    ctx.strokeStyle = '#d0ffd0';
+                    ctx.lineWidth = 1.6;
+                    ctx.strokeStyle = 'rgba(168, 228, 185, 0.65)';
                     ctx.stroke();
 
-                    ctx.strokeStyle = '#a0ffa0';
-                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = 'rgba(140, 215, 165, 0.55)';
+                    ctx.lineWidth = 1.4;
                     ctx.beginPath();
                     ctx.moveTo(-12, 5);
                     ctx.lineTo(-20, -2);
@@ -26459,7 +26562,7 @@
                     ctx.lineTo(18, 8);
                     ctx.stroke();
 
-                    ctx.fillStyle = '#ffffff';
+                    ctx.fillStyle = 'rgba(230, 245, 235, 0.75)';
                     ctx.beginPath();
                     ctx.arc(0, -8, 3, 0, 2 * Math.PI);
                     ctx.fill();
