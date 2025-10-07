@@ -3988,8 +3988,7 @@
                         p.isRequestingCharge = true; // A flag for the stepPlayer function
                         break;
                     default:
-                        // Default to EMP burst for other classes
-                        useEmpBurst();
+                        // EMP charges now auto-activate on proximity
                         break;
                 }
             }
@@ -4216,7 +4215,7 @@
                 upgradeLevels: { dmg: 0, speed: 0, hp: 0, max_shield: 0, crit_chance: 0, ghost_hounds: 0, launcher: 0, lazarus_beam: 0, gravity_well: 0, star_cannon: 0 },
                 grenades: 0, hasVoidBeam: false, voidBeamCooldown: 0,
                 hasLazarusBeam: false, lazarusBeamCooldown: 0,
-                hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 0, vampirismLevel: 0, flamethrowerLevel: 0,
+                hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 1, vampirismLevel: 0, flamethrowerLevel: 0,
                 flamethrowerT: 0, // Separate timer for lava chunks, unaffected by overclock
                 // Shield recharge delay system
                 shieldRecharging: false,
@@ -4798,6 +4797,7 @@
                 timeShards: [],
                 temporalBeam: null,
                 championMinions: [],
+                empCharges: [],
                 playerChampion: null,
                 shadowChampionId: null,
                 shadowChampionDefeated: false,
@@ -6159,14 +6159,7 @@
                             enemy.hp -= applied;
                         }
 
-                        if (applied > 0) {
-                            for (let i = 0; i < 4; i++) {
-                                store.flameParticles.push(new FlameParticle(
-                                    x + (Math.random() - 0.5) * radius * 0.6,
-                                    y + (Math.random() - 0.5) * radius * 0.6
-                                ));
-                            }
-                        }
+                        // Flame particles removed per user request - pulse visual effect remains
                     }
                 });
             }
@@ -6233,7 +6226,7 @@
                         if (p.multishot < 5) { p.multishot++; } else { if (p.addFrontNext) { p.multishot++; } else { p.rearMultishot = (p.rearMultishot || 0) + 1; } p.addFrontNext = !p.addFrontNext; }
                     }
                 },
-                { id: 'shield', name: 'VOID SHIELD', icon: '🛡️', desc: '+20 regenerating shield', apply: () => { store.player.shieldMax += 20; store.player.shield = store.player.shieldMax; } },
+                { id: 'shield', name: 'VOID BARRIER', icon: '🩵', desc: 'BIG Shields', apply: () => { store.player.shieldMax *= 1.15 ; store.player.shieldMax += 50 ; store.player.shield = store.player.shieldMax; } },
                 { id: 'flamethrower', name: 'LAVA CHUNKS', icon: '🌋', desc: 'Spews chunks of molten rock in a cone.', apply: () => { store.player.flamethrowerLevel++; } }
             ];
 
@@ -6278,12 +6271,12 @@
                         return `+${hpIncrease} Max HP (Lvl ${level + 1})`;
                     }
                 },
-                'nano_save': { name: "NANO SAVE", icon: '💾', cost: 25, isPremium: true, max: 3, category: 'utility', apply: () => { if (store.player.nanoSaves < 3) { store.player.nanoSaves++; return true; } return false; }, desc: () => `Auto-heals on low HP. Charges: ${store.player.nanoSaves}/3` },
+                'nano_save': { name: "NANO CHARGE", icon: '💾', cost: 25, isPremium: true, max: 5, category: 'utility', apply: () => { if (store.player.nanoSaves < 5) { store.player.nanoSaves++; return true; } return false; }, desc: () => `Blocks death, sets HP to 10, +15 max HP, opens shop. Charges: ${store.player.nanoSaves}/5` },
                 'luck_boost': { name: "LUCK BOOST", icon: '🍀', baseCost: 50, scale: 2, maxLevel: 5, category: 'utility', effect: (level) => { store.player.luckBoost = (store.player.luckBoost || 0) + (0.15 / Math.pow(2, level)); }, desc: level => `+${(0.15 / Math.pow(2, level) * 100).toFixed(1)}% drop chance (Lvl ${level + 1})` },
                 'dmg': { name: "DAMAGE", icon: '💪', baseCost: 50, scale: 1.5, maxLevel: 10, category: 'attack', effect: () => store.player.dmgMult *= 1.06, desc: level => `+6% Damage (Lvl ${level + 1})` },
                 'crit_chance': { name: "SHINOBI REFLEXES", icon: '🥷', baseCost: 40, increment: 24, maxLevel: 10, category: 'attack', effect: () => { store.player.critChance *= 1.5; store.player.critDamage *= 1.5; }, desc: level => `+50% Crit Chance & Dmg (Lvl ${level + 1})` },
                 'speed': { name: "SPEED", icon: '🚀', baseCost: 40, scale: 1.6, maxLevel: 8, category: 'utility', effect: () => store.player.speed *= 1.10, desc: level => `+10% Speed (Lvl ${level + 1})` },
-                'grenade': { name: "EMP BURST", icon: '⚡💣', cost: 70, isPremium: true, max: 3, category: 'attack', apply: () => { if (store.player.grenades < 3) { store.player.grenades++; return true; } return false; }, desc: () => `Add 1 charge (max 3). Stuns and disrupts nearby enemies.` },
+                'grenade': { name: "EMP BURST", icon: '⚡💣', cost: 70, isPremium: true, max: 6, category: 'attack', apply: () => { if (!store.empCharges) store.empCharges = []; if (store.empCharges.length < 6) { createEmpCharge(); return true; } return false; }, desc: () => `Add orbiting EMP charge (max 6). Auto-activates near enemies.` },
                 'max_shield': {
                     name: "MAX SHIELD",
                     icon: '🛡️',
@@ -7697,41 +7690,37 @@
                 }
 
                 function chooseVoidReaperSpawnPosition(player) {
-                    const marginX = 80;
-                    const marginY = 70;
-                    const theme = getSpawnProfileForWave(store.world.wave)?.theme;
-                    const pools = {
-                        SWARM_HELL: ['top', 'bottom', 'top', 'left', 'right'],
-                        TANK_RUSH: ['left', 'right', 'left', 'right', 'top'],
-                        ELITE_ASSAULT: ['left', 'right', 'bottom', 'top'],
-                        PRECISION_TEST: ['left', 'right', 'top', 'bottom'],
-                        DODGE_HELL: ['top', 'bottom', 'left', 'right', 'top']
+                    // Spawn from far corners/edges to maximize travel distance
+                    const corners = [
+                        { name: 'top-left', x: 50, y: 50 },
+                        { name: 'top-right', x: W - 50, y: 50 },
+                        { name: 'bottom-left', x: 50, y: H - 50 },
+                        { name: 'bottom-right', x: W - 50, y: H - 50 }
+                    ];
+                    
+                    // Calculate which corner is farthest from player for maximum dramatic effect
+                    let farthestCorner = corners[0];
+                    let maxDist = 0;
+                    
+                    corners.forEach(corner => {
+                        const dx = corner.x - player.x;
+                        const dy = corner.y - player.y;
+                        const dist = dx * dx + dy * dy;
+                        if (dist > maxDist) {
+                            maxDist = dist;
+                            farthestCorner = corner;
+                        }
+                    });
+                    
+                    // Add slight randomness so it's not always exactly the same spot
+                    const jitterX = (Math.random() - 0.5) * 80;
+                    const jitterY = (Math.random() - 0.5) * 80;
+                    
+                    return { 
+                        edge: farthestCorner.name, 
+                        x: clamp(farthestCorner.x + jitterX, 30, W - 30), 
+                        y: clamp(farthestCorner.y + jitterY, 30, H - 30)
                     };
-                    const pool = pools[theme] || ['top', 'left', 'right', 'bottom'];
-                    const edge = pool[Math.floor(Math.random() * pool.length)];
-                    const jitterX = (Math.random() - 0.5) * 120;
-                    const jitterY = (Math.random() - 0.5) * 120;
-                    let x;
-                    let y;
-                    switch (edge) {
-                        case 'left':
-                            x = marginX;
-                            y = clamp(player.y + jitterY, marginY, H - marginY);
-                            break;
-                        case 'right':
-                            x = W - marginX;
-                            y = clamp(player.y + jitterY, marginY, H - marginY);
-                            break;
-                        case 'bottom':
-                            x = clamp(player.x + jitterX, marginX, W - marginX);
-                            y = H - marginY;
-                            break;
-                        default:
-                            x = clamp(player.x + jitterX, marginX, W - marginX);
-                            y = marginY;
-                            break;
-                    }
-                    return { edge, x, y };
                 }
 
                 function spawnVoidReaper({ hpScale = 1, damageMult = 1, lateGameScaling = 1 } = {}) {
@@ -7802,8 +7791,9 @@
                         announce('VOID REAPER SHATTERED! MASSIVE CACHE SECURED.');
                         store.activeEffects.push(createEffect('voidReaperReward', enemy.x, enemy.y, (enemy.r || 24) * 3.2, { gold: bonusGold }));
                         
-                        // Chance to drop upgrade powerup from void reapers
-                        if (Math.random() < 0.25) { // 25% chance for upgrade drop
+                        // Chance to drop upgrade powerup from void reapers (affected by luck at 50% effectiveness)
+                        const luckModifier = 1 + ((store.player.luckBoost || 0) * 0.5);
+                        if (Math.random() < (0.25 * luckModifier)) { // 25% base chance, boosted by luck
                             const tier = Math.random() < 0.6 ? 'midTier' : 'bossTier'; // 60% mid-tier, 40% boss-tier
                             spawnUpgradePowerup(enemy.x + Math.random() * 40 - 20, enemy.y + Math.random() * 40 - 20, tier);
                         }
@@ -7883,6 +7873,26 @@
                             enemy.hitSlowTimer = 0;
                             enemy.slowTimer = 0;
                             const speed = enemy.lungeSpeed || VOID_REAPER_CONFIG.lungeSpeed;
+                            
+                            // Track player until close, then go straight for dodging
+                            const player = store.player;
+                            const dx = player.x - enemy.x;
+                            const dy = player.y - enemy.y;
+                            const distToPlayer = Math.sqrt(dx * dx + dy * dy);
+                            
+                            // When far from player (>300 units), curve toward them
+                            // When close (<300 units), lock direction for dodgeable straight line
+                            if (distToPlayer > 300 && !enemy.lockedForDodge) {
+                                // Update direction to track player
+                                const targetAngle = Math.atan2(dy, dx);
+                                enemy.heading = targetAngle;
+                                enemy.lungeDirX = Math.cos(targetAngle);
+                                enemy.lungeDirY = Math.sin(targetAngle);
+                            } else {
+                                // Lock direction when close enough
+                                enemy.lockedForDodge = true;
+                            }
+                            
                             const dirX = enemy.lungeDirX || Math.cos(enemy.heading || 0);
                             const dirY = enemy.lungeDirY || Math.sin(enemy.heading || 0);
                             enemy.x += dirX * speed * dt;
@@ -7891,7 +7901,6 @@
                             const total = Math.max(1, enemy.totalLungeDistance || 1);
                             enemy.lungeProgress = Math.min(1.15, enemy.lungeDistanceTravelled / total);
 
-                            const player = store.player;
                             if (player && !player.isInvincible && !playerIsInvulnerable()) {
                                 const px = player.x - enemy.x;
                                 const py = player.y - enemy.y;
@@ -8298,7 +8307,7 @@
                     shadow_champion: { r: 18, v: 70, vx: 0, hp: 620, color: '#cbd4ff', xp: 60, score: 480, gold: 12, fireRateChance: 1, fireCooldown: 1.45, contactDamage: 14 },
                     void_champion: { r: 16, v: 48, vx: 0, hp: 190, color: '#5A28D8', xp: 32, score: 325, gold: 9, fireRateChance: 0.75, fireCooldown: 1.65, contactDamage: 10 },
                     void_champion_orb: { r: 6, v: 0, vx: 0, hp: 22, color: '#FF7DEB', xp: 2, score: 24, gold: 0, fireRateChance: 0.55, fireCooldown: 1.25, contactDamage: 4 },
-                    void_reaper: { r: 20, v: 0, vx: 0, hp: 165, color: '#9f74ff', xp: 55, score: 520, gold: 15, contactDamage: 22 }
+                    void_reaper: { r: 20, v: 0, vx: 0, hp: 165, color: '#9f74ff', xp: 55, score: 520, gold: 15, contactDamage: 11 }
                 };
                 const baseCfg = cfgs[type];
                 if (!baseCfg) {
@@ -10296,6 +10305,7 @@
                 stepPowerups(dt);
                 stepPlayerChampion(dt);
                 stepChampionMinions(dt);
+                stepEmpCharges(dt);
                 stepHounds(dt);
                 stepShadowHounds(dt);
                 updateGibs(dt);
@@ -11440,7 +11450,10 @@
                 }
 
                 if (store.player.hp <= 0) {
-                    handleGameOver();
+                    // Check for nano charge before death
+                    if (!triggerNanoSaveCharge()) {
+                        handleGameOver();
+                    }
                 }
             }
 
@@ -11754,6 +11767,14 @@
                     // Guaranteed boss-tier upgrade drop with delay
                     setTimeout(() => {
                         spawnUpgradePowerup(x + Math.random() * 60 - 30, y + Math.random() * 60 - 30, 'bossTier');
+                        
+                        // Luck gives small chance for bonus drop (33% of normal luck effectiveness)
+                        const luckBonus = (store.player.luckBoost || 0) * 0.33;
+                        if (Math.random() < luckBonus) {
+                            setTimeout(() => {
+                                spawnUpgradePowerup(x + Math.random() * 80 - 40, y + Math.random() * 80 - 40, Math.random() < 0.5 ? 'midTier' : 'bossTier');
+                            }, 800);
+                        }
                     }, 1500);
                 }
                 if (isSmall) {
@@ -11951,6 +11972,7 @@
                 store.drones = []; store.hounds = []; store.shadowHounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
                 store.lightningBolts = []; store.empNovas = []; store.flamePulses = []; store.poisonPuddles = []; store.goldenOrbs = []; store.shadowEchoes = [];
                 store.championMinions = [];
+                store.empCharges = [];
                 store.playerChampion = null;
                 store.shadowChampionId = null;
                 store.shadowChampionDefeated = false;
@@ -12559,6 +12581,76 @@
 
                     drawPlayerChampion(champion);
                 }
+
+                // Draw EMP charges
+                if (store.empCharges && store.empCharges.length > 0) {
+                    ctx.save();
+                    store.empCharges.forEach(charge => {
+                        if (!charge || charge.dead) return;
+                        
+                        // Draw tether to player
+                        ctx.globalAlpha = 0.35;
+                        const gradient = ctx.createLinearGradient(store.player.x, store.player.y, charge.x, charge.y);
+                        gradient.addColorStop(0, 'rgba(100, 200, 255, 0.4)');
+                        gradient.addColorStop(1, 'rgba(150, 220, 255, 0.15)');
+                        ctx.strokeStyle = gradient;
+                        ctx.lineWidth = 1.8;
+                        ctx.beginPath();
+                        ctx.moveTo(store.player.x, store.player.y);
+                        ctx.lineTo(charge.x, charge.y);
+                        ctx.stroke();
+                    });
+                    ctx.restore();
+
+                    store.empCharges.forEach(charge => {
+                        if (!charge || charge.dead) return;
+                        
+                        // Draw charge orb
+                        const pulseScale = 1 + Math.sin(charge.pulsePhase) * 0.15;
+                        const baseRadius = 8;
+                        const radius = baseRadius * pulseScale;
+                        
+                        ctx.save();
+                        ctx.translate(charge.x, charge.y);
+                        
+                        // Outer glow
+                        ctx.globalAlpha = 0.3;
+                        const outerGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 2);
+                        outerGlow.addColorStop(0, 'rgba(100, 200, 255, 0.6)');
+                        outerGlow.addColorStop(0.5, 'rgba(80, 180, 255, 0.3)');
+                        outerGlow.addColorStop(1, 'rgba(60, 160, 255, 0)');
+                        ctx.fillStyle = outerGlow;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, radius * 2, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Core charge
+                        ctx.globalAlpha = 0.9;
+                        const coreGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+                        coreGradient.addColorStop(0, '#FFFFFF');
+                        coreGradient.addColorStop(0.4, '#A0E0FF');
+                        coreGradient.addColorStop(1, '#4080FF');
+                        ctx.fillStyle = coreGradient;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Electric arcs
+                        ctx.globalAlpha = 0.7;
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 1;
+                        for (let i = 0; i < 3; i++) {
+                            const angle = (charge.pulsePhase * 2 + i * Math.PI * 2 / 3);
+                            const arcRadius = radius * 0.6;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, arcRadius, angle, angle + Math.PI * 0.3);
+                            ctx.stroke();
+                        }
+                        
+                        ctx.restore();
+                    });
+                }
+
                 if (store.iceman) drawIceman(store.iceman);
                 if (store.beefClone) drawBeefClone(store.beefClone);
                 drawShip(store.player.x, store.player.y, store.player);
@@ -12995,18 +13087,8 @@
                     p.shieldRecharging = false;
                 }
 
-                // Check for nano save BEFORE applying damage
-                const hpAfterDamage = p.hp - dmg;
-                if (hpAfterDamage <= 0 && p.nanoSaves > 0) {
-                    p.nanoSaves--;
-                    const revivedHp = Math.max(p.hpMax * 0.3, hpAfterDamage + p.hpMax * 0.35);
-                    p.hp = Math.max(1, Math.min(p.hpMax, revivedHp));
-                    store.activeEffects.push(createEffect("nanoHeal"));
-                    announce('NANO SAVE ACTIVATED!');
-                    return; // Don't apply the lethal damage
-                }
-
-                p.hp = Math.max(0, hpAfterDamage);
+                // Old nano save logic removed - now handled in main game loop before death
+                p.hp -= dmg;
 
                 if (p.hp < p.hpMax / 2 && !store.world.lowHealthTutorialShown) {
                     store.world.lowHealthTutorialShown = true;
@@ -13188,14 +13270,9 @@
                     }
                 }
 
+                // EMP charges now orbit automatically, no button needed
                 if (grenadeBtn) {
-                    if (player.grenades > 0) {
-                        grenadeBtn.classList.remove('hide');
-                        grenadeBtn.textContent = `EMP BURST [${player.grenades}]`;
-                        grenadeBtn.disabled = false;
-                    } else {
-                        grenadeBtn.classList.add('hide');
-                    }
+                    grenadeBtn.classList.add('hide');
                 }
 
                 if (!store.fpsLastTime) {
@@ -20299,15 +20376,15 @@
                         const emergingPhase = e.phase === 'emerging';
                         const lungePhase = e.phase === 'lunge';
                         const pulse = 0.55 + 0.45 * Math.sin(time * 4.6 + (e.riftSeed || 0));
-                        const auraScale = warningPhase ? 1.3 - 0.2 * (e.riftProgress || 0) : 1.1 + 0.15 * (e.emergeProgress || 0);
 
+                        // Spectral aura
                         ctx.save();
                         ctx.globalCompositeOperation = 'lighter';
                         ctx.globalAlpha = 0.55 + 0.25 * pulse;
-                        const outerRadius = a * (1.6 * auraScale);
-                        const aura = ctx.createRadialGradient(0, 0, outerRadius * 0.25, 0, 0, outerRadius);
-                        aura.addColorStop(0, 'rgba(210, 150, 255, 0.65)');
-                        aura.addColorStop(0.65, 'rgba(115, 50, 200, 0.35)');
+                        const outerRadius = a * 1.8;
+                        const aura = ctx.createRadialGradient(0, 0, outerRadius * 0.2, 0, 0, outerRadius);
+                        aura.addColorStop(0, 'rgba(180, 120, 255, 0.7)');
+                        aura.addColorStop(0.6, 'rgba(120, 60, 200, 0.4)');
                         aura.addColorStop(1, 'rgba(40, 0, 80, 0)');
                         ctx.fillStyle = aura;
                         ctx.beginPath();
@@ -20315,96 +20392,116 @@
                         ctx.fill();
                         ctx.restore();
 
-                        if (warningPhase) {
-                            const rings = 3;
-                            const progress = Math.min(1, e.riftProgress || 0);
-                            for (let i = 0; i < rings; i++) {
-                                const ringProgress = progress * (1 - i * 0.25);
-                                if (ringProgress <= 0) continue;
-                                const radius = a * (0.8 + i * 0.45);
-                                ctx.save();
-                                ctx.globalAlpha = 0.45 * Math.pow(ringProgress, 0.9);
-                                ctx.strokeStyle = ringProgress > 0.9 ? '#f1e2ff' : '#a176ff';
-                                ctx.lineWidth = 2.4 - i * 0.6;
-                                ctx.beginPath();
-                                ctx.arc(0, 0, radius, 0, Math.PI * 2);
-                                ctx.stroke();
-                                ctx.restore();
-                            }
-                        }
-
                         ctx.save();
                         const heading = e.heading || 0;
-                        ctx.rotate(heading);
-
-                        const emergeGlow = emergingPhase ? (e.emergeProgress || 0) : 0;
+                        ctx.rotate(heading - Math.PI / 2); // Rotate so it faces movement direction
+                        
+                        // Scale for visual effect
+                        const scale = 0.9;
+                        ctx.scale(scale, scale);
+                        
+                        // Spectral transparency and glow
                         ctx.globalAlpha = 0.85;
-                        const cloakGradient = ctx.createLinearGradient(0, -a * 1.3, 0, a * 1.6);
-                        cloakGradient.addColorStop(0, '#f9f3ff');
-                        cloakGradient.addColorStop(0.35 + emergeGlow * 0.25, '#c5a0ff');
-                        cloakGradient.addColorStop(1, '#2d0a44');
-                        ctx.fillStyle = cloakGradient;
-                        ctx.strokeStyle = '#efd9ff';
-                        ctx.lineWidth = 2;
+                        ctx.shadowColor = 'rgba(180, 120, 255, 0.7)';
+                        ctx.shadowBlur = 20;
 
+                        // Tattered robe body with fade
+                        const bodyGradient = ctx.createLinearGradient(0, -a * 2, 0, a * 2);
+                        bodyGradient.addColorStop(0, 'rgba(5, 0, 10, 1)');
+                        bodyGradient.addColorStop(1, 'rgba(5, 0, 10, 0.4)');
+                        ctx.fillStyle = bodyGradient;
+                        
                         ctx.beginPath();
-                        ctx.moveTo(-a * 0.4, -a * 1.2);
-                        ctx.quadraticCurveTo(0, -a * 0.35, a * 0.4, -a * 1.2);
-                        ctx.lineTo(a * 0.95, a * 0.9);
-                        ctx.quadraticCurveTo(0, a * 1.6, -a * 0.95, a * 0.9);
+                        ctx.moveTo(-a, a * 1.4); // Tattered edge starts
+                        ctx.lineTo(-a * 0.7, a * 2);
+                        ctx.lineTo(-a * 0.3, a * 1.5);
+                        ctx.lineTo(a * 0.15, a * 2);
+                        ctx.lineTo(a * 0.6, a * 1.4);
+                        ctx.lineTo(a, a * 2); // Tattered edge ends
+                        ctx.quadraticCurveTo(a * 1.5, 0, a * 0.9, -a * 1.4); // Right side
+                        ctx.quadraticCurveTo(0, -a * 2.1, -a * 0.9, -a * 1.4); // Top hood
+                        ctx.quadraticCurveTo(-a * 1.5, 0, -a, a * 1.4); // Left side
                         ctx.closePath();
                         ctx.fill();
-                        ctx.stroke();
 
-                        ctx.globalAlpha = 1;
-                        ctx.fillStyle = '#ffffff';
+                        // Reset shadow for skull and scythe
+                        ctx.shadowBlur = 0;
+
+                        // Skull
+                        ctx.fillStyle = 'white';
                         ctx.beginPath();
-                        ctx.arc(-a * 0.22, -a * 0.4, a * 0.12, 0, Math.PI * 2);
-                        ctx.arc(a * 0.22, -a * 0.4, a * 0.12, 0, Math.PI * 2);
+                        ctx.moveTo(-a * 0.45, -a * 1.3);
+                        ctx.quadraticCurveTo(0, -a * 1.7, a * 0.45, -a * 1.3);
+                        ctx.quadraticCurveTo(a * 0.6, -a * 0.6, 0, -a * 0.3);
+                        ctx.quadraticCurveTo(-a * 0.6, -a * 0.6, -a * 0.45, -a * 1.3);
+                        ctx.closePath();
                         ctx.fill();
 
-                        ctx.fillStyle = '#391062';
+                        // Eye sockets
+                        ctx.fillStyle = 'black';
                         ctx.beginPath();
-                        ctx.arc(-a * 0.22, -a * 0.4, a * 0.08, 0, Math.PI * 2);
-                        ctx.arc(a * 0.22, -a * 0.4, a * 0.08, 0, Math.PI * 2);
+                        ctx.arc(-a * 0.25, -a, a * 0.18, 0, Math.PI * 2);
+                        ctx.arc(a * 0.25, -a, a * 0.18, 0, Math.PI * 2);
                         ctx.fill();
 
-                        const scytheArc = e.scytheArc || VOID_REAPER_CONFIG.scytheArc;
-                        const scytheReach = (e.scytheReach || VOID_REAPER_CONFIG.scytheReach) * 0.55;
+                        // Nose cavity
+                        ctx.beginPath();
+                        ctx.moveTo(0, -a * 0.8);
+                        ctx.lineTo(a * 0.12, -a * 0.6);
+                        ctx.lineTo(-a * 0.12, -a * 0.6);
+                        ctx.closePath();
+                        ctx.fill();
+
+                        // Scythe with swing animation
                         ctx.save();
-                        ctx.translate(a * 0.35, 0);
-                        ctx.strokeStyle = '#ffe8ff';
-                        ctx.lineWidth = 3.4;
-                        const swingProgress = lungePhase ? Math.min(1, (e.lungeProgress || 0) * 1.4) : emergeGlow * 0.8;
-                        const swingArc = scytheArc * 0.5 * swingProgress;
+                        const swingProgress = lungePhase ? Math.min(1, (e.lungeProgress || 0) * 1.4) : (emergingPhase ? (e.emergeProgress || 0) * 0.8 : 0);
+                        const swingAngle = Math.sin(swingProgress * Math.PI) * -1.8;
+                        ctx.rotate(swingAngle);
+
+                        // Scythe handle
+                        ctx.fillStyle = 'black';
+                        ctx.strokeStyle = 'black';
+                        ctx.lineWidth = a * 0.25;
                         ctx.beginPath();
-                        ctx.arc(0, 0, scytheReach, -swingArc, swingArc);
+                        ctx.moveTo(a * 0.3, -a * 2.3);
+                        ctx.lineTo(a * 0.3, a * 1.7);
                         ctx.stroke();
 
-                        ctx.strokeStyle = '#c09bff';
-                        ctx.lineWidth = 1.6;
+                        // Scythe blade
                         ctx.beginPath();
-                        ctx.arc(0, 0, scytheReach * 0.92, -swingArc * 0.85, swingArc * 0.85);
-                        ctx.stroke();
-                        ctx.restore();
+                        ctx.moveTo(a * 0.3, -a * 2.3);
+                        ctx.quadraticCurveTo(a * 1.8, -a * 2.9, a * 2.6, -a * 1.4);
+                        ctx.quadraticCurveTo(a * 1.9, -a * 2.4, a * 0.3, -a * 2);
+                        ctx.closePath();
+                        ctx.fill();
 
-                        ctx.restore();
+                        // Skeletal hand gripping scythe
+                        ctx.fillStyle = 'white';
+                        ctx.beginPath();
+                        ctx.rect(-a * 0.15, -a * 0.15, a * 0.5, a * 0.5);
+                        ctx.rect(-a * 0.2, -a * 0.15, a * 0.12, a * 0.35);
+                        ctx.rect(-a * 0.2, a * 0.2, a * 0.12, a * 0.35);
+                        ctx.fill();
+                        
+                        ctx.restore(); // End scythe rotation
 
+                        ctx.restore(); // End main rotation
+
+                        // Afterimage trail during lunge
                         if (lungePhase) {
-                            const afterImageCount = 4;
-                            const baseAlpha = 0.18 + 0.12 * pulse;
+                            const afterImageCount = 5;
+                            const baseAlpha = 0.22;
                             const lungeProgress = e.lungeProgress || 0;
                             for (let i = 1; i <= afterImageCount; i++) {
                                 const decay = i / (afterImageCount + 1);
-                                // Use fixed offset based on reaper size and lunge progress instead of dt
-                                const offset = a * 2.5 * decay * (0.8 + 0.4 * lungeProgress);
+                                const offset = a * 3 * decay;
                                 ctx.save();
                                 ctx.globalAlpha = baseAlpha * (1 - decay);
                                 ctx.translate(-Math.cos(heading) * offset, -Math.sin(heading) * offset);
-                                ctx.rotate(heading);
-                                ctx.fillStyle = `rgba(130, 70, 220, ${0.5 * (1 - decay)})`;
+                                ctx.rotate(heading - Math.PI / 2);
+                                ctx.fillStyle = `rgba(130, 70, 220, ${0.6 * (1 - decay)})`;
                                 ctx.beginPath();
-                                ctx.ellipse(0, 0, a * (1.1 - decay * 0.3), a * (0.8 - decay * 0.25), 0, 0, Math.PI * 2);
+                                ctx.ellipse(0, 0, a * (1.2 - decay * 0.3) * 0.9, a * (1.6 - decay * 0.4) * 0.9, 0, 0, Math.PI * 2);
                                 ctx.fill();
                                 ctx.restore();
                             }
@@ -20999,7 +21096,7 @@
                         effect.life = 7;
                         effect.radius = 0;
                         effect.maxRadius = scale < 1.0 ? 60 : 150; // Mini version much smaller visual
-                        effect.effectRadius = scale < 1.0 ? 90 : 150; // Mini has larger effective area than visual
+                        effect.effectRadius = scale < 1.0 ? 72 : 150; // Mini has 20% smaller AOE than before (was 90)
                         effect.damagePulseT = 1;
                         effect.totalDamageDealtToBoss = 0;
                         effect.stars = [];
@@ -22999,6 +23096,27 @@
             }
 
             function showShopWithHighlight() { showShop(); announce('Low integrity! Route to the Upgrade Hangar for repairs.'); setTimeout(() => { const repairItem = document.querySelector('.shop-item[data-key="repair"]'); if (repairItem) repairItem.classList.add('highlight'); }, 100); }
+
+            function triggerNanoSaveCharge() {
+                const p = store.player;
+                if (!p || p.nanoSaves <= 0) return false;
+                
+                // Block death, set life to 10
+                p.nanoSaves--;
+                p.hp = 10;
+                
+                // Increase max health
+                p.hpMax += 15;
+                
+                // Trigger heal effect
+                store.activeEffects.push(createEffect("nanoHeal"));
+                announce('⚡ NANO CHARGE ACTIVATED! ⚡');
+                
+                // Open shop
+                showShop();
+                
+                return true;
+            }
 
             function triggerMechForgeGoldMilestone(forceShop = false) {
                 const world = store.world;
@@ -25758,7 +25876,7 @@
                 const { x, y, isMini } = iceman;
                 ctx.save();
                 ctx.translate(x, y);
-                const scale = isMini ? 0.6 : 1.0; // Mini iceman is 60% the size
+                const scale = isMini ? 0.4 : 1.0; // Mini iceman is 40% the size (smaller for boss token)
                 ctx.scale(scale, scale);
                 ctx.globalAlpha = 0.6 + 0.2 * Math.sin(performance.now() / 200);
 
@@ -26070,29 +26188,93 @@
                 burningDamageBonus: 0.2,
                 shockDuration: 1.6,
                 slowFactor: 0.5,
-                projectilePurgeRadiusRatio: 0.75
+                projectilePurgeRadiusRatio: 0.75,
+                proximityTriggerRadius: 180, // Auto-activate when enemy within this range
+                orbitRadius: 85,
+                orbitSpeed: 1.2
             };
 
-            function useEmpBurst() {
+            function createEmpCharge() {
+                if (!store.empCharges) store.empCharges = [];
+                const chargeCount = store.empCharges.length;
+                const charge = {
+                    x: store.player.x,
+                    y: store.player.y,
+                    orbitAngle: (chargeCount / (chargeCount + 1)) * Math.PI * 2,
+                    orbitRadius: EMP_BURST_CONFIG.orbitRadius,
+                    orbitSpeed: EMP_BURST_CONFIG.orbitSpeed,
+                    pulsePhase: Math.random() * Math.PI * 2,
+                    dead: false
+                };
+                store.empCharges.push(charge);
+            }
+
+            function stepEmpCharges(dt) {
+                if (!store.empCharges || store.empCharges.length === 0) return;
+                const p = store.player;
+                if (!p || p.dead) {
+                    store.empCharges.length = 0;
+                    return;
+                }
+
+                for (let i = store.empCharges.length - 1; i >= 0; i--) {
+                    const charge = store.empCharges[i];
+                    if (!charge || charge.dead) {
+                        store.empCharges.splice(i, 1);
+                        continue;
+                    }
+
+                    // Update orbit position
+                    charge.orbitAngle += charge.orbitSpeed * dt;
+                    charge.pulsePhase += dt * 4;
+                    const radius = charge.orbitRadius * (1 + Math.sin(charge.pulsePhase) * 0.05);
+                    const targetX = p.x + Math.cos(charge.orbitAngle) * radius;
+                    const targetY = p.y + Math.sin(charge.orbitAngle) * radius * 0.6;
+                    charge.x += (targetX - charge.x) * Math.min(1, 12 * dt);
+                    charge.y += (targetY - charge.y) * Math.min(1, 12 * dt);
+
+                    // Check proximity to enemies
+                    const proximityRadiusSq = EMP_BURST_CONFIG.proximityTriggerRadius ** 2;
+                    const targets = store.boss ? [...store.enemies, store.boss] : store.enemies;
+                    let nearbyEnemy = false;
+                    
+                    for (const enemy of targets) {
+                        if (!enemy || enemy.dead) continue;
+                        const dx = enemy.x - charge.x;
+                        const dy = enemy.y - charge.y;
+                        const distSq = dx * dx + dy * dy;
+                        if (distSq < proximityRadiusSq) {
+                            nearbyEnemy = true;
+                            break;
+                        }
+                    }
+
+                    if (nearbyEnemy) {
+                        // Trigger EMP burst at charge location
+                        triggerEmpBurst(charge.x, charge.y);
+                        charge.dead = true;
+                    }
+                }
+            }
+
+            function triggerEmpBurst(x, y) {
                 const p = store.player;
                 if (!p || store.isPaused) return;
-                if (!p.grenades || p.grenades <= 0) return;
 
                 playSound('thunder');
-                p.grenades--;
 
                 const isMini = p.miniAbilities && p.miniAbilities.has('grenade');
                 const radius = isMini ? EMP_BURST_CONFIG.radius * 0.6 : EMP_BURST_CONFIG.radius; // Mini EMP is 60% radius
                 screenFlash(1, 140, 'rgba(100, 200, 255, 0.2)');
-                store.activeEffects.push(createEffect('empShockwave', p.x, p.y, radius));
+                store.activeEffects.push(createEffect('empShockwave', x, y, radius));
 
                 const radiusSq = radius * radius;
                 const targets = store.boss ? [...store.enemies, store.boss] : store.enemies;
 
                 targets.forEach(enemy => {
                     if (!enemy || enemy.dead) return;
-                    const dx = enemy.x - p.x;
-                    const dy = enemy.y - p.y;
+                    const dx = enemy.x - x;
+                    const dy = enemy.y - y;
                     if (dx * dx + dy * dy > radiusSq) return;
 
                     const isBoss = enemy === store.boss;
@@ -26183,16 +26365,14 @@
                     for (let i = store.eBullets.length - 1; i >= 0; i--) {
                         const bullet = store.eBullets[i];
                         if (!bullet) continue;
-                        const dx = bullet.x - p.x;
-                        const dy = bullet.y - p.y;
+                        const dx = bullet.x - x;
+                        const dy = bullet.y - y;
                         if (dx * dx + dy * dy <= purgeRadiusSq) {
                             store.eBullets.splice(i, 1);
                             store.activeEffects.push(createEffect('empStatic', bullet.x, bullet.y, 20));
                         }
                     }
                 }
-
-                announce('EMP BURST DEPLOYED!');
             }
 
             function stepVoidLaser(dt) {
@@ -29378,7 +29558,7 @@
                 q('pauseBtn').textContent = store.isPaused ? 'RESUME' : 'PAUSE';
             });
 
-            q('grenadeBtnUI').addEventListener('click', useEmpBurst);
+            // EMP charges now auto-activate on proximity, no manual button
 
             /* Commented out for future implementation
             q('storyBtn').addEventListener('click', (e) => {
@@ -29824,7 +30004,7 @@
                     }
                 }
 
-                if (key === ' ') { e.preventDefault(); useEmpBurst() }
+                // EMP charges auto-activate on proximity, spacebar no longer needed
                 if (key === 'escape') {
                     e.preventDefault();
                     // Close skill tree if it's open
