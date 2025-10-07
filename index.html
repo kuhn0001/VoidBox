@@ -4212,7 +4212,7 @@
                 timeShardStacks: 0, timeShardTimer: 0, timeShardMultiplier: 1,
                 hasShieldBubble: false, powerupTimers: {},
                 swirlShots: false, attackSpeedStacks: 0,
-                upgradeLevels: { dmg: 0, speed: 0, hp: 0, max_shield: 0, crit_chance: 0, ghost_hounds: 0, launcher: 0, lazarus_beam: 0, gravity_well: 0, star_cannon: 0 },
+                upgradeLevels: { dmg: 0, speed: 0, hp: 0, max_shield: 0, crit_chance: 0, ghost_hounds: 0, launcher: 0, lazarus_beam: 0, gravity_well: 0, star_cannon: 0, fragment_blast: 0 },
                 grenades: 0, hasVoidBeam: false, voidBeamCooldown: 0,
                 hasLazarusBeam: false, lazarusBeamCooldown: 0,
                 hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 1, vampirismLevel: 0, flamethrowerLevel: 0,
@@ -19223,7 +19223,7 @@
                     ctx.shadowColor = '#fde047';
                     ctx.shadowBlur = 10;
                     const state = t.asynchronosState;
-                    const beamAngle = state ? state.beam.angle : time * 0.005;
+                    const beamAngle = (state && state.beam) ? state.beam.angle : time * 0.5;
                     // Hour hand
                     ctx.save();
                     ctx.rotate(beamAngle / 12);
@@ -26598,7 +26598,7 @@
                 }
             }
             const EMP_BURST_CONFIG = {
-                radius: 240,
+                radius: 480, // Doubled from 240
                 baseDamage: 62,
                 bossDamageScale: 0.45,
                 baseStun: 2.8,
@@ -26610,7 +26610,8 @@
                 shockDuration: 1.6,
                 slowFactor: 0.5,
                 projectilePurgeRadiusRatio: 0.75,
-                proximityTriggerRadius: 180, // Auto-activate when enemy within this range
+                proximityTriggerRadius: 180, // Auto-activate when enemy within this range (imminent threat)
+                cooldown: 4.0, // 4 second cooldown between bursts
                 orbitRadius: 85,
                 orbitSpeed: 1.2
             };
@@ -26625,6 +26626,7 @@
                     orbitRadius: EMP_BURST_CONFIG.orbitRadius,
                     orbitSpeed: EMP_BURST_CONFIG.orbitSpeed,
                     pulsePhase: Math.random() * Math.PI * 2,
+                    cooldown: 0, // Track cooldown per charge
                     dead: false
                 };
                 store.empCharges.push(charge);
@@ -26654,7 +26656,13 @@
                     charge.x += (targetX - charge.x) * Math.min(1, 12 * dt);
                     charge.y += (targetY - charge.y) * Math.min(1, 12 * dt);
 
-                    // Check proximity to enemies (only trigger if there's an unaffected enemy nearby)
+                    // Update cooldown
+                    if (charge.cooldown > 0) {
+                        charge.cooldown -= dt;
+                        continue; // Skip trigger check if on cooldown
+                    }
+
+                    // Check proximity to enemies (only trigger if there's an imminent threat nearby)
                     const proximityRadiusSq = EMP_BURST_CONFIG.proximityTriggerRadius ** 2;
                     const targets = store.boss ? [...store.enemies, store.boss] : store.enemies;
                     let hasUnaffectedEnemy = false;
@@ -26680,7 +26688,7 @@
                     if (hasUnaffectedEnemy) {
                         // Trigger EMP burst at charge location
                         triggerEmpBurst(charge.x, charge.y);
-                        charge.dead = true;
+                        charge.cooldown = EMP_BURST_CONFIG.cooldown; // Set 4 second cooldown
                     }
                 }
             }
