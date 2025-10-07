@@ -4801,6 +4801,7 @@
                 temporalBeam: null,
                 championMinions: [],
                 empCharges: [],
+                empGlobalCooldown: 0,
                 playerChampion: null,
                 shadowChampionId: null,
                 shadowChampionDefeated: false,
@@ -6279,7 +6280,7 @@
                 'dmg': { name: "DAMAGE", icon: '💪', baseCost: 50, scale: 1.5, maxLevel: 10, category: 'attack', effect: () => store.player.dmgMult *= 1.06, desc: level => `+6% Damage (Lvl ${level + 1})` },
                 'crit_chance': { name: "SHINOBI REFLEXES", icon: '🥷', baseCost: 40, increment: 24, maxLevel: 10, category: 'attack', effect: () => { store.player.critChance *= 1.5; store.player.critDamage *= 1.5; }, desc: level => `+50% Crit Chance & Dmg (Lvl ${level + 1})` },
                 'speed': { name: "SPEED", icon: '🚀', baseCost: 40, scale: 1.6, maxLevel: 8, category: 'utility', effect: () => store.player.speed *= 1.10, desc: level => `+10% Speed (Lvl ${level + 1})` },
-                'grenade': { name: "EMP BURST", icon: '⚡💣', cost: 70, isPremium: true, max: 6, category: 'attack', apply: () => { if (!store.empCharges) store.empCharges = []; if (store.empCharges.length < 6) { createEmpCharge(); return true; } return false; }, desc: () => `Add orbiting EMP charge (max 6). Auto-activates near enemies.` },
+                'grenade': { name: "EMP BURST", icon: '⚡💣', cost: 70, isPremium: true, max: 3, category: 'attack', apply: () => { if (!store.empCharges) store.empCharges = []; if (store.empCharges.length < 3) { createEmpCharge(); return true; } return false; }, desc: () => `Add permanent EMP charge (max 3). Auto-activates near enemies and recharges every 30s.` },
                 'fragment_blast': { 
                     name: "FRAGMENT BLAST", 
                     icon: '💥', 
@@ -12074,6 +12075,7 @@
                 store.lightningBolts = []; store.empNovas = []; store.flamePulses = []; store.poisonPuddles = []; store.goldenOrbs = []; store.shadowEchoes = [];
                 store.championMinions = [];
                 store.empCharges = [];
+                store.empGlobalCooldown = 0;
                 store.playerChampion = null;
                 store.shadowChampionId = null;
                 store.shadowChampionDefeated = false;
@@ -12706,28 +12708,39 @@
 
                     store.empCharges.forEach(charge => {
                         if (!charge || charge.dead) return;
-                        
-                        // Draw charge orb
-                        const pulseScale = 1 + Math.sin(charge.pulsePhase) * 0.15;
+
+                        const chargeCooldown = EMP_BURST_CONFIG?.chargeCooldown ?? 30;
+                        const cooldownRemaining = Math.max(0, charge.cooldown || 0);
+                        const cooldownRatio = chargeCooldown > 0 ? Math.min(1, cooldownRemaining / chargeCooldown) : 0;
+                        const readiness = Math.max(0, 1 - cooldownRatio);
+
+                        const globalCooldown = EMP_BURST_CONFIG?.globalCooldown ?? 0;
+                        const globalRemaining = Math.max(0, store.empGlobalCooldown || 0);
+                        const globalRatio = globalCooldown > 0 ? Math.min(1, globalRemaining / globalCooldown) : (globalRemaining > 0 ? 1 : 0);
+                        const globalFactor = globalRatio > 0 ? Math.max(0.35, 1 - globalRatio * 0.9) : 1;
+                        const availability = Math.min(1, readiness * globalFactor);
+
+                        const pulseStrength = 0.15 * (0.35 + 0.65 * availability);
                         const baseRadius = 8;
+                        const pulseScale = 1 + Math.sin(charge.pulsePhase) * pulseStrength;
                         const radius = baseRadius * pulseScale;
-                        
+
                         ctx.save();
                         ctx.translate(charge.x, charge.y);
-                        
-                        // Outer glow
-                        ctx.globalAlpha = 0.3;
-                        const outerGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 2);
-                        outerGlow.addColorStop(0, 'rgba(100, 200, 255, 0.6)');
-                        outerGlow.addColorStop(0.5, 'rgba(80, 180, 255, 0.3)');
+
+                        // Outer glow intensity scales with availability
+                        ctx.globalAlpha = 0.18 + 0.42 * availability;
+                        const outerGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 2.1);
+                        outerGlow.addColorStop(0, 'rgba(100, 200, 255, 0.7)');
+                        outerGlow.addColorStop(0.55, 'rgba(80, 180, 255, 0.32)');
                         outerGlow.addColorStop(1, 'rgba(60, 160, 255, 0)');
                         ctx.fillStyle = outerGlow;
                         ctx.beginPath();
-                        ctx.arc(0, 0, radius * 2, 0, Math.PI * 2);
+                        ctx.arc(0, 0, radius * 2.1, 0, Math.PI * 2);
                         ctx.fill();
-                        
-                        // Core charge
-                        ctx.globalAlpha = 0.9;
+
+                        // Core charge brightness tracks readiness
+                        ctx.globalAlpha = 0.65 + 0.35 * availability;
                         const coreGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
                         coreGradient.addColorStop(0, '#FFFFFF');
                         coreGradient.addColorStop(0.4, '#A0E0FF');
@@ -12736,9 +12749,40 @@
                         ctx.beginPath();
                         ctx.arc(0, 0, radius, 0, Math.PI * 2);
                         ctx.fill();
-                        
-                        // Electric arcs
-                        ctx.globalAlpha = 0.7;
+
+                        // Cooldown progress ring
+                        if (cooldownRatio > 0) {
+                            const recoveredRatio = 1 - cooldownRatio;
+                            ctx.globalAlpha = 0.8;
+                            ctx.strokeStyle = 'rgba(90, 150, 255, 0.85)';
+                            ctx.lineWidth = 2;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, radius + 3, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * recoveredRatio, false);
+                            ctx.stroke();
+
+                            ctx.globalAlpha = 0.25;
+                            ctx.fillStyle = 'rgba(40, 90, 180, 0.35)';
+                            ctx.beginPath();
+                            ctx.moveTo(0, 0);
+                            ctx.arc(0, 0, radius + 3, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * recoveredRatio, false);
+                            ctx.closePath();
+                            ctx.fill();
+                        }
+
+                        // Highlight global cooldown if charge is ready but ability is globally gated
+                        if (cooldownRatio === 0 && globalRatio > 0) {
+                            ctx.globalAlpha = 0.85;
+                            ctx.strokeStyle = 'rgba(255, 180, 80, 0.9)';
+                            ctx.lineWidth = 2;
+                            ctx.setLineDash([4, 3]);
+                            ctx.beginPath();
+                            ctx.arc(0, 0, radius + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - globalRatio), false);
+                            ctx.stroke();
+                            ctx.setLineDash([]);
+                        }
+
+                        // Electric arcs remain but fade with availability
+                        ctx.globalAlpha = 0.35 + 0.45 * availability;
                         ctx.strokeStyle = '#FFFFFF';
                         ctx.lineWidth = 1;
                         for (let i = 0; i < 3; i++) {
@@ -12748,7 +12792,7 @@
                             ctx.arc(0, 0, arcRadius, angle, angle + Math.PI * 0.3);
                             ctx.stroke();
                         }
-                        
+
                         ctx.restore();
                     });
                 }
@@ -14220,55 +14264,103 @@
             }
 
             function activateJuggernautClone(p) {
-                const altitudeTarget = Math.max(80, p.y - 150);
+                const margin = 60;
+                const clone = store.beefClone && store.beefClone.mode === 'juggernaut_bomber'
+                    ? store.beefClone
+                    : {};
+
                 store.juggernautBombs = [];
-                store.beefClone = {
-                    x: clamp(p.x, 60, W - 60),
-                    y: altitudeTarget,
-                    t: 0,
-                    mode: 'juggernaut_bomber',
-                    direction: 1,
-                    speed: 260,
-                    baseInterval: p.beefUnstoppableForce ? 0.45 : 0.6,
-                    dropTimer: 0.2,
-                    bobPhase: 0,
-                    bobSpeed: 1.6,
-                    altitude: altitudeTarget,
-                    visualScale: 0.95
-                };
+
+                clone.mode = 'juggernaut_bomber';
+                clone.visualScale = clone.visualScale || 0.95;
+                clone.backlineDistance = clone.backlineDistance ?? 170;
+                clone.minBacklineDistance = clone.minBacklineDistance ?? 110;
+                clone.followEase = clone.followEase ?? 7.2;
+                clone.horizontalEase = clone.horizontalEase ?? 5.6;
+                clone.topBoundary = clone.topBoundary ?? 60;
+                clone.bobSpeed = clone.bobSpeed || 1.7;
+                clone.bobPhase = typeof clone.bobPhase === 'number' ? clone.bobPhase : Math.random() * Math.PI * 2;
+                clone.bombDamageScale = clone.bombDamageScale ?? 1;
+                clone.bombRadiusScale = clone.bombRadiusScale ?? 1;
+                clone.bombSpeedScale = clone.bombSpeedScale ?? 1.08;
+                clone.bombSeekStrength = clone.bombSeekStrength ?? 640;
+                clone.bombMaxSpeed = clone.bombMaxSpeed ?? 620;
+                clone.baseInterval = p.beefUnstoppableForce ? 0.45 : (clone.baseInterval || 0.6);
+                clone.dropTimer = 0;
+                clone.direction = clone.direction || 1;
+                clone.x = clamp(p.x, margin, W - margin);
+                const initialY = clamp(p.y - clone.backlineDistance, clone.topBoundary, H * 0.88);
+                clone.y = clamp(clone.y ?? initialY, clone.topBoundary, H * 0.88);
+
+                store.beefClone = clone;
             }
 
             function updateJuggernautClone(dt) {
                 const clone = store.beefClone;
                 if (!clone || clone.mode !== 'juggernaut_bomber') return;
                 const p = store.player;
+                if (!p || p.dead) return;
+
                 const margin = 60;
-                const direction = clone.direction || 1;
-                const speed = clone.speed || 260;
-                clone.x += direction * speed * dt;
-                if (clone.x < margin) {
-                    clone.x = margin;
-                    clone.direction = 1;
-                } else if (clone.x > W - margin) {
-                    clone.x = W - margin;
-                    clone.direction = -1;
+                const topBoundary = clone.topBoundary ?? 60;
+                const followEase = clone.followEase ?? 7.2;
+                const horizontalEase = clone.horizontalEase ?? followEase;
+                const backlineDistance = clone.backlineDistance ?? 170;
+                const minBacklineDistance = clone.minBacklineDistance ?? 110;
+                const midfield = H * 0.5;
+
+                const bobSpeed = clone.bobSpeed || 1.7;
+                clone.bobPhase = (clone.bobPhase || 0) + dt * bobSpeed;
+                const bobBase = 14 + Math.min(12, (p.beefExplosionDamage || 0) * 8);
+                const bobOffset = Math.sin(clone.bobPhase) * bobBase;
+
+                const targetX = clamp(p.x, margin, W - margin);
+
+                let dynamicDistance = backlineDistance;
+                if (p.y < midfield) {
+                    const blendStart = midfield;
+                    const blendEnd = topBoundary + 40;
+                    const denom = Math.max(1, blendStart - blendEnd);
+                    const t = clamp((blendStart - p.y) / denom, 0, 1);
+                    dynamicDistance = backlineDistance - (backlineDistance - minBacklineDistance) * t;
                 }
 
-                const targetAltitude = Math.max(80, p.y - 150);
-                clone.altitude = clone.altitude ?? clone.y;
-                clone.altitude += (targetAltitude - clone.altitude) * Math.min(1, dt * 4);
-                clone.bobPhase = (clone.bobPhase || 0) + dt * (clone.bobSpeed || 1.6);
-                const bobAmplitude = 14 + Math.min(10, (p.beefExplosionDamage || 0) * 8);
-                clone.y = clone.altitude + Math.sin(clone.bobPhase) * bobAmplitude;
+                let desiredY = p.y - dynamicDistance;
+                if (desiredY < topBoundary) desiredY = topBoundary;
+                const maxAnchor = Math.min(p.y - 30, H * 0.88);
+                const adjustedY = clamp(desiredY + bobOffset, topBoundary, maxAnchor);
+
+                const horizontalFactor = 1 - Math.exp(-dt * horizontalEase);
+                clone.x += (targetX - clone.x) * horizontalFactor;
+
+                const verticalFactor = 1 - Math.exp(-dt * followEase);
+                clone.y += (adjustedY - clone.y) * verticalFactor;
+
+                clone.x = clamp(clone.x, margin, W - margin);
+                clone.y = clamp(clone.y, topBoundary, H * 0.9);
+
+                clone.direction = clone.x <= targetX ? 1 : -1;
 
                 const unstoppableBonus = p.beefUnstoppableForce ? 0.12 : 0;
                 const eliteBonus = p.beefEliteCombat ? 0.08 : 0;
                 const intervalBase = clone.baseInterval || 0.6;
-                const interval = Math.max(0.28, intervalBase - unstoppableBonus - eliteBonus);
+                const interval = Math.max(0.24, intervalBase - unstoppableBonus - eliteBonus);
                 clone.dropTimer = (clone.dropTimer || 0) - dt;
                 if (clone.dropTimer <= 0) {
-                    spawnJuggernautBomb(clone, p);
-                    clone.dropTimer = interval;
+                    const target = selectMirrorCloneBombTarget(clone);
+                    if (target) {
+                        spawnJuggernautBomb(clone, p, {
+                            damageScale: clone.bombDamageScale,
+                            radiusScale: clone.bombRadiusScale,
+                            speedScale: clone.bombSpeedScale,
+                            target,
+                            seekStrength: clone.bombSeekStrength,
+                            maxSpeed: clone.bombMaxSpeed
+                        });
+                        clone.dropTimer = interval;
+                    } else {
+                        clone.dropTimer = Math.min(interval, 0.35);
+                    }
                 }
             }
 
@@ -26732,13 +26824,18 @@
                 slowFactor: 0.5,
                 projectilePurgeRadiusRatio: 0.75,
                 proximityTriggerRadius: 180, // Auto-activate when enemy within this range (imminent threat)
-                cooldown: 4.0, // 4 second cooldown between bursts
+                chargeCooldown: 30, // Per-charge cooldown in seconds
+                globalCooldown: 4.5, // Prevent overlapping bursts while effects resolve
+                maxCharges: 3,
                 orbitRadius: 85,
                 orbitSpeed: 1.2
             };
 
             function createEmpCharge() {
                 if (!store.empCharges) store.empCharges = [];
+                if (store.empCharges.length >= (EMP_BURST_CONFIG.maxCharges || 3)) {
+                    return;
+                }
                 const chargeCount = store.empCharges.length;
                 const charge = {
                     x: store.player.x,
@@ -26751,6 +26848,15 @@
                     dead: false
                 };
                 store.empCharges.push(charge);
+
+                const total = store.empCharges.length;
+                if (total > 0) {
+                    for (let i = 0; i < total; i++) {
+                        const c = store.empCharges[i];
+                        if (!c) continue;
+                        c.orbitAngle = (i / total) * Math.PI * 2;
+                    }
+                }
             }
 
             function stepEmpCharges(dt) {
@@ -26758,8 +26864,16 @@
                 const p = store.player;
                 if (!p || p.dead) {
                     store.empCharges.length = 0;
+                    store.empGlobalCooldown = 0;
                     return;
                 }
+
+                store.empGlobalCooldown = Math.max(0, (store.empGlobalCooldown || 0) - dt);
+
+                const proximityRadiusSq = EMP_BURST_CONFIG.proximityTriggerRadius ** 2;
+                const targets = store.boss
+                    ? [...(store.enemies || []), store.boss]
+                    : [...(store.enemies || [])];
 
                 for (let i = store.empCharges.length - 1; i >= 0; i--) {
                     const charge = store.empCharges[i];
@@ -26778,14 +26892,19 @@
                     charge.y += (targetY - charge.y) * Math.min(1, 12 * dt);
 
                     // Update cooldown
+                    charge.cooldown = Math.max(0, (charge.cooldown || 0) - dt);
                     if (charge.cooldown > 0) {
-                        charge.cooldown -= dt;
                         continue; // Skip trigger check if on cooldown
                     }
 
-                    // Check proximity to enemies (only trigger if there's an imminent threat nearby)
-                    const proximityRadiusSq = EMP_BURST_CONFIG.proximityTriggerRadius ** 2;
-                    const targets = store.boss ? [...store.enemies, store.boss] : store.enemies;
+                    if ((store.empGlobalCooldown || 0) > 0) {
+                        continue; // Ability still in global cooldown window
+                    }
+
+                    if (!targets.length) {
+                        continue;
+                    }
+
                     let hasUnaffectedEnemy = false;
                     
                     for (const enemy of targets) {
@@ -26809,7 +26928,8 @@
                     if (hasUnaffectedEnemy) {
                         // Trigger EMP burst at charge location
                         triggerEmpBurst(charge.x, charge.y);
-                        charge.cooldown = EMP_BURST_CONFIG.cooldown; // Set 4 second cooldown
+                        charge.cooldown = EMP_BURST_CONFIG.chargeCooldown;
+                        store.empGlobalCooldown = Math.max(store.empGlobalCooldown || 0, EMP_BURST_CONFIG.globalCooldown || 0);
                     }
                 }
             }
