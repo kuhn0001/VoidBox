@@ -1811,6 +1811,95 @@
             box-shadow: 0 0 14px rgba(178, 102, 255, 0.35);
         }
 
+        .champion-preset-section {
+            margin-top: 18px;
+            padding: 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(178, 102, 255, 0.35);
+            background: linear-gradient(145deg, rgba(20, 10, 40, 0.7), rgba(12, 6, 28, 0.85));
+            box-shadow: inset 0 0 18px rgba(25, 10, 45, 0.45);
+        }
+
+        .champion-preset-section h3 {
+            margin: 0 0 6px 0;
+            font-size: 15px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .champion-preset-section p {
+            margin: 0 0 10px 0;
+            color: #dcd0ff;
+            font-size: 11px;
+        }
+
+        .preset-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+        }
+
+        .preset-code-output {
+            width: 100%;
+            resize: none;
+            border-radius: 10px;
+            border: 1px solid rgba(178, 102, 255, 0.5);
+            background: rgba(12, 6, 24, 0.9);
+            color: #f0e5ff;
+            font-family: 'Consolas', 'Fira Code', monospace;
+            font-size: 13px;
+            letter-spacing: 0.05em;
+            padding: 10px 12px;
+        }
+
+        .preset-code-output:focus {
+            outline: none;
+            border-color: rgba(210, 150, 255, 0.85);
+            box-shadow: 0 0 12px rgba(178, 102, 255, 0.35);
+        }
+
+        .preset-import {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        .preset-code-input {
+            flex: 1;
+            min-width: 200px;
+            border-radius: 10px;
+            border: 1px solid rgba(178, 102, 255, 0.45);
+            background: rgba(15, 8, 30, 0.92);
+            color: #f5e8ff;
+            font-family: 'Consolas', 'Fira Code', monospace;
+            font-size: 13px;
+            letter-spacing: 0.04em;
+            padding: 8px 12px;
+        }
+
+        .preset-code-input:focus {
+            outline: none;
+            border-color: rgba(210, 150, 255, 0.85);
+            box-shadow: 0 0 12px rgba(178, 102, 255, 0.35);
+        }
+
+        .preset-status {
+            margin-top: 8px;
+            font-size: 11px;
+            min-height: 1.2em;
+            color: #d8ccff;
+        }
+
+        .preset-status.success {
+            color: #7df0b8;
+        }
+
+        .preset-status.error {
+            color: #ff8fb3;
+        }
+
         /* Champion Upgrade Section Styles */
         .champion-upgrade-section {
             flex: 1;
@@ -3422,7 +3511,7 @@
                 </div>
 
                 <div id="abilityBar">
-                    <button id="grenadeBtnUI" class="fixed-btn ability-btn hide" type="button">EMP BURST</button>
+                    <button id="grenadeBtnUI" class="fixed-btn ability-btn hide" type="button">SHIELD PULSE</button>
                 </div>
 
             </div>
@@ -3462,7 +3551,7 @@
                         </div>
                         <div class="builder-guidance">
                             <p><strong>Attack Modules</strong> are mutually exclusive loadouts. Equipping one replaces
-                                the Standard Volley until you switch back.</p>
+                                the Starfall Salvo until you switch back.</p>
                             <p><strong>Cadence Cores</strong> unlock in tiers. Selecting a higher tier automatically
                                 includes the timing bonuses from earlier cores.</p>
                             <p><strong>Minion Protocols</strong> swap escort behaviors. Only one protocol runs at a
@@ -3473,9 +3562,9 @@
                             <div class="builder-option">
                                 <label for="attackModuleSelect">Attack Module</label>
                                 <p class="builder-option-desc">Primary weapon pattern for your guardian. Equipping one
-                                    replaces the Standard Volley until you switch back.</p>
+                                    replaces the Starfall Salvo until you switch back.</p>
                                 <select id="attackModuleSelect" class="builder-select">
-                                    <option value="default">Default: Standard Volley</option>
+                                    <option value="default">Default: Starfall Salvo</option>
                                 </select>
                                 <div class="builder-option-detail" id="attackModuleDetail"></div>
                             </div>
@@ -3516,6 +3605,21 @@
                                 Loadout</button>
                             <button id="resetConfigurationBtn" class="btn builder-action-btn builder-action-reset">Reset
                                 to Current</button>
+                        </div>
+
+                        <div class="champion-preset-section">
+                            <h3>Permanent Config Codes</h3>
+                            <p>Generate a code from your current champion or load one to restore a saved build.</p>
+                            <div class="preset-actions">
+                                <button id="generateChampionPresetBtn" class="btn builder-action-btn builder-action-apply" type="button">Generate Code</button>
+                                <button id="copyChampionPresetBtn" class="btn builder-action-btn" type="button">Copy to Clipboard</button>
+                            </div>
+                            <textarea id="championPresetCodeOutput" class="preset-code-output" rows="2" readonly spellcheck="false" placeholder="Your champion code will appear here"></textarea>
+                            <div class="preset-import">
+                                <input id="championPresetCodeInput" class="preset-code-input" type="text" placeholder="Enter champion code" spellcheck="false" autocomplete="off" />
+                                <button id="applyChampionPresetBtn" class="btn builder-action-btn builder-action-apply" type="button">Load Code</button>
+                            </div>
+                            <div id="championPresetStatus" class="preset-status"></div>
                         </div>
                     </div>
 
@@ -3573,7 +3677,7 @@
                                 </div>
                                 <div class="loadout-item">
                                     <span class="loadout-label">Attack Module</span>
-                                    <span class="loadout-value" id="championAttackModuleLabel">Standard Volley</span>
+                                    <span class="loadout-value" id="championAttackModuleLabel">Starfall Salvo</span>
                                 </div>
                                 <div class="loadout-item">
                                     <span class="loadout-label">Cadence Core</span>
@@ -4008,7 +4112,7 @@
                         iconUrl = p.subclass === 'phasestriker' ? 'phase.png' : 'storm.png';
                         break;
                     default:
-                        iconUrl = 'storm4.png'; // EMP burst icon
+                        iconUrl = 'storm4.png'; // Shield Pulse icon
                         break;
                 }
                 joystick.abilityIcon.style.backgroundImage = `url('${iconUrl}')`;
@@ -4798,6 +4902,8 @@
                 shadowEchoes: [],
                 temporalEchoes: [],
                 timeShards: [],
+                championPresetCache: null,
+                lastChampionPresetCode: null,
                 temporalBeam: null,
                 championMinions: [],
                 empCharges: [],
@@ -5811,6 +5917,9 @@
                 }
 
                 let dmg = b.dmg || 15;
+                if (b.isChampionShot && b.vulnerabilityProfile && e) {
+                    dmg = applyChampionVulnerabilityScaling(dmg, e, b.vulnerabilityProfile);
+                }
                 let didCrit = false;
                 if (e === store.boss && b.isDrone) dmg *= 0.4;
 
@@ -6280,7 +6389,45 @@
                 'dmg': { name: "DAMAGE", icon: '💪', baseCost: 50, scale: 1.5, maxLevel: 10, category: 'attack', effect: () => store.player.dmgMult *= 1.06, desc: level => `+6% Damage (Lvl ${level + 1})` },
                 'crit_chance': { name: "SHINOBI REFLEXES", icon: '🥷', baseCost: 40, increment: 24, maxLevel: 10, category: 'attack', effect: () => { store.player.critChance *= 1.5; store.player.critDamage *= 1.5; }, desc: level => `+50% Crit Chance & Dmg (Lvl ${level + 1})` },
                 'speed': { name: "SPEED", icon: '🚀', baseCost: 40, scale: 1.6, maxLevel: 8, category: 'utility', effect: () => store.player.speed *= 1.10, desc: level => `+10% Speed (Lvl ${level + 1})` },
-                'grenade': { name: "EMP BURST", icon: '⚡💣', cost: 70, isPremium: true, max: 3, category: 'attack', apply: () => { if (!store.empCharges) store.empCharges = []; if (store.empCharges.length < 3) { createEmpCharge(); return true; } return false; }, desc: () => `Add permanent EMP charge (max 3). Auto-activates near enemies and recharges every 30s.` },
+                'grenade': { 
+                    name: "SHIELD PULSE", 
+                    icon: '⚡�️', 
+                    cost: 70, 
+                    isPremium: true, 
+                    max: 3, 
+                    category: 'attack', 
+                    apply: () => { 
+                        if (!store.empCharges) store.empCharges = []; 
+                        if (store.empCharges.length < 3) { 
+                            createEmpCharge(); 
+                            return true; 
+                        } else {
+                            // At max capacity - recharge the charge with longest cooldown
+                            let longestCooldownCharge = null;
+                            let maxCooldown = 0;
+                            for (const charge of store.empCharges) {
+                                if (charge && !charge.dead && (charge.cooldown || 0) > maxCooldown) {
+                                    maxCooldown = charge.cooldown;
+                                    longestCooldownCharge = charge;
+                                }
+                            }
+                            if (longestCooldownCharge) {
+                                longestCooldownCharge.cooldown = 0; // Instantly recharge
+                                announce('⚡ Shield Pulse Recharged! ⚡');
+                                return true;
+                            }
+                            return false;
+                        }
+                    }, 
+                    desc: () => {
+                        const count = store.empCharges?.length || 0;
+                        if (count < 3) {
+                            return `Add Shield Pulse charge (${count}/3). Auto-activates near threats.`;
+                        } else {
+                            return `Shield Pulse (3/3). Additional pickups recharge your longest cooldown.`;
+                        }
+                    }
+                },
                 'fragment_blast': { 
                     name: "FRAGMENT BLAST", 
                     icon: '💥', 
@@ -7116,18 +7263,20 @@
                 }
                 return store.world.collarStacks;
             }
-            const MAX_COLLAR_STACKS = 40;
+            const MAX_COLLAR_STACKS = 50; // Increased from 40 to allow longer runs
             const COLLAR_TARGET_GAIN_MULTIPLIER = 1.6;
 
             function calculateCollarBonus(stacks) {
                 const safeStacks = Math.max(0, Number.isFinite(stacks) ? stacks : 0);
-                const tierOneLimit = 5; // First 5 stacks at 6% each
-                const tierTwoLimit = 10; // Next 5 stacks at 4% each
+                const tierOneLimit = 5; // First 5 stacks at 8% each (increased from 6%)
+                const tierTwoLimit = 10; // Next 5 stacks at 6% each (increased from 4%)
+                const tierThreeLimit = 20; // Next 10 stacks at 5% each (increased from 2%)
                 const cappedStacks = Math.min(safeStacks, MAX_COLLAR_STACKS);
                 const tierOne = Math.min(cappedStacks, tierOneLimit);
                 const tierTwo = Math.min(Math.max(cappedStacks - tierOneLimit, 0), tierTwoLimit - tierOneLimit);
-                const tierThree = Math.max(cappedStacks - tierTwoLimit, 0);
-                const bonus = tierOne * 0.06 + tierTwo * 0.04 + tierThree * 0.02;
+                const tierThree = Math.min(Math.max(cappedStacks - tierTwoLimit, 0), tierThreeLimit - tierTwoLimit);
+                const tierFour = Math.max(cappedStacks - tierThreeLimit, 0); // Stacks beyond 20 at 4% each
+                const bonus = tierOne * 0.08 + tierTwo * 0.06 + tierThree * 0.05 + tierFour * 0.04;
                 return 1 + bonus;
             }
 
@@ -11436,6 +11585,13 @@
 
                 // Handle active effects separately (different property name)
                 compactInactiveEffects(store.activeEffects);
+                
+                // Cap active effects to prevent overdraw/performance issues (especially with dense enemy clusters)
+                const MAX_ACTIVE_EFFECTS = 120;
+                if (store.activeEffects.length > MAX_ACTIVE_EFFECTS) {
+                    // Keep most recent effects, drop oldest ones
+                    store.activeEffects.splice(0, store.activeEffects.length - MAX_ACTIVE_EFFECTS);
+                }
 
                 if (!store.boss && store.enemies.length === 0) {
                     // Add some delay before starting next wave to prevent rapid cycling
@@ -12692,11 +12848,21 @@
                     store.empCharges.forEach(charge => {
                         if (!charge || charge.dead) return;
                         
-                        // Draw tether to player
-                        ctx.globalAlpha = 0.35;
+                        const chargeCooldown = EMP_BURST_CONFIG?.chargeCooldown ?? 30;
+                        const cooldownRemaining = Math.max(0, charge.cooldown || 0);
+                        const cooldownRatio = chargeCooldown > 0 ? Math.min(1, cooldownRemaining / chargeCooldown) : 0;
+                        const isRecharging = cooldownRatio > 0;
+                        
+                        // Draw tether to player - dim significantly when recharging
+                        ctx.globalAlpha = isRecharging ? 0.12 : 0.35;
                         const gradient = ctx.createLinearGradient(store.player.x, store.player.y, charge.x, charge.y);
-                        gradient.addColorStop(0, 'rgba(100, 200, 255, 0.4)');
-                        gradient.addColorStop(1, 'rgba(150, 220, 255, 0.15)');
+                        if (isRecharging) {
+                            gradient.addColorStop(0, 'rgba(60, 80, 120, 0.25)');
+                            gradient.addColorStop(1, 'rgba(50, 70, 100, 0.08)');
+                        } else {
+                            gradient.addColorStop(0, 'rgba(100, 200, 255, 0.4)');
+                            gradient.addColorStop(1, 'rgba(150, 220, 255, 0.15)');
+                        }
                         ctx.strokeStyle = gradient;
                         ctx.lineWidth = 1.8;
                         ctx.beginPath();
@@ -12719,8 +12885,10 @@
                         const globalRatio = globalCooldown > 0 ? Math.min(1, globalRemaining / globalCooldown) : (globalRemaining > 0 ? 1 : 0);
                         const globalFactor = globalRatio > 0 ? Math.max(0.35, 1 - globalRatio * 0.9) : 1;
                         const availability = Math.min(1, readiness * globalFactor);
+                        
+                        const isRecharging = cooldownRatio > 0;
 
-                        const pulseStrength = 0.15 * (0.35 + 0.65 * availability);
+                        const pulseStrength = isRecharging ? 0.02 : 0.15 * (0.35 + 0.65 * availability);
                         const baseRadius = 8;
                         const pulseScale = 1 + Math.sin(charge.pulsePhase) * pulseStrength;
                         const radius = baseRadius * pulseScale;
@@ -12728,27 +12896,51 @@
                         ctx.save();
                         ctx.translate(charge.x, charge.y);
 
-                        // Outer glow intensity scales with availability
-                        ctx.globalAlpha = 0.18 + 0.42 * availability;
-                        const outerGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 2.1);
-                        outerGlow.addColorStop(0, 'rgba(100, 200, 255, 0.7)');
-                        outerGlow.addColorStop(0.55, 'rgba(80, 180, 255, 0.32)');
-                        outerGlow.addColorStop(1, 'rgba(60, 160, 255, 0)');
-                        ctx.fillStyle = outerGlow;
-                        ctx.beginPath();
-                        ctx.arc(0, 0, radius * 2.1, 0, Math.PI * 2);
-                        ctx.fill();
+                        if (isRecharging) {
+                            // Deactivated/recharging appearance - very dim and grey
+                            ctx.globalAlpha = 0.15;
+                            const outerGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 2.1);
+                            outerGlow.addColorStop(0, 'rgba(60, 80, 120, 0.4)');
+                            outerGlow.addColorStop(0.55, 'rgba(50, 70, 100, 0.2)');
+                            outerGlow.addColorStop(1, 'rgba(40, 60, 90, 0)');
+                            ctx.fillStyle = outerGlow;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, radius * 2.1, 0, Math.PI * 2);
+                            ctx.fill();
 
-                        // Core charge brightness tracks readiness
-                        ctx.globalAlpha = 0.65 + 0.35 * availability;
-                        const coreGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
-                        coreGradient.addColorStop(0, '#FFFFFF');
-                        coreGradient.addColorStop(0.4, '#A0E0FF');
-                        coreGradient.addColorStop(1, '#4080FF');
-                        ctx.fillStyle = coreGradient;
-                        ctx.beginPath();
-                        ctx.arc(0, 0, radius, 0, Math.PI * 2);
-                        ctx.fill();
+                            // Dim grey core when recharging
+                            ctx.globalAlpha = 0.25;
+                            const coreGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+                            coreGradient.addColorStop(0, '#8899BB');
+                            coreGradient.addColorStop(0.4, '#556688');
+                            coreGradient.addColorStop(1, '#334466');
+                            ctx.fillStyle = coreGradient;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, radius, 0, Math.PI * 2);
+                            ctx.fill();
+                        } else {
+                            // Active appearance - bright and pulsing
+                            ctx.globalAlpha = 0.18 + 0.42 * availability;
+                            const outerGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 2.1);
+                            outerGlow.addColorStop(0, 'rgba(100, 200, 255, 0.7)');
+                            outerGlow.addColorStop(0.55, 'rgba(80, 180, 255, 0.32)');
+                            outerGlow.addColorStop(1, 'rgba(60, 160, 255, 0)');
+                            ctx.fillStyle = outerGlow;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, radius * 2.1, 0, Math.PI * 2);
+                            ctx.fill();
+
+                            // Core charge brightness tracks readiness
+                            ctx.globalAlpha = 0.65 + 0.35 * availability;
+                            const coreGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+                            coreGradient.addColorStop(0, '#FFFFFF');
+                            coreGradient.addColorStop(0.4, '#A0E0FF');
+                            coreGradient.addColorStop(1, '#4080FF');
+                            ctx.fillStyle = coreGradient;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, radius, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
 
                         // Cooldown progress ring
                         if (cooldownRatio > 0) {
@@ -15030,10 +15222,10 @@
             const CHAMPION_ATTACK_MODULE_MAP = Object.freeze(Object.fromEntries(CHAMPION_ATTACK_MODULES.map(mod => [mod.id, mod])));
 
             const CHAMPION_CADENCE_LEVELS = Object.freeze([
-                { level: 0, name: 'BASELINE CADENCE', cost: 0, fireRateMult: 1.0, dashCooldownMult: 1.0, desc: 'Standard guardian timing.' },
-                { level: 1, name: 'PULSE SYNC', cost: 140, fireRateMult: 0.9, dashCooldownMult: 0.92, desc: '-10% firing delay, -8% dash cooldown.' },
-                { level: 2, name: 'NOVA RHYTHM', cost: 210, fireRateMult: 0.8, dashCooldownMult: 0.86, desc: '-20% firing delay, -14% dash cooldown.' },
-                { level: 3, name: 'TEMPORAL WARP', cost: 290, fireRateMult: 0.7, dashCooldownMult: 0.8, desc: '-30% firing delay, -20% dash cooldown.' }
+                { level: 0, name: 'BASELINE CADENCE', cost: 0, fireRateMult: 1.0, dashCooldownMult: 1.0, specialCooldownMult: 1.0, desc: 'Standard guardian timing.' },
+                { level: 1, name: 'PULSE SYNC', cost: 140, fireRateMult: 0.9, dashCooldownMult: 0.92, specialCooldownMult: 0.94, desc: '-10% firing delay, -8% dash cooldown. Specials rotate 6% faster.' },
+                { level: 2, name: 'NOVA RHYTHM', cost: 210, fireRateMult: 0.8, dashCooldownMult: 0.86, specialCooldownMult: 0.9, desc: '-20% firing delay, -14% dash cooldown. Specials rotate 10% faster.' },
+                { level: 3, name: 'TEMPORAL WARP', cost: 290, fireRateMult: 0.7, dashCooldownMult: 0.8, specialCooldownMult: 0.85, desc: '-30% firing delay, -20% dash cooldown. Specials rotate 15% faster.' }
             ]);
 
             const CHAMPION_MINION_PROTOCOL_LEVELS = Object.freeze([
@@ -15347,7 +15539,10 @@
                     signature: 'Void harmonics auto-adjust to pilot focus.',
                     icon: '💠',
                     abilityHighlights: [
-                        { id: 'standard-volley', name: 'Energy Volley', icon: '🔹', description: 'Adaptive plasma bolts that scale with guardian level.' },
+                        { id: 'starfall_salvo', name: 'Starfall Salvo', icon: '✨', description: 'Fires a staggered spray of plasma bolts that home on the champion’s focus target.' },
+                        { id: 'solar_brand', name: 'Solar Brand', icon: '☀️', description: 'Marks a priority enemy, searing them over time while exposing weak points.' },
+                        { id: 'nebula_bloom', name: 'Nebula Bloom', icon: '🌌', description: 'Detonates a short-lived gravity bloom that batters clustered threats.' },
+                        { id: 'crescent_ricochet', name: 'Crescent Ricochet', icon: '🌀', description: 'Arcing lances ricochet between up to three close targets.' },
                         { id: 'dash', name: 'Shadow Dash', icon: '💨', description: 'Short-range blink that phases through threats.' }
                     ],
                     previewEffects: {
@@ -15361,8 +15556,10 @@
                     signature: 'Armored spearhead that mirrors Juggernaut aggression.',
                     icon: '🛡️',
                     abilityHighlights: [
-                        { id: 'charge', name: 'Titan Charge', icon: '💥', description: 'Accelerates and slams through clustered targets.' },
-                        { id: 'volley', name: 'Energy Volley', icon: '🔹', description: 'Heavy plasma bolts stagger foes at medium range.' }
+                        { id: 'starfall_salvo', name: 'Starfall Salvo', icon: '✨', description: 'Heavy plasma bolts stagger foes at medium range.' },
+                        { id: 'solar_brand', name: 'Solar Brand', icon: '☀️', description: 'Marks armored targets to soften them for the next charge.' },
+                        { id: 'nebula_bloom', name: 'Nebula Bloom', icon: '🌌', description: 'Blast wave that thins out packs before the titan dives in.' },
+                        { id: 'charge', name: 'Titan Charge', icon: '💥', description: 'Accelerates and slams through clustered targets.' }
                     ],
                     previewEffects: {
                         attack: 'shockwave',
@@ -15375,8 +15572,10 @@
                     signature: 'Guided ordnance suite pairs with stealth rocket arrays.',
                     icon: '🚀',
                     abilityHighlights: [
-                        { id: 'rockets', name: 'Stealth Rockets', icon: '🚀', description: 'Guided munitions fan out before converging on priority threats.' },
-                        { id: 'volley', name: 'Energy Volley', icon: '🔹', description: 'Standard plasma volley keeps pressure between salvos.' }
+                        { id: 'starfall_salvo', name: 'Starfall Salvo', icon: '✨', description: 'Rotating salvo keeps targets painted between missile strikes.' },
+                        { id: 'solar_brand', name: 'Solar Brand', icon: '☀️', description: 'Sustained burn keeps high-value targets lit for follow-up rockets.' },
+                        { id: 'nebula_bloom', name: 'Nebula Bloom', icon: '🌌', description: 'Area blast softens clustered enemies for stealth rockets.' },
+                        { id: 'crescent_ricochet', name: 'Crescent Ricochet', icon: '🌀', description: 'Guided arcs pick off stragglers during reload cycles.' }
                     ],
                     previewEffects: {
                         attack: 'rocket-trail',
@@ -15389,8 +15588,10 @@
                     signature: 'Conducts stormlight and void lasers in alternating cadence.',
                     icon: '⚡',
                     abilityHighlights: [
-                        { id: 'lightning', name: 'Chain Lightning', icon: '⚡', description: 'Arcs between clustered enemies, escalating with each jump.' },
-                        { id: 'laser', name: 'Void Laser', icon: '🔱', description: 'Focus beam that pierces armor after a short channel.' },
+                        { id: 'starfall_salvo', name: 'Starfall Salvo', icon: '✨', description: 'Void-aligned bolts extend the pilot’s pressure window.' },
+                        { id: 'solar_brand', name: 'Solar Brand', icon: '☀️', description: 'Infuses enemies with stormlight for damage over time.' },
+                        { id: 'nebula_bloom', name: 'Nebula Bloom', icon: '🌌', description: 'Micro-singularity tears through clustered foes.' },
+                        { id: 'crescent_ricochet', name: 'Crescent Ricochet', icon: '🌀', description: 'Half-cycle pulses chain through nearby targets.' },
                         { id: 'dash', name: 'Shadow Dash', icon: '💨', description: 'Blink strike shreds armor during phase transitions.' }
                     ],
                     previewEffects: {
@@ -15399,6 +15600,344 @@
                     }
                 }
             });
+
+            const CHAMPION_COMBAT_BLUEPRINT = Object.freeze({
+                primary: Object.freeze({
+                    id: 'starfall_salvo',
+                    name: 'Starfall Salvo',
+                    icon: '✨',
+                    cadence: 'steady',
+                    targeting: 'single',
+                    description: 'A quick three-to-five bolt spray that stays on the champion’s current target.',
+                    baseCooldown: 0.7,
+                    jitter: [0.06, 0.12],
+                    execute: championFireStarfallSalvo
+                }),
+                specials: Object.freeze([
+                    Object.freeze({
+                        id: 'solar_brand',
+                        name: 'Solar Brand',
+                        icon: '☀️',
+                        cadence: 'damage-over-time',
+                        targeting: 'single',
+                        baseCooldown: 7.5,
+                        initialDelay: 2.5,
+                        priority: 4,
+                        minTargets: 1,
+                        vulnerabilities: { default: 1, boss: 1.12, armored: 1.15, swarm: 0.9 },
+                        execute: championExecuteSolarBrand
+                    }),
+                    Object.freeze({
+                        id: 'nebula_bloom',
+                        name: 'Nebula Bloom',
+                        icon: '🌌',
+                        cadence: 'burst',
+                        targeting: 'aoe',
+                        baseCooldown: 11,
+                        initialDelay: 4.8,
+                        priority: 5,
+                        minNearby: 3,
+                        radius: 165,
+                        vulnerabilities: { default: 1, swarm: 1.2, nimble: 1.08, armored: 0.9 },
+                        execute: championExecuteNebulaBloom
+                    }),
+                    Object.freeze({
+                        id: 'crescent_ricochet',
+                        name: 'Crescent Ricochet',
+                        icon: '🌀',
+                        cadence: 'half-cycle',
+                        targeting: 'multi',
+                        baseCooldown: 4.6,
+                        initialDelay: 1.8,
+                        priority: 3,
+                        maxTargets: 3,
+                        searchRadius: 240,
+                        vulnerabilities: { default: 1, nimble: 1.12, swarm: 1.05, boss: 0.95 },
+                        execute: championExecuteCrescentRicochet
+                    })
+                ])
+            });
+
+            const CHAMPION_COMBAT_SUMMARY = Object.freeze([
+                {
+                    id: 'starfall_salvo',
+                    name: 'Starfall Salvo',
+                    icon: '✨',
+                    cadence: 'Steady primary attack',
+                    targeting: 'Single target',
+                    description: 'Fires a staggered spray of plasma bolts that track the champion’s focus.'
+                },
+                {
+                    id: 'solar_brand',
+                    name: 'Solar Brand',
+                    icon: '☀️',
+                    cadence: 'Timed burn',
+                    targeting: 'Single target',
+                    description: 'Brands an enemy with radiant fire, dealing a burst of damage followed by damage over time. Strong against armored units.'
+                },
+                {
+                    id: 'nebula_bloom',
+                    name: 'Nebula Bloom',
+                    icon: '🌌',
+                    cadence: 'Burst detonation',
+                    targeting: 'Area of effect',
+                    description: 'Collapses a gravity bloom that batters clustered enemies. Excels at clearing swarms.'
+                },
+                {
+                    id: 'crescent_ricochet',
+                    name: 'Crescent Ricochet',
+                    icon: '🌀',
+                    cadence: 'Half-cycle strike',
+                    targeting: 'Capped multi-target (3)',
+                    description: 'Arc blades ricochet between up to three nearby foes, prioritising nimble threats.'
+                }
+            ]);
+
+            function cloneChampionAbility(ability) {
+                if (!ability) return null;
+                return {
+                    ...ability,
+                    _baseCooldown: ability.baseCooldown,
+                    timer: ability.initialDelay != null ? ability.initialDelay : ability.baseCooldown
+                };
+            }
+
+            function createChampionCombatProfile(overrides = {}) {
+                const primaryBlueprint = CHAMPION_COMBAT_BLUEPRINT.primary || {};
+                const primary = {
+                    ...primaryBlueprint,
+                    _baseCooldown: primaryBlueprint.baseCooldown
+                };
+                const specials = (CHAMPION_COMBAT_BLUEPRINT.specials || []).map(cloneChampionAbility);
+                return {
+                    primary,
+                    specials,
+                    specialCooldownMult: overrides.specialCooldownMult ?? 1,
+                    lastAbilityId: null
+                };
+            }
+
+            function ensureChampionCombatProfile(champion, overrides = {}) {
+                if (!champion) return null;
+                if (!champion.combatProfile) {
+                    champion.combatProfile = createChampionCombatProfile(overrides);
+                }
+                return champion.combatProfile;
+            }
+
+            function configureChampionCombatProfile(champion, cadenceOption = null) {
+                const profile = ensureChampionCombatProfile(champion);
+                if (!profile) return null;
+
+                const cadenceMult = cadenceOption?.specialCooldownMult ?? profile.specialCooldownMult ?? 1;
+                const previousMult = profile.specialCooldownMult ?? 1;
+                profile.specialCooldownMult = cadenceMult;
+
+                if (profile.primary) {
+                    const base = champion.fireCooldown ?? profile.primary.baseCooldown ?? profile.primary._baseCooldown ?? PLAYER_CHAMPION_CONFIG.baseFireCooldown;
+                    profile.primary.baseCooldown = base;
+                }
+
+                if (Array.isArray(profile.specials)) {
+                    profile.specials.forEach(special => {
+                        if (!special) return;
+                        const base = special._baseCooldown ?? special.baseCooldown ?? 1;
+                        special.baseCooldown = base;
+                        if (special.timer != null) {
+                            if (previousMult !== cadenceMult && special.timer > 0) {
+                                const normalized = special.timer / Math.max(0.0001, previousMult);
+                                special.timer = Math.min(normalized * cadenceMult, base * cadenceMult);
+                            } else {
+                                special.timer = Math.min(special.timer, base * cadenceMult);
+                            }
+                        } else {
+                            special.timer = base * cadenceMult;
+                        }
+                    });
+                }
+
+                return profile;
+            }
+
+            function classifyEnemyForChampionVulnerabilities(enemy) {
+                const tags = new Set();
+                if (!enemy) return tags;
+
+                const hpMax = ensureFiniteNumber(enemy.hpMax ?? enemy.maxHp ?? enemy.hp ?? 0, 0);
+                const radius = ensureFiniteNumber(enemy.r ?? enemy.radius ?? 0, 0);
+                const shield = ensureFiniteNumber(enemy.shield ?? enemy.shieldHp ?? 0, 0);
+                const speed = ensureFiniteNumber(enemy.speed ?? enemy.baseSpeed ?? enemy.moveSpeed ?? 0, 0);
+
+                if (enemy === store.boss) {
+                    tags.add('boss');
+                    tags.add('armored');
+                }
+
+                if (hpMax >= 900 || radius >= 34) tags.add('behemoth');
+                if (hpMax >= 600 || radius >= 28) tags.add('armored');
+                else if (hpMax >= 280 || radius >= 22) tags.add('elite');
+                if (hpMax <= 120 || radius <= 14) tags.add('swarm');
+
+                const vx = ensureFiniteNumber(enemy.vx ?? enemy.hvx ?? 0, 0);
+                const vy = ensureFiniteNumber(enemy.vy ?? enemy.hvy ?? 0, 0);
+                if (speed >= 260 || (vx * vx + vy * vy) > 260 * 260) tags.add('nimble');
+                if (shield > 0 || enemy.shielded) tags.add('shielded');
+                if (enemy.spawnGroupSize >= 4) tags.add('pack');
+                if (enemy.isFlying || enemy.flying || enemy.flight) tags.add('air');
+
+                return tags;
+            }
+
+            function applyChampionVulnerabilityScaling(baseDamage, enemy, profile) {
+                if (!profile || baseDamage <= 0) return baseDamage;
+                const tags = classifyEnemyForChampionVulnerabilities(enemy);
+                const map = profile.tags || profile;
+                let multiplier = typeof map.default === 'number' ? map.default : 1;
+
+                tags.forEach(tag => {
+                    if (typeof map[tag] === 'number') {
+                        multiplier *= map[tag];
+                    }
+                });
+
+                let result = baseDamage * multiplier;
+                if (typeof profile.floor === 'number') {
+                    result = Math.max(profile.floor, result);
+                }
+                if (typeof profile.ceiling === 'number') {
+                    result = Math.min(profile.ceiling, result);
+                }
+                return result;
+            }
+
+            function countEnemiesAround(x, y, radius, { includeBoss = true } = {}) {
+                let count = 0;
+                forEachEnemyNearby(x, y, radius, enemy => {
+                    if (!enemy || enemy.dead || enemy.hp <= 0) return false;
+                    count++;
+                    return false;
+                });
+
+                if (includeBoss && store.boss && !store.boss.dead) {
+                    const boss = store.boss;
+                    const dx = boss.x - x;
+                    const dy = boss.y - y;
+                    const bossRadius = radius + (boss.r || 60);
+                    if (dx * dx + dy * dy <= bossRadius * bossRadius) {
+                        count++;
+                    }
+                }
+
+                return count;
+            }
+
+            function selectChampionSpecialAbility(champion, target, context = {}) {
+                if (!champion || !champion.combatProfile) return null;
+                const { combatProfile } = champion;
+                if (!combatProfile.specials || combatProfile.specials.length === 0) return null;
+
+                const targetTraits = context.targetTraits || classifyEnemyForChampionVulnerabilities(target);
+                const nearbyCount = context.nearbyCount ?? (target ? countEnemiesAround(target.x, target.y, context.scanRadius || 220) : 0);
+                let best = null;
+                let bestScore = -Infinity;
+
+                combatProfile.specials.forEach(special => {
+                    if (!special || special.timer > 0) return;
+                    if (special.targeting === 'single' && !target) return;
+
+                    const minTargets = special.minTargets ?? 0;
+                    if (minTargets > 0 && nearbyCount < minTargets) return;
+
+                    let score = special.priority ?? 0;
+
+                    if (special.targeting === 'aoe') {
+                        const required = special.minNearby ?? 3;
+                        const densityBonus = Math.max(0, nearbyCount - required + 1);
+                        score += densityBonus * 1.2;
+                    } else if (special.targeting === 'multi') {
+                        const hits = Math.min(special.maxTargets ?? 3, Math.max(nearbyCount, target ? 1 : 0));
+                        score += hits * 0.9;
+                    } else if (special.targeting === 'single') {
+                        if (targetTraits.has('boss') || targetTraits.has('armored')) score += 2.8;
+                        if (targetTraits.has('nimble')) score += 0.6;
+                    }
+
+                    if (combatProfile.lastAbilityId && combatProfile.lastAbilityId === special.id) {
+                        score -= 0.5; // discourage repeating the same special immediately
+                    }
+
+                    if (score > bestScore) {
+                        bestScore = score;
+                        best = special;
+                    }
+                });
+
+                return best;
+            }
+
+            function executeChampionAbility(champion, ability, context = {}) {
+                if (!champion || !ability || typeof ability.execute !== 'function') return null;
+                const profile = ensureChampionCombatProfile(champion);
+                const cadenceMult = profile?.specialCooldownMult ?? 1;
+                const baseCooldown = ability._baseCooldown ?? ability.baseCooldown ?? 1.2;
+
+                const result = ability.execute(champion, {
+                    ...context,
+                    ability,
+                    vulnerabilityProfile: ability.vulnerabilities || null,
+                    cadenceMult
+                }) || {};
+
+                const cooldown = (typeof result.cooldown === 'number' ? result.cooldown : baseCooldown) * cadenceMult;
+                ability.timer = cooldown;
+                profile.lastAbilityId = ability.id;
+
+                const baseDelay = typeof result.fireTimer === 'number' ? result.fireTimer : (ability.postFireDelay ?? champion.fireCooldown ?? baseCooldown);
+                const jitterRange = result.jitterRange || ability.jitter || [0.05, 0.11];
+                let jitter = 0;
+                if (typeof result.jitter === 'number') {
+                    jitter = result.jitter;
+                } else if (Array.isArray(jitterRange)) {
+                    const [min = 0, max = 0] = jitterRange;
+                    jitter = min + Math.random() * Math.max(0, max - min);
+                } else if (typeof jitterRange === 'number') {
+                    jitter = jitterRange;
+                }
+
+                champion.fireTimer = Math.max(0.2, baseDelay + jitter);
+                return result;
+            }
+
+            function executeChampionPrimary(champion, target, context = {}) {
+                if (!champion) return null;
+                const profile = ensureChampionCombatProfile(champion);
+                if (!profile || !profile.primary || typeof profile.primary.execute !== 'function') return null;
+
+                const primary = profile.primary;
+                const baseDelay = champion.fireCooldown ?? primary.baseCooldown ?? PLAYER_CHAMPION_CONFIG.baseFireCooldown;
+                const result = primary.execute(champion, {
+                    ...context,
+                    target,
+                    ability: primary,
+                    vulnerabilityProfile: primary.vulnerabilities || null
+                }) || {};
+
+                const jitterRange = result.jitterRange || primary.jitter || [0.06, 0.12];
+                let jitter = 0;
+                if (typeof result.jitter === 'number') {
+                    jitter = result.jitter;
+                } else if (Array.isArray(jitterRange)) {
+                    const [min = 0, max = 0] = jitterRange;
+                    jitter = min + Math.random() * Math.max(0, max - min);
+                } else if (typeof jitterRange === 'number') {
+                    jitter = jitterRange;
+                }
+
+                const nextDelay = typeof result.fireTimer === 'number' ? result.fireTimer : baseDelay;
+                champion.fireTimer = Math.max(0.2, nextDelay + jitter);
+                profile.lastAbilityId = primary.id;
+                return result;
+            }
 
             const CHAMPION_SKIN_OPTIONS = Object.freeze([
                 { id: 'default', name: 'Void Vanguard', icon: '💠', cost: 0, desc: 'Baseline guardian plating.', theme: 'default' },
@@ -15410,6 +15949,316 @@
             ]);
 
             const CHAMPION_SKIN_OPTION_MAP = Object.freeze(Object.fromEntries(CHAMPION_SKIN_OPTIONS.map(s => [s.id, s])));
+
+            const CHAMPION_PRESET_SCHEMA_VERSION = 1;
+            const CHAMPION_PRESET_MODULE_IDS = Object.freeze([
+                'precision_strike',
+                'kinetic_swarm',
+                'inferno_burst',
+                'plasma_stream',
+                'focus_beam',
+                'scatter_array',
+                'arc_cannon',
+                'storm_grid',
+                'ember',
+                'tempest',
+                'void'
+            ]);
+            const CHAMPION_PRESET_MODULE_CHOICES = Object.freeze(['default', ...CHAMPION_PRESET_MODULE_IDS]);
+            const CHAMPION_PRESET_SKIN_IDS = Object.freeze(CHAMPION_SKIN_OPTIONS.map(opt => opt.id));
+            const CHAMPION_PRESET_UPGRADE_KEYS = Object.freeze([
+                'champion_health',
+                'champion_damage',
+                'champion_speed',
+                'champion_shield',
+                'champion_regen'
+            ]);
+
+            function captureChampionPreset(player = store.player) {
+                if (!player) return null;
+                const upgrades = ensureChampionUpgradeState(player);
+                const upgradeLevels = player.upgradeLevels || {};
+                const champion = store.playerChampion && !store.playerChampion.dead ? store.playerChampion : null;
+
+                const unlockedModules = CHAMPION_PRESET_MODULE_IDS.filter(id => upgrades?.unlockedAttacks && upgrades.unlockedAttacks[id]);
+                const unlockedSkins = CHAMPION_PRESET_SKIN_IDS.filter(id => upgrades?.unlockedSkins && upgrades.unlockedSkins[id]);
+                if (!unlockedSkins.includes('default')) unlockedSkins.push('default');
+
+                const levelSnapshot = {};
+                CHAMPION_PRESET_UPGRADE_KEYS.forEach(key => {
+                    const value = upgradeLevels[key] || 0;
+                    if (value > 0) {
+                        levelSnapshot[key] = value;
+                    }
+                });
+
+                return {
+                    version: CHAMPION_PRESET_SCHEMA_VERSION,
+                    championUnlocked: !!player.championUnlocked,
+                    attackModule: upgrades.attackModule || 'default',
+                    cadenceLevel: upgrades.cadenceLevel || 0,
+                    minionProtocols: upgrades.minionProtocols || 0,
+                    skin: upgrades.skin || 'default',
+                    unlockedAttacks: unlockedModules,
+                    unlockedSkins,
+                    upgradeLevels: levelSnapshot,
+                    championLevel: champion?.level || player.championPresetLevel || 1,
+                    championXp: champion?.xp || player.championPresetXp || 0
+                };
+            }
+
+            function encodeChampionPresetCode(preset) {
+                if (!preset) return null;
+
+                const modulesSet = new Set(Array.isArray(preset.unlockedAttacks) ? preset.unlockedAttacks : (preset.unlockedModules || []));
+                const skinsSet = new Set(Array.isArray(preset.unlockedSkins) ? preset.unlockedSkins : []);
+                if (preset.attackModule && preset.attackModule !== 'default') {
+                    modulesSet.add(preset.attackModule);
+                }
+                if (preset.skin) {
+                    skinsSet.add(preset.skin);
+                }
+                skinsSet.add('default');
+
+                const encodeIndex = (value, list, fallbackIndex = 0) => {
+                    const idx = list.indexOf(value);
+                    return idx >= 0 ? idx : fallbackIndex;
+                };
+                const encodeBitset = (list, activeSet) => {
+                    let mask = 0;
+                    list.forEach((id, idx) => {
+                        if (activeSet.has(id)) {
+                            mask |= (1 << idx);
+                        }
+                    });
+                    return mask.toString(36).toUpperCase();
+                };
+
+                const moduleIndex = encodeIndex(preset.attackModule, CHAMPION_PRESET_MODULE_CHOICES, 0);
+                const cadenceLevel = Math.max(0, Math.min(CHAMPION_CADENCE_LEVELS.length - 1, Math.floor(preset.cadenceLevel || 0)));
+                const protocolLevel = Math.max(0, Math.min(CHAMPION_MINION_PROTOCOL_LEVELS.length - 1, Math.floor(preset.minionProtocols || 0)));
+                const skinIndex = encodeIndex(preset.skin, CHAMPION_PRESET_SKIN_IDS, 0);
+                const championLevel = Math.max(1, Math.floor(preset.championLevel || 1));
+                const championXp = Math.max(0, Math.floor(preset.championXp || 0));
+
+                const upgradeSegments = CHAMPION_PRESET_UPGRADE_KEYS.map(key => {
+                    const val = Math.max(0, Math.floor((preset.upgradeLevels && preset.upgradeLevels[key]) || 0));
+                    return val.toString(36).toUpperCase();
+                }).join('.');
+
+                const parts = [
+                    `VN${CHAMPION_PRESET_SCHEMA_VERSION.toString(36).toUpperCase()}`,
+                    `AM${moduleIndex.toString(36).toUpperCase()}`,
+                    `UM${encodeBitset(CHAMPION_PRESET_MODULE_IDS, modulesSet)}`,
+                    `CD${cadenceLevel.toString(36).toUpperCase()}`,
+                    `PR${protocolLevel.toString(36).toUpperCase()}`,
+                    `SK${skinIndex.toString(36).toUpperCase()}`,
+                    `US${encodeBitset(CHAMPION_PRESET_SKIN_IDS, skinsSet)}`,
+                    `CU${preset.championUnlocked ? '1' : '0'}`,
+                    `LV${championLevel.toString(36).toUpperCase()}`,
+                    `XP${championXp.toString(36).toUpperCase()}`,
+                    `UG${upgradeSegments}`
+                ];
+                return parts.join('-');
+            }
+
+            function decodeChampionPresetCode(code) {
+                if (typeof code !== 'string') return null;
+                const trimmed = code.trim();
+                if (!trimmed) return null;
+                const segments = trimmed.split('-');
+
+                const data = {
+                    version: CHAMPION_PRESET_SCHEMA_VERSION,
+                    championUnlocked: false,
+                    attackModule: 'default',
+                    cadenceLevel: 0,
+                    minionProtocols: 0,
+                    skin: 'default',
+                    unlockedAttacks: [],
+                    unlockedSkins: ['default'],
+                    upgradeLevels: {},
+                    championLevel: 1,
+                    championXp: 0
+                };
+
+                const decodeIndex = (value, list, fallbackValue) => {
+                    const idx = parseInt(value || '0', 36);
+                    if (!Number.isFinite(idx) || idx < 0) return fallbackValue;
+                    return list[idx] || fallbackValue;
+                };
+
+                const decodeBitset = (value, list) => {
+                    const mask = parseInt(value || '0', 36);
+                    if (!Number.isFinite(mask) || mask <= 0) return [];
+                    const result = [];
+                    list.forEach((id, idx) => {
+                        if (mask & (1 << idx)) {
+                            result.push(id);
+                        }
+                    });
+                    return result;
+                };
+
+                let version = CHAMPION_PRESET_SCHEMA_VERSION;
+                for (const segment of segments) {
+                    if (!segment) continue;
+                    const key = segment.slice(0, 2);
+                    const payload = segment.slice(2);
+                    switch (key) {
+                        case 'VN':
+                            version = parseInt(payload || '1', 36);
+                            break;
+                        case 'AM':
+                            data.attackModule = decodeIndex(payload, CHAMPION_PRESET_MODULE_CHOICES, 'default');
+                            break;
+                        case 'UM':
+                            data.unlockedAttacks = decodeBitset(payload, CHAMPION_PRESET_MODULE_IDS);
+                            break;
+                        case 'CD':
+                            data.cadenceLevel = Math.max(0, parseInt(payload || '0', 36) || 0);
+                            break;
+                        case 'PR':
+                            data.minionProtocols = Math.max(0, parseInt(payload || '0', 36) || 0);
+                            break;
+                        case 'SK':
+                            data.skin = decodeIndex(payload, CHAMPION_PRESET_SKIN_IDS, 'default');
+                            break;
+                        case 'US':
+                            data.unlockedSkins = decodeBitset(payload, CHAMPION_PRESET_SKIN_IDS);
+                            break;
+                        case 'CU':
+                            data.championUnlocked = payload === '1';
+                            break;
+                        case 'LV':
+                            data.championLevel = Math.max(1, parseInt(payload || '1', 36) || 1);
+                            break;
+                        case 'XP':
+                            data.championXp = Math.max(0, parseInt(payload || '0', 36) || 0);
+                            break;
+                        case 'UG': {
+                            const values = payload.split('.');
+                            const upgrades = {};
+                            CHAMPION_PRESET_UPGRADE_KEYS.forEach((keyName, idx) => {
+                                const raw = values[idx] || '0';
+                                const level = Math.max(0, parseInt(raw || '0', 36) || 0);
+                                if (level > 0) {
+                                    upgrades[keyName] = level;
+                                }
+                            });
+                            data.upgradeLevels = upgrades;
+                            break;
+                        }
+                        default:
+                            break;
+                    }
+                }
+
+                if (!Number.isFinite(version) || version < 1 || version > CHAMPION_PRESET_SCHEMA_VERSION) {
+                    return null;
+                }
+
+                if (!Array.isArray(data.unlockedAttacks)) data.unlockedAttacks = [];
+                if (!Array.isArray(data.unlockedSkins)) data.unlockedSkins = ['default'];
+                if (!data.unlockedSkins.includes('default')) data.unlockedSkins.push('default');
+
+                data.unlockedAttacks = Array.from(new Set(data.unlockedAttacks));
+                data.unlockedSkins = Array.from(new Set(data.unlockedSkins));
+                data.attackModule = CHAMPION_PRESET_MODULE_CHOICES.includes(data.attackModule) ? data.attackModule : 'default';
+                if (!CHAMPION_PRESET_SKIN_IDS.includes(data.skin)) data.skin = 'default';
+                data.cadenceLevel = Math.max(0, Math.min(CHAMPION_CADENCE_LEVELS.length - 1, data.cadenceLevel));
+                data.minionProtocols = Math.max(0, Math.min(CHAMPION_MINION_PROTOCOL_LEVELS.length - 1, data.minionProtocols));
+                data.championLevel = Math.max(1, data.championLevel);
+                data.championXp = Math.max(0, data.championXp);
+                return data;
+            }
+
+            function applyChampionPresetToPlayer(preset, { player = store.player, applyChampion = true } = {}) {
+                if (!preset || !player) return false;
+
+                const upgrades = ensureChampionUpgradeState(player);
+                const modulesSet = new Set(Array.isArray(preset.unlockedAttacks) ? preset.unlockedAttacks : []);
+                const skinsSet = new Set(Array.isArray(preset.unlockedSkins) ? preset.unlockedSkins : []);
+                if (preset.attackModule && preset.attackModule !== 'default') {
+                    modulesSet.add(preset.attackModule);
+                }
+                if (preset.skin) {
+                    skinsSet.add(preset.skin);
+                }
+                skinsSet.add('default');
+
+                if (!upgrades.unlockedAttacks || typeof upgrades.unlockedAttacks !== 'object') {
+                    upgrades.unlockedAttacks = {};
+                }
+                CHAMPION_PRESET_MODULE_IDS.forEach(id => {
+                    upgrades.unlockedAttacks[id] = modulesSet.has(id);
+                });
+
+                upgrades.attackModule = CHAMPION_PRESET_MODULE_CHOICES.includes(preset.attackModule) && (preset.attackModule === 'default' || modulesSet.has(preset.attackModule))
+                    ? preset.attackModule
+                    : 'default';
+                upgrades.cadenceLevel = Math.max(0, Math.min(CHAMPION_CADENCE_LEVELS.length - 1, Math.floor(preset.cadenceLevel || 0)));
+                upgrades.minionProtocols = Math.max(0, Math.min(CHAMPION_MINION_PROTOCOL_LEVELS.length - 1, Math.floor(preset.minionProtocols || 0)));
+
+                if (!upgrades.unlockedSkins || typeof upgrades.unlockedSkins !== 'object') {
+                    upgrades.unlockedSkins = { default: true };
+                }
+                CHAMPION_PRESET_SKIN_IDS.forEach(id => {
+                    upgrades.unlockedSkins[id] = skinsSet.has(id);
+                });
+                upgrades.skin = CHAMPION_PRESET_SKIN_IDS.includes(preset.skin) ? preset.skin : 'default';
+                if (!upgrades.unlockedSkins[upgrades.skin]) {
+                    upgrades.skin = 'default';
+                }
+
+                player.championUnlocked = preset.championUnlocked || player.championUnlocked;
+                player.upgradeLevels = player.upgradeLevels || {};
+                CHAMPION_PRESET_UPGRADE_KEYS.forEach(key => {
+                    const value = Math.max(0, Math.floor((preset.upgradeLevels && preset.upgradeLevels[key]) || 0));
+                    player.upgradeLevels[key] = value;
+                });
+
+                player.championPresetLevel = Math.max(1, Math.floor(preset.championLevel || player.championPresetLevel || 1));
+                player.championPresetXp = Math.max(0, Math.floor(preset.championXp || player.championPresetXp || 0));
+
+                store.championPresetCache = {
+                    version: preset.version || CHAMPION_PRESET_SCHEMA_VERSION,
+                    championUnlocked: player.championUnlocked,
+                    attackModule: upgrades.attackModule,
+                    cadenceLevel: upgrades.cadenceLevel,
+                    minionProtocols: upgrades.minionProtocols,
+                    skin: upgrades.skin,
+                    unlockedAttacks: Array.from(modulesSet),
+                    unlockedSkins: Array.from(skinsSet),
+                    upgradeLevels: { ...player.upgradeLevels },
+                    championLevel: player.championPresetLevel,
+                    championXp: player.championPresetXp
+                };
+
+                if (applyChampion && store.playerChampion && !store.playerChampion.dead) {
+                    const champion = store.playerChampion;
+                    champion.level = player.championPresetLevel;
+                    champion.xp = player.championPresetXp;
+                    champion.damageScale = 1 + (champion.level - 1) * 0.25;
+                    champion.fireCooldownBase = Math.max(0.6, PLAYER_CHAMPION_CONFIG.baseFireCooldown * Math.pow(0.9, champion.level - 1));
+                    champion.dashCooldownBase = Math.max(1.5, PLAYER_CHAMPION_CONFIG.baseDashCooldown * Math.pow(0.92, champion.level - 1));
+                    champion.momentumBase = Math.min(6.2, 4.1 + 0.25 * (champion.level - 1));
+                    champion.momentum = champion.momentumBase;
+                    champion.guardRadiusBase = PLAYER_CHAMPION_CONFIG.baseGuardRadius + champion.level * 6;
+                    champion.guardRadius = champion.guardRadiusBase;
+                    champion.angularSpeedBase = PLAYER_CHAMPION_CONFIG.baseAngularSpeed + (champion.level - 1) * 0.08;
+                    champion.angularSpeed = champion.angularSpeedBase;
+                    champion.volleySize = Math.min(7, 4 + champion.level);
+                    champion.volleySpread = Math.min(0.22, 0.16 + (champion.level - 1) * 0.015);
+                    champion.roamTimer = 0;
+                }
+
+                notifyChampionLoadoutChanged({ refreshMinions: true });
+                if (applyChampion && store.playerChampion && !store.playerChampion.dead) {
+                    refreshChampionMinionsFromState(store.playerChampion);
+                }
+                return true;
+            }
 
             function getChampionAttackCatalogue(state = getChampionUpgradeState()) {
                 if (!state) state = getChampionUpgradeState();
@@ -15679,6 +16528,8 @@
                 if (refreshMinions) {
                     refreshChampionMinionsFromState(champion, minionProtocol);
                 }
+
+                configureChampionCombatProfile(champion, cadence);
             }
 
             function ensureChampionCollections() {
@@ -15785,6 +16636,25 @@
                     store.playerChampion = champion;
                     store.player.championUnlocked = true;
                     store.championMinions.length = 0;
+
+                    const presetLevel = Math.max(1, store.player?.championPresetLevel || 1);
+                    const presetXp = Math.max(0, store.player?.championPresetXp || 0);
+                    if (presetLevel > 1) {
+                        champion.level = presetLevel;
+                        champion.damageScale = 1 + (champion.level - 1) * 0.25;
+                        champion.fireCooldownBase = Math.max(0.6, champion.fireCooldownBase * Math.pow(0.9, champion.level - 1));
+                        champion.dashCooldownBase = Math.max(1.5, champion.dashCooldownBase * Math.pow(0.92, champion.level - 1));
+                        champion.momentumBase = Math.min(6.2, champion.momentumBase + 0.25 * (champion.level - 1));
+                        champion.momentum = champion.momentumBase;
+                        champion.volleySize = Math.min(7, 4 + champion.level);
+                        champion.volleySpread = Math.min(0.22, 0.16 + (champion.level - 1) * 0.015);
+                        champion.guardRadiusBase = PLAYER_CHAMPION_CONFIG.baseGuardRadius + champion.level * 6;
+                        champion.guardRadius = champion.guardRadiusBase;
+                        champion.angularSpeedBase = PLAYER_CHAMPION_CONFIG.baseAngularSpeed + (champion.level - 1) * 0.08;
+                        champion.angularSpeed = champion.angularSpeedBase;
+                    }
+                    champion.xp = presetXp;
+
                     applyChampionUpgradeLoadout(champion, { refreshMinions: false });
                     // Spawn 3 minions immediately for better visual formation
                     for (let i = 0; i < 3; i++) {
@@ -20993,8 +21863,8 @@
                 // Check if this enemy should show vulnerability visuals based on clustering
                 const shouldShowVulnVisuals = (() => {
                     // Count nearby enemies with vulnerability visuals
-                    const clusterRadius = 120;
-                    const maxVisualsPerCluster = 3;
+                    const clusterRadius = 140; // Increased radius to cover more area
+                    const maxVisualsPerCluster = 2; // Reduced from 3 to 2 to prevent overdraw
                     let nearbyWithVisuals = 0;
                     
                     for (const other of store.enemies) {
@@ -22643,7 +23513,7 @@
                     : '<div class="shop-empty-subtle">No timed powerups are currently active.</div>';
 
                 const reserves = [];
-                if (player.grenades > 0) reserves.push(`<li><strong>EMP Bursts</strong> • Charges: ${player.grenades}</li>`);
+                if (player.grenades > 0) reserves.push(`<li><strong>Shield Pulses</strong> • Charges: ${player.grenades}</li>`);
                 if (player.nanoSaves > 0) reserves.push(`<li><strong>Nano Saves</strong> • Emergency rewinds: ${player.nanoSaves}</li>`);
                 if (player.hasLauncher) reserves.push('<li><strong>Fragment Launcher</strong> • Passive ordnance online</li>');
                 if (player.hasHounds) reserves.push('<li><strong>Ghost Hounds</strong> • Spectral escorts deployed</li>');
@@ -23183,7 +24053,7 @@
                     {
                         key: 'Safety Net',
                         value: `Nano ${pad(player.nanoSaves || 0)} • Vamp ${pct(player.vampirism || 0)}`,
-                        detail: `EMP Bursts ${pad(player.grenades || 0)} • Collar ${pad(world.collarStacks || 0)}`
+                        detail: `Shield Pulses ${pad(player.grenades || 0)} • Collar ${pad(world.collarStacks || 0)}`
                     }
                 ];
                 sections.push(renderGridSection('Core Systems', coreRows));
@@ -23203,7 +24073,7 @@
                     },
                     {
                         key: 'Arsenal',
-                        value: `Missiles ${pad(player.missileVolley || 0)} • EMP Bursts ${pad(player.grenades || 0)}`,
+                        value: `Missiles ${pad(player.missileVolley || 0)} • Shield Pulses ${pad(player.grenades || 0)}`,
                         detail: `Fragment Launcher ${player.hasLauncher ? 'ONLINE' : 'LOCKED'} • Lazarus ${player.hasLazarusBeam ? 'ONLINE' : 'LOCKED'}`
                     },
                     {
@@ -23711,29 +24581,44 @@
             }
 
             function championDealDamage(target, damage, options = {}) {
-                if (!target || target.dead || damage <= 0) return;
+                if (!target || target.dead || damage <= 0) return 0;
                 const champion = store.playerChampion;
                 const upgradeState = getChampionUpgradeState();
+                let finalDamage = damage;
+
+                if (options.vulnerabilityProfile) {
+                    finalDamage = applyChampionVulnerabilityScaling(finalDamage, target, options.vulnerabilityProfile);
+                }
+                if (typeof options.damageMultiplier === 'number') {
+                    finalDamage *= options.damageMultiplier;
+                }
+                if (typeof options.damageBonus === 'number') {
+                    finalDamage += options.damageBonus;
+                }
+                finalDamage = Math.max(0, finalDamage);
+
                 const pseudoBullet = {
                     x: options.x ?? target.x,
                     y: options.y ?? target.y,
-                    dmg: damage,
+                    dmg: finalDamage,
                     pierce: true,
                     explosive: false,
                     isChampionShot: true,
                     skipChampionEffects: !!options.skipChampionEffects,
                     championAttackModule: options.sourceAttackModule ?? (champion?.attackModule || upgradeState.attackModule || 'default'),
                     championLevel: options.championLevel ?? (champion?.level || 1),
+                    vulnerabilityProfile: options.vulnerabilityProfile || null,
                     fromChampionMinion: !!options.fromChampionMinion,
                     minionProtocolLevel: options.minionProtocolLevel ?? 0,
                     minionProtocolSlowFactor: options.minionProtocolSlowFactor ?? null,
                     minionProtocolNovaDamageScale: options.minionProtocolNovaDamageScale ?? 0
                 };
                 handleBulletImpact(pseudoBullet, target);
+                return finalDamage;
             }
 
-            function championFireVolley(champion, target) {
-                if (!champion || champion.dead || !target) return;
+            function championFireStarfallSalvo(champion, target, context = {}) {
+                if (!champion || champion.dead || !target) return null;
                 const player = store.player;
                 const dmgMult = (player?.dmgMult || 1) * (champion.damageScale || 1);
                 const baseAngle = Math.atan2(target.y - champion.y, target.x - champion.x);
@@ -23741,6 +24626,8 @@
                 const spread = champion.volleySpread || 0.16;
                 const projectileSpeed = 360 + (champion.level || 1) * 45;
                 const baseDamage = (26 + (champion.level || 1) * 8) * dmgMult * (champion.attackDamageMultiplier || 1);
+                const vulnerabilityProfile = context.vulnerabilityProfile || null;
+                let highestDamage = 0;
 
                 for (let i = 0; i < volley; i++) {
                     const offsetIdx = i - (volley - 1) / 2;
@@ -23760,63 +24647,25 @@
                         championLevel: champion.level || 1
                     });
                     bullet.collisionSearchRadius = 160;
+                    if (vulnerabilityProfile) {
+                        bullet.vulnerabilityProfile = vulnerabilityProfile;
+                    }
+                    highestDamage = Math.max(highestDamage, bullet.dmg || 0);
                 }
 
                 const jitter = 0.06 + Math.random() * 0.08;
-                champion.fireTimer = (champion.fireCooldown || 1) + jitter;
                 const now = performance.now();
                 if (!champion.lastShotTime || (now - champion.lastShotTime) > 200) {
                     champion.lastShotTime = now;
                 }
                 store.activeEffects.push(createEffect('hitSpark', champion.x + Math.cos(baseAngle) * 6, champion.y + Math.sin(baseAngle) * 6, 14, { strength: 45 }));
+                return {
+                    fireTimer: champion.fireCooldown || 1,
+                    jitter,
+                    damageApplied: highestDamage
+                };
             }
 
-            function championUseSpecialAbility(champion, target) {
-                if (!champion || champion.dead || !target) return;
-                const player = store.player;
-                const playerGenome = player.pilotGenome;
-
-                if (!champion.lastSpecialUse) champion.lastSpecialUse = 0;
-                const now = performance.now();
-
-                // Cooldown for special abilities
-                if (now - champion.lastSpecialUse < 2000) {
-                    championFireVolley(champion, target);
-                    return;
-                }
-
-                champion.lastSpecialUse = now;
-                const dmgMult = (player?.dmgMult || 1) * (champion.damageScale || 1);
-
-                // Random class ability based on pilot genome
-                const abilities = [];
-                if (playerGenome === 'beef') abilities.push('charge');
-                if (playerGenome === 'rocketman') abilities.push('stealth_rockets');
-                if (playerGenome === 'voidmancer') abilities.push('lightning', 'laser');
-
-                // Always add a basic ability as fallback
-                abilities.push('volley');
-
-                const chosenAbility = abilities[Math.floor(Math.random() * abilities.length)];
-
-                switch (chosenAbility) {
-                    case 'charge':
-                        championPerformCharge(champion, target, dmgMult);
-                        break;
-                    case 'stealth_rockets':
-                        championFireStealthRockets(champion, target, dmgMult);
-                        break;
-                    case 'lightning':
-                        championCastLightning(champion, target, dmgMult);
-                        break;
-                    case 'laser':
-                        championFireLaser(champion, target, dmgMult);
-                        break;
-                    default:
-                        championFireVolley(champion, target);
-                        break;
-                }
-            }
 
             function championPerformCharge(champion, target, dmgMult) {
                 const dx = target.x - champion.x;
@@ -23860,105 +24709,182 @@
                 playSound('beefCharge');
             }
 
-            function championFireStealthRockets(champion, target, dmgMult) {
-                const baseAngle = Math.atan2(target.y - champion.y, target.x - champion.x);
-                const rocketCount = 2 + Math.floor((champion.level || 1) / 2);
+            function championExecuteCrescentRicochet(champion, context = {}) {
+                const target = context.target;
+                if (!champion || champion.dead || !target) return null;
 
-                for (let i = 0; i < rocketCount; i++) {
-                    const angleSpread = 0.3;
-                    const offsetIdx = i - (rocketCount - 1) / 2;
-                    const angle = baseAngle + offsetIdx * (angleSpread / Math.max(1, rocketCount - 1));
+                const player = store.player;
+                const level = champion.level || 1;
+                const dmgMult = (player?.dmgMult || 1) * (champion.damageScale || 1);
+                const baseDamage = (22 + level * 9) * dmgMult * (champion.attackDamageMultiplier || 1);
+                const maxTargets = context.ability?.maxTargets ?? 3;
+                const radius = context.ability?.searchRadius ?? 240;
+                const vulnerabilityProfile = context.vulnerabilityProfile || null;
 
-                    const rocket = spawnBullet({
-                        x: champion.x + Math.cos(angle) * 15,
-                        y: champion.y + Math.sin(angle) * 15,
-                        vx: Math.cos(angle) * 280,
-                        vy: Math.sin(angle) * 280,
-                        r: 4,
-                        col: 'rgba(80, 140, 220, 0.9)',
-                        dmg: (45 + (champion.level || 1) * 12) * dmgMult,
-                        life: 2.5,
-                        pierce: true,
-                        explosive: true,
-                        isChampionShot: true,
-                        championAttackModule: champion.attackModule || getChampionUpgradeState().attackModule || 'default',
-                        championLevel: champion.level || 1,
-                        stealthRocket: true
-                    });
-                    rocket.collisionSearchRadius = 180;
+                const candidates = [];
+                forEachEnemyNearby(target.x, target.y, radius, enemy => {
+                    if (!enemy || enemy.dead || enemy.hp <= 0) return false;
+                    const dx = enemy.x - target.x;
+                    const dy = enemy.y - target.y;
+                    const distSq = dx * dx + dy * dy;
+                    candidates.push({ enemy, distSq });
+                    return false;
+                });
+
+                if (store.boss && !store.boss.dead) {
+                    const boss = store.boss;
+                    const dx = boss.x - target.x;
+                    const dy = boss.y - target.y;
+                    const distSq = dx * dx + dy * dy;
+                    if (distSq <= Math.pow(radius + (boss.r || 60), 2)) {
+                        candidates.push({ enemy: boss, distSq });
+                    }
                 }
 
-                champion.fireTimer = 1.8;
-                store.activeEffects.push(createEffect('hitSpark', champion.x, champion.y, 18, { strength: 60 }));
-            }
+                candidates.sort((a, b) => a.distSq - b.distSq);
 
-            function championCastLightning(champion, target, dmgMult) {
-                // Play thunder sound with extended cooldown for champions to prevent constant spam
-                // This is separate from the global thunder cooldown to allow boss/ability sounds while limiting champion spam
-                const now = performance.now();
+                let totalDamage = 0;
+                let hits = 0;
+                const arcPoints = [];
 
-                const damage = (35 + (champion.level || 1) * 10) * dmgMult;
-                const maxJumps = 2 + Math.floor((champion.level || 1) / 2);
-
-                // Create lightning chain starting from champion to target
-                let currentTarget = target;
-                let jumpCount = 0;
-                const hitTargets = new Set();
-
-                while (currentTarget && jumpCount < maxJumps && !hitTargets.has(currentTarget)) {
-                    hitTargets.add(currentTarget);
-
-                    // Deal damage
-                    championDealDamage(currentTarget, damage * (0.8 ** jumpCount), { x: champion.x, y: champion.y });
-
-                    // Visual effect
-                    store.activeEffects.push(createEffect('lightning', champion.x, champion.y, 30, {
-                        targetX: currentTarget.x,
-                        targetY: currentTarget.y,
-                        strength: 70 - jumpCount * 15
-                    }));
-
-                    // Find next target
-                    let nextTarget = null;
-                    let bestDist = 200;
-
-                    forEachEnemyNearby(currentTarget.x, currentTarget.y, bestDist, enemy => {
-                        if (!enemy || enemy.dead || hitTargets.has(enemy)) return false;
-                        const dx = enemy.x - currentTarget.x;
-                        const dy = enemy.y - currentTarget.y;
-                        const dist = Math.sqrt(dx * dx + dy * dy);
-                        if (dist < bestDist) {
-                            bestDist = dist;
-                            nextTarget = enemy;
-                        }
-                        return false;
+                for (let i = 0; i < candidates.length && hits < maxTargets; i++) {
+                    const foe = candidates[i].enemy;
+                    if (!foe || foe.dead || foe.hp <= 0) continue;
+                    const applied = championDealDamage(foe, baseDamage, {
+                        x: champion.x,
+                        y: champion.y,
+                        vulnerabilityProfile,
+                        sourceAttackModule: champion.attackModule || getChampionUpgradeState().attackModule || 'default'
                     });
-
-                    currentTarget = nextTarget;
-                    jumpCount++;
+                    totalDamage += applied;
+                    hits++;
+                    arcPoints.push({ x: foe.x, y: foe.y });
+                    foe.vulnerabilityPulseColor = '#7c9dff';
+                    foe.vulnerabilityPulseStrength = Math.max(foe.vulnerabilityPulseStrength || 0, 0.7);
                 }
 
-                champion.fireTimer = 1.5;
+                if (hits > 0) {
+                    let prevPoint = { x: champion.x, y: champion.y };
+                    arcPoints.forEach(point => {
+                        store.activeEffects.push(createEffect('lightning', prevPoint.x, prevPoint.y, 20, {
+                            targetX: point.x,
+                            targetY: point.y,
+                            strength: 48
+                        }));
+                        prevPoint = point;
+                    });
+                    playSound('chainLightning');
+                }
+
+                return {
+                    fireTimer: 0.85,
+                    cooldown: context.ability?._baseCooldown ?? context.ability?.baseCooldown ?? 4.6,
+                    appliedDamage: totalDamage,
+                    hits
+                };
             }
 
-            function championFireLaser(champion, target, dmgMult) {
-                const damage = (25 + (champion.level || 1) * 8) * dmgMult;
-                const laserDuration = 0.8;
+            function championExecuteSolarBrand(champion, context = {}) {
+                const target = context.target;
+                if (!champion || champion.dead || !target) return null;
 
-                // Create sustained laser beam
-                champion.laserTarget = target;
-                champion.laserTimer = laserDuration;
-                champion.laserDamage = damage;
-                champion.fireTimer = 2.0;
+                const player = store.player;
+                const level = champion.level || 1;
+                const dmgMult = (player?.dmgMult || 1) * (champion.damageScale || 1);
+                const burstDamage = (34 + level * 11) * dmgMult * (champion.attackDamageMultiplier || 1);
+                const burnPayload = (18 + level * 6) * dmgMult;
+                const vulnerabilityProfile = context.vulnerabilityProfile || null;
 
-                // Visual laser effect
-                store.activeEffects.push(createEffect('laser', champion.x, champion.y, 25, {
-                    targetX: target.x,
-                    targetY: target.y,
-                    duration: laserDuration,
-                    strength: 80
-                }));
+                const applied = championDealDamage(target, burstDamage, {
+                    x: champion.x,
+                    y: champion.y,
+                    vulnerabilityProfile,
+                    sourceAttackModule: champion.attackModule || getChampionUpgradeState().attackModule || 'default'
+                });
 
+                applyChampionEmberBurn(target, {
+                    finalDamage: burnPayload,
+                    championLevel: level
+                });
+
+                target.vulnerabilityPulseColor = '#ffb347';
+                target.vulnerabilityPulseStrength = Math.max(target.vulnerabilityPulseStrength || 0, 1.0);
+
+                store.activeEffects.push(createEffect('jugFearEmber', target.x, target.y, (target.r || 20) * 1.35));
+                store.activeEffects.push(createEffect('hitSpark', target.x, target.y, (target.r || 18) * 1.1, { strength: 70 }));
+                playSound('stargun');
+
+                return {
+                    fireTimer: 0.95,
+                    cooldown: context.ability?._baseCooldown ?? context.ability?.baseCooldown ?? 7.5,
+                    appliedDamage: applied
+                };
+            }
+
+            function championExecuteNebulaBloom(champion, context = {}) {
+                const target = context.target;
+                if (!champion || champion.dead || !target) return null;
+
+                const player = store.player;
+                const level = champion.level || 1;
+                const dmgMult = (player?.dmgMult || 1) * (champion.damageScale || 1);
+                const baseDamage = (24 + level * 9) * dmgMult * (champion.attackDamageMultiplier || 1);
+                const radius = context.ability?.radius ?? 165;
+                const vulnerabilityProfile = context.vulnerabilityProfile || null;
+                const radiusSq = radius * radius;
+                let hits = 0;
+                let totalDamage = 0;
+
+                const originX = target.x;
+                const originY = target.y;
+
+                forEachEnemyNearby(originX, originY, radius, enemy => {
+                    if (!enemy || enemy.dead || enemy.hp <= 0) return false;
+                    const dx = enemy.x - originX;
+                    const dy = enemy.y - originY;
+                    if (dx * dx + dy * dy > radiusSq) return false;
+                    const applied = championDealDamage(enemy, baseDamage, {
+                        x: originX,
+                        y: originY,
+                        vulnerabilityProfile,
+                        sourceAttackModule: champion.attackModule || getChampionUpgradeState().attackModule || 'default'
+                    });
+                    totalDamage += applied;
+                    hits++;
+                    enemy.vulnerabilityPulseColor = '#96c8ff';
+                    enemy.vulnerabilityPulseStrength = Math.max(enemy.vulnerabilityPulseStrength || 0, 0.85);
+                    return false;
+                });
+
+                if (store.boss && !store.boss.dead) {
+                    const boss = store.boss;
+                    const dx = boss.x - originX;
+                    const dy = boss.y - originY;
+                    if (dx * dx + dy * dy <= Math.pow(radius + (boss.r || 60), 2)) {
+                        const applied = championDealDamage(boss, baseDamage, {
+                            x: originX,
+                            y: originY,
+                            vulnerabilityProfile,
+                            sourceAttackModule: champion.attackModule || getChampionUpgradeState().attackModule || 'default'
+                        });
+                        totalDamage += applied;
+                        hits++;
+                        boss.vulnerabilityPulseColor = '#96c8ff';
+                        boss.vulnerabilityPulseStrength = Math.max(boss.vulnerabilityPulseStrength || 0, 0.55);
+                    }
+                }
+
+                store.activeEffects.push(createEffect('grenadeExplosion', originX, originY, radius * 1.2, { strength: 75 }));
+                store.activeEffects.push(createEffect('hitSpark', originX, originY, radius, { strength: 55 }));
+                playSound('explosion');
+
+                return {
+                    fireTimer: 1.15,
+                    cooldown: context.ability?._baseCooldown ?? context.ability?.baseCooldown ?? 11,
+                    appliedDamage: totalDamage,
+                    hits,
+                    jitterRange: [0.08, 0.14]
+                };
             }
 
             // Primordial Soldier Laboratory Functions
@@ -23975,6 +24901,7 @@
                 populateChampionUpgradeGrid();
                 updateChampionPreview();
                 updateChampionStats();
+                resetChampionPresetPanel();
                 panel.classList.remove("hide");
                 enterPanel('championDressingRoom');
             }
@@ -24027,7 +24954,7 @@
 
                 const attackModuleLabel = q('championAttackModuleLabel');
                 const attackModule = (upgradeState?.attackModule && CHAMPION_ATTACK_MODULE_MAP[upgradeState.attackModule]) || null;
-                if (attackModuleLabel) attackModuleLabel.textContent = attackModule?.name || 'Standard Volley';
+                if (attackModuleLabel) attackModuleLabel.textContent = attackModule?.name || 'Starfall Salvo';
 
                 const cadenceLabel = q('championCadenceLabel');
                 const cadenceOption = CHAMPION_CADENCE_LEVELS[upgradeState?.cadenceLevel || 0] || CHAMPION_CADENCE_LEVELS[0];
@@ -24462,7 +25389,7 @@
                             ctx.restore();
                         }
                         break;
-                    default: // Standard volley
+                    default: // Starfall Salvo volley
                         const volleyCount = 3;
                         for (let i = 0; i < volleyCount; i++) {
                             const angle = time * 2 + i * (Math.PI * 2 / volleyCount);
@@ -24644,11 +25571,19 @@
                     attackTypes.push(ability);
                 });
 
+                CHAMPION_COMBAT_SUMMARY.forEach(summary => {
+                    if (!summary) return;
+                    const key = summary.id || summary.name;
+                    if (key && seen.has(key)) return;
+                    if (key) seen.add(key);
+                    attackTypes.push(summary);
+                });
+
                 if (!attackTypes.length) {
                     attackTypes.push({
-                        name: 'Energy Volley',
-                        icon: '🔹',
-                        description: 'Adaptive plasma volley that scales with guardian level.'
+                        name: 'Starfall Salvo',
+                        icon: '✨',
+                        description: 'Staggered plasma bolts that lock to the guardian’s focus.'
                     });
                 }
 
@@ -24696,8 +25631,8 @@
                     }
                 } else {
                     upgrades.push({
-                        name: 'Attack Module · Standard Volley',
-                        description: 'Baseline plasma barrage configured for general engagements.'
+                        name: 'Attack Module · Starfall Salvo',
+                        description: 'Baseline plasma barrage configured for sustained guardian fire.'
                     });
                 }
 
@@ -24779,6 +25714,43 @@
                 });
             }
 
+            function setChampionPresetStatus(message, type = '') {
+                const statusEl = q('championPresetStatus');
+                if (!statusEl) return;
+                statusEl.textContent = message || '';
+                statusEl.classList.remove('success', 'error');
+                if (type) {
+                    statusEl.classList.add(type);
+                }
+            }
+
+            function resetChampionPresetPanel({ preserveInput = false } = {}) {
+                const output = q('championPresetCodeOutput');
+                if (output) {
+                    output.value = store.lastChampionPresetCode || '';
+                }
+                if (!preserveInput) {
+                    const input = q('championPresetCodeInput');
+                    if (input) input.value = '';
+                }
+                if (!preserveInput) {
+                    setChampionPresetStatus('');
+                }
+            }
+
+            function loadChampionPresetCode(code, options = {}) {
+                const preset = decodeChampionPresetCode(code);
+                if (!preset) {
+                    return { success: false, message: 'Invalid or corrupted champion code.' };
+                }
+                const applied = applyChampionPresetToPlayer(preset, options);
+                if (!applied) {
+                    return { success: false, message: 'Unable to apply champion configuration.' };
+                }
+                store.lastChampionPresetCode = code;
+                return { success: true, preset };
+            }
+
             function updateChampionBuilderDetails() {
                 const formatLabel = (value) => {
                     if (value === undefined || value === null) return '';
@@ -24802,13 +25774,13 @@
                     const value = select ? select.value : 'default';
                     const module = value && value !== 'default' ? CHAMPION_ATTACK_MODULE_MAP[value] : null;
                     const info = module ? module : {
-                        icon: '🔹',
-                        name: 'Standard Volley',
-                        desc: 'Balanced plasma barrage tuned for multi-role engagements.',
+                        icon: '✨',
+                        name: 'Starfall Salvo',
+                        desc: 'Radiant starfire bolts cascade toward your focus target and nearby threats.',
                         damageType: 'adaptive',
                         targetType: 'multi-role',
                         attackSpeed: 'balanced',
-                        tradeOff: 'Reliable baseline damage without specialization.'
+                        tradeOff: 'Reliable baseline pattern without specialized amplification.'
                     };
                     const meta = [];
                     if (info.damageType) {
@@ -24828,8 +25800,8 @@
                     }
                     const metaHtml = meta.length ? `<ul class="builder-detail-meta">${meta.join('')}</ul>` : '';
                     attackDetail.innerHTML = `
-                        <div class="builder-detail-title"><span>${escapeHtml(info.icon || '🔹')}</span><span>${escapeHtml(info.name || 'Standard Volley')}</span></div>
-                        <p>${escapeHtml(info.desc || 'Balanced plasma barrage tuned for multi-role engagements.')}</p>
+                        <div class="builder-detail-title"><span>${escapeHtml(info.icon || '✨')}</span><span>${escapeHtml(info.name || 'Starfall Salvo')}</span></div>
+                        <p>${escapeHtml(info.desc || 'Radiant starfire bolts cascade toward your focus target and nearby threats.')}</p>
                         ${metaHtml}
                     `;
                 }
@@ -24946,7 +25918,7 @@
                 // Attack Module Select
                 const attackSelect = q('attackModuleSelect');
                 if (attackSelect) {
-                    attackSelect.innerHTML = '<option value="default">Standard Volley</option>';
+                    attackSelect.innerHTML = '<option value="default">Starfall Salvo</option>';
                     const unlockedModules = Object.entries(state.unlockedAttacks || {})
                         .filter(([, unlocked]) => !!unlocked)
                         .map(([moduleId]) => moduleId);
@@ -25122,6 +26094,7 @@
                     populateChampionUpgradeGrid();
                     updateChampionPreview();
                     updateChampionStats();
+                    resetChampionPresetPanel({ preserveInput: true });
                 }
             }
 
@@ -25164,6 +26137,13 @@
                 const hadTarget = !!(champion.currentTarget && !champion.currentTarget.dead && champion.currentTarget.hp > 0);
                 const fireTimerBase = champion.fireTimer ?? champion.fireCooldown ?? PLAYER_CHAMPION_CONFIG.baseFireCooldown;
                 champion.fireTimer = Math.max(0, fireTimerBase - dt);
+                const combatProfile = ensureChampionCombatProfile(champion);
+                if (combatProfile && Array.isArray(combatProfile.specials)) {
+                    combatProfile.specials.forEach(special => {
+                        if (!special) return;
+                        special.timer = Math.max(0, (special.timer ?? 0) - dt);
+                    });
+                }
 
                 const target = resolveChampionTarget(champion);
                 if (!hadTarget && target && champion.fireTimer > 0.15) {
@@ -25330,11 +26310,28 @@
                             addShadowEcho(champion.x, champion.y);
                             champion.fireTimer = 0.4;
                         } else {
-                            // 15% chance to use special class ability instead of normal volley (reduced from 30% to prevent spam)
-                            if (Math.random() < 0.15) {
-                                championUseSpecialAbility(champion, target);
+                            const targetTraits = classifyEnemyForChampionVulnerabilities(target);
+                            const nearbyCount = countEnemiesAround(target.x, target.y, 220);
+                            const selectedSpecial = selectChampionSpecialAbility(champion, target, {
+                                targetTraits,
+                                nearbyCount,
+                                scanRadius: 240
+                            });
+
+                            if (selectedSpecial) {
+                                executeChampionAbility(champion, selectedSpecial, {
+                                    target,
+                                    targetTraits,
+                                    nearbyCount,
+                                    ability: selectedSpecial,
+                                    vulnerabilityProfile: selectedSpecial.vulnerabilities || null
+                                });
                             } else {
-                                championFireVolley(champion, target);
+                                executeChampionPrimary(champion, target, {
+                                    ability: combatProfile?.primary,
+                                    targetTraits,
+                                    vulnerabilityProfile: combatProfile?.primary?.vulnerabilities || null
+                                });
                             }
                         }
                     }
@@ -26810,6 +27807,7 @@
                     }
                 }
             }
+            // Shield Pulse System Configuration (internal name: EMP_BURST_CONFIG for backwards compatibility)
             const EMP_BURST_CONFIG = {
                 radius: 480, // Doubled from 240
                 baseDamage: 62,
@@ -26905,29 +27903,43 @@
                         continue;
                     }
 
-                    let hasUnaffectedEnemy = false;
+                    // Count unaffected enemies within blast radius to avoid wasteful triggering
+                    let unaffectedEnemiesInRange = 0;
+                    const empBlastRadius = EMP_BURST_CONFIG.radius || 480;
+                    const empBlastRadiusSq = empBlastRadius * empBlastRadius;
                     
                     for (const enemy of targets) {
                         if (!enemy || enemy.dead) continue;
-                        const dx = enemy.x - charge.x;
-                        const dy = enemy.y - charge.y;
-                        const distSq = dx * dx + dy * dy;
-                        if (distSq < proximityRadiusSq) {
-                            // Check if this enemy is already affected by EMP (has stun or shock from EMP)
-                            const hasEmpStun = enemy.stunTimer && enemy.stunTimer > 0;
-                            const hasEmpShock = enemy.stormShockTimer && enemy.stormShockTimer > 0;
-                            const isAlreadyAffected = hasEmpStun || hasEmpShock;
-                            
-                            if (!isAlreadyAffected) {
-                                hasUnaffectedEnemy = true;
-                                break;
+                        
+                        // First check if enemy is in proximity trigger range (close threat)
+                        const dxProximity = enemy.x - charge.x;
+                        const dyProximity = enemy.y - charge.y;
+                        const distSqProximity = dxProximity * dxProximity + dyProximity * dyProximity;
+                        
+                        if (distSqProximity < proximityRadiusSq) {
+                            // Now check if they're within the actual EMP blast radius
+                            if (distSqProximity < empBlastRadiusSq) {
+                                // Check if this enemy would actually be affected by EMP
+                                const hasRecentEmpStun = enemy.stunTimer && enemy.stunTimer > 1.5; // Has >1.5s stun left
+                                const hasRecentEmpShock = enemy.stormShockTimer && enemy.stormShockTimer > 1.0; // Has >1s shock left
+                                const isRecentlyAffected = hasRecentEmpStun || hasRecentEmpShock;
+                                
+                                if (!isRecentlyAffected) {
+                                    unaffectedEnemiesInRange++;
+                                }
                             }
                         }
                     }
 
-                    if (hasUnaffectedEnemy) {
-                        // Trigger EMP burst at charge location
+                    // Only trigger if we have at least 2 valid targets (or 1 boss)
+                    const isBossNearby = store.boss && !store.boss.dead && 
+                        ((store.boss.x - charge.x) ** 2 + (store.boss.y - charge.y) ** 2 < proximityRadiusSq);
+                    const minTargetsRequired = isBossNearby ? 1 : 2;
+                    
+                    if (unaffectedEnemiesInRange >= minTargetsRequired) {
+                        // Trigger Shield Pulse burst at charge location
                         triggerEmpBurst(charge.x, charge.y);
+                        // Set cooldown - Shield Pulse charges recharge after use
                         charge.cooldown = EMP_BURST_CONFIG.chargeCooldown;
                         store.empGlobalCooldown = Math.max(store.empGlobalCooldown || 0, EMP_BURST_CONFIG.globalCooldown || 0);
                     }
@@ -29365,13 +30377,16 @@
 
                     // New Beef Skills
                     case 'beef_shield':
-                        p.beefShieldMax = 100;
-                        p.beefShield = 100;
+                        // Base shield scales with level: 100 + (10 per level)
+                        p.beefShieldMax = 100 + (p.level * 10);
+                        p.beefShield = p.beefShieldMax;
                         p.beefShieldRegenRate = 5; // Shield per second
                         announce('BEEF SHIELD ACTIVATED - Defensive Armor Plating!');
                         break;
                     case 'beef_shield_enhanced':
-                        p.beefShieldMax = Math.max(p.beefShieldMax || 100, 200);
+                        // Enhanced shield scales with level: 200 + (15 per level)
+                        const baseShield = p.beefShieldMax || (100 + (p.level * 10));
+                        p.beefShieldMax = Math.max(baseShield, 200 + (p.level * 15));
                         p.beefShield = p.beefShieldMax;
                         p.beefShieldRegenRate = 15; // Faster regeneration
                         p.beefShieldReflect = true; // Reflect damage back to enemies
@@ -29737,8 +30752,9 @@
 
                     // CLASS ABILITY UNLOCKS (5th node rewards)
                     case 'beef_shield_unlock':
-                        p.beefShieldMax = 150;
-                        p.beefShield = 150;
+                        // Unlock shield with level scaling: 150 + (12 per level)
+                        p.beefShieldMax = 150 + (p.level * 12);
+                        p.beefShield = p.beefShieldMax;
                         p.beefShieldRegenRate = 8;
                         p.beefShieldRegenDelay = 3;
                         p.beefShieldDamageDealt = 0; // Track damage dealt for shield charging
@@ -30214,6 +31230,112 @@
                     updateChampionStats();
                     updateChampionBuilderDetails();
                     announce('Configuration reset to current settings.');
+                });
+            }
+
+            const generateChampionPresetBtn = q('generateChampionPresetBtn');
+            if (generateChampionPresetBtn) {
+                generateChampionPresetBtn.addEventListener('click', () => {
+                    const preset = captureChampionPreset();
+                    if (!preset) {
+                        setChampionPresetStatus('Champion data unavailable.', 'error');
+                        return;
+                    }
+                    const code = encodeChampionPresetCode(preset);
+                    if (!code) {
+                        setChampionPresetStatus('Failed to generate champion code.', 'error');
+                        return;
+                    }
+                    store.lastChampionPresetCode = code;
+                    const output = q('championPresetCodeOutput');
+                    if (output) {
+                        output.value = code;
+                        try {
+                            output.focus();
+                            output.select();
+                        } catch (err) { }
+                    }
+                    const canClipboard = typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function';
+                    if (canClipboard) {
+                        navigator.clipboard.writeText(code).then(() => {
+                            setChampionPresetStatus('Champion code generated and copied to clipboard.', 'success');
+                        }).catch(() => {
+                            setChampionPresetStatus('Champion code generated. Copy it manually if needed.', 'success');
+                        });
+                    } else {
+                        setChampionPresetStatus('Champion code generated. Copy it manually if needed.', 'success');
+                    }
+                });
+            }
+
+            const copyChampionPresetBtn = q('copyChampionPresetBtn');
+            if (copyChampionPresetBtn) {
+                copyChampionPresetBtn.addEventListener('click', () => {
+                    const output = q('championPresetCodeOutput');
+                    const code = (output && output.value ? output.value.trim() : '') || store.lastChampionPresetCode || '';
+                    if (!code) {
+                        setChampionPresetStatus('Generate a champion code first.', 'error');
+                        return;
+                    }
+                    const canClipboard = typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function';
+                    if (canClipboard) {
+                        navigator.clipboard.writeText(code).then(() => {
+                            setChampionPresetStatus('Champion code copied to clipboard.', 'success');
+                        }).catch(() => {
+                            try {
+                                if (output) {
+                                    output.focus();
+                                    output.select();
+                                }
+                                if (typeof document !== 'undefined' && document.execCommand) {
+                                    document.execCommand('copy');
+                                    setChampionPresetStatus('Champion code copied to clipboard.', 'success');
+                                } else {
+                                    setChampionPresetStatus('Champion code ready—copy manually if needed.', 'success');
+                                }
+                            } catch (err) {
+                                setChampionPresetStatus('Unable to access clipboard. Select and copy the code manually.', 'error');
+                            }
+                        });
+                    } else {
+                        try {
+                            if (output) {
+                                output.focus();
+                                output.select();
+                            }
+                        } catch (err) { }
+                        setChampionPresetStatus('Clipboard unavailable. Select and copy the code manually.', 'error');
+                    }
+                });
+            }
+
+            const championPresetCodeInput = q('championPresetCodeInput');
+            const applyChampionPresetBtn = q('applyChampionPresetBtn');
+            if (applyChampionPresetBtn) {
+                applyChampionPresetBtn.addEventListener('click', () => {
+                    const code = championPresetCodeInput && championPresetCodeInput.value ? championPresetCodeInput.value.trim() : '';
+                    if (!code) {
+                        setChampionPresetStatus('Enter a champion code to load.', 'error');
+                        return;
+                    }
+                    const result = loadChampionPresetCode(code, { player: store.player, applyChampion: true });
+                    if (!result.success) {
+                        setChampionPresetStatus(result.message || 'Failed to apply champion code.', 'error');
+                        return;
+                    }
+                    setChampionPresetStatus('Champion configuration restored from code.', 'success');
+                    refreshPrimordialSoldierLaboratory();
+                });
+            }
+
+            if (championPresetCodeInput) {
+                championPresetCodeInput.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        if (applyChampionPresetBtn) {
+                            applyChampionPresetBtn.click();
+                        }
+                    }
                 });
             }
 
