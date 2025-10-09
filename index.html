@@ -4335,7 +4335,7 @@
                 afterburnerParticleTimer: 0,
                 starCannonLevel: 0, starCannonTimer: 0, starCannonIcemanSupport: false, starCannonNextSide: 'left',
                 juggernautCloneActive: false,
-                luckBoost: 0, magnetRadius: 0, hasIceman: false, hasBeefClone: false, critChance: 0.02, critDamage: 1.85,
+                luckBoost: 0, magnetRadius: 0, hasIceman: false, icemanFireT: 0, hasBeefClone: false, critChance: 0.02, critDamage: 1.85,
                 pilotGenome: null, missileVolley: 2,
                 hasRearGuard: false, rearGuardCooldown: 0, rearGuardReady: true,
                 rearMultishot: 0, addFrontNext: true,
@@ -6544,7 +6544,29 @@
                         return `Calibration Mk${pad(upcomingLevel)} ▸ ${bursts} alternating blasts • ${cooldown}s reload.`;
                     }
                 },
-                'iceman': { name: "THE ICEMAN", icon: '❄️', cost: 118, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (!store.player.hasIceman) { store.player.hasIceman = true; store.iceman = { x: store.player.x, y: store.player.y + 50, t: 0 }; return true; } return false; }, desc: () => 'Val Kilmer mirrors your attacks.' },
+                'iceman': { 
+                    name: "THE ICEMAN", 
+                    icon: '❄️', 
+                    baseCost: 118, 
+                    scale: 2, 
+                    maxLevel: 3, 
+                    isPremium: true, 
+                    category: 'utility', 
+                    effect: (level) => { 
+                        if (!store.player.hasIceman) { 
+                            store.player.hasIceman = true; 
+                            store.iceman = { x: store.player.x, y: store.player.y + 50, t: 0, level: 1 }; 
+                        } else if (store.iceman) {
+                            store.iceman.level = (store.iceman.level || 1) + 1;
+                        }
+                    }, 
+                    desc: level => { 
+                        if (level === 0) return 'Val Kilmer mirrors your attacks.'; 
+                        if (level === 1) return 'Iceman fires 50% faster.'; 
+                        if (level === 2) return 'Iceman deals 50% more damage.'; 
+                        return 'Max Level'; 
+                    } 
+                },
                 'lazarus_beam': { name: "LORD LAZARUS", icon: '☢️☄️☢️', baseCost: 200, scale: 3, maxLevel: 2, category: 'attack', effect: (level) => { if (level === 0) { store.player.hasLazarusBeam = true; store.player.lazarusBeamCooldown = 15; } }, desc: level => { if (level === 0) return 'Summon Lord Lazarus who fires devastating energy beams across the battlefield.'; if (level === 1) return 'Lazarus fires twice as often and launches dual beams.'; return 'Max Level'; } },
                 'magnet_pull': { name: "GRAV-PULSE", icon: '🧲', cost: 90, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (store.player.magnetRadius <= 0) { store.player.magnetRadius = 150; return true; } return false; }, desc: () => `Pulls in nearby powerups.` },
                 'gravity_well': { name: "GRAVITY WELL", icon: '🕳️', baseCost: 300, scale: 2, maxLevel: 2, category: 'attack', effect: (level) => { if (level === 0) { store.player.hasVoidBeam = true; store.player.voidBeamCooldown = 15; } }, desc: level => { if (level === 0) return 'Unleash a singularity that traps and crushes foes.'; if (level === 1) return 'Summon a second, smaller singularity.'; return 'Max Level'; } },
@@ -8992,8 +9014,9 @@
                 if (p.beefExplosionRadius) impactRadius *= p.beefExplosionRadius;
                 if (p.subclass === 'juggernaut') impactRadius = Math.max(impactRadius, 120);
 
-                let baseDamage = 80;
-                if (p.beefBigExplosion || (p.skillTree && p.skillTree.juggernaut_enhanced)) baseDamage = 150;
+                // Reduced base damage for better balance - charge is utility/mobility first, damage second
+                let baseDamage = 35; // Reduced from 80
+                if (p.beefBigExplosion || (p.skillTree && p.skillTree.juggernaut_enhanced)) baseDamage = 65; // Reduced from 150
                 if (p.beefChargeDamage) baseDamage *= p.beefChargeDamage;
                 if (p.beefExplosionDamage) baseDamage *= p.beefExplosionDamage;
                 if (p.beefChargeDamageMultiplier) baseDamage *= p.beefChargeDamageMultiplier;
@@ -9587,6 +9610,17 @@
                 p.fireT -= dt;
                 const timeShardRate = p.timeShardMultiplier && p.timeShardMultiplier > 0 ? p.timeShardMultiplier : 1;
                 if (p.fireT <= 0 && !p.empDisabled) { firePlayer(); p.fireT = p.fireRate * timeShardRate; }
+
+                // Iceman has independent fire rate (level 2+: 50% faster)
+                if (p.hasIceman && store.iceman && !p.empDisabled) {
+                    const icemanLevel = store.iceman.level || 1;
+                    const icemanFireRate = icemanLevel >= 2 ? p.fireRate * 0.67 : p.fireRate; // 50% faster at level 2+
+                    p.icemanFireT -= dt;
+                    if (p.icemanFireT <= 0) {
+                        fireIcemanShot();
+                        p.icemanFireT = icemanFireRate * timeShardRate;
+                    }
+                }
 
                 // Separate flamethrower system (unaffected by overclock)
                 if (p.flamethrowerLevel > 0 && !p.empDisabled) {
@@ -13790,6 +13824,35 @@
                     isSwirl: swirlFlag
                 });
             }
+            function fireIcemanShot() {
+                const p = store.player;
+                if (!p.hasIceman || !store.iceman) return;
+                
+                const icemanLevel = store.iceman.level || 1;
+                const icemanDamageMult = icemanLevel >= 3 ? 1.5 : 1.0; // Level 3: +50% damage
+                
+                const baseBulletSpeed = 420;
+                const bulletSpeed = baseBulletSpeed + 50 * p.bulletSpeedLvl;
+                const totalMultishot = 1 + p.multiShot + p.multishotReward;
+                const angleSpread = totalMultishot > 1 ? 12 : 0;
+                
+                for (let i = 0; i < totalMultishot; i++) {
+                    const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180;
+                    spawnBullet({
+                        x: store.iceman.x + 10 * Math.sin(angle),
+                        y: store.iceman.y - 12,
+                        vx: Math.sin(angle) * bulletSpeed,
+                        vy: -Math.cos(angle) * bulletSpeed,
+                        r: p.explosive ? 5 : 3,
+                        col: "#66aaff",
+                        dmg: 15 * p.dmgMult * 0.35 * icemanDamageMult,
+                        pierce: p.piercing,
+                        explosive: p.explosive,
+                        isIceman: true,
+                        isSwirl: p.swirlShots
+                    });
+                }
+            }
             function firePlayer() {
                 const p = store.player;
                 if (p.beefChargeState && p.beefChargeState !== 'ready') return;
@@ -13811,24 +13874,6 @@
                         explosive: p.explosive,
                         isSwirl: p.swirlShots
                     });
-                }
-                if (p.hasIceman && store.iceman) {
-                    for (let i = 0; i < totalMultishot; i++) {
-                        const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180;
-                        spawnBullet({
-                            x: store.iceman.x + 10 * Math.sin(angle),
-                            y: store.iceman.y - 12,
-                            vx: Math.sin(angle) * bulletSpeed,
-                            vy: -Math.cos(angle) * bulletSpeed,
-                            r: p.explosive ? 5 : 3,
-                            col: "#66aaff",
-                            dmg: 15 * p.dmgMult * 0.35,
-                            pierce: p.piercing,
-                            explosive: p.explosive,
-                            isIceman: true,
-                            isSwirl: p.swirlShots
-                        });
-                    }
                 }
                 if (p.hasBeefClone && store.beefClone && store.beefClone.mode !== 'juggernaut_bomber') {
                     for (let i = 0; i < totalMultishot; i++) {
@@ -28085,26 +28130,38 @@
                 if (p.voidLaserRetargetTimer <= 0) {
                     p.voidLaserRetargetTimer = 0.1;
 
-                    // Find closest enemy within range
+                    // Find highest priority (HP) enemy within range
                     const allEnemies = store.boss ? [...store.enemies.filter(e => !e.dead), store.boss] : store.enemies.filter(e => !e.dead);
-                    let closestTarget = null;
-                    let closestDistSq = maxRange * maxRange;
-
-                    allEnemies.forEach(e => {
+                    
+                    // Filter enemies within range, then sort by HP descending
+                    const enemiesInRange = allEnemies.filter(e => {
                         const distSq = (p.x - e.x) ** 2 + (p.y - e.y) ** 2;
-                        if (distSq < closestDistSq) {
-                            closestDistSq = distSq;
-                            closestTarget = e;
-                        }
+                        return distSq <= maxRange * maxRange;
                     });
-
-                    // Reset ramp time if target changed
-                    if (closestTarget !== p.voidLaserLastTarget) {
-                        p.voidLaserRampTime = 0;
-                        p.voidLaserLastTarget = closestTarget;
+                    
+                    let highestPriorityTarget = null;
+                    if (enemiesInRange.length > 0) {
+                        // Prioritize: Boss > Champion > Highest HP
+                        const bosses = enemiesInRange.filter(e => e.isBoss);
+                        const champions = enemiesInRange.filter(e => e.isChampion && !e.isBoss);
+                        const regular = enemiesInRange.filter(e => !e.isBoss && !e.isChampion);
+                        
+                        if (bosses.length > 0) {
+                            highestPriorityTarget = bosses.sort((a, b) => b.hp - a.hp)[0];
+                        } else if (champions.length > 0) {
+                            highestPriorityTarget = champions.sort((a, b) => b.hp - a.hp)[0];
+                        } else {
+                            highestPriorityTarget = regular.sort((a, b) => b.hp - a.hp)[0];
+                        }
                     }
 
-                    p.voidLaserTarget = closestTarget;
+                    // Reset ramp time if target changed
+                    if (highestPriorityTarget !== p.voidLaserLastTarget) {
+                        p.voidLaserRampTime = 0;
+                        p.voidLaserLastTarget = highestPriorityTarget;
+                    }
+
+                    p.voidLaserTarget = highestPriorityTarget;
                 }
 
                 // Apply continuous damage if we have a target
@@ -28401,15 +28458,19 @@
                 // Use custom start position or default to center above player
                 const startPoint = startPos || { x: p.x, y: p.y - 20 };
 
-                let closestDistSq = Infinity;
+                // Find highest priority initial target (Boss > Champion > Highest HP)
+                const bosses = allEnemies.filter(e => e.isBoss);
+                const champions = allEnemies.filter(e => e.isChampion && !e.isBoss);
+                const regular = allEnemies.filter(e => !e.isBoss && !e.isChampion);
+                
                 let currentTarget = null;
-                allEnemies.forEach(e => {
-                    const distSq = (startPoint.x - e.x) ** 2 + (startPoint.y - e.y) ** 2;
-                    if (distSq < closestDistSq) {
-                        closestDistSq = distSq;
-                        currentTarget = e;
-                    }
-                });
+                if (bosses.length > 0) {
+                    currentTarget = bosses.sort((a, b) => b.hp - a.hp)[0];
+                } else if (champions.length > 0) {
+                    currentTarget = champions.sort((a, b) => b.hp - a.hp)[0];
+                } else if (regular.length > 0) {
+                    currentTarget = regular.sort((a, b) => b.hp - a.hp)[0];
+                }
 
                 if (!currentTarget) return;
 
@@ -28515,7 +28576,8 @@
                 const distSq = dx * dx + dy * dy;
                 if (distSq <= 0.001) return;
 
-                const baseDamage = (player.blinkDamageEnhanced ? 200 : 150) * player.dmgMult * damageMultiplier;
+                // Reduced blink damage for better balance - blink is mobility first, damage second
+                const baseDamage = (player.blinkDamageEnhanced ? 45 : 30) * player.dmgMult * damageMultiplier; // Reduced from 200/150
 
                 store.enemies.forEach(e => {
                     if (e.dead) return;
@@ -28573,9 +28635,9 @@
                     // Create time ripple explosion effect
                     store.activeEffects.push(createEffect("timeRippleExplosion", nx, ny));
 
-                    // Damage enemies in explosion radius
+                    // Damage enemies in explosion radius (reduced for balance)
                     const explosionRadius = 80;
-                    const explosionDamage = 120 * player.dmgMult;
+                    const explosionDamage = 40 * player.dmgMult; // Reduced from 120
                     const targets = store.boss ? [store.boss, ...store.enemies] : store.enemies;
                     targets.forEach(e => {
                         if (e.dead) return;
@@ -30404,7 +30466,7 @@
                         announce('BEEF CHARGE ACTIVATED - Devastating Rush Attack!');
                         break;
                     case 'beef_charge_enhanced':
-                        p.beefChargeDamageMultiplier = 2.0; // Double charge damage
+                        p.beefChargeDamageMultiplier = 1.5; // 50% more charge damage (reduced from 2x)
                         p.beefChargeRange = 1.5; // Increased range
                         announce('RAMMING SPEED ACTIVATED - Enhanced Charge Power!');
                         break;
@@ -30497,7 +30559,7 @@
 
                     // Juggernaut Tree Skills
                     case 'juggernaut_charge_power':
-                        p.beefChargeDamage = (p.beefChargeDamage || 1.0) * 2.0; // 100% more damage
+                        p.beefChargeDamage = (p.beefChargeDamage || 1.0) * 1.5; // 50% more damage (reduced from 100%)
                         p.beefChargeKnockback = (p.beefChargeKnockback || 1.0) * 2.0; // 100% more knockback
                         p.beefChargeRange = (p.beefChargeRange || 1.0) * 1.5; // 50% more range
                         announce('CHARGE POWER ACTIVATED - Enhanced Charge Strength!');
@@ -30591,7 +30653,7 @@
                         break;
                     case 'phasestriker_phase_mastery':
                         ensurePhasestrikerLoadout(p);
-                        p.blinkDamage = (p.blinkDamage || 50) * 2;
+                        p.blinkDamage = (p.blinkDamage || 50) * 1.5; // 50% more damage (reduced from 2x)
                         p.blinkInvulnerable = true; // Brief invulnerability during blink
                         announce('PHASE MASTERY ACTIVATED - Dimensional Superiority!');
                         break;
@@ -30637,7 +30699,7 @@
                         p.beefMaxCharges = Math.max(p.beefMaxCharges || 3, 5);
                         p.beefCharges = Math.max(p.beefCharges, 5);
                         p.beefEliteCombat = true;
-                        p.marauderDoubleHitBonus = 3.0; // Elite double-hit gives 3x damage instead of 2x
+                        p.marauderDoubleHitBonus = 2.0; // Elite double-hit gives 2x damage (reduced from 3x for balance)
                         announce('ELITE WARRIOR ACTIVATED - Peak Marauder Prowess!');
                         break;
                     case 'marauder_clone':
