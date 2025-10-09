@@ -9645,9 +9645,13 @@
                     if (p.missileFireT <= 0) {
                         p.missileFireT = p.pilotGenome === 'rocketman' ? 1.0 : 1.2;
                         let closest = null, closestDist = Infinity;
+                        const playfieldMargin = 50;
                         const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies;
                         potentialTargets.forEach(e => {
                             if (e.dead || e.hp <= 0 || e.y < 0) return;
+                            // Don't target enemies outside playfield
+                            if (e.x < -playfieldMargin || e.x > W + playfieldMargin || 
+                                e.y < -playfieldMargin || e.y > H + playfieldMargin) return;
                             const dist = (p.x - e.x) ** 2 + (p.y - e.y) ** 2;
                             if (dist < closestDist) { closest = e; closestDist = dist; }
                         });
@@ -9992,6 +9996,15 @@
                     m.life += dt;
                     const maxLife = m.maxLife !== undefined ? m.maxLife : 6;
                     if (m.life > maxLife) { m.dead = true; return; }
+                    
+                    // Check if target is still valid and in playfield
+                    const playfieldMargin = 50;
+                    const targetOffScreen = m.target && (m.target.x < -playfieldMargin || m.target.x > W + playfieldMargin || 
+                                                         m.target.y < -playfieldMargin || m.target.y > H + playfieldMargin);
+                    if (targetOffScreen) {
+                        m.target = null; // Lose target if it goes off screen
+                    }
+                    
                     if (m.target && !m.target.dead && m.target.hp > 0) {
                         const dx = m.target.x - m.x, dy = m.target.y - m.y, dist = Math.sqrt(dx * dx + dy * dy);
                         if (dist > 1) {
@@ -10584,6 +10597,7 @@
                 stepEmpCharges(dt);
                 stepHounds(dt);
                 stepShadowHounds(dt);
+                stepVoidRifts(dt);
                 updateGibs(dt);
 
                 stepMissiles(dt);
@@ -11170,10 +11184,8 @@
                             if (e.orbitTargetId) {
                                 orbitTarget = store.enemies.find(en => en.id === e.orbitTargetId && !en.dead);
                             }
-                            if (!orbitTarget && store.boss && !store.boss.dead) {
-                                orbitTarget = store.boss;
-                            }
-
+                            // Don't fall back to store.boss - orbiters should die with their parent
+                            
                             if (orbitTarget) {
                                 // Calculate desired position around target using angle
                                 e.orbitAngle += e.orbitSpeed * speedMultiplier * dt * 0.5; // Slower rotation
@@ -12261,7 +12273,7 @@
                 store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = []; store.starProjectiles = []; store.pendingStarSalvos = []; store.pendingStarClones = []; store.juggernautBombs = [];
                 store.lastBossSnapshot = null;
                 store.lastBossDefeatId = null;
-                store.drones = []; store.hounds = []; store.shadowHounds = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
+                store.drones = []; store.hounds = []; store.shadowHounds = []; store.voidRifts = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
                 store.lightningBolts = []; store.empNovas = []; store.flamePulses = []; store.poisonPuddles = []; store.goldenOrbs = []; store.shadowEchoes = [];
                 store.championMinions = [];
                 store.empCharges = [];
@@ -12842,6 +12854,7 @@
                 });
                 store.drones.forEach(d => drawDrone(d));
                 if (store.shadowHounds) store.shadowHounds.forEach(h => drawShadowHound(h));
+                if (store.voidRifts) store.voidRifts.forEach(rift => drawVoidRift(rift));
                 store.hounds.forEach(h => drawHound(h));
                 const champion = store.playerChampion;
                 if (champion && !champion.dead) {
@@ -15013,14 +15026,16 @@
             function ensureShadowCloneInit(b) {
                 if (b.shadowInitialized) return;
                 b.shadowInitialized = true;
-                b.shadowAbilityCooldown = 30;
+                b.shadowAbilityCooldown = 26;
                 b.shadowAbilityTimers = {
-                    star: 6 + Math.random() * 2,
-                    lightning: 12 + Math.random() * 2,
-                    hounds: 18 + Math.random() * 2,
-                    charge: 24 + Math.random() * 2
+                    star: 5 + Math.random() * 2,
+                    lightning: 10 + Math.random() * 2,
+                    hounds: 15 + Math.random() * 2,
+                    charge: 20 + Math.random() * 2,
+                    pulseWave: 8 + Math.random() * 2,
+                    voidRift: 18 + Math.random() * 2
                 };
-                b.shadowAbilityOrder = ['star', 'lightning', 'hounds', 'charge'];
+                b.shadowAbilityOrder = ['star', 'pulseWave', 'lightning', 'hounds', 'voidRift', 'charge'];
                 b.shadowAbilityIndex = 0;
                 b.multishotTimer = 0.9;
                 b.shadowChargeVX = 0;
@@ -16764,6 +16779,8 @@
                     case 'lightning': windupBase = b.isEnraged ? 0.65 : 0.85; break;
                     case 'hounds': windupBase = b.isEnraged ? 0.7 : 0.9; break;
                     case 'charge': windupBase = b.isEnraged ? 0.9 : 1.1; break;
+                    case 'pulseWave': windupBase = b.isEnraged ? 0.5 : 0.7; break;
+                    case 'voidRift': windupBase = b.isEnraged ? 0.75 : 0.95; break;
                     default: windupBase = 0.8; break;
                 }
                 b.abilityWindupTotal = windupBase;
@@ -16781,6 +16798,50 @@
                 b.shadowChargeVY = 0;
                 b.shadowChargeTrailCooldown = 0;
                 b.shadowChargeHit = false;
+            }
+
+            function shadowClonePulseWave(b, dmgScale) {
+                // Create expanding ring of bullets
+                const bulletCount = b.isEnraged ? 18 : 14;
+                const speed = b.isEnraged ? 240 : 200;
+                for (let i = 0; i < bulletCount; i++) {
+                    const angle = (i / bulletCount) * Math.PI * 2;
+                    const bullet = getEBulletFromPool({
+                        x: b.x,
+                        y: b.y,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        r: 5,
+                        col: '#b0b8ff',
+                        dmg: 18 * dmgScale,
+                        life: 3.5
+                    });
+                    store.eBullets.push(bullet);
+                }
+                store.activeEffects.push(createEffect('explosion', b.x, b.y, 30));
+                playSound('explosion');
+            }
+
+            function shadowCloneVoidRift(b, dmgScale) {
+                // Spawn void rifts at player location that deal damage over time
+                if (!store.voidRifts) store.voidRifts = [];
+                const riftCount = b.isEnraged ? 3 : 2;
+                for (let i = 0; i < riftCount; i++) {
+                    const spread = 80;
+                    const offsetX = (Math.random() - 0.5) * spread;
+                    const offsetY = (Math.random() - 0.5) * spread;
+                    store.voidRifts.push({
+                        x: store.player.x + offsetX,
+                        y: store.player.y + offsetY,
+                        r: 28,
+                        life: 4.5,
+                        maxLife: 4.5,
+                        damageTimer: 0,
+                        damage: 8 * dmgScale,
+                        dead: false
+                    });
+                }
+                playSound('warp');
             }
 
             function shadowCloneFireMultishot(b, dmgScale) {
@@ -16808,14 +16869,15 @@
             function shadowCloneFireStarVolley(b, dmgScale) {
                 const player = store.player;
                 const baseAngle = Math.atan2(player.y - b.y, player.x - b.x);
-                const starCount = b.isEnraged ? 4 : 3;
-                const angleStep = 0.18;
+                const starCount = b.isEnraged ? 5 : 3;
+                const angleStep = 0.16;
                 const radialOffset = 28;
                 for (let i = 0; i < starCount; i++) {
                     const offsetIdx = i - (starCount - 1) / 2;
                     const angle = baseAngle + offsetIdx * angleStep;
-                    const originX = b.x + Math.cos(angle + Math.PI / 2) * radialOffset;
-                    const originY = b.y + Math.sin(angle + Math.PI / 2) * radialOffset;
+                    // Fire from boss center towards player (removed perpendicular offset)
+                    const originX = b.x + Math.cos(angle) * radialOffset;
+                    const originY = b.y + Math.sin(angle) * radialOffset;
                     launchStarProjectile(originX, originY, angle, {
                         isEnemy: true,
                         enemyDamage: 20 * dmgScale * (b.isEnraged ? 1.2 : 1),
@@ -17565,6 +17627,20 @@
                                     b.shadowTelegraph = null;
                                     b.shadowTelegraphTarget = null;
                                     break;
+                                case 'pulseWave':
+                                    shadowClonePulseWave(b, dmgScale);
+                                    b.abilityStage = 'recover';
+                                    b.abilityTimer = 0.5;
+                                    b.shadowTelegraph = null;
+                                    b.shadowTelegraphTarget = null;
+                                    break;
+                                case 'voidRift':
+                                    shadowCloneVoidRift(b, dmgScale);
+                                    b.abilityStage = 'recover';
+                                    b.abilityTimer = 0.7;
+                                    b.shadowTelegraph = null;
+                                    b.shadowTelegraphTarget = null;
+                                    break;
                                 case 'charge':
                                     b.shadowTelegraph = null;
                                     b.shadowTelegraphTarget = null;
@@ -18094,9 +18170,12 @@
                 if (b.y < 130) {
                     b.y = Math.min(130, b.y + 140 * dt);
                 } else {
-                    b.moveT += dt;
-                    b.x = W / 2 + Math.sin(b.moveT * 0.55) * 150;
-                    b.y = 130 + Math.sin(b.moveT * 0.9) * 26;
+                    // Smooth circular/figure-8 movement pattern
+                    b.moveT += dt * (state.enraged ? 0.65 : 0.5);
+                    const radiusX = 180;
+                    const radiusY = 50;
+                    b.x = W / 2 + Math.sin(b.moveT) * radiusX;
+                    b.y = 130 + Math.sin(b.moveT * 2) * radiusY; // Figure-8 pattern
                 }
 
                 const spinMultiplier = state.enraged ? 1.35 : 1;
@@ -26507,6 +26586,35 @@
             }
             function stepHounds(dt) { if (!store.player.hasHounds) return; store.hounds.forEach(h => { if (!h.target || h.target.dead || h.target.hp <= 0) { let closest = null, closestDist = Infinity; const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies; potentialTargets.forEach(e => { if (e.dead || e.hp <= 0) return; const dist = (h.x - e.x) ** 2 + (h.y - e.y) ** 2; if (dist < closestDist) { closestDist = dist; closest = e; } }); h.target = closest; } if (h.target) { const tx = h.target.x, ty = h.target.y; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); const speed = 350; if (dist > 30) { h.x += (dx / dist) * speed * dt; h.y += (dy / dist) * speed * dt; } else { h.attackT -= dt; if (h.attackT <= 0) { h.attackT = 0.25; let dmg = 8 * store.player.dmgMult; if (h.target === store.boss) dmg *= 0.3; if (!h.target.dead && h.target.hp > 0) { h.target.hp -= dmg; if (store.player.vampirism > 0) { let healAmount = dmg * store.player.vampirism; healAmount = Math.max(healAmount, 0.5); healAmount = Math.min(healAmount, 2); store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount); } if (h.target.hp <= 0) { h.killCount++; if (h.killCount > 0 && h.killCount % 12 === 0) { playSound('dogs'); } } } } } } else { const tx = store.player.x + h.side * 50, ty = store.player.y + 20; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); if (dist > 5) { h.x += dx * 5 * dt; h.y += dy * 5 * dt; } } }); }
 
+            function stepVoidRifts(dt) {
+                if (!store.voidRifts || !store.voidRifts.length) return;
+                const player = store.player;
+                for (let i = store.voidRifts.length - 1; i >= 0; i--) {
+                    const rift = store.voidRifts[i];
+                    if (!rift) {
+                        store.voidRifts.splice(i, 1);
+                        continue;
+                    }
+                    rift.life -= dt;
+                    if (rift.life <= 0 || rift.dead) {
+                        store.voidRifts.splice(i, 1);
+                        continue;
+                    }
+                    
+                    // Damage player if standing in rift
+                    rift.damageTimer -= dt;
+                    if (rift.damageTimer <= 0) {
+                        rift.damageTimer = 0.3;
+                        const dx = player.x - rift.x;
+                        const dy = player.y - rift.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist <= rift.r + (player.r || 18)) {
+                            takeDamage(rift.damage);
+                        }
+                    }
+                }
+            }
+
             function stepShadowHounds(dt) {
                 if (!store.shadowHounds || !store.shadowHounds.length) return;
                 const player = store.player;
@@ -26944,6 +27052,50 @@
                     }
                     ctx.stroke();
                 }
+                ctx.restore();
+            }
+
+            function drawVoidRift(rift) {
+                ctx.save();
+                ctx.translate(rift.x, rift.y);
+                const time = performance.now() / 1000;
+                const lifeRatio = Math.max(0, Math.min(1, rift.life / rift.maxLife));
+                const pulse = 0.6 + 0.4 * Math.sin(time * 4);
+                const rotation = time * 0.5;
+
+                // Outer swirling void
+                ctx.globalAlpha = 0.4 * lifeRatio;
+                const outerGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, rift.r * 1.3);
+                outerGrad.addColorStop(0, 'rgba(80, 40, 120, 0.8)');
+                outerGrad.addColorStop(0.5, 'rgba(40, 20, 80, 0.6)');
+                outerGrad.addColorStop(1, 'rgba(20, 10, 40, 0)');
+                ctx.fillStyle = outerGrad;
+                ctx.beginPath();
+                ctx.arc(0, 0, rift.r * 1.3 * pulse, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Inner void core
+                ctx.globalAlpha = 0.7 * lifeRatio;
+                ctx.rotate(rotation);
+                const innerGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, rift.r);
+                innerGrad.addColorStop(0, 'rgba(140, 80, 180, 0.9)');
+                innerGrad.addColorStop(0.6, 'rgba(80, 40, 120, 0.7)');
+                innerGrad.addColorStop(1, 'rgba(40, 20, 80, 0.2)');
+                ctx.fillStyle = innerGrad;
+                ctx.beginPath();
+                ctx.arc(0, 0, rift.r, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Swirl pattern
+                ctx.strokeStyle = `rgba(180, 140, 220, ${0.5 * lifeRatio})`;
+                ctx.lineWidth = 2;
+                for (let i = 0; i < 3; i++) {
+                    const angle = (i / 3) * Math.PI * 2;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, rift.r * 0.7, angle, angle + Math.PI * 0.6);
+                    ctx.stroke();
+                }
+
                 ctx.restore();
             }
 
@@ -28130,13 +28282,16 @@
                 if (p.voidLaserRetargetTimer <= 0) {
                     p.voidLaserRetargetTimer = 0.1;
 
-                    // Find highest priority (HP) enemy within range
+                    // Find highest priority (HP) enemy within range AND in playfield
                     const allEnemies = store.boss ? [...store.enemies.filter(e => !e.dead), store.boss] : store.enemies.filter(e => !e.dead);
                     
-                    // Filter enemies within range, then sort by HP descending
+                    // Filter enemies within range and in playfield, then sort by HP descending
+                    const playfieldMargin = 50; // Allow some margin for bosses
                     const enemiesInRange = allEnemies.filter(e => {
                         const distSq = (p.x - e.x) ** 2 + (p.y - e.y) ** 2;
-                        return distSq <= maxRange * maxRange;
+                        const inPlayfield = e.x >= -playfieldMargin && e.x <= W + playfieldMargin && 
+                                           e.y >= -playfieldMargin && e.y <= H + playfieldMargin;
+                        return distSq <= maxRange * maxRange && inPlayfield;
                     });
                     
                     let highestPriorityTarget = null;
@@ -28452,7 +28607,10 @@
 
             function fireChainLightningBolt(damageMultiplier = 1.0, startPos = null) {
                 const p = store.player;
-                const allEnemies = store.boss ? [...store.enemies.filter(e => !e.dead), store.boss] : store.enemies.filter(e => !e.dead);
+                const playfieldMargin = 50;
+                const allEnemies = (store.boss ? [...store.enemies.filter(e => !e.dead), store.boss] : store.enemies.filter(e => !e.dead))
+                    .filter(e => e.x >= -playfieldMargin && e.x <= W + playfieldMargin && 
+                                 e.y >= -playfieldMargin && e.y <= H + playfieldMargin);
                 if (allEnemies.length === 0) return;
 
                 // Use custom start position or default to center above player
