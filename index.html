@@ -6562,10 +6562,13 @@
                     category: 'utility', 
                     effect: (level) => { 
                         if (!store.player.hasIceman) { 
-                            store.player.hasIceman = true; 
+                            store.player.hasIceman = true;
+                            store.player.icemanFireT = 0; // Initialize fire timer
                             store.iceman = { x: store.player.x, y: store.player.y + 50, t: 0, level: 1 }; 
+                            announce('❄️ Iceman is your wingman!');
                         } else if (store.iceman) {
                             store.iceman.level = (store.iceman.level || 1) + 1;
+                            announce(`❄️ Iceman upgraded to level ${store.iceman.level}!`);
                         }
                     }, 
                     desc: level => { 
@@ -8010,21 +8013,27 @@
                     if (preemptive) {
                         const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
                         const baseGold = Number.isFinite(enemy.gold) ? enemy.gold : 0;
-                        const bonusGold = Math.max(12, Math.floor(baseGold * VOID_REAPER_CONFIG.preemptiveGoldBonus * collarBonus));
+                        const bonusGold = Math.max(50, Math.floor(baseGold * VOID_REAPER_CONFIG.preemptiveGoldBonus * collarBonus)); // Increased minimum from 12 to 50
                         const bonusScore = Math.floor((enemy.score || 0) * VOID_REAPER_CONFIG.bonusScoreRatio);
                         const bonusXp = Math.floor((enemy.xp || 0) * VOID_REAPER_CONFIG.bonusXpRatio);
                         if (bonusGold) addWorldGold(bonusGold);
                         if (bonusScore) store.world.score += bonusScore;
                         if (bonusXp) store.world.xp += bonusXp;
-                        announce('VOID REAPER SHATTERED! MASSIVE CACHE SECURED.');
+                        announce('⭐ VOID REAPER DEFEATED! STAR POWER ACTIVATED! ⭐');
                         store.activeEffects.push(createEffect('voidReaperReward', enemy.x, enemy.y, (enemy.r || 24) * 3.2, { gold: bonusGold }));
+                        
+                        // Grant 5 seconds of invincibility star effect (like Mario/Mario Kart)
+                        store.player.isInvincible = true;
+                        store.player.starPowerEndTime = performance.now() + 5000; // 5 seconds
+                        screenFlash(2, 250, 'rgba(255, 215, 0, 0.3)'); // Golden flash
+                        playSound('powerup');
                         
                         // Spawn purple & gold coins (New Orleans style) to make loot visible
                         if (!store.powerups) store.powerups = [];
-                        const numCoins = Math.min(5, Math.floor(bonusGold / 8)); // 1 coin per 8 gold, max 5 coins
+                        const numCoins = Math.min(8, Math.floor(bonusGold / 8)); // 1 coin per 8 gold, max 8 coins (increased from 5)
                         for (let i = 0; i < numCoins; i++) {
                             const angle = (i / numCoins) * Math.PI * 2;
-                            const dist = 30 + Math.random() * 20;
+                            const dist = 30 + Math.random() * 30;
                             const coinX = enemy.x + Math.cos(angle) * dist;
                             const coinY = enemy.y + Math.sin(angle) * dist;
                             store.powerups.push({
@@ -8037,11 +8046,48 @@
                             });
                         }
                         
-                        // Chance to drop upgrade powerup from void reapers (affected by luck at 50% effectiveness)
-                        const luckModifier = 1 + ((store.player.luckBoost || 0) * 0.5);
-                        if (Math.random() < (0.25 * luckModifier)) { // 25% base chance, boosted by luck
-                            const tier = Math.random() < 0.6 ? 'midTier' : 'bossTier'; // 60% mid-tier, 40% boss-tier
-                            spawnUpgradePowerup(enemy.x + Math.random() * 40 - 20, enemy.y + Math.random() * 40 - 20, tier);
+                        // GUARANTEED REWARD: Elite tier upgrade, boss tier upgrade + money, OR large money
+                        const rewardRoll = Math.random();
+                        if (rewardRoll < 0.40) {
+                            // 40% chance: Elite tier upgrade (iceman, lazarus, gravity well, etc)
+                            spawnUpgradePowerup(enemy.x, enemy.y - 20, 'bossTier');
+                            announce('🌟 Elite Upgrade Acquired!');
+                        } else if (rewardRoll < 0.70) {
+                            // 30% chance: Boss tier upgrade + bonus money
+                            spawnUpgradePowerup(enemy.x - 25, enemy.y - 20, 'bossTier');
+                            const extraGold = 25;
+                            addWorldGold(extraGold);
+                            // Spawn extra gold coins
+                            for (let i = 0; i < 3; i++) {
+                                const angle = (Math.PI / 3) * i + Math.PI / 6;
+                                const dist = 45;
+                                store.powerups.push({
+                                    x: enemy.x + Math.cos(angle) * dist,
+                                    y: enemy.y + Math.sin(angle) * dist,
+                                    r: 14,
+                                    type: 'cash',
+                                    isVoidReaper: true,
+                                    pulseOffset: i * 0.3
+                                });
+                            }
+                        } else {
+                            // 30% chance: Large money reward (no upgrade)
+                            const largeGoldBonus = 35;
+                            addWorldGold(largeGoldBonus);
+                            announce('💰 Major Gold Cache Secured!');
+                            // Spawn extra gold powerups in a circle
+                            for (let i = 0; i < 6; i++) {
+                                const angle = (i / 6) * Math.PI * 2;
+                                const dist = 50;
+                                store.powerups.push({
+                                    x: enemy.x + Math.cos(angle) * dist,
+                                    y: enemy.y + Math.sin(angle) * dist,
+                                    r: 14,
+                                    type: 'cash',
+                                    isVoidReaper: true,
+                                    pulseOffset: i * 0.4
+                                });
+                            }
                         }
                     } else {
                         store.activeEffects.push(createEffect('voidReaperDissolve', enemy.x, enemy.y, (enemy.r || 24) * 2.2));
@@ -9318,6 +9364,14 @@
 
             function stepPlayer(dt) {
                 const p = store.player;
+                
+                // Check if star power invincibility should expire
+                if (p.isInvincible && p.starPowerEndTime && performance.now() >= p.starPowerEndTime) {
+                    p.isInvincible = false;
+                    p.starPowerEndTime = null;
+                    announce('⭐ Star Power Expired');
+                }
+                
                 if (p.pilotGenome === 'beef' && p.beefMaxCharges > 0 && p.beefChargeState !== 'ready') {
                     const plan = p.beefChargePlan;
                     if (!plan || !plan.segments || plan.segments.length === 0) {
@@ -17599,7 +17653,7 @@
                     color: '#8cf5ff',
                     duration: 0.4
                 }));
-                playSound('charge');
+                // Sound removed - no temporal echo sound spam
             }
 
             function dropTimeShardsAlongPath(path, b, state) {
@@ -17727,7 +17781,7 @@
                         color: '#8cf5ff',
                         duration: state.beamTelegraphWindow
                     }));
-                    playSound('trap');
+                    // Sound removed - no telegraph sound spam
                 }
 
                 if (state.beamSkipTimer <= 0) {
@@ -17739,7 +17793,7 @@
                         color: '#6ff2ff',
                         duration: 0.4
                     }));
-                    playSound('thunder');
+                    // Sound removed - no beam skip sound spam
                 }
 
                 if (state.skipPulseTimer > 0) {
@@ -17759,10 +17813,16 @@
             }
 
             function fireAsynchronosVolley(b, dmgScale, state) {
-                const count = state.phase === 2 ? 8 : 6;
-                const speed = state.phase === 2 ? 260 : 220;
+                const count = state.phase === 2 ? 12 : 8; // More projectiles
+                const speed = state.phase === 2 ? 280 : 240; // Faster projectiles
                 const baseAngle = Math.atan2(store.player.y - b.y, store.player.x - b.x);
-                const spread = state.phase === 2 ? 0.35 : 0.28;
+                const spread = state.phase === 2 ? 0.5 : 0.35; // Wider spread
+
+                // Create warning indicator
+                store.activeEffects.push(createEffect('spawnTeleport', b.x, b.y, Math.max(50, (b.r || 40) + 25), {
+                    color: state.phase === 2 ? '#ff66aa' : '#66eaff',
+                    duration: 0.4
+                }));
 
                 for (let i = 0; i < count; i++) {
                     const t = count > 1 ? i / (count - 1) : 0.5;
@@ -17773,20 +17833,101 @@
                         y: b.y,
                         vx: Math.cos(angle) * speed,
                         vy: Math.sin(angle) * speed,
-                        r: 4.5,
-                        col: '#66eaff',
-                        dmg: 16 * dmgScale * (state.phase === 2 ? 1.2 : 1),
-                        life: 4,
+                        r: state.phase === 2 ? 5 : 4.5,
+                        col: state.phase === 2 ? '#ff66ff' : '#66eaff',
+                        dmg: 15 * dmgScale * (state.phase === 2 ? 1.3 : 1),
+                        life: 4.5,
                         type: 'temporal_spear'
                     });
-                    bullet.spin = (i - (count - 1) / 2) * 0.6;
+                    bullet.spin = (i - (count - 1) / 2) * 0.7;
                     store.eBullets.push(bullet);
                 }
+                
+                // Phase 2: Add secondary radial burst
+                if (state.phase === 2) {
+                    const radialCount = 8;
+                    const radialSpeed = 180;
+                    for (let i = 0; i < radialCount; i++) {
+                        const angle = (i / radialCount) * Math.PI * 2;
+                        const bullet = getEBulletFromPool({
+                            x: b.x,
+                            y: b.y,
+                            vx: Math.cos(angle) * radialSpeed,
+                            vy: Math.sin(angle) * radialSpeed,
+                            r: 3.5,
+                            col: '#aa66ff',
+                            dmg: 12 * dmgScale,
+                            life: 3,
+                            type: 'temporal_spear'
+                        });
+                        bullet.spin = i * 0.5;
+                        store.eBullets.push(bullet);
+                    }
+                }
+            }
 
-                store.activeEffects.push(createEffect('spawnTeleport', b.x, b.y, Math.max(40, (b.r || 40) + 18), {
-                    color: '#66eaff',
-                    duration: 0.35
+            function performAsynchronosDash(b, state, dmgScale) {
+                // Asynchronos teleports behind the player and dashes through them
+                const player = store.player;
+                if (!player) return;
+                
+                // Calculate position behind player
+                const angleToPlayer = Math.atan2(player.y - b.y, player.x - b.x);
+                const behindDistance = 280;
+                const targetX = player.x - Math.cos(angleToPlayer) * behindDistance;
+                const targetY = player.y - Math.sin(angleToPlayer) * behindDistance;
+                
+                // Clamp to screen bounds with padding
+                const clampedX = clamp(targetX, 80, W - 80);
+                const clampedY = clamp(targetY, 80, H - 200);
+                
+                // Teleport effect at current position
+                store.activeEffects.push(createEffect('spawnTeleport', b.x, b.y, b.r * 1.8, {
+                    color: '#6ff2ff',
+                    duration: 0.5
                 }));
+                
+                // Teleport boss
+                b.x = clampedX;
+                b.y = clampedY;
+                
+                // Arrival effect
+                store.activeEffects.push(createEffect('spawnTeleport', b.x, b.y, b.r * 2.2, {
+                    color: '#ff6f6f',
+                    duration: 0.6
+                }));
+                
+                // Launch 3 waves of temporal spears in rapid succession toward player
+                for (let wave = 0; wave < 3; wave++) {
+                    setTimeout(() => {
+                        if (!b || b.dead) return;
+                        const count = 5;
+                        const speed = 320;
+                        const baseAngle = Math.atan2(player.y - b.y, player.x - b.x);
+                        const spread = 0.6;
+                        
+                        for (let i = 0; i < count; i++) {
+                            const t = count > 1 ? i / (count - 1) : 0.5;
+                            const offset = (t - 0.5) * spread;
+                            const angle = baseAngle + offset;
+                            const bullet = getEBulletFromPool({
+                                x: b.x,
+                                y: b.y,
+                                vx: Math.cos(angle) * speed,
+                                vy: Math.sin(angle) * speed,
+                                r: 5,
+                                col: wave === 0 ? '#ff6f6f' : wave === 1 ? '#ffaa6f' : '#ffff6f',
+                                dmg: 14 * dmgScale,
+                                life: 4,
+                                type: 'temporal_spear'
+                            });
+                            bullet.spin = (i - (count - 1) / 2) * 0.8;
+                            store.eBullets.push(bullet);
+                        }
+                    }, wave * 250);
+                }
+                
+                announce('⚡ ASYNCHRONOS WARPS BEHIND YOU!');
             }
 
             function stepBossAsynchronos(dt, b, dmgScale) {
@@ -17798,12 +17939,14 @@
                 if (state.phase === 1 && hpRatio <= 0.5) {
                     state.phase = 2;
                     b.isEnraged = true;
-                    state.beamRotationSpeed = state.phaseBeamRotationSpeed;
+                    state.beamRotationSpeed = state.phaseBeamRotationSpeed * 1.3; // Even faster in phase 2
                     state.beamSkipTimer = Math.min(state.beamSkipTimer, state.phaseBeamSkipInterval);
                     state.rewindTimer = Math.min(state.rewindTimer, state.phaseRewindInterval);
                     state.burstTimer = Math.min(state.burstTimer, state.phaseBurstInterval);
-                    announce('ASYNCHRONOS ACCELERATES THE TIMELINE!');
+                    state.dashAttackTimer = 4.0; // New dash attack ability
+                    announce('⚡ ASYNCHRONOS FRACTURES TIME ITSELF! ⚡');
                     playSound('epicHorn');
+                    screenFlash(3, 200, 'rgba(111, 242, 255, 0.4)');
                 }
 
                 if (state.rewinding) {
@@ -17811,11 +17954,23 @@
                 } else if (b.y < 110) {
                     b.y = Math.min(110, b.y + 160 * dt);
                 } else {
-                    state.movePhase += dt * (state.phase === 2 ? 1.1 : 0.85);
-                    const targetX = W / 2 + Math.sin(state.movePhase * 0.9) * (260 + (state.phase === 2 ? 40 : 0));
-                    const targetY = 120 + Math.sin(state.movePhase * 1.4) * 26;
-                    b.x += (targetX - b.x) * Math.min(1, 2.8 * dt);
-                    b.y += (targetY - b.y) * Math.min(1, 1.6 * dt);
+                    // More dynamic movement patterns
+                    state.movePhase += dt * (state.phase === 2 ? 1.5 : 0.85);
+                    const erraticFactor = state.phase === 2 ? Math.sin(state.movePhase * 3.2) * 60 : 0;
+                    const targetX = W / 2 + Math.sin(state.movePhase * 0.9) * (260 + erraticFactor) + Math.cos(state.movePhase * 1.7) * 80;
+                    const targetY = 120 + Math.sin(state.movePhase * 1.4) * (state.phase === 2 ? 45 : 26) + Math.cos(state.movePhase * 2.1) * 25;
+                    const moveSpeed = state.phase === 2 ? 3.5 : 2.8;
+                    b.x += (targetX - b.x) * Math.min(1, moveSpeed * dt);
+                    b.y += (targetY - b.y) * Math.min(1, (state.phase === 2 ? 2.2 : 1.6) * dt);
+                    
+                    // Phase 2: Add teleport dash attacks
+                    if (state.phase === 2) {
+                        state.dashAttackTimer = (state.dashAttackTimer || 5.0) - dt;
+                        if (state.dashAttackTimer <= 0) {
+                            performAsynchronosDash(b, state, dmgScale);
+                            state.dashAttackTimer = 6.5; // Dash every 6.5 seconds in phase 2
+                        }
+                    }
                 }
 
                 state.echoTimer = Math.max(0, state.echoTimer - dt);
@@ -17887,16 +18042,16 @@
                         echo.traveled += Math.hypot(stepX, stepY);
                         echo.trailTimer -= dt;
                         if (echo.trailTimer <= 0) {
-                            echo.trailTimer += echo.trailInterval || 0.08;
+                            echo.trailTimer += echo.trailInterval || 0.10; // Slower trail spawn rate
                             const trail = getEBulletFromPool({
                                 x: echo.x,
                                 y: echo.y,
                                 vx: 0,
                                 vy: 0,
-                                r: 7,
+                                r: 5, // Smaller radius
                                 col: echo.trailColor || '#4de0ff',
-                                dmg: (echo.damage || 18) * 0.55,
-                                life: 0.35,
+                                dmg: 0, // Trail doesn't damage - only the echo itself damages on direct hit
+                                life: 0.5, // Visible longer for better telegraph
                                 type: 'temporal_trail'
                             });
                             store.eBullets.push(trail);
@@ -19668,6 +19823,7 @@
                 const telegraph = clamp(beam.telegraph || 0, 0, 1);
                 const skipPulse = clamp(beam.skipPulse || 0, 0, 1);
                 const originOffset = beam.originOffset !== undefined ? beam.originOffset : 1;
+                const now = performance.now() / 1000;
 
                 ctx.save();
                 ctx.translate(boss.x, boss.y);
@@ -19675,21 +19831,49 @@
                 ctx.globalCompositeOperation = 'lighter';
 
                 const baseWidth = width * (telegraph > 0 ? (0.45 + 0.55 * (1 - telegraph)) : 1);
-                const auraWidth = baseWidth * (1.9 + skipPulse * 0.4);
+                const auraWidth = baseWidth * (2.5 + skipPulse * 0.6); // Wider, more visible aura
                 const startOffset = -length * 0.12 * (1 - originOffset);
 
+                // Enhanced outer glow for better visibility
+                const outerGlowGradient = ctx.createLinearGradient(0, -auraWidth * 1.4, 0, auraWidth * 1.4);
+                outerGlowGradient.addColorStop(0, 'rgba(111, 242, 255, 0)');
+                outerGlowGradient.addColorStop(0.3, 'rgba(111, 242, 255, 0.15)');
+                outerGlowGradient.addColorStop(0.7, 'rgba(111, 242, 255, 0.15)');
+                outerGlowGradient.addColorStop(1, 'rgba(111, 242, 255, 0)');
+                ctx.fillStyle = outerGlowGradient;
+                ctx.fillRect(startOffset, -auraWidth * 1.4, length, auraWidth * 2.8);
+
+                // Main aura - brighter and more menacing
                 const auraGradient = ctx.createLinearGradient(0, -auraWidth, 0, auraWidth);
                 auraGradient.addColorStop(0, 'rgba(140, 246, 255, 0)');
-                auraGradient.addColorStop(0.35, 'rgba(140, 246, 255, 0.24)');
-                auraGradient.addColorStop(0.65, 'rgba(140, 246, 255, 0.24)');
+                auraGradient.addColorStop(0.35, 'rgba(140, 246, 255, 0.45)'); // Increased from 0.24
+                auraGradient.addColorStop(0.65, 'rgba(140, 246, 255, 0.45)');
                 auraGradient.addColorStop(1, 'rgba(140, 246, 255, 0)');
                 ctx.fillStyle = auraGradient;
                 ctx.fillRect(startOffset, -auraWidth, length, auraWidth * 2);
 
-                const coreWidth = Math.max(6, baseWidth * 0.45);
+                // Animated energy pulses traveling along beam
+                const pulseCount = 3;
+                for (let i = 0; i < pulseCount; i++) {
+                    const pulsePhase = (now * 2 + i * (Math.PI * 2 / pulseCount)) % (Math.PI * 2);
+                    const pulsePos = (Math.sin(pulsePhase) * 0.5 + 0.5) * length * 0.8;
+                    const pulseRadius = baseWidth * 0.8;
+                    const pulseGradient = ctx.createRadialGradient(pulsePos, 0, 0, pulsePos, 0, pulseRadius * 2);
+                    pulseGradient.addColorStop(0, 'rgba(255, 255, 255, 0.6)');
+                    pulseGradient.addColorStop(0.5, 'rgba(140, 246, 255, 0.3)');
+                    pulseGradient.addColorStop(1, 'rgba(140, 246, 255, 0)');
+                    ctx.fillStyle = pulseGradient;
+                    ctx.beginPath();
+                    ctx.arc(pulsePos, 0, pulseRadius * 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Brighter core with pulsing effect
+                const coreWidth = Math.max(8, baseWidth * 0.5); // Slightly thicker
+                const corePulse = 0.8 + Math.sin(now * 6) * 0.2;
                 const coreGradient = ctx.createLinearGradient(0, -coreWidth, 0, coreWidth);
                 coreGradient.addColorStop(0, 'rgba(255,255,255,0)');
-                coreGradient.addColorStop(0.5, `rgba(210, 255, 255, ${0.75 + skipPulse * 0.35})`);
+                coreGradient.addColorStop(0.5, `rgba(255, 255, 255, ${(0.85 + skipPulse * 0.45) * corePulse})`); // Brighter white core
                 coreGradient.addColorStop(1, 'rgba(255,255,255,0)');
                 ctx.fillStyle = coreGradient;
                 ctx.fillRect(startOffset, -coreWidth, length, coreWidth * 2);
@@ -19697,16 +19881,33 @@
                 if (telegraph > 0.01) {
                     ctx.save();
                     ctx.globalCompositeOperation = 'screen';
-                    ctx.globalAlpha = clamp(telegraph * 0.95, 0.18, 0.75);
-                    ctx.lineWidth = Math.max(2, baseWidth * 0.6);
-                    ctx.strokeStyle = addAlpha('#66eaff', 0.8);
-                    const dash = baseWidth * 1.1;
-                    ctx.setLineDash([dash, dash]);
+                    ctx.globalAlpha = clamp(telegraph * 0.95, 0.3, 0.85); // More visible warning
+                    ctx.lineWidth = Math.max(3, baseWidth * 0.7);
+                    ctx.strokeStyle = addAlpha('#ff6666', 0.9); // Red warning color
+                    const dash = baseWidth * 1.2;
+                    ctx.setLineDash([dash * 0.5, dash * 0.5]);
                     ctx.beginPath();
                     ctx.moveTo(startOffset, 0);
                     ctx.lineTo(startOffset + length, 0);
                     ctx.stroke();
                     ctx.restore();
+                }
+                
+                // Add visible edge markers to show danger zone boundaries
+                const markerCount = 12;
+                const markerPulse = 0.7 + Math.sin(now * 8) * 0.3;
+                ctx.fillStyle = `rgba(255, 100, 100, ${0.7 * markerPulse})`;
+                for (let i = 0; i < markerCount; i++) {
+                    const markerX = startOffset + (i / (markerCount - 1)) * length;
+                    const markerSize = telegraph > 0.01 ? 6 : 4;
+                    // Top edge markers
+                    ctx.beginPath();
+                    ctx.arc(markerX, -baseWidth, markerSize, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Bottom edge markers
+                    ctx.beginPath();
+                    ctx.arc(markerX, baseWidth, markerSize, 0, Math.PI * 2);
+                    ctx.fill();
                 }
 
                 if (skipPulse > 0.01) {
@@ -27911,9 +28112,82 @@
                 const auraTheme = skinTheme.aura;
                 const trailColor = skinTheme.trail || '#78b4ff';
                 const accentColor = bodyTheme.accent || trailColor || '#6090d0';
+                
+                // Check if star power is active
+                const isStarPowerActive = champion.isInvincible && champion.starPowerEndTime > performance.now();
 
                 ctx.save();
                 ctx.translate(champion.x, champion.y);
+                
+                // ⭐ STAR POWER EFFECT (Mario/Mario Kart style invincibility) ⭐
+                if (isStarPowerActive) {
+                    const starProgress = (champion.starPowerEndTime - performance.now()) / 5000;
+                    const rainbowPhase = now * 8; // Fast rainbow cycling
+                    
+                    // Rainbow rotating aura rings
+                    ctx.save();
+                    ctx.globalCompositeOperation = 'lighter';
+                    for (let i = 0; i < 4; i++) {
+                        const ringAngle = (now * 4 + i * Math.PI / 2) % (Math.PI * 2);
+                        const ringRadius = baseRadius * (1.8 + i * 0.3);
+                        const hue = ((rainbowPhase + i * 60) % 360);
+                        ctx.globalAlpha = 0.6 * starProgress;
+                        ctx.strokeStyle = `hsla(${hue}, 100%, 60%, 0.8)`;
+                        ctx.lineWidth = 3;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, ringRadius, ringAngle, ringAngle + Math.PI / 2);
+                        ctx.stroke();
+                    }
+                    
+                    // Rainbow sparkle particles
+                    for (let i = 0; i < 8; i++) {
+                        const sparklePhase = (now * 5 + i * 0.8) % 3;
+                        const sparkleAlpha = Math.max(0, 1 - sparklePhase / 3) * starProgress;
+                        const sparkleAngle = (i / 8) * Math.PI * 2 + now * 2;
+                        const sparkleDist = baseRadius * (1.2 + sparklePhase * 0.8);
+                        const sparkleX = Math.cos(sparkleAngle) * sparkleDist;
+                        const sparkleY = Math.sin(sparkleAngle) * sparkleDist;
+                        const sparkleHue = ((rainbowPhase + i * 45) % 360);
+                        
+                        ctx.globalAlpha = sparkleAlpha;
+                        ctx.fillStyle = `hsla(${sparkleHue}, 100%, 70%, 1)`;
+                        ctx.shadowColor = `hsla(${sparkleHue}, 100%, 80%, 0.9)`;
+                        ctx.shadowBlur = 8;
+                        
+                        // Four-pointed star shape
+                        ctx.save();
+                        ctx.translate(sparkleX, sparkleY);
+                        ctx.rotate(sparklePhase * Math.PI);
+                        ctx.beginPath();
+                        for (let j = 0; j < 4; j++) {
+                            const angle = (j / 4) * Math.PI * 2;
+                            const r = j % 2 === 0 ? 4 : 2;
+                            const px = Math.cos(angle) * r;
+                            const py = Math.sin(angle) * r;
+                            if (j === 0) ctx.moveTo(px, py);
+                            else ctx.lineTo(px, py);
+                        }
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.restore();
+                    }
+                    
+                    ctx.shadowBlur = 0;
+                    ctx.restore();
+                    
+                    // Pulsing rainbow glow around ship
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.globalAlpha = 0.4 * starProgress * (0.7 + 0.3 * Math.sin(now * 12));
+                    const glowHue = (rainbowPhase % 360);
+                    const glowGradient = ctx.createRadialGradient(0, 0, baseRadius * 0.5, 0, 0, baseRadius * 2.5);
+                    glowGradient.addColorStop(0, `hsla(${glowHue}, 100%, 70%, 0.8)`);
+                    glowGradient.addColorStop(0.5, `hsla(${(glowHue + 60) % 360}, 100%, 60%, 0.4)`);
+                    glowGradient.addColorStop(1, `hsla(${(glowHue + 120) % 360}, 100%, 50%, 0)`);
+                    ctx.fillStyle = glowGradient;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, baseRadius * 2.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
 
                 // Premium multi-layered aura with pulsing rings
                 ctx.save();
