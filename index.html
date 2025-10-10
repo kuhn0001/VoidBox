@@ -6561,14 +6561,38 @@
                     isPremium: true, 
                     category: 'utility', 
                     effect: (level) => { 
-                        if (!store.player.hasIceman) { 
-                            store.player.hasIceman = true;
-                            store.player.icemanFireT = 0; // Initialize fire timer
-                            store.iceman = { x: store.player.x, y: store.player.y + 50, t: 0, level: 1 }; 
+                        const p = store.player;
+                        if (!p.hasIceman) { 
+                            // First purchase - initialize everything
+                            p.hasIceman = true;
+                            p.icemanFireT = 0;
+                            store.iceman = { 
+                                x: p.x, 
+                                y: p.y + 50, 
+                                t: 0, 
+                                level: 1 
+                            }; 
                             announce('❄️ Iceman is your wingman!');
-                        } else if (store.iceman) {
+                            console.log('Iceman initialized:', store.iceman, 'fireT:', p.icemanFireT);
+                        } else {
+                            // Upgrade existing iceman
+                            if (!store.iceman) {
+                                // Safety: recreate iceman if somehow missing
+                                store.iceman = { 
+                                    x: p.x, 
+                                    y: p.y + 50, 
+                                    t: 0, 
+                                    level: 1 
+                                };
+                                console.warn('Iceman was missing, recreated');
+                            }
                             store.iceman.level = (store.iceman.level || 1) + 1;
                             announce(`❄️ Iceman upgraded to level ${store.iceman.level}!`);
+                            console.log('Iceman upgraded to level:', store.iceman.level);
+                        }
+                        // Always ensure fireT is a valid number
+                        if (typeof p.icemanFireT !== 'number' || isNaN(p.icemanFireT)) {
+                            p.icemanFireT = 0;
                         }
                     }, 
                     desc: level => { 
@@ -9719,13 +9743,25 @@
 
                 // Iceman has independent fire rate (level 2+: 50% faster)
                 if (p.hasIceman && store.iceman && !p.empDisabled) {
+                    // Ensure timer is initialized
+                    if (typeof p.icemanFireT !== 'number' || isNaN(p.icemanFireT)) {
+                        console.warn('Iceman fireT was invalid, initializing to 0');
+                        p.icemanFireT = 0;
+                    }
+                    
                     const icemanLevel = store.iceman.level || 1;
                     const icemanFireRate = icemanLevel >= 2 ? p.fireRate * 0.67 : p.fireRate; // 50% faster at level 2+
                     p.icemanFireT -= dt;
                     if (p.icemanFireT <= 0) {
+                        console.log(`Iceman ready to fire! fireT: ${p.icemanFireT}, rate: ${icemanFireRate}`);
                         fireIcemanShot();
                         p.icemanFireT = icemanFireRate * timeShardRate;
+                        console.log(`Iceman fireT reset to: ${p.icemanFireT}`);
                     }
+                } else if (p.hasIceman && !store.iceman) {
+                    console.error('Player hasIceman but store.iceman is missing!');
+                } else if (p.hasIceman && p.empDisabled) {
+                    console.log('Iceman disabled by EMP');
                 }
 
                 // Separate flamethrower system (unaffected by overclock)
@@ -13945,31 +13981,41 @@
             }
             function fireIcemanShot() {
                 const p = store.player;
-                if (!p.hasIceman || !store.iceman) return;
+                if (!p.hasIceman) {
+                    console.warn('fireIcemanShot called but hasIceman is false');
+                    return;
+                }
+                if (!store.iceman) {
+                    console.error('fireIcemanShot called but store.iceman is missing!');
+                    return;
+                }
                 
                 const icemanLevel = store.iceman.level || 1;
                 const icemanDamageMult = icemanLevel >= 3 ? 1.5 : 1.0; // Level 3: +50% damage
                 
                 const baseBulletSpeed = 420;
-                const bulletSpeed = baseBulletSpeed + 50 * p.bulletSpeedLvl;
-                const totalMultishot = 1 + p.multiShot + p.multishotReward;
+                const bulletSpeed = baseBulletSpeed + 50 * (p.bulletSpeedLvl || 0);
+                const totalMultishot = 1 + (p.multiShot || 0) + (p.multishotReward || 0);
                 const angleSpread = totalMultishot > 1 ? 12 : 0;
+                
+                console.log(`Iceman firing ${totalMultishot} shots from (${store.iceman.x}, ${store.iceman.y}), level ${icemanLevel}`);
                 
                 for (let i = 0; i < totalMultishot; i++) {
                     const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180;
-                    spawnBullet({
+                    const bullet = spawnBullet({
                         x: store.iceman.x + 10 * Math.sin(angle),
                         y: store.iceman.y - 12,
                         vx: Math.sin(angle) * bulletSpeed,
                         vy: -Math.cos(angle) * bulletSpeed,
                         r: p.explosive ? 5 : 3,
                         col: "#66aaff",
-                        dmg: 15 * p.dmgMult * 0.35 * icemanDamageMult,
-                        pierce: p.piercing,
-                        explosive: p.explosive,
+                        dmg: 15 * (p.dmgMult || 1) * 0.35 * icemanDamageMult,
+                        pierce: p.piercing || false,
+                        explosive: p.explosive || false,
                         isIceman: true,
-                        isSwirl: p.swirlShots
+                        isSwirl: p.swirlShots || false
                     });
+                    console.log('Iceman bullet spawned:', bullet);
                 }
             }
             function getOmegaMultishotColor(type) {
