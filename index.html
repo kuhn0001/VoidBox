@@ -13992,8 +13992,65 @@
                 
                 const icemanLevel = store.iceman.level || 1;
                 const icemanDamageMult = icemanLevel >= 3 ? 1.5 : 1.0; // Level 3: +50% damage
+                const icemanDamageCoefficient = 0.35; // Iceman deals 35% of player damage
                 
-                // Match player's firing exactly
+                // OMEGA MULTISHOT: Copy player's omega orbs if they have it
+                if (p.hasOmegaMultishot && p.omegaMultishotType) {
+                    const baseBulletSpeed = 380;
+                    const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0);
+                    const orbCount = Math.max(1, Math.ceil(totalMultishot / 3)); // Combine 3 shots into 1 orb
+                    const angleSpread = 12;
+                    
+                    console.log(`Iceman firing ${orbCount} OMEGA orbs (combined from ${totalMultishot} shots)`);
+                    
+                    for (let i = 0; i < orbCount; i++) {
+                        const angle = (i - (orbCount - 1) / 2) * angleSpread * Math.PI / 180;
+                        const damagePerShot = 15 * p.dmgMult;
+                        const combinedDamage = damagePerShot * Math.floor(totalMultishot / orbCount) * 1.3 * icemanDamageCoefficient * icemanDamageMult;
+                        
+                        spawnBullet({
+                            x: store.iceman.x + 12 * Math.sin(angle),
+                            y: store.iceman.y - 12,
+                            vx: Math.sin(angle) * baseBulletSpeed,
+                            vy: -Math.cos(angle) * baseBulletSpeed,
+                            r: 8, // Larger projectile
+                            col: getOmegaMultishotColor(p.omegaMultishotType),
+                            dmg: combinedDamage,
+                            pierce: p.piercing,
+                            explosive: false, // Handled by omega explosion
+                            isSwirl: false,
+                            isOmegaShot: true,
+                            omegaType: p.omegaMultishotType,
+                            isIceman: true
+                        });
+                    }
+                    
+                    // Star Cannon works with Omega too
+                    if (p.starCannonLevel > 0) {
+                        const starCount = getStarCannonProjectileCount(p.starCannonLevel);
+                        const spreadAngle = 15;
+                        for (let i = 0; i < starCount; i++) {
+                            const angle = (i - (starCount - 1) / 2) * spreadAngle * Math.PI / 180;
+                            spawnBullet({
+                                x: store.iceman.x,
+                                y: store.iceman.y - 15,
+                                vx: Math.sin(angle) * 320,
+                                vy: -Math.cos(angle) * 320,
+                                r: 6,
+                                col: "#ffff66",
+                                dmg: 45 * p.dmgMult * icemanDamageCoefficient * icemanDamageMult,
+                                pierce: true,
+                                explosive: false,
+                                isStar: true,
+                                isIceman: true,
+                                life: 0
+                            });
+                        }
+                    }
+                    return;
+                }
+                
+                // NORMAL MULTISHOT: Match player's firing exactly
                 const baseBulletSpeed = 420;
                 const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0);
                 const angleSpread = 10; // Match player's angle spread
@@ -14010,7 +14067,7 @@
                         vy: -Math.cos(angle) * baseBulletSpeed,
                         r: p.explosive ? 5 : 3,
                         col: "#66aaff",
-                        dmg: 15 * p.dmgMult * 0.35 * icemanDamageMult,
+                        dmg: 15 * p.dmgMult * icemanDamageCoefficient * icemanDamageMult,
                         pierce: p.piercing || false,
                         explosive: p.explosive || false,
                         isIceman: true,
@@ -14031,7 +14088,7 @@
                             vy: -Math.cos(angle) * 320,
                             r: 6,
                             col: "#ffff66",
-                            dmg: 45 * p.dmgMult * 0.35,
+                            dmg: 45 * p.dmgMult * icemanDamageCoefficient * icemanDamageMult,
                             pierce: true,
                             explosive: false,
                             isStar: true,
@@ -14133,6 +14190,7 @@
                     const orbCount = Math.max(1, Math.ceil(totalMultishot / 3)); // Combine 3 shots into 1 orb
                     const angleSpread = 12;
                     
+                    // Player fires Omega orbs
                     for (let i = 0; i < orbCount; i++) {
                         const angle = (i - (orbCount - 1) / 2) * angleSpread * Math.PI / 180;
                         const damagePerShot = 15 * p.dmgMult;
@@ -14153,6 +14211,32 @@
                             omegaType: p.omegaMultishotType
                         });
                     }
+                    
+                    // Beef Clone also fires Omega orbs (35% damage)
+                    if (p.hasBeefClone && store.beefClone && store.beefClone.mode !== 'juggernaut_bomber') {
+                        for (let i = 0; i < orbCount; i++) {
+                            const angle = (i - (orbCount - 1) / 2) * angleSpread * Math.PI / 180;
+                            const damagePerShot = 15 * p.dmgMult;
+                            const combinedDamage = damagePerShot * Math.floor(totalMultishot / orbCount) * 1.3 * 0.35; // Beef clone: 35% damage
+                            
+                            spawnBullet({
+                                x: store.beefClone.x + 12 * Math.sin(angle),
+                                y: store.beefClone.y - 12,
+                                vx: Math.sin(angle) * baseBulletSpeed,
+                                vy: -Math.cos(angle) * baseBulletSpeed,
+                                r: 8,
+                                col: getOmegaMultishotColor(p.omegaMultishotType),
+                                dmg: combinedDamage,
+                                pierce: p.piercing,
+                                explosive: false,
+                                isSwirl: false,
+                                isOmegaShot: true,
+                                omegaType: p.omegaMultishotType,
+                                isBeefClone: true
+                            });
+                        }
+                    }
+                    
                     return;
                 }
                 
