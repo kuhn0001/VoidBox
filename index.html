@@ -13993,29 +13993,52 @@
                 const icemanLevel = store.iceman.level || 1;
                 const icemanDamageMult = icemanLevel >= 3 ? 1.5 : 1.0; // Level 3: +50% damage
                 
+                // Match player's firing exactly
                 const baseBulletSpeed = 420;
-                const bulletSpeed = baseBulletSpeed + 50 * (p.bulletSpeedLvl || 0);
-                const totalMultishot = 1 + (p.multiShot || 0) + (p.multishotReward || 0);
-                const angleSpread = totalMultishot > 1 ? 12 : 0;
+                const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0);
+                const angleSpread = 10; // Match player's angle spread
                 
-                console.log(`Iceman firing ${totalMultishot} shots from (${store.iceman.x}, ${store.iceman.y}), level ${icemanLevel}`);
+                console.log(`Iceman firing ${totalMultishot} shots (player multishot: ${p.multishot}, cheat: ${p.cheatMultishotBonus || 0})`);
                 
+                // Fire regular bullets - matches player count exactly
                 for (let i = 0; i < totalMultishot; i++) {
                     const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180;
-                    const bullet = spawnBullet({
+                    spawnBullet({
                         x: store.iceman.x + 10 * Math.sin(angle),
                         y: store.iceman.y - 12,
-                        vx: Math.sin(angle) * bulletSpeed,
-                        vy: -Math.cos(angle) * bulletSpeed,
+                        vx: Math.sin(angle) * baseBulletSpeed,
+                        vy: -Math.cos(angle) * baseBulletSpeed,
                         r: p.explosive ? 5 : 3,
                         col: "#66aaff",
-                        dmg: 15 * (p.dmgMult || 1) * 0.35 * icemanDamageMult,
+                        dmg: 15 * p.dmgMult * 0.35 * icemanDamageMult,
                         pierce: p.piercing || false,
                         explosive: p.explosive || false,
                         isIceman: true,
                         isSwirl: p.swirlShots || false
                     });
-                    console.log('Iceman bullet spawned:', bullet);
+                }
+                
+                // Star Cannon: Iceman copies player's star cannon shots when player has it
+                if (p.starCannonLevel > 0) {
+                    const starCount = getStarCannonProjectileCount(p.starCannonLevel);
+                    const spreadAngle = 15; // degrees between stars
+                    for (let i = 0; i < starCount; i++) {
+                        const angle = (i - (starCount - 1) / 2) * spreadAngle * Math.PI / 180;
+                        spawnBullet({
+                            x: store.iceman.x,
+                            y: store.iceman.y - 15,
+                            vx: Math.sin(angle) * 320,
+                            vy: -Math.cos(angle) * 320,
+                            r: 6,
+                            col: "#ffff66",
+                            dmg: 45 * p.dmgMult * 0.35,
+                            pierce: true,
+                            explosive: false,
+                            isStar: true,
+                            isIceman: true,
+                            life: 0
+                        });
+                    }
                 }
             }
             function getOmegaMultishotColor(type) {
