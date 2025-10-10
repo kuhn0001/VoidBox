@@ -4355,6 +4355,8 @@
                 hasBlink: false, autoBlinkEnabled: false, autoBlinkRange: 0, autoBlinkLookahead: 0.45, autoBlinkLastTrigger: 0,
                 isBlinkSlashing: false,
                 enhancedClusters: false, enhancedPierce: false, hasStormbringer: false, hasPhasestriker: false,
+                // Omega multishot abilities
+                hasOmegaMultishot: false, omegaMultishotType: null,
                 // Void caller enhanced options
                 hasDoubleStorm: false, hasHybridVoid: false, hasImpactPhase: false,
                 // Skill tree progress
@@ -6075,6 +6077,12 @@
                     }
                 }
 
+                // Trigger Omega Multishot explosion on impact
+                if (b.isOmegaShot && !b.omegaExplosionTriggered) {
+                    triggerOmegaMultishotExplosion(b, e);
+                    b.omegaExplosionTriggered = true; // Only explode once
+                }
+                
                 if (b.explosive) explode(b.x, b.y, false, true);
                 if (!b.pierce) b.dead = true;
             }
@@ -8151,6 +8159,50 @@
                                     if (diff < -Math.PI) diff += Math.PI * 2;
                                     const arc = (enemy.scytheArc || VOID_REAPER_CONFIG.scytheArc) * (0.7 + 0.3 * Math.min(1, enemy.lungeProgress || 0));
                                     if (Math.abs(diff) <= arc * 0.5) {
+                                        // Check for Shield Pulse (EMP) protection
+                                        if (store.empCharges && store.empCharges.length > 0) {
+                                            // Shield Pulse blocks the reaper!
+                                            const charge = store.empCharges[0];
+                                            triggerEmpBurst(charge.x, charge.y);
+                                            charge.cooldown = EMP_BURST_CONFIG.chargeCooldown;
+                                            store.empGlobalCooldown = Math.max(store.empGlobalCooldown || 0, EMP_BURST_CONFIG.globalCooldown || 0);
+                                            announce('⚡ SHIELD PULSE STOPPED THE REAPER! ⚡');
+                                            playSound('thunder');
+                                            screenFlash(1, 200, 'rgba(100, 200, 255, 0.4)');
+                                            // Stun and damage the reaper
+                                            enemy.hp -= 80;
+                                            enemy.stunTimer = 3.5;
+                                            enemy.phase = 'recovering';
+                                            enemy.hitSlowFactor = 0.3;
+                                            enemy.hitSlowTimer = 4;
+                                            store.activeEffects.push(createEffect('empShockwave', enemy.x, enemy.y, 280));
+                                            return;
+                                        }
+                                        // Check for Aft Flank Shield protection (if reaper is behind player)
+                                        const reaperAngleToPlayer = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+                                        const playerFacingAngle = player.heading || 0;
+                                        let facingDiff = reaperAngleToPlayer - playerFacingAngle;
+                                        if (facingDiff > Math.PI) facingDiff -= Math.PI * 2;
+                                        if (facingDiff < -Math.PI) facingDiff += Math.PI * 2;
+                                        const isFromBehind = Math.abs(facingDiff) > Math.PI * 0.5; // Behind if angle > 90 degrees
+                                        
+                                        if (player.hasRearGuard && player.rearGuardReady && isFromBehind) {
+                                            // Aft Flank Shield blocks the reaper from behind!
+                                            player.rearGuardReady = false;
+                                            player.rearGuardCooldown = 8;
+                                            announce('🛡️ AFT FLANKSHIELD STOPPED THE REAPER! 🛡️');
+                                            playSound('stargun');
+                                            screenFlash(1, 200, 'rgba(255, 215, 0, 0.4)');
+                                            store.activeEffects.push(createEffect("rearGuardBlock"));
+                                            // Stun and damage the reaper
+                                            enemy.hp -= 60;
+                                            enemy.stunTimer = 2.5;
+                                            enemy.phase = 'recovering';
+                                            enemy.hitSlowFactor = 0.4;
+                                            enemy.hitSlowTimer = 3;
+                                            return;
+                                        }
+                                        
                                         takeDamage(player.hp + player.shield + player.hpMax + 999);
                                     }
                                 }
@@ -13866,9 +13918,122 @@
                     });
                 }
             }
+            function getOmegaMultishotColor(type) {
+                switch (type) {
+                    case 'marauder_burst': return '#ff6b35'; // Fiery orange
+                    case 'juggernaut_hammer': return '#ffd700'; // Golden
+                    case 'railgunner_lance': return '#00ffff'; // Cyan
+                    case 'demolitioner_nova': return '#ff1744'; // Explosive red
+                    case 'phasestriker_void': return '#9c27b0'; // Void purple
+                    case 'stormbringer_storm': return '#00bfff'; // Electric blue
+                    default: return '#ffffff';
+                }
+            }
+            
+            function triggerOmegaMultishotExplosion(bullet, enemy) {
+                if (!bullet.isOmegaShot || !bullet.omegaType) return;
+                
+                const p = store.player;
+                const explosionRadius = 90;
+                const radiusSq = explosionRadius * explosionRadius;
+                
+                // Create visual effect
+                store.activeEffects.push(createEffect('omegaExplosion', bullet.x, bullet.y, explosionRadius, {
+                    color: getOmegaMultishotColor(bullet.omegaType),
+                    omegaType: bullet.omegaType
+                }));
+                
+                // Apply AOE damage based on omega type
+                const targets = store.boss ? [...store.enemies, store.boss] : store.enemies;
+                targets.forEach(e => {
+                    if (!e || e.dead || e === enemy) return; // Skip the primary target (already hit)
+                    const dx = e.x - bullet.x;
+                    const dy = e.y - bullet.y;
+                    const distSq = dx * dx + dy * dy;
+                    
+                    if (distSq <= radiusSq) {
+                        const aoeDamage = bullet.dmg * 0.7; // 70% damage to nearby enemies
+                        const isBoss = e === store.boss;
+                        
+                        if (isBoss) {
+                            applyBossDamage(e, aoeDamage, { point: { x: e.x, y: e.y } });
+                        } else {
+                            e.hp -= aoeDamage;
+                            store.world.totalDamage += aoeDamage;
+                        }
+                        
+                        // Add special effects based on omega type
+                        switch (bullet.omegaType) {
+                            case 'marauder_burst':
+                                e.jugBurnTimer = Math.max(e.jugBurnTimer || 0, 2);
+                                break;
+                            case 'juggernaut_hammer':
+                                e.stunTimer = Math.max(e.stunTimer || 0, 0.8);
+                                e.hitSlowFactor = 0.5;
+                                e.hitSlowTimer = 1.2;
+                                break;
+                            case 'railgunner_lance':
+                                // Pierce effect - already handled by pierce property
+                                break;
+                            case 'demolitioner_nova':
+                                // Chain explosion - trigger smaller explosions
+                                if (Math.random() < 0.4) {
+                                    store.activeEffects.push(createEffect('explosion', e.x, e.y, 35));
+                                }
+                                break;
+                            case 'phasestriker_void':
+                                e.phaseLockTimer = Math.max(e.phaseLockTimer || 0, 1.5);
+                                e.phaseLockSlowFactor = 0.4;
+                                break;
+                            case 'stormbringer_storm':
+                                e.stormShockTimer = Math.max(e.stormShockTimer || 0, 1.8);
+                                e.stormShockIntensity = 0.8;
+                                break;
+                        }
+                        
+                        store.activeEffects.push(createEffect('hitSpark', e.x, e.y, e.r || 16));
+                    }
+                });
+                
+                playSound('explosion');
+            }
+            
             function firePlayer() {
                 const p = store.player;
                 if (p.beefChargeState && p.beefChargeState !== 'ready') return;
+                
+                // OMEGA MULTISHOT: Transform regular multishot into special AOE projectiles
+                if (p.hasOmegaMultishot && p.omegaMultishotType) {
+                    const baseBulletSpeed = 380;
+                    const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0);
+                    // Combine shots: fire fewer but more powerful projectiles
+                    const orbCount = Math.max(1, Math.ceil(totalMultishot / 3)); // Combine 3 shots into 1 orb
+                    const angleSpread = 12;
+                    
+                    for (let i = 0; i < orbCount; i++) {
+                        const angle = (i - (orbCount - 1) / 2) * angleSpread * Math.PI / 180;
+                        const damagePerShot = 15 * p.dmgMult;
+                        const combinedDamage = damagePerShot * Math.floor(totalMultishot / orbCount) * 1.3; // 30% bonus for omega
+                        
+                        spawnBullet({
+                            x: p.x + 12 * Math.sin(angle),
+                            y: p.y - 12,
+                            vx: Math.sin(angle) * baseBulletSpeed,
+                            vy: -Math.cos(angle) * baseBulletSpeed,
+                            r: 8, // Larger projectile
+                            col: getOmegaMultishotColor(p.omegaMultishotType),
+                            dmg: combinedDamage,
+                            pierce: p.piercing,
+                            explosive: false, // Handled by omega explosion
+                            isSwirl: false,
+                            isOmegaShot: true,
+                            omegaType: p.omegaMultishotType
+                        });
+                    }
+                    return;
+                }
+                
+                // NORMAL MULTISHOT
                 const baseBulletSpeed = 420;
                 const bulletSpeed = baseBulletSpeed;
                 const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0);
@@ -15589,6 +15754,246 @@
                         aura: '#a070ff',
                         trail: '#4e2c7a'
                     }
+                },
+                blackgold: {
+                    key: 'blackgold',
+                    label: 'Black Gold Dynasty',
+                    body: {
+                        top: '#0a0a0c',
+                        mid: '#121214',
+                        bottom: '#1a1a1c',
+                        outline: '#d4af37',
+                        interior: '#060608',
+                        accent: '#ffd700'
+                    },
+                    visor: {
+                        left: 'rgba(255, 215, 0, 0.95)',
+                        center: 'rgba(255, 235, 100, 0.98)',
+                        right: 'rgba(212, 175, 55, 0.92)'
+                    },
+                    aura: {
+                        inner: 'rgba(255, 215, 0, 0.35)',
+                        mid: 'rgba(180, 130, 30, 0.65)',
+                        outer: 'rgba(30, 25, 5, 0)'
+                    },
+                    trail: '#ffd700',
+                    bullet: 'rgba(255, 215, 0, 0.97)',
+                    bulletPierce: 'rgba(255, 240, 120, 0.99)',
+                    minion: {
+                        core: '#ffe87c',
+                        aura: '#d4af37',
+                        trail: '#8b7355'
+                    }
+                },
+                crimsonhex: {
+                    key: 'crimsonhex',
+                    label: 'Crimson Hex Protocol',
+                    body: {
+                        top: '#8b0000',
+                        mid: '#5c0000',
+                        bottom: '#b71c1c',
+                        outline: '#ff1744',
+                        interior: '#3d0000',
+                        accent: '#ff5252'
+                    },
+                    visor: {
+                        left: 'rgba(255, 23, 68, 0.94)',
+                        center: 'rgba(255, 82, 82, 0.98)',
+                        right: 'rgba(198, 40, 40, 0.9)'
+                    },
+                    aura: {
+                        inner: 'rgba(255, 23, 68, 0.38)',
+                        mid: 'rgba(183, 28, 28, 0.68)',
+                        outer: 'rgba(40, 0, 0, 0)'
+                    },
+                    trail: '#ff1744',
+                    bullet: 'rgba(255, 23, 68, 0.97)',
+                    bulletPierce: 'rgba(255, 82, 82, 0.99)',
+                    minion: {
+                        core: '#ff5252',
+                        aura: '#ff1744',
+                        trail: '#7f0000'
+                    }
+                },
+                prismrift: {
+                    key: 'prismrift',
+                    label: 'Prismatic Rift Walker',
+                    body: {
+                        top: '#00d4ff',
+                        mid: '#00bfa5',
+                        bottom: '#69f0ae',
+                        outline: '#b2ff59',
+                        interior: '#004d40',
+                        accent: '#64ffda'
+                    },
+                    visor: {
+                        left: 'rgba(0, 191, 165, 0.94)',
+                        center: 'rgba(100, 255, 218, 0.98)',
+                        right: 'rgba(178, 255, 89, 0.92)'
+                    },
+                    aura: {
+                        inner: 'rgba(0, 212, 255, 0.36)',
+                        mid: 'rgba(0, 191, 165, 0.62)',
+                        outer: 'rgba(0, 40, 35, 0)'
+                    },
+                    trail: '#64ffda',
+                    bullet: 'rgba(100, 255, 218, 0.97)',
+                    bulletPierce: 'rgba(178, 255, 89, 0.99)',
+                    minion: {
+                        core: '#b2ff59',
+                        aura: '#64ffda',
+                        trail: '#00897b'
+                    }
+                },
+                ghostflame: {
+                    key: 'ghostflame',
+                    label: 'Ghost Flame Specter',
+                    body: {
+                        top: '#1de9b6',
+                        mid: '#00c9a7',
+                        bottom: '#69f0ae',
+                        outline: '#00e5ff',
+                        interior: '#004d40',
+                        accent: '#18ffff'
+                    },
+                    visor: {
+                        left: 'rgba(0, 229, 255, 0.95)',
+                        center: 'rgba(29, 233, 182, 0.98)',
+                        right: 'rgba(24, 255, 255, 0.92)'
+                    },
+                    aura: {
+                        inner: 'rgba(29, 233, 182, 0.42)',
+                        mid: 'rgba(0, 229, 255, 0.7)',
+                        outer: 'rgba(0, 60, 50, 0)'
+                    },
+                    trail: '#18ffff',
+                    bullet: 'rgba(24, 255, 255, 0.97)',
+                    bulletPierce: 'rgba(29, 233, 182, 0.99)',
+                    minion: {
+                        core: '#00e5ff',
+                        aura: '#1de9b6',
+                        trail: '#00695c'
+                    }
+                },
+                voidcrystal: {
+                    key: 'voidcrystal',
+                    label: 'Void Crystal Architect',
+                    body: {
+                        top: '#4a148c',
+                        mid: '#6a1b9a',
+                        bottom: '#8e24aa',
+                        outline: '#e040fb',
+                        interior: '#311b92',
+                        accent: '#d500f9'
+                    },
+                    visor: {
+                        left: 'rgba(213, 0, 249, 0.94)',
+                        center: 'rgba(224, 64, 251, 0.98)',
+                        right: 'rgba(170, 0, 255, 0.9)'
+                    },
+                    aura: {
+                        inner: 'rgba(224, 64, 251, 0.4)',
+                        mid: 'rgba(142, 36, 170, 0.72)',
+                        outer: 'rgba(40, 10, 70, 0)'
+                    },
+                    trail: '#e040fb',
+                    bullet: 'rgba(224, 64, 251, 0.97)',
+                    bulletPierce: 'rgba(213, 0, 249, 0.99)',
+                    minion: {
+                        core: '#e1bee7',
+                        aura: '#d500f9',
+                        trail: '#4a148c'
+                    }
+                },
+                chromestrike: {
+                    key: 'chromestrike',
+                    label: 'Chrome Strike Edition',
+                    body: {
+                        top: '#b0bec5',
+                        mid: '#90a4ae',
+                        bottom: '#cfd8dc',
+                        outline: '#00e5ff',
+                        interior: '#607d8b',
+                        accent: '#80d8ff'
+                    },
+                    visor: {
+                        left: 'rgba(0, 229, 255, 0.96)',
+                        center: 'rgba(128, 216, 255, 0.98)',
+                        right: 'rgba(224, 247, 250, 0.94)'
+                    },
+                    aura: {
+                        inner: 'rgba(176, 190, 197, 0.38)',
+                        mid: 'rgba(96, 125, 139, 0.65)',
+                        outer: 'rgba(30, 40, 50, 0)'
+                    },
+                    trail: '#80d8ff',
+                    bullet: 'rgba(128, 216, 255, 0.97)',
+                    bulletPierce: 'rgba(224, 247, 250, 0.99)',
+                    minion: {
+                        core: '#e0f7fa',
+                        aura: '#80d8ff',
+                        trail: '#455a64'
+                    }
+                },
+                infernalcore: {
+                    key: 'infernalcore',
+                    label: 'Infernal Core Juggernaut',
+                    body: {
+                        top: '#ff3d00',
+                        mid: '#bf360c',
+                        bottom: '#ff6e40',
+                        outline: '#ffab40',
+                        interior: '#6d1b00',
+                        accent: '#ff9e80'
+                    },
+                    visor: {
+                        left: 'rgba(255, 171, 64, 0.95)',
+                        center: 'rgba(255, 158, 128, 0.98)',
+                        right: 'rgba(255, 61, 0, 0.92)'
+                    },
+                    aura: {
+                        inner: 'rgba(255, 61, 0, 0.44)',
+                        mid: 'rgba(191, 54, 12, 0.76)',
+                        outer: 'rgba(60, 15, 0, 0)'
+                    },
+                    trail: '#ff6e40',
+                    bullet: 'rgba(255, 158, 128, 0.97)',
+                    bulletPierce: 'rgba(255, 171, 64, 0.99)',
+                    minion: {
+                        core: '#ffccbc',
+                        aura: '#ff6e40',
+                        trail: '#bf360c'
+                    }
+                },
+                glacialwarden: {
+                    key: 'glacialwarden',
+                    label: 'Glacial Warden Sovereign',
+                    body: {
+                        top: '#0277bd',
+                        mid: '#01579b',
+                        bottom: '#039be5',
+                        outline: '#00b8d4',
+                        interior: '#004d73',
+                        accent: '#00e5ff'
+                    },
+                    visor: {
+                        left: 'rgba(0, 184, 212, 0.95)',
+                        center: 'rgba(0, 229, 255, 0.98)',
+                        right: 'rgba(129, 212, 250, 0.92)'
+                    },
+                    aura: {
+                        inner: 'rgba(0, 229, 255, 0.4)',
+                        mid: 'rgba(2, 119, 189, 0.7)',
+                        outer: 'rgba(0, 30, 60, 0)'
+                    },
+                    trail: '#00b8d4',
+                    bullet: 'rgba(0, 229, 255, 0.97)',
+                    bulletPierce: 'rgba(129, 212, 250, 0.99)',
+                    minion: {
+                        core: '#b3e5fc',
+                        aura: '#00b8d4',
+                        trail: '#01579b'
+                    }
                 }
             });
 
@@ -16005,7 +16410,15 @@
                 { id: 'tempest', name: 'Tempest Breaker', icon: '🌩️', cost: 120, desc: 'Ionized teal plating that crackles with stormlight.', theme: 'tempest' },
                 { id: 'aurora', name: 'Aurora Helix', icon: '🌌', cost: 140, desc: 'Prismatic plating braided from polar light flows.', theme: 'aurora' },
                 { id: 'bastion', name: 'Obsidian Bastion', icon: '🛡️', cost: 180, desc: 'Heavy dusk armor with molten core vents.', theme: 'bastion' },
-                { id: 'umbra', name: 'Umbral Regent', icon: '🌑', cost: 150, desc: 'Abyssal crystal armor forged from void echoes.', theme: 'umbra' }
+                { id: 'umbra', name: 'Umbral Regent', icon: '🌑', cost: 150, desc: 'Abyssal crystal armor forged from void echoes.', theme: 'umbra' },
+                { id: 'blackgold', name: 'Black Gold Dynasty', icon: '👑', cost: 250, desc: 'Obsidian chassis inlaid with 24K quantum gold tracery.', theme: 'blackgold' },
+                { id: 'crimsonhex', name: 'Crimson Hex Protocol', icon: '⬢', cost: 200, desc: 'Crimson war-forged armor with hexagonal energy matrices.', theme: 'crimsonhex' },
+                { id: 'prismrift', name: 'Prismatic Rift Walker', icon: '🌈', cost: 220, desc: 'Reality-bending chrome that shifts through the spectrum.', theme: 'prismrift' },
+                { id: 'ghostflame', name: 'Ghost Flame Specter', icon: '👻', cost: 240, desc: 'Spectral cyan plating wreathed in ethereal ghost fire.', theme: 'ghostflame' },
+                { id: 'voidcrystal', name: 'Void Crystal Architect', icon: '💎', cost: 260, desc: 'Crystalline void lattice forged from dimensional fractures.', theme: 'voidcrystal' },
+                { id: 'chromestrike', name: 'Chrome Strike Edition', icon: '⚡', cost: 280, desc: 'Mirror-finish chromium with electric cyan highlights.', theme: 'chromestrike' },
+                { id: 'infernalcore', name: 'Infernal Core Juggernaut', icon: '🔥', cost: 300, desc: 'Molten core reactor armor bleeding thermal death glow.', theme: 'infernalcore' },
+                { id: 'glacialwarden', name: 'Glacial Warden Sovereign', icon: '❄️', cost: 220, desc: 'Frost-forged adamant plates radiating absolute zero.', theme: 'glacialwarden' }
             ]);
 
             const CHAMPION_SKIN_OPTION_MAP = Object.freeze(Object.fromEntries(CHAMPION_SKIN_OPTIONS.map(s => [s.id, s])));
@@ -22544,6 +22957,65 @@
                             ctx.restore();
                         };
                         break;
+                    case "omegaExplosion":
+                        effect.maxLife = 0.75;
+                        effect.life = effect.maxLife;
+                        effect.radius = radius || 90;
+                        effect.color = opts.color || '#ffffff';
+                        effect.omegaType = opts.omegaType;
+                        effect.particles = Array.from({ length: 16 }, (_, i) => ({
+                            angle: (i / 16) * Math.PI * 2,
+                            speed: 120 + Math.random() * 60,
+                            size: 4 + Math.random() * 3
+                        }));
+                        effect.step = function (dt) {
+                            this.life -= dt;
+                            if (this.life <= 0) this.isActive = false;
+                        };
+                        effect.draw = function () {
+                            const t = 1 - (this.life / this.maxLife);
+                            const fade = 1 - t;
+                            const time = performance.now() / 1000;
+                            
+                            ctx.save();
+                            ctx.translate(this.x, this.y);
+                            ctx.globalCompositeOperation = 'lighter';
+                            
+                            // Core explosion
+                            const coreRadius = this.radius * (0.4 + t * 0.6);
+                            ctx.globalAlpha = 0.7 * fade;
+                            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, coreRadius);
+                            gradient.addColorStop(0, this.color);
+                            gradient.addColorStop(0.5, this.color + '88');
+                            gradient.addColorStop(1, this.color + '00');
+                            ctx.fillStyle = gradient;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, coreRadius, 0, Math.PI * 2);
+                            ctx.fill();
+                            
+                            // Expanding ring
+                            ctx.globalAlpha = 0.9 * fade;
+                            ctx.strokeStyle = this.color;
+                            ctx.lineWidth = 4 * fade;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, this.radius * t, 0, Math.PI * 2);
+                            ctx.stroke();
+                            
+                            // Flying particles
+                            ctx.globalAlpha = 0.8 * fade;
+                            this.particles.forEach(particle => {
+                                const dist = particle.speed * t;
+                                const px = Math.cos(particle.angle) * dist;
+                                const py = Math.sin(particle.angle) * dist;
+                                ctx.fillStyle = this.color;
+                                ctx.beginPath();
+                                ctx.arc(px, py, particle.size * (1 - t * 0.5), 0, Math.PI * 2);
+                                ctx.fill();
+                            });
+                            
+                            ctx.restore();
+                        };
+                        break;
                     case "gravityWell":
                         // Use radius parameter as scale factor (default 1.0 for normal, 0.4 for mini)
                         const scale = radius || 1.0;
@@ -23430,12 +23902,24 @@
                             (key === 'launcher' && player.hasLauncher) ||
                             (key === 'luck_boost' && player.luckBoost > 0) ||
                             (key === 'magnet_pull' && player.magnetRadius > 0) ||
-                            (key === 'rear_guard' && player.hasRearGuard) ||
-                            (key === 'iceman' && player.hasIceman);
+                            (key === 'rear_guard' && player.hasRearGuard);
                         if (alreadyUnlocked) {
                             return { cost: Infinity, available: false, premium: true, reason: 'Already unlocked.' };
                         }
                     }
+                    
+                    // Handle premium items with level-based costs (iceman, ghost_hounds, etc.)
+                    if (upgrade.baseCost && upgrade.scale && upgrade.maxLevel) {
+                        const currentLevel = (player.upgradeLevels && player.upgradeLevels[key]) || 0;
+                        if (currentLevel >= upgrade.maxLevel) {
+                            return { cost: Infinity, available: false, premium: true, level: currentLevel, reason: 'Max level reached.' };
+                        }
+                        const cost = upgrade.increment
+                            ? upgrade.baseCost + (currentLevel * upgrade.increment)
+                            : Math.floor(upgrade.baseCost * Math.pow(upgrade.scale, currentLevel));
+                        return { cost, available: availableGold >= cost, premium: true, level: currentLevel };
+                    }
+                    
                     return { cost: upgrade.cost, available: availableGold >= upgrade.cost, premium: true };
                 } else {
                     const currentLevel = (player.upgradeLevels && player.upgradeLevels[key]) || 0;
@@ -23466,6 +23950,23 @@
                                 const currentGold = getWorldGold();
                                 cost = Math.max(0, prevGold - currentGold);
                             }
+                        }
+                    } else if (upgrade.baseCost && upgrade.scale && upgrade.maxLevel && upgrade.effect) {
+                        // Handle leveled premium items (iceman, ghost_hounds, lazarus_beam, etc.)
+                        const info = getNextUpgradeCost(key);
+                        const isFree = options.free === true;
+                        const canAfford = isFree || (info && info.available && Number.isFinite(info.cost) && getWorldGold() >= info.cost);
+                        
+                        if (canAfford) {
+                            const currentLevel = (store.player.upgradeLevels && store.player.upgradeLevels[key]) || 0;
+                            if (!isFree) {
+                                addWorldGold(-info.cost);
+                                cost = info.cost;
+                            }
+                            upgrade.effect(currentLevel);
+                            if (!store.player.upgradeLevels) store.player.upgradeLevels = {};
+                            store.player.upgradeLevels[key] = currentLevel + 1;
+                            success = true;
                         }
                     } else {
                         const info = getNextUpgradeCost(key);
@@ -24143,7 +24644,7 @@
                 }
 
                 const summaryLines = [
-                    `GENOME ROUTE ▸ ${genomeName} ➜ ${subclassDisplay}`,
+                    `GENOME ROUTE ▸ ${genomeName} ➜ ${subclassDisplay}${player.hasOmegaMultishot ? ' ⭐ OMEGA' : ''}`,
                     `MISSION STATUS ▸ W${pad(world.wave || 1)} | LV ${pad(world.level || 1)} | BOSSES ${pad(world.bosses || 0)} | KILLS ${pad(world.kills || 0, 3)}`,
                     `FORGE LEDGER ▸ GOLD ${pad(gold, 4)} | XP ${pad(world.xp || 0, 4)} | SCORE ${pad(world.score || 0, 6)}`,
                     `PROGRESSION ▸ TOTAL ${pad(player.totalProgressionPoints || 0)} | SPENT ${pad(player.skillPointsSpent || 0)} | UNSPENT ${pad(player.unspentProgressionPoints || 0)}`
@@ -24162,12 +24663,17 @@
                     {
                         key: 'Hull Integrity',
                         value: `${pad(toNumber(player.hp || 0), 3)}/${pad(toNumber(player.hpMax || player.hp || 0), 3)}`,
-                        detail: player.damageReduction ? `Damage Reduction ${pct(player.damageReduction)}` : null
+                        detail: player.damageReduction ? `Damage Reduction ${pct(player.damageReduction)} • Knockback ${player.knockbackImmunity ? 'Immune' : 'Normal'}` : null
                     },
                     {
                         key: 'Shield Matrix',
                         value: `${pad(toNumber(player.shield || 0), 3)}/${pad(toNumber(player.shieldMax || 0), 3)}`,
                         detail: player.shieldRechargeDelayMax ? `Recharge Delay ${fmt(player.shieldRechargeDelayMax, 2)}s` : null
+                    },
+                    {
+                        key: 'Beef Shield',
+                        value: player.beefShieldMax > 0 ? `${pad(Math.floor(player.beefShield || 0), 3)}/${pad(Math.floor(player.beefShieldMax), 3)}` : 'LOCKED',
+                        detail: player.beefShieldMax > 0 ? `Regen ${fmt(player.beefShieldRegenRate || 5, 1)}/s • Cooldown ${fmt(player.beefShieldCooldown || 0, 1)}s` : 'Unlock via Beef class skill tree'
                     },
                     {
                         key: 'Velocity',
@@ -24193,7 +24699,7 @@
                     {
                         key: 'Volley Matrix',
                         value: `${fmt(shotsPerSecond, 1)} /s`,
-                        detail: `Projectiles ${pad(player.multishot || 1)} • Pierce ${pad(player.piercing || player.missilePierce || 0)}`
+                        detail: `Projectiles ${pad(player.multishot || 1)} • Pierce ${pad(player.piercing || player.missilePierce || 0)}${player.hasOmegaMultishot ? ' • OMEGA MODE' : ''}`
                     },
                     {
                         key: 'Arsenal',
@@ -24204,6 +24710,21 @@
                         key: 'Special Ammo',
                         value: `Storm ${player.hasStormbringer ? 'ONLINE' : 'LOCKED'} • Phase ${player.hasPhasestriker ? 'ONLINE' : 'LOCKED'}`,
                         detail: player.hasBlink ? `Blink ${player.autoBlinkEnabled ? 'AUTO' : 'MANUAL'}` : 'Blink locked'
+                    },
+                    {
+                        key: 'Special Weapons',
+                        value: `Star Cannon ${player.starCannonLevel ? `MK${player.starCannonLevel}` : 'LOCKED'}`,
+                        detail: `Gravity Well ${player.hasVoidBeam ? 'ONLINE' : 'LOCKED'} • Iceman ${player.hasIceman ? 'ACTIVE' : 'LOCKED'}`
+                    },
+                    {
+                        key: 'Beef Class',
+                        value: player.beefMaxCharges > 0 ? `Charges ${player.beefCharges || 0}/${player.beefMaxCharges}` : 'N/A',
+                        detail: player.beefMaxCharges > 0 ? `Chain Mode ${player.beefChainMode ? 'ON' : 'OFF'} • Elite Combat ${player.beefEliteCombat ? 'ON' : 'OFF'}` : null
+                    },
+                    {
+                        key: 'Rocketman Class',
+                        value: player.missilePierce > 0 || player.missileCluster ? `Pierce ${player.missilePierce || 0} • Cluster ${player.missileCluster ? 'ON' : 'OFF'}` : 'N/A',
+                        detail: player.missileClusterCount ? `Cluster Count ${player.missileClusterCount} • Radius x${fmt(player.missileClusterRadius || 1, 1)}` : null
                     }
                 ];
                 sections.push(renderGridSection('Offensive Matrix', offenseRows));
@@ -24322,20 +24843,84 @@
 
                 function buildSystemList(p) {
                     const systems = [];
-                    if (p.hasVoidBeam) systems.push('Gravity Well ▸ Singularity ready');
-                    if (p.hasLazarusBeam) systems.push('Lazarus Beam ▸ Dual smite online');
-                    if (p.hasLauncher) systems.push('Fragment Launcher ▸ Payload linked');
+                    
+                    // Defense Systems
+                    if (p.hasRearGuard) {
+                        const cooldown = p.rearGuardReady ? 'READY' : `${fmt(p.rearGuardCooldown || 8, 1)}s`;
+                        systems.push(`Aft Flank Shield ▸ ${cooldown} • REAPER COUNTER`);
+                    }
+                    if (p.grenades > 0) {
+                        systems.push(`Shield Pulse (EMP) ▸ ${pad(p.grenades)} charges • REAPER COUNTER`);
+                    }
+                    if (p.beefShieldMax > 0) {
+                        systems.push(`Beef Shield ▸ ${pad(Math.floor(p.beefShield || 0))}/${pad(Math.floor(p.beefShieldMax))} armor`);
+                    }
+                    
+                    // Offensive Systems
+                    if (p.hasVoidBeam) systems.push('Gravity Well ▸ Singularity generator ready');
+                    if (p.hasLazarusBeam) {
+                        const level = p.upgradeLevels?.lazarus_beam || 1;
+                        systems.push(`Lazarus Beam ▸ Level ${level} ${level > 1 ? 'dual' : 'single'} beam`);
+                    }
+                    if (p.hasLauncher) {
+                        const level = p.upgradeLevels?.launcher || 1;
+                        const projectiles = 2 * level;
+                        systems.push(`Fragment Launcher ▸ ${projectiles} projectiles`);
+                    }
                     if (p.hasHounds) {
                         const packSize = Array.isArray(store.hounds) ? store.hounds.filter(h => h && !h.dead).length : 2;
-                        systems.push(`Ghost Hounds ▸ Pack ${pad(packSize)}`);
+                        systems.push(`Ghost Hounds ▸ Pack of ${pad(packSize)}`);
                     }
-                    if (p.hasIceman) systems.push('The Iceman ▸ Mirror support active');
-                    if (p.hasRearGuard) systems.push(`Rear Guard ▸ Cooldown ${fmt(p.rearGuardCooldown || 6, 1)}s`);
-                    if (p.hasBlink) systems.push(`Blink ▸ ${p.autoBlinkEnabled ? 'Auto-response' : 'Manual trigger'}`);
-                    if (p.hasVoidLaser || p.hasPhasestriker) systems.push('Void Laser ▸ Target lock established');
-                    if (p.hasChainLightning || p.hasStormbringer) systems.push('Chain Lightning ▸ Arc lattice primed');
-                    if (p.starCannonLevel) systems.push(`Star Cannon ▸ MK${pad(p.starCannonLevel)}${p.starCannonIcemanSupport ? ' + Iceman sync' : ''}`);
-                    if (p.attackSpeedStacks) systems.push(`Hyper Drive ▸ ${pad(p.attackSpeedStacks)} stacks`);
+                    if (p.hasIceman) {
+                        const level = store.iceman?.level || 1;
+                        systems.push(`The Iceman ▸ Level ${level} mirror support`);
+                    }
+                    if (p.starCannonLevel) {
+                        const support = p.starCannonIcemanSupport ? ' + Iceman sync' : '';
+                        systems.push(`Star Cannon ▸ MK${pad(p.starCannonLevel)}${support}`);
+                    }
+                    
+                    // Mobility & Special
+                    if (p.hasBlink) {
+                        const mode = p.autoBlinkEnabled ? 'Auto-response' : 'Manual trigger';
+                        systems.push(`Blink Teleport ▸ ${mode} • Range ${pad(Math.floor(p.blinkRange || 250))}`);
+                    }
+                    if (p.hasVoidLaser || p.hasPhasestriker) {
+                        const level = p.phasestRikerLevel || 0;
+                        const range = level >= 1 ? 'Unlimited' : 'Short';
+                        systems.push(`Void Laser ▸ ${range} range • ${p.doubleBeam ? 'Double beam' : 'Single beam'}`);
+                    }
+                    if (p.hasChainLightning || p.hasStormbringer) {
+                        const level = p.stormstrikerLevel || 1;
+                        const bolts = level >= 3 ? '4 bolts' : level >= 2 ? 'Twin bolts' : 'Single bolt';
+                        systems.push(`Chain Lightning ▸ ${bolts} • Damage x${fmt(p.chainLightningDamage || 1, 1)}`);
+                    }
+                    if (p.hasBeefClone) {
+                        const mode = p.juggernautCloneActive ? 'Bomber' : 'Marauder';
+                        systems.push(`Battle Clone ▸ ${mode} mode active`);
+                    }
+                    if (p.wiperLasers) {
+                        systems.push(`Wiper Lasers ▸ Sweeping laser array online`);
+                    }
+                    
+                    // Omega Multishot
+                    if (p.hasOmegaMultishot && p.omegaMultishotType) {
+                        const omegaNames = {
+                            'marauder_burst': 'Omega Burst',
+                            'juggernaut_hammer': 'Omega Hammer',
+                            'railgunner_lance': 'Omega Lance',
+                            'demolitioner_nova': 'Omega Nova',
+                            'phasestriker_void': 'Omega Void',
+                            'stormbringer_storm': 'Omega Storm'
+                        };
+                        const name = omegaNames[p.omegaMultishotType] || 'Omega Multishot';
+                        systems.push(`⭐ ${name} ▸ AOE projectile transformation active`);
+                    }
+                    
+                    // Buffs & Stacks
+                    if (p.attackSpeedStacks) systems.push(`Hyper Drive ▸ ${pad(p.attackSpeedStacks)} stacks active`);
+                    if (p.timeShardStacks) systems.push(`Time Shards ▸ ${pad(p.timeShardStacks)} stacks • x${fmt(p.timeShardMultiplier || 1, 2)} rate`);
+                    
                     return systems;
                 }
 
@@ -27330,9 +27915,26 @@
                 ctx.save();
                 ctx.translate(champion.x, champion.y);
 
-                // Dark blue aura (darker than iceman)
+                // Premium multi-layered aura with pulsing rings
                 ctx.save();
                 ctx.globalCompositeOperation = 'lighter';
+                
+                // Outer expanding rings for premium skins
+                const isPremiumSkin = ['blackgold', 'crimsonhex', 'prismrift', 'ghostflame', 'voidcrystal', 'chromestrike', 'infernalcore', 'glacialwarden'].includes(skinTheme.key);
+                if (isPremiumSkin) {
+                    for (let i = 0; i < 3; i++) {
+                        const ringPhase = (now * 1.5 + i * 0.8) % 2;
+                        const ringAlpha = Math.max(0, 0.3 - ringPhase * 0.15);
+                        ctx.globalAlpha = ringAlpha;
+                        ctx.strokeStyle = withAlpha(accentColor, 0.6);
+                        ctx.lineWidth = 2 + level * 0.3;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, baseRadius * (2.2 + ringPhase * 0.8 + level * 0.15), 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                }
+                
+                // Main aura
                 ctx.globalAlpha = 0.32 + 0.24 * Math.sin(now * 2.5 + auraPhase * 0.9);
                 const auraRadius = baseRadius * (2.0 + auraPulse * 0.7 + level * 0.1);
                 const auraGradient = ctx.createRadialGradient(0, 0, baseRadius * 0.3, 0, 0, auraRadius);
@@ -27435,29 +28037,95 @@
                 ctx.closePath();
                 ctx.fill();
 
-                // Angular accent lines
+                // Angular accent lines with premium glow effects
                 const accentLevelColor = level >= 4 ? withAlpha(accentColor, 0.95) : withAlpha(accentColor, 0.82);
-                ctx.globalAlpha = 0.8;
+                
+                // Premium skins get glowing accent lines
+                if (isPremiumSkin) {
+                    ctx.shadowColor = accentColor;
+                    ctx.shadowBlur = 8 + level * 2;
+                    ctx.globalAlpha = 0.9;
+                } else {
+                    ctx.globalAlpha = 0.8;
+                }
+                
                 ctx.strokeStyle = accentLevelColor;
-                ctx.lineWidth = 1.8;
+                ctx.lineWidth = isPremiumSkin ? 2.2 : 1.8;
                 ctx.beginPath();
                 ctx.moveTo(-baseRadius * 0.35, baseRadius * 0.25);
                 ctx.lineTo(baseRadius * 0.35, baseRadius * 0.25);
                 ctx.moveTo(-baseRadius * 0.25, baseRadius * 0.6);
                 ctx.lineTo(baseRadius * 0.25, baseRadius * 0.6);
                 ctx.stroke();
+                
+                ctx.shadowBlur = 0;
 
-                // Level indicators
+                // Level indicators with premium effects
                 if (level >= 2) {
                     ctx.globalAlpha = 0.6 + 0.25 * Math.sin(now * 5.5 + auraPhase);
                     ctx.lineWidth = level >= 4 ? 2.5 : 1.8;
                     ctx.strokeStyle = accentLevelColor;
+                    
+                    // Premium skins get crown/halo indicators
+                    if (isPremiumSkin && level >= 4) {
+                        ctx.shadowColor = accentColor;
+                        ctx.shadowBlur = 12;
+                        ctx.lineWidth = 3;
+                    }
+                    
                     ctx.beginPath();
                     ctx.moveTo(0, -baseRadius * 1.5);
                     ctx.lineTo(0, -baseRadius * 2.0);
                     ctx.moveTo(-baseRadius * 0.3, -baseRadius * 1.75);
                     ctx.lineTo(baseRadius * 0.3, -baseRadius * 1.75);
                     ctx.stroke();
+                    ctx.shadowBlur = 0;
+                }
+                
+                // Special skin-specific effects
+                if (skinTheme.key === 'blackgold') {
+                    // Gold shimmer particles
+                    for (let i = 0; i < 4; i++) {
+                        const sparklePhase = (now * 3 + i * 1.5) % 4;
+                        const sparkleAlpha = Math.max(0, 0.8 - sparklePhase * 0.2);
+                        const sparkleSize = 2 + sparklePhase * 0.5;
+                        const sparkleAngle = (i / 4) * Math.PI * 2 + now * 0.5;
+                        const sparkleX = Math.cos(sparkleAngle) * baseRadius * 1.4;
+                        const sparkleY = Math.sin(sparkleAngle) * baseRadius * 1.4;
+                        ctx.globalAlpha = sparkleAlpha;
+                        ctx.fillStyle = '#ffd700';
+                        ctx.beginPath();
+                        ctx.arc(sparkleX, sparkleY, sparkleSize, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                } else if (skinTheme.key === 'ghostflame') {
+                    // Ethereal flame wisps
+                    ctx.globalAlpha = 0.4 + 0.2 * Math.sin(now * 4);
+                    ctx.strokeStyle = withAlpha('#18ffff', 0.7);
+                    ctx.lineWidth = 1.5;
+                    for (let i = 0; i < 5; i++) {
+                        const wispAngle = (i / 5) * Math.PI * 2 + now * 2;
+                        const wispDist = baseRadius * (1.6 + 0.3 * Math.sin(now * 3 + i));
+                        ctx.beginPath();
+                        ctx.moveTo(Math.cos(wispAngle) * baseRadius * 1.2, Math.sin(wispAngle) * baseRadius * 1.2);
+                        ctx.lineTo(Math.cos(wispAngle) * wispDist, Math.sin(wispAngle) * wispDist);
+                        ctx.stroke();
+                    }
+                } else if (skinTheme.key === 'prismrift') {
+                    // Prismatic light refraction
+                    const prismColors = ['#00d4ff', '#00bfa5', '#69f0ae', '#b2ff59'];
+                    for (let i = 0; i < 4; i++) {
+                        const prismPhase = (now * 2 + i * 0.8) % 3;
+                        const prismAlpha = Math.max(0, 0.5 - prismPhase * 0.15);
+                        const prismAngle = (i / 4) * Math.PI * 2 + now * 1.2;
+                        ctx.globalAlpha = prismAlpha;
+                        ctx.strokeStyle = prismColors[i];
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.arc(Math.cos(prismAngle) * baseRadius * 0.8, Math.sin(prismAngle) * baseRadius * 0.8, 
+                               baseRadius * (0.3 + prismPhase * 0.2), 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
                 }
 
                 // Special ability charge indicator
@@ -29321,9 +29989,9 @@
                 }
             }
 
-            // 4-Node Skill Tree Data Structure + Separate Class Ability - Single focused path per subclass
+            // 5-Node Skill Tree Data Structure + Separate Class Ability - Single focused path per subclass with Omega node
             const SKILL_TREE_DATA = {
-                // Each subclass gets a focused 4-node skill tree + separate class ability (available immediately)
+                // Each subclass gets a focused 4-node skill tree + Omega node (tier 5) + separate class ability (available immediately)
                 marauder: {
                     title: 'MARAUDER MASTERY TREE',
                     path: {
@@ -29332,7 +30000,8 @@
                             { id: 'marauder_multi_charge', name: 'Multi Charge', desc: 'Gain 3 charge attacks with enhanced chain capability', icon: 'mar11.png', tier: 1 },
                             { id: 'marauder_chain_assault', name: 'Chain Assault', desc: 'Keep charge chains active and add +50% chain damage.', icon: 'mar2.png', tier: 2 },
                             { id: 'marauder_combat_mastery', name: 'Combat Mastery', desc: 'Double chain damage bonuses and boost attack speed by 30%.', icon: 'mar3.png', tier: 3 },
-                            { id: 'marauder_elite_warrior', name: 'Elite Warrior', desc: 'Unlock 5 charges and elite double-hits that strike for 3x damage.', icon: 'mar4.png', tier: 4 }
+                            { id: 'marauder_elite_warrior', name: 'Elite Warrior', desc: 'Unlock 5 charges and elite double-hits that strike for 3x damage.', icon: 'mar4.png', tier: 4 },
+                            { id: 'marauder_omega_burst', name: 'OMEGA BURST', desc: 'Transform multishot into explosive energy orbs that detonate on impact with massive AOE.', icon: 'omega.png', tier: 5, requiresAllPrevious: true }
                         ]
                     },
                     classAbility: { id: 'beef_shield_unlock', name: 'BEEF SHIELD', desc: 'UNLOCK: Regenerating armor plating with damage absorption', icon: 'bshield.png', tier: 'class' },
@@ -29347,7 +30016,8 @@
                             { id: 'juggernaut_charge_power', name: 'Charge Power', desc: '+100% charge damage and knockback, +50% charge range', icon: 'jug1.png', tier: 1 },
                             { id: 'juggernaut_charge_mastery', name: 'Charge Mastery', desc: 'Charge creates damaging shockwave, +2 charge capacity', icon: 'jug22.png', tier: 2 },
                             { id: 'juggernaut_heavy_armor', name: 'Heavy Armor', desc: '+50 HP, 25% damage reduction, knockback immunity', icon: 'jug33.png', tier: 3 },
-                            { id: 'juggernaut_unstoppable', name: 'Unstoppable Force', desc: '2.5x explosion radius, 3x damage - devastating impact', icon: 'jug4.png', tier: 4 }
+                            { id: 'juggernaut_unstoppable', name: 'Unstoppable Force', desc: '2.5x explosion radius, 3x damage - devastating impact', icon: 'jug4.png', tier: 4 },
+                            { id: 'juggernaut_omega_hammer', name: 'OMEGA HAMMER', desc: 'Transform multishot into devastating hammer projectiles that shatter on impact with shockwave AOE.', icon: 'omega.png', tier: 5, requiresAllPrevious: true }
                         ]
                     },
                     classAbility: { id: 'beef_shield_unlock', name: 'BEEF SHIELD', desc: 'UNLOCK: Regenerating armor plating with damage absorption', icon: 'bshield.png', tier: 'class' },
@@ -29362,7 +30032,8 @@
                             { id: 'railgunner_super_pierce', name: 'Super Pierce', desc: 'Missiles pierce 5 enemies with +30% pierce damage', icon: 'one.png', tier: 1 },
                             { id: 'railgunner_perfect_aim', name: 'Perfect Aim', desc: '+25% critical hit chance with +50% accuracy', icon: 'two.png', tier: 2 },
                             { id: 'railgunner_advanced_ballistics', name: 'Advanced Ballistics', desc: 'Pierce 8 enemies with +80% velocity and homing', icon: 'three.png', tier: 3 },
-                            { id: 'railgunner_precision_master', name: 'Precision Master', desc: '+50% critical chance, 2x crit damage, and full railgun mastery.', icon: 'four.png', tier: 4 }
+                            { id: 'railgunner_precision_master', name: 'Precision Master', desc: '+50% critical chance, 2x crit damage, and full railgun mastery.', icon: 'four.png', tier: 4 },
+                            { id: 'railgunner_omega_lance', name: 'OMEGA LANCE', desc: 'Transform multishot into piercing energy lances that explode in a line on impact.', icon: 'omega.png', tier: 5, requiresAllPrevious: true }
                         ]
                     },
                     classAbility: { id: 'firewall_unlock', name: 'FLAME PULSE', desc: 'UNLOCK: Expanding ring of fire that damages and pushes enemies back', icon: 'firewall.png', tier: 'class' },
@@ -29377,7 +30048,8 @@
                             { id: 'demolitioner_bigger_clusters', name: 'Bigger Clusters', desc: 'Cluster bombs are 2x larger with increased blast radius', icon: 'demo1.png', tier: 1 },
                             { id: 'demolitioner_cluster_mastery', name: 'Cluster Mastery', desc: 'Clusters split into secondary explosions, +50% cluster count', icon: 'demo2.png', tier: 2 },
                             { id: 'demolitioner_explosive_mastery', name: 'Explosive Mastery', desc: 'Guarantee 12 cluster bombs and chain detonations across explosions.', icon: 'demo3.png', tier: 3 },
-                            { id: 'demolitioner_demolition_expert', name: 'Demolition Expert', desc: 'Double cluster blast radius and add a 30% mega explosion chance.', icon: 'demo4.png', tier: 4 }
+                            { id: 'demolitioner_demolition_expert', name: 'Demolition Expert', desc: 'Double cluster blast radius and add a 30% mega explosion chance.', icon: 'demo4.png', tier: 4 },
+                            { id: 'demolitioner_omega_nova', name: 'OMEGA NOVA', desc: 'Transform multishot into unstable nova orbs that create massive chain explosions on impact.', icon: 'omega.png', tier: 5, requiresAllPrevious: true }
                         ]
                     },
                     classAbility: { id: 'firewall_unlock', name: 'FLAME PULSE', desc: 'UNLOCK: Expanding ring of fire that damages and pushes enemies back', icon: 'firewall.png', tier: 'class' },
@@ -29392,7 +30064,8 @@
                             { id: 'phasestriker_unlimited_range', name: 'Unlimited Range', desc: 'Void laser can target enemies anywhere on screen - no range limitations', icon: 'phase1.png', tier: 1 },
                             { id: 'phasestriker_ramping_power', name: 'Ramping Power', desc: 'Laser increases in size and damage each millisecond on the same target', icon: 'phase2.png', tier: 2 },
                             { id: 'phasestriker_dimensional_control', name: 'Dimensional Control', desc: 'Void laser phases through reality with 2.5x damage', icon: 'phase3.png', tier: 3 },
-                            { id: 'phasestriker_double_beam', name: 'Double Long Range Intensifying Beam', desc: 'Fires two parallel beams that intensify over time, dealing massive damage', icon: 'phase4.png', tier: 4 }
+                            { id: 'phasestriker_double_beam', name: 'Double Long Range Intensifying Beam', desc: 'Fires two parallel beams that intensify over time, dealing massive damage', icon: 'phase4.png', tier: 4 },
+                            { id: 'phasestriker_omega_void', name: 'OMEGA VOID', desc: 'Transform multishot into void discs that implode on impact, creating collapsing singularities.', icon: 'omega.png', tier: 5, requiresAllPrevious: true }
                         ]
                     },
                     classAbility: { id: 'blink_unlock', name: 'BLINK', desc: 'UNLOCK: Teleportation ability with tactical positioning', icon: 'blink.png', tier: 'class' },
@@ -29407,7 +30080,8 @@
                             { id: 'stormbringer_chain_boost', name: 'Twin Lightning', desc: 'Alternating left/right wing lightning at double fire rate', icon: 'storm1.png', tier: 1 },
                             { id: 'stormbringer_storm_mastery', name: 'Storm Mastery', desc: '+50% jump range and +80% chain lightning damage', icon: 'storm2.png', tier: 2 },
                             { id: 'stormbringer_thunder_lord', name: 'Thunder Lord', desc: '4 simultaneous lightning bolts from all positions - devastating coverage', icon: 'storm3.png', tier: 3 },
-                            { id: 'stormbringer_storm_god', name: 'Storm God', desc: '3x lightning damage multiplier - omnipotent electrical dominance', icon: 'storm4.png', tier: 4 }
+                            { id: 'stormbringer_storm_god', name: 'Storm God', desc: '3x lightning damage multiplier - omnipotent electrical dominance', icon: 'storm4.png', tier: 4 },
+                            { id: 'stormbringer_omega_storm', name: 'OMEGA STORM', desc: 'Transform multishot into charged plasma spheres that unleash chain lightning explosions on impact.', icon: 'omega.png', tier: 5, requiresAllPrevious: true }
                         ]
                     },
                     classAbility: { id: 'blink_unlock', name: 'BLINK', desc: 'UNLOCK: Teleportation ability with tactical positioning', icon: 'blink.png', tier: 'class' },
@@ -30968,6 +31642,38 @@
                         p.stormGodPower = true;
                         p.omnipotentLightning = true;
                         announce('STORM GOD ACTIVATED - Divine Electrical Mastery!');
+                        break;
+
+                    // OMEGA MULTISHOT NODES (Tier 5 - requires all previous nodes)
+                    case 'marauder_omega_burst':
+                        p.hasOmegaMultishot = true;
+                        p.omegaMultishotType = 'marauder_burst';
+                        announce('⭐ OMEGA BURST - Explosive Energy Orbs!');
+                        break;
+                    case 'juggernaut_omega_hammer':
+                        p.hasOmegaMultishot = true;
+                        p.omegaMultishotType = 'juggernaut_hammer';
+                        announce('⭐ OMEGA HAMMER - Shattering Projectiles!');
+                        break;
+                    case 'railgunner_omega_lance':
+                        p.hasOmegaMultishot = true;
+                        p.omegaMultishotType = 'railgunner_lance';
+                        announce('⭐ OMEGA LANCE - Piercing Energy!');
+                        break;
+                    case 'demolitioner_omega_nova':
+                        p.hasOmegaMultishot = true;
+                        p.omegaMultishotType = 'demolitioner_nova';
+                        announce('⭐ OMEGA NOVA - Unstable Chain Explosions!');
+                        break;
+                    case 'phasestriker_omega_void':
+                        p.hasOmegaMultishot = true;
+                        p.omegaMultishotType = 'phasestriker_void';
+                        announce('⭐ OMEGA VOID - Collapsing Singularities!');
+                        break;
+                    case 'stormbringer_omega_storm':
+                        p.hasOmegaMultishot = true;
+                        p.omegaMultishotType = 'stormbringer_storm';
+                        announce('⭐ OMEGA STORM - Plasma Lightning!');
                         break;
 
                     // CLASS ABILITY UNLOCKS (5th node rewards)
