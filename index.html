@@ -692,6 +692,81 @@
             flex-wrap: wrap;
         }
 
+        .shop-lab-button-row {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+            margin: 14px 0 18px;
+        }
+
+        #openChampionDressingRoom {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            height: 30.8px;
+            padding: 0 32px;
+            border-radius: 999px;
+            border: 1px solid rgba(120, 255, 210, 0.75);
+            background: linear-gradient(160deg, rgba(42, 210, 140, 0.92), rgba(18, 130, 92, 0.94));
+            box-shadow: inset 0 2px 6px rgba(255, 255, 255, 0.25), inset 0 -3px 10px rgba(6, 70, 48, 0.7), 0 0 18px rgba(50, 255, 190, 0.35);
+            color: #e8fff4;
+            font-family: 'Orbitron', 'Audiowide', ui-sans-serif;
+            font-size: 11px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+            overflow: hidden;
+        }
+
+        #openChampionDressingRoom.hide {
+            display: none;
+        }
+
+        #openChampionDressingRoom::after {
+            content: '';
+            position: absolute;
+            top: -90%;
+            left: -40%;
+            width: 50%;
+            height: 280%;
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.4) 45%, rgba(255, 255, 255, 0) 100%);
+            transform: rotate(20deg);
+            transition: transform 0.4s ease;
+        }
+
+        #openChampionDressingRoom:hover {
+            transform: translateY(-1px) scale(1.01);
+            background: linear-gradient(160deg, rgba(54, 230, 158, 0.98), rgba(24, 150, 110, 0.98));
+            box-shadow: inset 0 1px 6px rgba(255, 255, 255, 0.28), inset 0 -3px 10px rgba(8, 60, 38, 0.65), 0 0 24px rgba(90, 255, 210, 0.55);
+        }
+
+        #openChampionDressingRoom:hover::after {
+            transform: translateX(220%) rotate(20deg);
+        }
+
+        #openChampionDressingRoom:focus-visible {
+            outline: 2px solid rgba(180, 255, 230, 0.85);
+            outline-offset: 2px;
+        }
+
+        #openChampionDressingRoom .lab-icon {
+            font-size: 16px;
+            filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.45));
+        }
+
+        #openChampionDressingRoom .lab-label {
+            font-weight: 600;
+            letter-spacing: 0.2em;
+        }
+
+        #openChampionDressingRoom .lab-dna {
+            font-size: 13px;
+        }
+
         .shop-view-btn {
             flex: 1 1 180px;
             padding: 8px 16px;
@@ -3351,6 +3426,13 @@
                         <h2 style="font-family:'Orbitron';color:var(--accent)">PILOT SYSTEMS UPGRADE CATALOGUE</h2>
                         <p style="color:#ffddff">Gold 💰 <span id="shopgold"
                                 style="color:#FFD700;font-size:1.2em">0</span></p>
+                        <div class="shop-lab-button-row">
+                            <button id="openChampionDressingRoom" class="btn btn-primary hide" type="button">
+                                <span class="lab-icon">🧬</span>
+                                <span class="lab-label">PRIMORDIAL SOLDIER LAB</span>
+                                <span class="lab-dna">🔬</span>
+                            </button>
+                        </div>
                         <div class="shop-control-bar">
                             <div class="shop-control-block">
                                 <div class="shop-control-copy">
@@ -3390,8 +3472,6 @@
                             <div id="shopGrid" class="grid"></div>
                         </div>
                         <div class="row" style="justify-content:center;margin-top:10px;gap:10px">
-                            <button id="openChampionDressingRoom" class="btn btn-primary hide" type="button">PRIMORDIAL
-                                SOLDIER LABORATORY</button>
                             <button id="closeShop" class="btn" type="button">CLOSE</button>
                         </div>
                     </div>
@@ -27519,7 +27599,167 @@
                     isMini
                 };
             }
-            function stepHounds(dt) { if (!store.player.hasHounds) return; store.hounds.forEach(h => { if (!h.target || h.target.dead || h.target.hp <= 0) { let closest = null, closestDist = Infinity; const potentialTargets = store.boss ? [...store.enemies, store.boss] : store.enemies; potentialTargets.forEach(e => { if (e.dead || e.hp <= 0) return; const dist = (h.x - e.x) ** 2 + (h.y - e.y) ** 2; if (dist < closestDist) { closestDist = dist; closest = e; } }); h.target = closest; } if (h.target) { const tx = h.target.x, ty = h.target.y; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); const speed = 350; if (dist > 30) { h.x += (dx / dist) * speed * dt; h.y += (dy / dist) * speed * dt; } else { h.attackT -= dt; if (h.attackT <= 0) { h.attackT = 0.25; let dmg = 8 * store.player.dmgMult; if (h.target === store.boss) dmg *= 0.3; if (!h.target.dead && h.target.hp > 0) { h.target.hp -= dmg; if (store.player.vampirism > 0) { let healAmount = dmg * store.player.vampirism; healAmount = Math.max(healAmount, 0.5); healAmount = Math.min(healAmount, 2); store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount); } if (h.target.hp <= 0) { h.killCount++; if (h.killCount > 0 && h.killCount % 12 === 0) { playSound('dogs'); } } } } } } else { const tx = store.player.x + h.side * 50, ty = store.player.y + 20; const dx = tx - h.x, dy = ty - h.y; const dist = Math.sqrt(dx * dx + dy * dy); if (dist > 5) { h.x += dx * 5 * dt; h.y += dy * 5 * dt; } } }); }
+            function selectHoundPackTarget() {
+                if (!store.player?.hasHounds || !Array.isArray(store.hounds) || store.hounds.length === 0) {
+                    store.houndPackTarget = null;
+                    return null;
+                }
+
+                let target = store.houndPackTarget;
+                if (target && (target.dead || target.hp <= 0)) {
+                    target = null;
+                }
+
+                if (!target) {
+                    for (const h of store.hounds) {
+                        if (h?.target && !h.target.dead && h.target.hp > 0) {
+                            target = h.target;
+                            break;
+                        }
+                    }
+                }
+
+                if (!target) {
+                    const hounds = store.hounds;
+                    const player = store.player;
+                    let pivotX = player.x;
+                    let pivotY = player.y;
+
+                    if (hounds.length > 0) {
+                        let sumX = 0;
+                        let sumY = 0;
+                        let count = 0;
+                        for (const h of hounds) {
+                            if (!h) continue;
+                            sumX += h.x;
+                            sumY += h.y;
+                            count++;
+                        }
+                        if (count > 0) {
+                            pivotX = sumX / count;
+                            pivotY = sumY / count;
+                        }
+                    }
+
+                    let best = null;
+                    let bestScore = Infinity;
+                    const consider = (enemy) => {
+                        if (!enemy || enemy.dead || enemy.hp <= 0) return;
+                        const dx = enemy.x - pivotX;
+                        const dy = enemy.y - pivotY;
+                        let distSq = dx * dx + dy * dy;
+                        if (enemy === store.boss) {
+                            distSq *= 0.7;
+                        }
+                        if (distSq < bestScore) {
+                            bestScore = distSq;
+                            best = enemy;
+                        }
+                    };
+
+                    const enemies = Array.isArray(store.enemies) ? store.enemies : [];
+                    for (const enemy of enemies) {
+                        consider(enemy);
+                    }
+                    if (store.boss) {
+                        consider(store.boss);
+                    }
+
+                    target = best;
+                }
+
+                store.houndPackTarget = target || null;
+                return target || null;
+            }
+
+            function moveHoundTowards(hound, targetX, targetY, maxSpeed, dt) {
+                const dx = targetX - hound.x;
+                const dy = targetY - hound.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 1e-3) {
+                    hound.x = targetX;
+                    hound.y = targetY;
+                    return;
+                }
+                const step = Math.min(dist, maxSpeed * dt);
+                hound.x += (dx / dist) * step;
+                hound.y += (dy / dist) * step;
+            }
+
+            function stepHounds(dt) {
+                if (!store.player.hasHounds || !Array.isArray(store.hounds) || store.hounds.length === 0) {
+                    store.houndPackTarget = null;
+                    return;
+                }
+
+                const player = store.player;
+                const hounds = store.hounds;
+                const ordered = hounds.slice().sort((a, b) => (a?.side || 0) - (b?.side || 0));
+                const slotLookup = new Map();
+                ordered.forEach((hound, index) => {
+                    if (hound) slotLookup.set(hound, index);
+                });
+                const totalSlots = ordered.length || 1;
+                const timeFactor = performance.now() * 0.001;
+                let packTarget = selectHoundPackTarget();
+
+                for (const h of hounds) {
+                    if (!h) continue;
+                    h.attackT = Math.max(0, (h.attackT || 0) - dt);
+                    const target = packTarget && !packTarget.dead && packTarget.hp > 0 ? packTarget : null;
+
+                    if (target) {
+                        h.target = target;
+                        const slot = slotLookup.get(h) ?? 0;
+                        const angleStep = (Math.PI * 2) / totalSlots;
+                        const baseAngle = Math.atan2(player.y - target.y, player.x - target.x);
+                        const jitter = Math.sin(timeFactor * 1.7 + slot * 2.3) * 0.18;
+                        const desiredAngle = baseAngle + slot * angleStep + jitter;
+                        const orbitRadius = Math.max(18, Math.min(34, 20 + totalSlots * 2.5));
+                        const anchorX = target.x + Math.cos(desiredAngle) * orbitRadius;
+                        const anchorY = target.y + Math.sin(desiredAngle) * orbitRadius * 0.9;
+
+                        moveHoundTowards(h, anchorX, anchorY, 360, dt);
+
+                        const dx = target.x - h.x;
+                        const dy = target.y - h.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                        const attackRange = Math.max((target.r || 18) + 12, h.r ? h.r * 1.8 : 24);
+
+                        if (dist <= attackRange && h.attackT <= 0) {
+                            h.attackT = 0.25;
+                            let dmg = 8 * (store.player.dmgMult || 1);
+                            if (target === store.boss) dmg *= 0.3;
+                            if (!target.dead && target.hp > 0) {
+                                target.hp -= dmg;
+                                if (store.player.vampirism > 0) {
+                                    let healAmount = dmg * store.player.vampirism;
+                                    healAmount = Math.max(healAmount, 0.5);
+                                    healAmount = Math.min(healAmount, 2);
+                                    store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                                }
+                                if (target.hp <= 0) {
+                                    h.killCount = (h.killCount || 0) + 1;
+                                    if (h.killCount > 0 && h.killCount % 12 === 0) {
+                                        playSound('dogs');
+                                    }
+                                    store.houndPackTarget = null;
+                                    packTarget = null;
+                                }
+                            }
+                        }
+                    } else {
+                        h.target = null;
+                        const slot = slotLookup.get(h) ?? 0;
+                        const angleStep = (Math.PI * 2) / totalSlots;
+                        const idleAngle = slot * angleStep + timeFactor * 0.9;
+                        const idleRadius = 46 + slot * 3;
+                        const anchorX = player.x + Math.cos(idleAngle) * idleRadius;
+                        const anchorY = player.y + Math.sin(idleAngle) * idleRadius * 0.45 + 24;
+                        moveHoundTowards(h, anchorX, anchorY, 280, dt);
+                    }
+                }
+            }
 
             function stepVoidRifts(dt) {
                 if (!store.voidRifts || !store.voidRifts.length) return;
