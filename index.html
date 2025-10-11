@@ -4348,6 +4348,8 @@
                 beefChargePlan: null, beefChargeSegmentIndex: 0, beefImpactDelay: 0, beefLastImpact: null, beefQueuedCharge: null,
                 beefDoubleCharge: false, beefBigExplosion: false, // New skill tree abilities
                 beefChainMode: false, // Chain jumping system for marauder
+                beefShield: 0, beefShieldMax: 0, beefShieldDamageDealt: 0, beefShieldDamageTaken: 0, beefShieldCooldown: 0,
+                beefShieldTier: 0, beefShieldLastHpMax: 0, beefShieldLastTier: 0, beefShieldLastWave: 0,
                 hasChainLightning: false, chainLightningCooldown: 0, stormstrikerLevel: 0, lightningAlternate: false, lightningCycleIndex: 0, chainLightningDamage: 1.0,
                 phasestRikerLevel: 0, voidLaserRampTime: 0, voidLaserLastTarget: null,
                 wiperLasers: false, wiperLaser1Angle: 0, wiperLaser2Angle: Math.PI, wiperLaserSpeed: 1.5, wiperLaserDamageTimer: 0,
@@ -4487,6 +4489,12 @@
                     coreFill: '#c8ccff'
                 }
             };
+
+            const BEEF_SHIELD_TIERS = Object.freeze({
+                1: { ratio: 1.5, min: 150, regenRate: 8, regenDelay: 3 },
+                2: { ratio: 1.7, min: 220, regenRate: 10, regenDelay: 2.5 },
+                3: { ratio: 1.9, min: 260, regenRate: 15, regenDelay: 2.0, reflect: true }
+            });
 
             function getStarCannonCooldown(level) {
                 if (!level || level <= 0) {
@@ -13652,13 +13660,51 @@
                 }
             }
 
+            function recomputeBeefShieldCapacity(player, options = {}) {
+                if (!player || player.pilotGenome !== 'beef') return;
+                const tierValue = Number.isFinite(player.beefShieldTier) ? player.beefShieldTier : 1;
+                const tier = Math.min(3, Math.max(1, tierValue));
+                const config = BEEF_SHIELD_TIERS[tier] || BEEF_SHIELD_TIERS[1];
+                const hpMax = Math.max(0, Number.isFinite(player.hpMax) ? player.hpMax : 0);
+                const wave = store.world && Number.isFinite(store.world.wave) ? Math.max(1, store.world.wave) : 1;
+                const ratioValue = (config.ratio || 0) * hpMax;
+                const waveBonus = (config.waveBonus || 0) * (wave - 1);
+                const computedMax = Math.max(config.min || 0, Math.round(ratioValue + waveBonus));
+                const safeMax = Math.max(0, computedMax);
+                const prevMax = Number.isFinite(player.beefShieldMax) ? player.beefShieldMax : 0;
+                const prevValue = Number.isFinite(player.beefShield) ? player.beefShield : 0;
+
+                player.beefShieldMax = safeMax;
+                if (options.refill || prevMax <= 0) {
+                    player.beefShield = safeMax;
+                } else {
+                    const preservedRatio = prevMax > 0 ? prevValue / prevMax : 0;
+                    const nextValue = Math.round(safeMax * preservedRatio);
+                    player.beefShield = Math.max(0, Math.min(safeMax, nextValue));
+                }
+
+                player.beefShieldLastHpMax = hpMax;
+                player.beefShieldLastWave = wave;
+                player.beefShieldLastTier = tier;
+
+                if (config.regenRate !== undefined) player.beefShieldRegenRate = config.regenRate;
+                if (config.regenDelay !== undefined) player.beefShieldRegenDelay = config.regenDelay;
+                if (config.reflect) player.beefShieldReflect = true;
+            }
+
             function resetBeefShieldState(player) {
                 if (!player) return;
-                if (player.beefShield || player.beefShieldDamageDealt || player.beefShieldDamageTaken || player.beefShieldCooldown) {
+                if (player.beefShield || player.beefShieldMax || player.beefShieldDamageDealt || player.beefShieldDamageTaken || player.beefShieldCooldown) {
                     player.beefShield = 0;
+                    player.beefShieldMax = 0;
                     player.beefShieldDamageDealt = 0;
                     player.beefShieldDamageTaken = 0;
                     player.beefShieldCooldown = 0;
+                    player.beefShieldTier = 0;
+                    player.beefShieldLastHpMax = 0;
+                    player.beefShieldLastWave = 0;
+                    player.beefShieldLastTier = 0;
+                    player.hasBeefShield = false;
                 }
             }
 
@@ -13671,6 +13717,22 @@
                     return;
                 }
 
+                if (!Number.isFinite(p.beefShield) || p.beefShield < 0) p.beefShield = Math.max(0, Number.isFinite(p.beefShield) ? p.beefShield : 0);
+                if (!Number.isFinite(p.beefShieldMax) || p.beefShieldMax < 0) p.beefShieldMax = Math.max(0, Number.isFinite(p.beefShieldMax) ? p.beefShieldMax : 0);
+                if (p.beefShieldMax > 0 && p.beefShield > p.beefShieldMax) p.beefShield = p.beefShieldMax;
+
+                const currentTier = Number.isFinite(p.beefShieldTier) ? p.beefShieldTier : 0;
+                const wave = store.world && Number.isFinite(store.world.wave) ? Math.max(1, store.world.wave) : 1;
+                if (currentTier > 0) {
+                    const tier = Math.min(3, Math.max(1, currentTier));
+                    const needsRefresh = !Number.isFinite(p.beefShieldMax) || p.beefShieldMax <= 0 || p.beefShieldLastHpMax !== p.hpMax || p.beefShieldLastWave !== wave || p.beefShieldLastTier !== tier;
+                    if (needsRefresh) {
+                        recomputeBeefShieldCapacity(p, { refill: !Number.isFinite(p.beefShield) || p.beefShield <= 0 });
+                    }
+                }
+
+                if (!Number.isFinite(p.beefShieldDamageDealt)) p.beefShieldDamageDealt = 0;
+                if (!Number.isFinite(p.beefShieldDamageTaken)) p.beefShieldDamageTaken = 0;
                 const damageDealt = p.beefShieldDamageDealt;
                 const damageTaken = p.beefShieldDamageTaken;
 
@@ -13741,9 +13803,16 @@
                 }
                 store._hudInitWarned = false;
 
-                const hpPercent = Math.round((player.hp / player.hpMax) * 100);
-                const shieldPercent = player.shieldMax > 0 ? Math.round((player.shield / player.shieldMax) * 100) : 0;
-                const beefShieldPercent = player.pilotGenome === 'beef' && player.beefShieldMax > 0 ? Math.round((player.beefShield / player.beefShieldMax) * 100) : 0;
+                const hpMaxSafe = Math.max(1, Number.isFinite(player.hpMax) ? player.hpMax : 1);
+                const hpValueSafe = Number.isFinite(player.hp) ? player.hp : 0;
+                const shieldMaxSafe = Number.isFinite(player.shieldMax) && player.shieldMax > 0 ? player.shieldMax : 0;
+                const shieldValueSafe = Number.isFinite(player.shield) ? Math.max(0, player.shield) : 0;
+                const beefShieldMaxSafe = Number.isFinite(player.beefShieldMax) && player.beefShieldMax > 0 ? player.beefShieldMax : 0;
+                const beefShieldValueSafe = Number.isFinite(player.beefShield) ? Math.max(0, player.beefShield) : 0;
+
+                const hpPercent = Math.round((hpValueSafe / hpMaxSafe) * 100);
+                const shieldPercent = shieldMaxSafe > 0 ? Math.round((shieldValueSafe / shieldMaxSafe) * 100) : 0;
+                const beefShieldPercent = player.pilotGenome === 'beef' && beefShieldMaxSafe > 0 ? Math.round((beefShieldValueSafe / beefShieldMaxSafe) * 100) : 0;
 
                 pilotTitle.textContent = store.name ? `◢ ${store.name} ◣` : "◢ UNIDENTIFIED ◣";
                 scoreNum.textContent = store.world.score;
@@ -13762,13 +13831,13 @@
                 }
 
                 hpBarFill.style.width = `${hpPercent}%`;
-                hpText.textContent = `HP: ${Math.round(player.hp)} / ${player.hpMax}`;
+                hpText.textContent = `HP: ${Math.round(hpValueSafe)} / ${hpMaxSafe}`;
 
                 if (beefShieldBar && beefShieldText && beefShieldBarFill) {
-                    if (player.pilotGenome === 'beef' && player.beefShieldMax > 0) {
+                    if (player.pilotGenome === 'beef' && beefShieldMaxSafe > 0) {
                         beefShieldBar.style.display = "block";
                         beefShieldBarFill.style.width = `${beefShieldPercent}%`;
-                        beefShieldText.textContent = `BEEF SHIELD: ${Math.round(player.beefShield)} / ${player.beefShieldMax}`;
+                        beefShieldText.textContent = `BEEF SHIELD: ${Math.round(beefShieldValueSafe)} / ${Math.round(beefShieldMaxSafe)}`;
                     } else {
                         beefShieldBar.style.display = "none";
                         beefShieldText.textContent = "";
@@ -13777,8 +13846,8 @@
 
                 shieldBar.style.display = "block";
                 shieldBarFill.style.width = `${shieldPercent}%`;
-                shieldTextEl.textContent = player.shieldMax > 0
-                    ? `SHIELD: ${Math.round(player.shield)} / ${player.shieldMax}`
+                shieldTextEl.textContent = shieldMaxSafe > 0
+                    ? `SHIELD: ${Math.round(shieldValueSafe)} / ${shieldMaxSafe}`
                     : 'SHIELD: 0 / 0';
 
                 if (waveNum) waveNum.textContent = store.world.wave;
@@ -21122,7 +21191,7 @@
                 const time = performance.now() / 1000;
 
                 // Draw beef shield bubble if pilot is beef and shield is active
-                if (player.pilotGenome === 'beef' && player.beefShield > 0) {
+                if (player.pilotGenome === 'beef' && Number.isFinite(player.beefShield) && player.beefShield > 0 && Number.isFinite(player.beefShieldMax) && player.beefShieldMax > 0) {
                     const shieldPercent = player.beefShield / player.beefShieldMax;
                     const pulseIntensity = 0.7 + 0.3 * Math.sin(time * 2.5);
 
@@ -30202,8 +30271,12 @@
             function applyGenomeBonus(genome) {
                 if (!genome) return;
 
-                // Reset all potential subclass stats to their defaults
                 const p = store.player;
+                const preservedMultishot = Number.isFinite(p.multishot) ? p.multishot : 2;
+                const preservedRearMultishot = Number.isFinite(p.rearMultishot) ? p.rearMultishot : 0;
+                const preservedAddFront = typeof p.addFrontNext === 'boolean' ? p.addFrontNext : true;
+
+                // Reset all potential subclass stats to their defaults
                 p.subclass = null;
                 p.beefMaxCharges = 1;
                 p.missilePierce = 0;
@@ -30219,6 +30292,10 @@
                 p.voidLaserRetargetTimer = 0;
                 p.isBlinkSlashing = false;
 
+                p.multishot = preservedMultishot;
+                p.rearMultishot = preservedRearMultishot;
+                p.addFrontNext = preservedAddFront;
+
                 store.world.bossesAtPilotSelection = store.world.bosses;
 
                 switch (genome) {
@@ -30227,7 +30304,7 @@
                         break;
                     case 'voidmancer':
                         // Give +2 multishot base and mild speed boost for base voidmancer
-                        p.multishot = (p.multishot || 2) + 2; // Base 2 + 2 = 4 bullets total
+                        p.multishot = preservedMultishot + 2;
                         p.speed = (p.speed || 2.5) * 1.05; // 5% speed boost
                         break;
                     case 'rocketman':
@@ -31565,22 +31642,30 @@
                         break;
 
                     // New Beef Skills
-                    case 'beef_shield':
-                        // Base shield scales with level: 100 + (10 per level)
-                        p.beefShieldMax = 100 + (p.level * 10);
-                        p.beefShield = p.beefShieldMax;
-                        p.beefShieldRegenRate = 5; // Shield per second
+                    case 'beef_shield': {
+                        p.hasBeefShield = true;
+                        const previousTier = Number.isFinite(p.beefShieldTier) ? p.beefShieldTier : 0;
+                        const targetTier = previousTier >= 1 ? Math.max(previousTier, 2) : 1;
+                        p.beefShieldTier = targetTier;
+                        p.beefShieldDamageDealt = 0;
+                        p.beefShieldDamageTaken = 0;
+                        p.beefShieldCooldown = 0;
+                        recomputeBeefShieldCapacity(p, { refill: true });
                         announce('BEEF SHIELD ACTIVATED - Defensive Armor Plating!');
                         break;
-                    case 'beef_shield_enhanced':
-                        // Enhanced shield scales with level: 200 + (15 per level)
-                        const baseShield = p.beefShieldMax || (100 + (p.level * 10));
-                        p.beefShieldMax = Math.max(baseShield, 200 + (p.level * 15));
-                        p.beefShield = p.beefShieldMax;
-                        p.beefShieldRegenRate = 15; // Faster regeneration
-                        p.beefShieldReflect = true; // Reflect damage back to enemies
+                    }
+                    case 'beef_shield_enhanced': {
+                        p.hasBeefShield = true;
+                        const previousTier = Number.isFinite(p.beefShieldTier) ? p.beefShieldTier : 0;
+                        p.beefShieldTier = Math.max(previousTier, 3);
+                        p.beefShieldDamageDealt = 0;
+                        p.beefShieldDamageTaken = 0;
+                        p.beefShieldCooldown = 0;
+                        recomputeBeefShieldCapacity(p, { refill: true });
+                        p.beefShieldReflect = true;
                         announce('FORTRESS MODE ACTIVATED - Enhanced Defense and Reflection!');
                         break;
+                    }
                     case 'beef_charge':
                         p.beefChargeState = 'ready';
                         p.beefChargeCooldown = 0;
@@ -31940,19 +32025,18 @@
                         break;
 
                     // CLASS ABILITY UNLOCKS (5th node rewards)
-                    case 'beef_shield_unlock':
-                        // Unlock shield with level scaling: 150 + (12 per level)
-                        p.beefShieldMax = 150 + (p.level * 12);
-                        p.beefShield = p.beefShieldMax;
-                        p.beefShieldRegenRate = 8;
-                        p.beefShieldRegenDelay = 3;
-                        p.beefShieldDamageDealt = 0; // Track damage dealt for shield charging
-                        p.beefShieldDamageTaken = 0; // Track damage taken for shield depletion
-                        p.beefShieldCooldown = 0; // Cooldown after depletion before shield can absorb again
+                    case 'beef_shield_unlock': {
                         p.hasBeefShield = true;
+                        const previousTier = Number.isFinite(p.beefShieldTier) ? p.beefShieldTier : 0;
+                        p.beefShieldTier = Math.max(previousTier, 1);
+                        p.beefShieldDamageDealt = 0;
+                        p.beefShieldDamageTaken = 0;
+                        p.beefShieldCooldown = 0;
+                        recomputeBeefShieldCapacity(p, { refill: true });
                         playSound('powerup');
                         announce('🛡️ BEEF SHIELD UNLOCKED! - Class Ability Activated!');
                         break;
+                    }
                     case 'blink_unlock':
                         p.hasBlink = true;
                         p.blinkRange = 250;
@@ -31983,6 +32067,9 @@
 
             function applySubclassBonus(subclass) {
                 const p = store.player;
+                const preservedMultishot = Number.isFinite(p.multishot) ? p.multishot : 2;
+                const preservedRearMultishot = Number.isFinite(p.rearMultishot) ? p.rearMultishot : 0;
+                const preservedAddFront = typeof p.addFrontNext === 'boolean' ? p.addFrontNext : true;
 
                 switch (subclass) {
                     case 'railgunner':
@@ -32032,6 +32119,10 @@
                         break;
                 }
                 store.world.enemyHealthBonus *= 1.10;
+
+                p.multishot = preservedMultishot;
+                p.rearMultishot = preservedRearMultishot;
+                p.addFrontNext = preservedAddFront;
             }
 
             function showSpecSelect(isAdditive = false) {
