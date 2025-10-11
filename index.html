@@ -4311,7 +4311,7 @@
                     mouse.x = p.x;
                     mouse.y = p.y;
                 } catch (err) {
-                    console.error('Mouse move error:', err);
+                    // Mouse move error silenced
                 }
             }, { passive: true });
             cvs.addEventListener('touchstart', (e) => {
@@ -4321,7 +4321,7 @@
                     mouse.y = p.y;
                     e.preventDefault();
                 } catch (err) {
-                    console.error('Touch start error:', err);
+                    // Touch start error silenced
                 }
             }, { passive: false });
             cvs.addEventListener('touchmove', (e) => {
@@ -4331,7 +4331,7 @@
                     mouse.y = p.y;
                     e.preventDefault();
                 } catch (err) {
-                    console.error('Touch move error:', err);
+                    // Touch move error silenced
                 }
             }, { passive: false });
 
@@ -6557,7 +6557,7 @@
                         try {
                             evt.action?.();
                         } catch (err) {
-                            console.warn('Vulnerability event error', err);
+                            // Vulnerability event error silenced
                         }
                         store.vulnerabilityEvents.splice(i, 1);
                     }
@@ -6887,7 +6887,6 @@
                                 level: 1 
                             }; 
                             announce('❄️ Iceman is your wingman!');
-                            console.log('Iceman initialized:', store.iceman, 'fireT:', p.icemanFireT);
                         } else {
                             // Upgrade existing iceman
                             if (!store.iceman) {
@@ -6898,11 +6897,9 @@
                                     t: 0, 
                                     level: 1 
                                 };
-                                console.warn('Iceman was missing, recreated');
                             }
                             store.iceman.level = (store.iceman.level || 1) + 1;
                             announce(`❄️ Iceman upgraded to level ${store.iceman.level}!`);
-                            console.log('Iceman upgraded to level:', store.iceman.level);
                         }
                         // Always ensure fireT is a valid number
                         if (typeof p.icemanFireT !== 'number' || isNaN(p.icemanFireT)) {
@@ -7872,7 +7869,6 @@
 
             function sanitizeCollarStacks() {
                 if (!Number.isFinite(store.world.collarStacks)) {
-                    console.warn('Invalid collar stack value detected, resetting.', store.world.collarStacks);
                     store.world.collarStacks = 0;
                 }
                 if (!Number.isFinite(store.world.collarTargetStacks)) {
@@ -8366,7 +8362,6 @@
                         try {
                             return choice(context) || null;
                         } catch (err) {
-                            console.error('Transmission composer failed', err);
                             return null;
                         }
                     }
@@ -9082,13 +9077,6 @@
                     const spawnSpecs = buildWaveSpawnSpecs(store.world.wave, spawnCount, threatScale, lateGameScaling);
 
                     if (spawnSpecs.length === 0) {
-                        console.warn('Enemy spawn pipeline produced zero entities; applying fallback spawn.', {
-                            wave: store.world.wave,
-                            plannedSpawnCount,
-                            enemyCap,
-                            collarStacks,
-                            threatScale
-                        });
                         spawnSpecs.push({
                             type: 'drone',
                             props: { hpScale: threatScale, damageMult: threatScale },
@@ -9227,7 +9215,6 @@
                 };
                 const baseCfg = cfgs[type];
                 if (!baseCfg) {
-                    console.warn('Unknown enemy type', type);
                     return null;
                 }
                 let c = { ...baseCfg }; const wave = store.world.wave;
@@ -9603,7 +9590,7 @@
                     try {
                         spec.onSpawn(enemy);
                     } catch (err) {
-                        console.warn('Spawn spec hook failed', err);
+                        // Spawn spec hook error silenced
                     }
                 }
             }
@@ -10303,7 +10290,6 @@
                 if (p.hasIceman && store.iceman && !p.empDisabled) {
                     // Ensure timer is initialized
                     if (typeof p.icemanFireT !== 'number' || isNaN(p.icemanFireT)) {
-                        console.warn('Iceman fireT was invalid, initializing to 0');
                         p.icemanFireT = 0;
                     }
                     
@@ -10311,15 +10297,13 @@
                     const icemanFireRate = icemanLevel >= 2 ? p.fireRate * 0.67 : p.fireRate; // 50% faster at level 2+
                     p.icemanFireT -= dt;
                     if (p.icemanFireT <= 0) {
-                        console.log(`Iceman ready to fire! fireT: ${p.icemanFireT}, rate: ${icemanFireRate}`);
                         fireIcemanShot();
                         p.icemanFireT = icemanFireRate * timeShardRate;
-                        console.log(`Iceman fireT reset to: ${p.icemanFireT}`);
                     }
                 } else if (p.hasIceman && !store.iceman) {
-                    console.error('Player hasIceman but store.iceman is missing!');
+                    // Iceman missing error silenced
                 } else if (p.hasIceman && p.empDisabled) {
-                    console.log('Iceman disabled by EMP');
+                    // Iceman disabled by EMP
                 }
 
                 // Separate flamethrower system (unaffected by overclock)
@@ -13235,7 +13219,11 @@
                 }
 
                 if (store.fragmentProjectiles && store.fragmentProjectiles.length) {
-                    for (let i = 0; i < store.fragmentProjectiles.length; i++) {
+                    // Limit rendered fragments to prevent overdraw - only render the newest 30
+                    const maxVisibleFragments = 30;
+                    const startIndex = Math.max(0, store.fragmentProjectiles.length - maxVisibleFragments);
+                    
+                    for (let i = startIndex; i < store.fragmentProjectiles.length; i++) {
                         const frag = store.fragmentProjectiles[i];
                         if (!frag) continue;
                         const maxLifetime = Math.max(0.05, frag.maxLifetime || 0.35);
@@ -14233,13 +14221,8 @@
                 const fpsEl = q('fps');
 
                 if (!pilotTitle || !scoreNum || !goldNum || !hpBarFill || !hpText || !shieldBar || !shieldBarFill || !shieldTextEl) {
-                    if (!store._hudInitWarned && typeof console !== 'undefined') {
-                        console.warn('[HUD] Elements missing, skipping update until UI is ready.');
-                        store._hudInitWarned = true;
-                    }
                     return;
                 }
-                store._hudInitWarned = false;
 
                 const hpMaxSafe = Math.max(1, Number.isFinite(player.hpMax) ? player.hpMax : 1);
                 const hpValueSafe = Number.isFinite(player.hp) ? player.hp : 0;
@@ -14448,10 +14431,6 @@
 
                 const entries = normalizeLeaderboardEntries(leaderboardData) ?? fallbackData;
 
-                if (entries === fallbackData && leaderboardData) {
-                    console.warn("Leaderboard payload had unexpected shape, using fallback:", leaderboardData);
-                }
-
                 const safeEntries = entries.filter(entry => entry && typeof entry === "object");
 
                 const listHtml = safeEntries.map(s => `<li>${escapeHtml(s.name ?? "UNKNOWN PILOT")} — ${s.score ?? 0} (Wave ${s.waves ?? "?"})</li>`).join("");
@@ -14471,7 +14450,6 @@
                     // data.entries contains up to 50 players
                     updateLeaderboard(data);
                 } catch (err) {
-                    console.warn("Failed to fetch leaderboard, using offline data:", err.message);
                     updateLeaderboard(null);
                 }
             }
@@ -14492,12 +14470,11 @@
                     if (data.ok) {
                         updateLeaderboard(data);
                     } else {
-                        console.warn("Score rejected:", data.err);
                         announce(`Score rejected: ${data.err}`);
                         refreshScoreList();
                     }
                 } catch (err) {
-                    console.warn("Score submission failed, game continues offline:", err.message);
+                    // Score submission error silenced
                 }
             }
             function fireBullet(x, y, vx, vy, props = {}) {
@@ -14517,11 +14494,9 @@
             function fireIcemanShot() {
                 const p = store.player;
                 if (!p.hasIceman) {
-                    console.warn('fireIcemanShot called but hasIceman is false');
                     return;
                 }
                 if (!store.iceman) {
-                    console.error('fireIcemanShot called but store.iceman is missing!');
                     return;
                 }
                 
@@ -14536,8 +14511,6 @@
                 const cheatMultishot = Number.isFinite(p.cheatMultishotBonus) ? p.cheatMultishotBonus : 0;
                 const totalMultishot = Math.max(1, baseMultishot + cheatMultishot);
                 const angleSpread = 10; // Match player's angle spread
-                
-                console.log(`Iceman firing ${totalMultishot} shots (player multishot: ${p.multishot}, cheat: ${p.cheatMultishotBonus || 0})`);
                 
                 // Fire regular bullets - matches player count exactly
                 for (let i = 0; i < totalMultishot; i++) {
@@ -30837,6 +30810,17 @@
              * @param {number} [amount=15] - The number of gibs to create.
              */
             function spawnGibs(x, y, color, amount = 12) {
+                // Limit max gibs to prevent overdraw performance issues
+                const MAX_GIBS = 150;
+                
+                // If we're at max, remove oldest gibs first
+                if (store.gibs.length >= MAX_GIBS) {
+                    const excessCount = store.gibs.length - MAX_GIBS + amount;
+                    if (excessCount > 0) {
+                        store.gibs.splice(0, excessCount);
+                    }
+                }
+                
                 for (let i = 0; i < amount; i++) {
                     const angle = Math.random() * Math.PI * 2;
                     const speed = 50 + Math.random() * 150;
@@ -30884,7 +30868,14 @@
              * @param {object} ctx - The 2D rendering context of the canvas.
              */
             function drawGibs(ctx) {
+                // Only render gibs that are on-screen to prevent overdraw
+                const margin = 20;
                 store.gibs.forEach(gib => {
+                    // Skip off-screen gibs
+                    if (gib.x < -margin || gib.x > W + margin || gib.y < -margin || gib.y > H + margin) {
+                        return;
+                    }
+                    
                     const alpha = gib.life / gib.maxLife; // Fade out effect
 
                     ctx.save();
@@ -31098,7 +31089,6 @@
                 const genome = store.player.pilotGenome;
 
                 if (!panel || !grid) {
-                    console.warn('Subclass UI unavailable; skipping selection.');
                     resumeGame();
                     return;
                 }
@@ -31153,7 +31143,6 @@
 
                 const panel = q('subclassPanel');
                 if (!panel) {
-                    console.warn('Skill tree panel unavailable; skipping modal open.');
                     resumeGame();
                     return;
                 }
@@ -31257,7 +31246,6 @@
                         case 'beef': subclass = 'marauder'; break;
                         case 'voidmancer': subclass = 'phasestriker'; break;
                         default:
-                            console.error('Unknown pilot genome:', genome);
                             return;
                     }
                 }
@@ -31265,7 +31253,6 @@
                 // Get the skill tree data for the current subclass
                 const treeData = SKILL_TREE_DATA[subclass];
                 if (!treeData) {
-                    console.error('No skill tree data found for subclass:', subclass);
                     return;
                 }
 
@@ -31472,14 +31459,12 @@
                             subclass = 'phasestriker';
                             break;
                         default:
-                            console.error('Unknown pilot genome for skill tree:', p.pilotGenome);
                             return { subclass: null, treeData: null };
                     }
                 }
 
                 const treeData = SKILL_TREE_DATA[subclass];
                 if (!treeData) {
-                    console.error('Missing skill tree data for subclass:', subclass);
                     return { subclass: null, treeData: null };
                 }
 
@@ -31963,7 +31948,6 @@
                     const p = store.player;
                     const skillButton = document.querySelector(`[data-skill="${skill}"]`);
                     if (!skillButton) {
-                        console.warn(`Skill button for ${skill} not found.`);
                         isLearningSkill = false;
                         return;
                     }
@@ -32053,7 +32037,7 @@
                     }
                     // Note: No longer auto-closing when 4 skill points are spent - allow viewing
                 } catch (error) {
-                    console.error('Error in learnSkill:', error);
+                    // Skill learning error silenced
                 } finally {
                     isLearningSkill = false;
                 }
@@ -33874,11 +33858,6 @@
                     }
 
                     if (frameTime > 33 && (!performanceMetrics.lastSlowLog || now - performanceMetrics.lastSlowLog > 1500)) {
-                        console.warn(
-                            `[PERF] Slow frame ${frameTime.toFixed(1)}ms (logic ${performanceMetrics.stepWorldTime.toFixed(1)}ms, ` +
-                            `render ${performanceMetrics.renderTime.toFixed(1)}ms, enemies ${performanceMetrics.activeEnemies}, ` +
-                            `bullets ${performanceMetrics.activeBullets}, flames ${performanceMetrics.activeFlames})`
-                        );
                         performanceMetrics.lastSlowLog = now;
                     }
 
@@ -34029,7 +34008,6 @@
 
                         let loadedCount = 0;
                         const timeout = setTimeout(() => {
-                            console.warn(`${groupName} group loading timeout - continuing anyway`);
                             resolve();
                         }, 8000);
 
@@ -34080,7 +34058,6 @@
                                 resolve(img);
                             };
                             img.onerror = () => {
-                                console.warn(`Failed to load image: ${src}`);
                                 reject(new Error(`Failed to load ${src}`));
                             };
                             img.src = src;
@@ -34093,7 +34070,6 @@
                                 resolve(audio);
                             };
                             audio.onerror = () => {
-                                console.warn(`Failed to load audio: ${src}`);
                                 reject(new Error(`Failed to load ${src}`));
                             };
                             audio.volume = 0.1;
@@ -34113,9 +34089,9 @@
                     }
 
                     // Lazy load if not available
-                    this.loadSingleAsset(src, type).catch(err =>
-                        console.warn(`Failed to lazy load ${src}:`, err)
-                    );
+                    this.loadSingleAsset(src, type).catch(err => {
+                        // Lazy load error silenced
+                    });
 
                     return null; // Return null for immediate use, will be available later
                 }
@@ -34162,7 +34138,6 @@
                         setInterval(() => this.cleanupUnusedAssets(), 180000); // Every 3 minutes
 
                     } catch (error) {
-                        console.error('Asset loading failed:', error);
                         this.finishLoading(); // Continue anyway
                     }
                 }
@@ -34211,14 +34186,12 @@
                 refreshScoreList();
                 requestAnimationFrame(frame);
             } catch (error) {
-                console.error("Game initialization failed:", error);
                 try {
                     updateLeaderboard(null);
                     ensureName();
                     requestAnimationFrame(frame);
-                    console.log("Game started in offline mode")
                 } catch (criticalError) {
-                    console.error("Critical startup failure:", criticalError);
+                    // Critical startup error silenced
                 }
             }
 
