@@ -7268,7 +7268,8 @@
                 'swirly_upgrade': { name: 'SWIRL CORE', icon: '🌪️', duration: 0, type: 'instant', isSpecial: true },
                 'star_upgrade': { name: 'STAR CORE', icon: '🌠', duration: 0, type: 'instant', isSpecial: true },
                 'shadow_champion_token': { name: 'CHAMPION SIGIL', icon: '⚔️', duration: 0, type: 'instant', isSpecial: true },
-                'collar_fragment': { name: 'COLLAR FRAGMENT', icon: '⛓️', duration: 0, type: 'instant', isSpecial: true }
+                'collar_fragment': { name: 'COLLAR FRAGMENT', icon: '⛓️', duration: 0, type: 'instant', isSpecial: true },
+                'champion_upgrade': { name: 'CHAMPION CACHE', icon: '🧬', duration: 0, type: 'instant', isSpecial: true }
             };
 
             // --- GAME MECHANICS ---
@@ -7353,12 +7354,59 @@
                 store.powerups.push({ x, y, r: 14, type });
             }
 
-            function spawnUpgradePowerup(x, y, tier = 'midTier') {
+            function rollChampionVariantForTier(tier) {
+                if (tier === 'bossTier') {
+                    const roll = Math.random();
+                    if (roll > 0.85) return 'legendary';
+                    if (roll > 0.45) return 'major';
+                    return 'minor';
+                }
+                const roll = Math.random();
+                if (roll > 0.8) return 'legendary';
+                if (roll > 0.45) return 'major';
+                return 'minor';
+            }
+
+            function spawnChampionUpgradePowerup(x, y, variant = 'minor', opts = {}) {
+                if (!store.player?.championUnlocked && !opts.allowWithoutChampion) {
+                    return false;
+                }
                 if (!store.powerups) store.powerups = [];
-                store.powerups.push({ 
-                    x, 
-                    y, 
-                    r: 14, 
+                const powerup = {
+                    x,
+                    y,
+                    r: 14,
+                    type: 'champion_upgrade',
+                    championVariant: variant,
+                    pulseOffset: opts.pulseOffset !== undefined ? opts.pulseOffset : Math.random() * Math.PI * 2,
+                    fallbackTier: opts.fallbackTier || 'midTier'
+                };
+                if (opts.source) powerup.source = opts.source;
+                if (opts.isVoidReaper) powerup.isVoidReaper = true;
+                store.powerups.push(powerup);
+                return true;
+            }
+
+            function spawnUpgradePowerup(x, y, tier = 'midTier', opts = {}) {
+                if (!store.powerups) store.powerups = [];
+                const options = opts || {};
+                const championEligible = store.player?.championUnlocked;
+                const allowChampion = options.allowChampion !== undefined ? !!options.allowChampion : tier === 'midTier';
+                const forcedChampion = options.forceChampion === true;
+                const baseChance = options.championChance !== undefined ? options.championChance : (tier === 'midTier' ? 0.28 : 0);
+                const championChance = forcedChampion ? 1 : Math.max(0, Math.min(1, baseChance));
+                const shouldConvertToChampion = !options.forceStandard && championEligible && allowChampion && championChance > 0 && Math.random() < championChance;
+                if (shouldConvertToChampion || forcedChampion) {
+                    const variant = options.championVariant || rollChampionVariantForTier(tier);
+                    const championOptions = { ...options, fallbackTier: options.fallbackTier || tier };
+                    if (spawnChampionUpgradePowerup(x, y, variant, championOptions)) {
+                        return;
+                    }
+                }
+                store.powerups.push({
+                    x,
+                    y,
+                    r: 14,
                     type: 'upgrade',
                     upgradeTier: tier
                 });
@@ -7375,6 +7423,181 @@
                         type: 'cash'
                     });
                 });
+            }
+
+            function spawnVoidReaperLootPowerup(x, y, { championChance = 0.45, variant = null, pulseOffset = 0 } = {}) {
+                const championEligible = store.player?.championUnlocked;
+                const chance = clamp(championChance, 0, 1);
+                let droppedChampion = false;
+                if (championEligible) {
+                    const shouldChampion = variant ? true : Math.random() < chance;
+                    if (shouldChampion) {
+                        const pickedVariant = variant || rollChampionVariantForTier('bossTier');
+                        droppedChampion = spawnChampionUpgradePowerup(x, y, pickedVariant, {
+                            isVoidReaper: true,
+                            fallbackTier: 'bossTier',
+                            source: 'void_reaper',
+                            pulseOffset
+                        });
+                    }
+                }
+
+                if (!droppedChampion) {
+                    if (!store.powerups) store.powerups = [];
+                    store.powerups.push({
+                        x,
+                        y,
+                        r: 14,
+                        type: 'cash',
+                        isVoidReaper: true,
+                        pulseOffset
+                    });
+                }
+            }
+
+            function getChampionUpgradeRewardPools(state = ensureChampionUpgradeState()) {
+                const pools = {
+                    attack: [],
+                    cadence: [],
+                    protocol: [],
+                    skin: []
+                };
+                if (!store.player?.championUnlocked) {
+                    return pools;
+                }
+
+                const attackCatalogue = getChampionAttackCatalogue(state);
+                attackCatalogue.forEach(mod => {
+                    if (!mod.unlocked) {
+                        pools.attack.push({
+                            type: 'attack',
+                            id: mod.id,
+                            name: mod.name,
+                            icon: mod.icon || '⚔️',
+                            desc: mod.desc,
+                            apply: () => {
+                                state.unlockedAttacks[mod.id] = true;
+                                state.attackModule = mod.id;
+                                notifyChampionLoadoutChanged({ refreshMinions: true });
+                                announce(`Champion module secured: ${mod.name}!`);
+                                playSound('epicHorn');
+                            }
+                        });
+                    }
+                });
+
+                const cadenceNext = getNextChampionCadenceUpgrade(state);
+                if (cadenceNext && cadenceNext.option) {
+                    const next = cadenceNext.option;
+                    pools.cadence.push({
+                        type: 'cadence',
+                        level: next.level,
+                        name: next.name,
+                        icon: '🎵',
+                        desc: next.desc || 'Improves guardian firing rhythm.',
+                        apply: () => {
+                            state.cadenceLevel = next.level;
+                            notifyChampionLoadoutChanged({ refreshMinions: true });
+                            announce(`Champion cadence aligned: ${next.name}!`);
+                            playSound('epicHorn');
+                        }
+                    });
+                }
+
+                const protocolNext = getNextChampionProtocolUpgrade(state);
+                if (protocolNext && protocolNext.option) {
+                    const next = protocolNext.option;
+                    pools.protocol.push({
+                        type: 'protocol',
+                        level: next.level,
+                        name: next.name,
+                        icon: '🛰️',
+                        desc: next.desc || 'Enhances escort minion behavior.',
+                        apply: () => {
+                            state.minionProtocols = next.level;
+                            notifyChampionLoadoutChanged({ refreshMinions: true });
+                            announce(`Minion protocols upgraded: ${next.name}!`);
+                            playSound('epicHorn');
+                        }
+                    });
+                }
+
+                const skinNext = getNextChampionSkinUnlock(state);
+                if (skinNext && skinNext.option) {
+                    const option = skinNext.option;
+                    pools.skin.push({
+                        type: 'skin',
+                        id: option.id,
+                        name: option.name,
+                        icon: option.icon || '🎨',
+                        desc: option.desc || 'New guardian plating unlocked.',
+                        apply: () => {
+                            state.unlockedSkins[option.id] = true;
+                            state.skin = option.id;
+                            notifyChampionLoadoutChanged({ refreshMinions: true });
+                            announce(`Champion plating unlocked: ${option.name}!`);
+                            playSound('epicHorn');
+                        }
+                    });
+                }
+
+                return pools;
+            }
+
+            function pickChampionUpgradeReward(variant, pools) {
+                const sequences = {
+                    minor: [pools.cadence, pools.protocol, pools.attack, pools.skin],
+                    major: [pools.attack, pools.cadence, pools.protocol, pools.skin],
+                    legendary: [pools.skin, pools.attack, pools.cadence, pools.protocol]
+                };
+                const sequence = sequences[variant] || sequences.major;
+                for (const pool of sequence) {
+                    if (Array.isArray(pool) && pool.length > 0) {
+                        return pool[Math.floor(Math.random() * pool.length)];
+                    }
+                }
+                const fallback = [];
+                ['attack', 'cadence', 'protocol', 'skin'].forEach(key => {
+                    if (Array.isArray(pools[key])) {
+                        fallback.push(...pools[key]);
+                    }
+                });
+                if (fallback.length === 0) return null;
+                return fallback[Math.floor(Math.random() * fallback.length)];
+            }
+
+            function grantChampionUpgradeReward(variant = 'minor', { fallbackTier = null, source = 'powerup', skipPopup = false } = {}) {
+                if (!store.player?.championUnlocked) {
+                    if (fallbackTier) {
+                        applyRandomUpgrade(fallbackTier, { skipChampionChance: true });
+                        return true;
+                    }
+                    return false;
+                }
+
+                const state = ensureChampionUpgradeState();
+                const pools = getChampionUpgradeRewardPools(state);
+                const reward = pickChampionUpgradeReward(variant, pools);
+                if (!reward) {
+                    if (fallbackTier) {
+                        applyRandomUpgrade(fallbackTier, { skipChampionChance: true });
+                        return true;
+                    }
+                    return false;
+                }
+
+                reward.apply();
+
+                if (!skipPopup) {
+                    showUpgradePopup({
+                        name: reward.name,
+                        icon: reward.icon || '🧬',
+                        desc: reward.desc || 'Guardian systems enhanced.',
+                        tier: 'champion'
+                    });
+                }
+
+                return true;
             }
 
             function handleVoidChampionReward(enemy) {
@@ -7427,6 +7650,16 @@
                 const powerup = POWERUP_TYPES[typeKey];
                 if (typeKey === 'shadow_champion_token') {
                     grantChampionCompanion();
+                    return;
+                }
+                if (typeKey === 'champion_upgrade') {
+                    const pending = store.pendingChampionUpgrade || {};
+                    delete store.pendingChampionUpgrade;
+                    const variant = pending.variant || pending.championVariant || 'minor';
+                    const fallbackTier = pending.fallbackTier || 'midTier';
+                    const source = pending.source || 'powerup';
+                    announce(powerup.name);
+                    grantChampionUpgradeReward(variant, { fallbackTier, source });
                     return;
                 }
                 if (typeKey === 'missile') {
@@ -7522,6 +7755,7 @@
                     // This will be passed through the collection system
                     applyRandomUpgrade(store.currentUpgradeTier || 'midTier');
                     delete store.currentUpgradeTier; // Clean up
+                    delete store.pendingChampionUpgrade;
                     return;
                 }
                 if (powerup.type === 'timed') {
@@ -7542,21 +7776,40 @@
                 announce(powerup.name);
             }
 
-            function applyRandomUpgrade(forcedTier = null) {
+            function applyRandomUpgrade(forcedTier = null, options = {}) {
                 const tier = forcedTier || 'midTier';
+                const opts = options || {};
+                const championEligible = store.player?.championUnlocked;
+
+                if (!opts.skipChampionChance) {
+                    const forcedVariant = opts.forceChampionVariant || (store.pendingChampionUpgrade && store.pendingChampionUpgrade.variant);
+                    if (forcedVariant && championEligible) {
+                        delete store.pendingChampionUpgrade;
+                        if (grantChampionUpgradeReward(forcedVariant, { fallbackTier: tier, source: opts.source || 'powerup', skipPopup: opts.skipChampionPopup === true })) {
+                            return;
+                        }
+                    } else if (championEligible && tier === 'midTier') {
+                        const chance = opts.championChance ?? 0.22;
+                        if (Math.random() < chance) {
+                            const variant = opts.championVariant || rollChampionVariantForTier(tier);
+                            if (grantChampionUpgradeReward(variant, { fallbackTier: tier, source: opts.source || 'powerup', skipPopup: opts.skipChampionPopup === true })) {
+                                return;
+                            }
+                        }
+                    }
+                }
+
                 const availableUpgrades = UPGRADE_TIERS[tier] || UPGRADE_TIERS.midTier;
-                
-                // Filter to upgrades that aren't maxed out (ignore cost for free upgrades)
+
                 const eligibleUpgrades = availableUpgrades.filter(key => {
                     const upgrade = SHOP_UPGRADES[key];
                     if (!upgrade) return false;
-                    
+
                     const info = getNextUpgradeCost(key);
                     return info && Number.isFinite(info.cost);
                 });
-                
+
                 if (eligibleUpgrades.length === 0) {
-                    // If no eligible upgrades, give gold instead
                     const goldAmount = tier === 'bossTier' ? 200 : 100;
                     addWorldGold(goldAmount);
                     showUpgradePopup({
@@ -7567,15 +7820,12 @@
                     });
                     return;
                 }
-                
-                // Select random upgrade from eligible options
+
                 const selectedKey = eligibleUpgrades[Math.floor(Math.random() * eligibleUpgrades.length)];
                 const upgrade = SHOP_UPGRADES[selectedKey];
-                
-                // Special handling for iceman from boss token - create escort drone instead
+
                 let result;
                 if (selectedKey === 'iceman' && tier === 'bossTier') {
-                    // Add an escort drone instead of mini iceman
                     if (!store.escortDrones) store.escortDrones = [];
                     const droneIndex = store.escortDrones.length;
                     const side = droneIndex % 2 === 0 ? 'left' : 'right';
@@ -7588,10 +7838,8 @@
                     });
                     result = { success: true, cost: 0, key: selectedKey };
                 } else {
-                    // Apply the upgrade for free
                     result = attemptPurchaseUpgrade(selectedKey, { silent: true, free: true });
-                    
-                    // Mark boss-tier abilities as mini versions
+
                     if (result.success && tier === 'bossTier') {
                         if (!store.player.miniAbilities) store.player.miniAbilities = new Set();
                         if (['gravity_well', 'lazarus_beam', 'ghost_hounds', 'launcher', 'grenade'].includes(selectedKey)) {
@@ -7599,13 +7847,12 @@
                         }
                     }
                 }
-                
+
                 if (result.success) {
-                    // Show popup with upgrade details
                     const level = (store.player?.upgradeLevels && store.player.upgradeLevels[selectedKey]) || 0;
                     const name = typeof upgrade.getName === 'function' ? upgrade.getName(null, level - 1) : upgrade.name;
                     const desc = typeof upgrade.desc === 'function' ? upgrade.desc(level - 1) : upgrade.desc;
-                    
+
                     showUpgradePopup({
                         name: name,
                         icon: upgrade.icon || '⚡',
@@ -7613,7 +7860,6 @@
                         tier: tier
                     });
                 } else {
-                    // Fallback to gold if upgrade failed
                     const goldAmount = tier === 'bossTier' ? 150 : 75;
                     addWorldGold(goldAmount);
                     showUpgradePopup({
@@ -8374,12 +8620,8 @@
                             const dist = 30 + Math.random() * 30;
                             const coinX = enemy.x + Math.cos(angle) * dist;
                             const coinY = enemy.y + Math.sin(angle) * dist;
-                            store.powerups.push({
-                                x: coinX,
-                                y: coinY,
-                                r: 14,
-                                type: 'cash',
-                                isVoidReaper: true, // Special flag for purple/gold rendering
+                            spawnVoidReaperLootPowerup(coinX, coinY, {
+                                championChance: 0.5,
                                 pulseOffset: i * 0.5
                             });
                         }
@@ -8388,25 +8630,25 @@
                         const rewardRoll = Math.random();
                         if (rewardRoll < 0.40) {
                             // 40% chance: Elite tier upgrade (iceman, lazarus, gravity well, etc)
-                            spawnUpgradePowerup(enemy.x, enemy.y - 20, 'bossTier');
+                            spawnUpgradePowerup(enemy.x, enemy.y - 20, 'bossTier', { championChance: 0.6, allowChampion: true });
                             announce('🌟 Elite Upgrade Acquired!');
                         } else if (rewardRoll < 0.70) {
                             // 30% chance: Boss tier upgrade + bonus money
-                            spawnUpgradePowerup(enemy.x - 25, enemy.y - 20, 'bossTier');
+                            spawnUpgradePowerup(enemy.x - 25, enemy.y - 20, 'bossTier', { championChance: 0.65, allowChampion: true });
                             const extraGold = 25;
                             addWorldGold(extraGold);
                             // Spawn extra gold coins
                             for (let i = 0; i < 3; i++) {
                                 const angle = (Math.PI / 3) * i + Math.PI / 6;
                                 const dist = 45;
-                                store.powerups.push({
-                                    x: enemy.x + Math.cos(angle) * dist,
-                                    y: enemy.y + Math.sin(angle) * dist,
-                                    r: 14,
-                                    type: 'cash',
-                                    isVoidReaper: true,
-                                    pulseOffset: i * 0.3
-                                });
+                                spawnVoidReaperLootPowerup(
+                                    enemy.x + Math.cos(angle) * dist,
+                                    enemy.y + Math.sin(angle) * dist,
+                                    {
+                                        championChance: 0.55,
+                                        pulseOffset: i * 0.3
+                                    }
+                                );
                             }
                         } else {
                             // 30% chance: Large money reward (no upgrade)
@@ -8417,14 +8659,14 @@
                             for (let i = 0; i < 6; i++) {
                                 const angle = (i / 6) * Math.PI * 2;
                                 const dist = 50;
-                                store.powerups.push({
-                                    x: enemy.x + Math.cos(angle) * dist,
-                                    y: enemy.y + Math.sin(angle) * dist,
-                                    r: 14,
-                                    type: 'cash',
-                                    isVoidReaper: true,
-                                    pulseOffset: i * 0.4
-                                });
+                                spawnVoidReaperLootPowerup(
+                                    enemy.x + Math.cos(angle) * dist,
+                                    enemy.y + Math.sin(angle) * dist,
+                                    {
+                                        championChance: 0.4,
+                                        pulseOffset: i * 0.4
+                                    }
+                                );
                             }
                         }
                     } else {
@@ -10298,6 +10540,13 @@
                             if (powerup.type === 'upgrade' && powerup.upgradeTier) {
                                 store.currentUpgradeTier = powerup.upgradeTier;
                             }
+                            if (powerup.type === 'champion_upgrade') {
+                                store.pendingChampionUpgrade = {
+                                    variant: powerup.championVariant || 'minor',
+                                    fallbackTier: powerup.fallbackTier || 'midTier',
+                                    source: powerup.source || 'powerup'
+                                };
+                            }
                             applyPowerup(powerup.type);
                             return;
                         }
@@ -10313,6 +10562,13 @@
                         powerup.dead = true;
                         if (powerup.type === 'upgrade' && powerup.upgradeTier) {
                             store.currentUpgradeTier = powerup.upgradeTier;
+                        }
+                        if (powerup.type === 'champion_upgrade') {
+                            store.pendingChampionUpgrade = {
+                                variant: powerup.championVariant || 'minor',
+                                fallbackTier: powerup.fallbackTier || 'midTier',
+                                source: powerup.source || 'powerup'
+                            };
                         }
                         applyPowerup(powerup.type);
                     }
@@ -12611,6 +12867,7 @@
                 store.drones = []; store.hounds = []; store.shadowHounds = []; store.voidRifts = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
                 store.lightningBolts = []; store.empNovas = []; store.flamePulses = []; store.poisonPuddles = []; store.goldenOrbs = []; store.shadowEchoes = [];
                 store.championMinions = [];
+                store.pendingChampionUpgrade = null;
                 store.empCharges = [];
                 store.empGlobalCooldown = 0;
                 store.playerChampion = null;
@@ -13201,7 +13458,7 @@
                 drawTemporalBeam();
                 if (store.boss && store.boss.visible !== false) drawBoss(store.boss);
                 store.flameParticles.forEach(p => {
-                    if (p.draw) p.draw();
+                    if (p.draw) p.draw(ctx);
                     else if (p.color) {
                         ctx.save();
                         ctx.fillStyle = p.color;
@@ -19951,6 +20208,21 @@
                     coreFill = 'rgba(50, 220, 190, 0.5)';
                     borderColor = 'rgba(180, 255, 235, 0.95)';
                     iconColor = '#eafff5';
+                    iconFont = 'bold 18px Orbitron';
+                } else if (p.type === 'champion_upgrade') {
+                    if (p.isVoidReaper) {
+                        glowInner = 'rgba(70, 255, 195, 0.9)';
+                        glowOuter = 'rgba(190, 100, 255, 0)';
+                        coreFill = 'rgba(40, 210, 160, 0.55)';
+                        borderColor = 'rgba(230, 255, 245, 0.95)';
+                        iconColor = '#eafff8';
+                    } else {
+                        glowInner = 'rgba(90, 255, 210, 0.88)';
+                        glowOuter = 'rgba(30, 160, 120, 0)';
+                        coreFill = 'rgba(40, 200, 150, 0.5)';
+                        borderColor = 'rgba(170, 255, 230, 0.95)';
+                        iconColor = '#e4fff5';
+                    }
                     iconFont = 'bold 18px Orbitron';
                 } else if (p.isVoidReaper && p.type === 'cash') {
                     // New Orleans style - purple & gold
@@ -30484,9 +30756,20 @@
                 if (title) title.textContent = upgradeInfo.name || 'UPGRADE ACQUIRED';
                 if (desc) desc.textContent = upgradeInfo.desc || 'Enhancement applied to your systems.';
                 if (tier) {
-                    const tierText = upgradeInfo.tier === 'bossTier' ? 'BOSS-TIER UPGRADE' : 'MID-TIER UPGRADE';
+                    let tierText;
+                    let tierColor;
+                    if (upgradeInfo.tier === 'bossTier') {
+                        tierText = 'BOSS-TIER UPGRADE';
+                        tierColor = '#ff6b6b';
+                    } else if (upgradeInfo.tier === 'champion') {
+                        tierText = 'CHAMPION UPGRADE';
+                        tierColor = '#52ffce';
+                    } else {
+                        tierText = 'MID-TIER UPGRADE';
+                        tierColor = '#4ecdc4';
+                    }
                     tier.textContent = tierText;
-                    tier.style.color = upgradeInfo.tier === 'bossTier' ? '#ff6b6b' : '#4ecdc4';
+                    tier.style.color = tierColor;
                 }
                 
                 pauseGame();
