@@ -4933,7 +4933,7 @@
                     shopSpotlightMessage: 'Upgrade Hangar online. Deploy credits as needed.'
                 },
                 player: { ...player_initial_state },
-                boss: null, bullets: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], shadowHounds: [], missiles: [], lasers: [], mines: [], activeEffects: [], starProjectiles: [], pendingStarSalvos: [], pendingStarClones: [], juggernautBombs: [],
+                boss: null, bullets: [], fragmentProjectiles: [], eBullets: [], enemies: [], powerups: [], drones: [], hounds: [], shadowHounds: [], missiles: [], lasers: [], mines: [], activeEffects: [], starProjectiles: [], pendingStarSalvos: [], pendingStarClones: [], juggernautBombs: [],
                 lastBossSnapshot: null,
                 lastBossDefeatId: null,
                 flameParticles: [],
@@ -5115,6 +5115,30 @@
                 }
                 store.bullets.push(bullet);
                 return bullet;
+            }
+
+            function spawnFragmentProjectile(props = {}) {
+                const defaults = {
+                    x: 0,
+                    y: 0,
+                    vx: 0,
+                    vy: 0,
+                    r: 2,
+                    col: '#ff9944',
+                    dmg: 8,
+                    pierce: 0,
+                    explosive: false,
+                    lifetime: 0,
+                    maxLifetime: 0.35,
+                    isFragment: true,
+                    isFragmentBlast: true
+                };
+                const projectile = { ...defaults, ...props };
+                projectile.dead = false;
+                projectile.lifetime = Number.isFinite(projectile.lifetime) ? projectile.lifetime : 0;
+                projectile.maxLifetime = Math.max(0.05, Number.isFinite(projectile.maxLifetime) ? projectile.maxLifetime : defaults.maxLifetime);
+                store.fragmentProjectiles.push(projectile);
+                return projectile;
             }
 
             function ensurePlayerMultishotIntegrity(player) {
@@ -6141,6 +6165,160 @@
                 
                 if (b.explosive) explode(b.x, b.y, false, true);
                 if (!b.pierce) b.dead = true;
+            }
+
+            function updatePlayerProjectile(b, dt, bossTarget, state) {
+                if (!b) return;
+
+                const sharedState = state || { autoBlinkTriggered: false };
+
+                b.x += b.vx * dt;
+                b.y += b.vy * dt;
+
+                if (b.isFragment) {
+                    b.lifetime = (b.lifetime || 0) + dt;
+                    if (b.lifetime >= b.maxLifetime) {
+                        b.dead = true;
+                    }
+                }
+
+                if (b.isSwirl) {
+                    b.life = (b.life || 0) + dt;
+                    b.x += Math.sin(b.life * 15) * 150 * dt;
+                }
+
+                if (b.isFlame) {
+                    b.life -= dt;
+                    if (b.life <= 0) b.dead = true;
+                    b.particleSpawnT -= dt;
+                    if (b.particleSpawnT <= 0) {
+                        b.particleSpawnT = b.isLavaChunk ? 0.1 : 0.05;
+                        const life = 0.3 + Math.random() * 0.3;
+                        const angle = Math.random() * 2 * Math.PI;
+                        const speed = b.isLavaChunk ? 10 + Math.random() * 15 : 20 + Math.random() * 20;
+                        if (!Array.isArray(b.particles)) b.particles = [];
+                        b.particles.push({
+                            x: 0,
+                            y: 0,
+                            vx: Math.cos(angle) * speed,
+                            vy: Math.sin(angle) * speed,
+                            life,
+                            maxLife: life,
+                            r: 1 + Math.random() * (b.isLavaChunk ? 1.5 : 2)
+                        });
+                    }
+                    b.particles = b.particles.filter(p => {
+                        p.life -= dt;
+                        p.x += p.vx * dt;
+                        p.y += p.vy * dt;
+                        return p.life > 0;
+                    });
+                } else if (b.isLevelUpPulse) {
+                    b.life -= dt;
+                    if (b.life <= 0) b.dead = true;
+                }
+
+                if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) {
+                    b.dead = true;
+                }
+
+                if (!b.dead && bossTarget && !bossTarget.dead && collide(b, bossTarget)) {
+                    handleBulletImpact(b, bossTarget);
+                }
+
+                if (!b.dead && store.enemies.length) {
+                    const searchRadius = getBulletSearchRadius(b);
+                    forEachEnemyNearby(b.x, b.y, searchRadius, enemy => {
+                        if (enemy === bossTarget) return false;
+                        if (!collide(b, enemy)) return false;
+                        handleBulletImpact(b, enemy);
+                        return b.dead && !b.pierce;
+                    });
+                }
+
+                if (!b.dead && store.timeShards && store.timeShards.length) {
+                    for (let si = store.timeShards.length - 1; si >= 0; si--) {
+                        const shard = store.timeShards[si];
+                        if (!shard || shard.dead) continue;
+                        const hitRadius = (shard.r || 14) + (b.r || 3);
+                        const dx = b.x - shard.x;
+                        const dy = b.y - shard.y;
+                        if (dx * dx + dy * dy > hitRadius * hitRadius) continue;
+
+                        const damage = b.dmg || 12;
+                        shard.hp -= damage;
+                        shard.hitPulse = 0.22;
+                        store.activeEffects.push(createEffect('hitSpark', shard.x, shard.y, (shard.r || 14) * 1.6, { strength: 32 }));
+
+                        if (shard.hp <= 0) {
+                            applyTimeShardBuff(shard.buffStacks || 1);
+                            store.activeEffects.push(createEffect('spawnTeleport', shard.x, shard.y, 36, { color: '#9df7ff', duration: 0.32 }));
+                            playSound('stargun');
+                            store.timeShards.splice(si, 1);
+                        }
+
+                        if (!b.pierce) {
+                            b.dead = true;
+                        }
+                        break;
+                    }
+                }
+
+                if (!b.dead && store.mechPuddles && store.mechPuddles.length) {
+                    for (let i = store.mechPuddles.length - 1; i >= 0; i--) {
+                        const puddle = store.mechPuddles[i];
+                        const dx = b.x - puddle.x;
+                        const dy = b.y - puddle.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+
+                        if (dist < puddle.r + (b.r || 2)) {
+                            puddle.hp -= (b.dmg || 15);
+
+                            if (puddle.hp <= 0) {
+                                addWorldGold(1);
+                                store.world.xp += 1;
+
+                                for (let j = 0; j < 5; j++) {
+                                    store.flameParticles.push({
+                                        x: puddle.x + (Math.random() - 0.5) * 20,
+                                        y: puddle.y + (Math.random() - 0.5) * 20,
+                                        vx: (Math.random() - 0.5) * 100,
+                                        vy: -Math.random() * 100,
+                                        life: 0.3 + Math.random() * 0.3,
+                                        maxLife: 0.3 + Math.random() * 0.3,
+                                        r: 2 + Math.random() * 3,
+                                        update: function (delta) {
+                                            this.life -= delta;
+                                            this.x += this.vx * delta;
+                                            this.y += this.vy * delta;
+                                            this.vy += 200 * delta;
+                                            return this.life > 0;
+                                        },
+                                        draw: function (ctx) {
+                                            ctx.fillStyle = 'rgba(255, 120, 50, 0.8)';
+                                            ctx.beginPath();
+                                            ctx.arc(this.x, this.y, this.r * (this.life / this.maxLife), 0, Math.PI * 2);
+                                            ctx.fill();
+                                        }
+                                    });
+                                }
+
+                                store.mechPuddles.splice(i, 1);
+                            }
+
+                            if (!b.pierce) {
+                                b.dead = true;
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                if (!sharedState.autoBlinkTriggered && !b.dead) {
+                    if (attemptAutoBlink(store.player, b)) {
+                        sharedState.autoBlinkTriggered = true;
+                    }
+                }
             }
 
             const CLASS_DAMAGE_TAGS = {
@@ -11644,139 +11822,15 @@
 
                 rebuildEnemySpatialIndex();
                 const bossTarget = store.boss && !store.boss.dead ? store.boss : null;
+                const bulletStepState = { autoBlinkTriggered: false };
 
                 for (let bi = 0; bi < store.bullets.length; bi++) {
-                    const b = store.bullets[bi];
-                    b.x += b.vx * dt;
-                    b.y += b.vy * dt;
-                    
-                    // Handle fragment bullet lifetime
-                    if (b.isFragment) {
-                        b.lifetime = (b.lifetime || 0) + dt;
-                        if (b.lifetime >= b.maxLifetime) {
-                            b.dead = true;
-                        }
-                    }
-                    
-                    if (b.isSwirl) {
-                        b.life = (b.life || 0) + dt;
-                        b.x += Math.sin(b.life * 15) * 150 * dt;
-                    }
-                    if (b.isFlame) {
-                        b.life -= dt;
-                        if (b.life <= 0) b.dead = true;
-                        b.particleSpawnT -= dt;
-                        if (b.particleSpawnT <= 0) {
-                            b.particleSpawnT = b.isLavaChunk ? 0.1 : 0.05;
-                            const life = 0.3 + Math.random() * 0.3, angle = Math.random() * 2 * Math.PI, speed = b.isLavaChunk ? 10 + Math.random() * 15 : 20 + Math.random() * 20;
-                            b.particles.push({ x: 0, y: 0, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: life, maxLife: life, r: 1 + Math.random() * (b.isLavaChunk ? 1.5 : 2) });
-                        }
-                        b.particles = b.particles.filter(p => {
-                            p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt;
-                            return p.life > 0;
-                        });
-                    } else if (b.isLevelUpPulse) {
-                        b.life -= dt;
-                        if (b.life <= 0) b.dead = true;
-                    }
+                    updatePlayerProjectile(store.bullets[bi], dt, bossTarget, bulletStepState);
+                }
 
-                    if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true;
-
-                    if (!b.dead && bossTarget && !bossTarget.dead && collide(b, bossTarget)) {
-                        handleBulletImpact(b, bossTarget);
-                    }
-
-                    if (!b.dead && store.enemies.length) {
-                        const searchRadius = getBulletSearchRadius(b);
-                        forEachEnemyNearby(b.x, b.y, searchRadius, enemy => {
-                            if (enemy === bossTarget) return false;
-                            if (!collide(b, enemy)) return false;
-                            handleBulletImpact(b, enemy);
-                            return b.dead && !b.pierce;
-                        });
-                    }
-
-                    if (!b.dead && store.timeShards && store.timeShards.length) {
-                        for (let si = store.timeShards.length - 1; si >= 0; si--) {
-                            const shard = store.timeShards[si];
-                            if (!shard || shard.dead) continue;
-                            const hitRadius = (shard.r || 14) + (b.r || 3);
-                            const dx = b.x - shard.x;
-                            const dy = b.y - shard.y;
-                            if (dx * dx + dy * dy > hitRadius * hitRadius) continue;
-
-                            const damage = b.dmg || 12;
-                            shard.hp -= damage;
-                            shard.hitPulse = 0.22;
-                            store.activeEffects.push(createEffect('hitSpark', shard.x, shard.y, (shard.r || 14) * 1.6, { strength: 32 }));
-
-                            if (shard.hp <= 0) {
-                                applyTimeShardBuff(shard.buffStacks || 1);
-                                store.activeEffects.push(createEffect('spawnTeleport', shard.x, shard.y, 36, { color: '#9df7ff', duration: 0.32 }));
-                                playSound('stargun');
-                                store.timeShards.splice(si, 1);
-                            }
-
-                            if (!b.pierce) {
-                                b.dead = true;
-                            }
-                            break;
-                        }
-                    }
-
-                    // Check bullet collision with mech puddles (make puddles killable)
-                    if (!b.dead && store.mechPuddles) {
-                        for (let i = store.mechPuddles.length - 1; i >= 0; i--) {
-                            const puddle = store.mechPuddles[i];
-                            const dx = b.x - puddle.x;
-                            const dy = b.y - puddle.y;
-                            const dist = Math.sqrt(dx * dx + dy * dy);
-
-                            if (dist < puddle.r + (b.r || 2)) {
-                                // Puddle hit by bullet - take damage
-                                puddle.hp -= (b.dmg || 15);
-
-                                if (puddle.hp <= 0) {
-                                    // Puddle destroyed - award rewards
-                                    addWorldGold(1);
-                                    store.world.xp += 1;
-
-                                    // Small explosion effect
-                                    for (let j = 0; j < 5; j++) {
-                                        store.flameParticles.push({
-                                            x: puddle.x + (Math.random() - 0.5) * 20,
-                                            y: puddle.y + (Math.random() - 0.5) * 20,
-                                            vx: (Math.random() - 0.5) * 100,
-                                            vy: -Math.random() * 100,
-                                            life: 0.3 + Math.random() * 0.3,
-                                            maxLife: 0.3 + Math.random() * 0.3,
-                                            r: 2 + Math.random() * 3,
-                                            update: function (dt) {
-                                                this.life -= dt;
-                                                this.x += this.vx * dt;
-                                                this.y += this.vy * dt;
-                                                this.vy += 200 * dt; // gravity
-                                                return this.life > 0;
-                                            },
-                                            draw: function () {
-                                                if (!ctx) return;
-                                                const alpha = this.life / this.maxLife;
-                                                ctx.fillStyle = `rgba(0, 255, 255, ${alpha})`;
-                                                ctx.beginPath();
-                                                ctx.arc(this.x, this.y, this.r * alpha, 0, Math.PI * 2);
-                                                ctx.fill();
-                                            }
-                                        });
-                                    }
-
-                                    // console.log('Puddle destroyed by bullet! +1 gold, +1 xp');
-                                    store.mechPuddles.splice(i, 1);
-                                }
-
-                                if (!b.pierce) b.dead = true;
-                                break;
-                            }
-                        }
+                if (store.fragmentProjectiles && store.fragmentProjectiles.length) {
+                    for (let fi = 0; fi < store.fragmentProjectiles.length; fi++) {
+                        updatePlayerProjectile(store.fragmentProjectiles[fi], dt, bossTarget, bulletStepState);
                     }
                 }
 
@@ -11807,6 +11861,7 @@
 
                 // Optimized cleanup with object pooling
                 removeDeadObjects(store.bullets, bullet => bulletPool.release(bullet));
+                removeDeadObjects(store.fragmentProjectiles);
                 removeDeadObjects(store.eBullets, bullet => returnEBulletToPool(bullet));
 
                 // Efficient removal for other arrays
@@ -12470,7 +12525,7 @@
                 if (store.eBullets && store.eBullets.length) {
                     store.eBullets.forEach(returnEBulletToPool);
                 }
-                store.boss = null; store.bullets = []; store.eBullets = []; store.enemies = []; store.powerups = []; store.starProjectiles = []; store.pendingStarSalvos = []; store.pendingStarClones = []; store.juggernautBombs = [];
+                store.boss = null; store.bullets = []; store.fragmentProjectiles = []; store.eBullets = []; store.enemies = []; store.powerups = []; store.starProjectiles = []; store.pendingStarSalvos = []; store.pendingStarClones = []; store.juggernautBombs = [];
                 store.lastBossSnapshot = null;
                 store.lastBossDefeatId = null;
                 store.drones = []; store.hounds = []; store.shadowHounds = []; store.voidRifts = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
@@ -12838,6 +12893,30 @@
                     ctx.fill();
 
                     if (alpha < 1.0) {
+                        ctx.restore();
+                    }
+                }
+
+                if (store.fragmentProjectiles && store.fragmentProjectiles.length) {
+                    for (let i = 0; i < store.fragmentProjectiles.length; i++) {
+                        const frag = store.fragmentProjectiles[i];
+                        if (!frag) continue;
+                        const maxLifetime = Math.max(0.05, frag.maxLifetime || 0.35);
+                        const elapsed = Math.min(maxLifetime, Math.max(0, frag.lifetime || 0));
+                        const lifeRatio = 1 - (elapsed / maxLifetime);
+                        ctx.save();
+                        ctx.translate(frag.x, frag.y);
+                        ctx.globalAlpha = 0.45 + lifeRatio * 0.45;
+                        const radius = (frag.r || 2) * (1.1 + 0.4 * lifeRatio);
+                        const color = frag.col || '#ff9944';
+                        const gradient = ctx.createRadialGradient(0, 0, radius * 0.2, 0, 0, radius);
+                        gradient.addColorStop(0, '#ffffff');
+                        gradient.addColorStop(0.35, color);
+                        gradient.addColorStop(1, `${color}00`);
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+                        ctx.fill();
                         ctx.restore();
                     }
                 }
@@ -28688,8 +28767,8 @@
                         for (let j = 0; j < fragmentCount; j++) {
                             const offsetAngle = angle + (Math.random() - 0.5) * spreadAngle;
                             const speed = 400 + Math.random() * 100;
-                            
-                            store.bullets.push({
+
+                            spawnFragmentProjectile({
                                 x: p.x,
                                 y: p.y,
                                 vx: Math.cos(offsetAngle) * speed,
@@ -28700,8 +28779,7 @@
                                 pierce: p.piercing,
                                 explosive: false,
                                 isFragment: true,
-                                lifetime: 0,
-                                maxLifetime: meleeRange / speed // Die after traveling melee range
+                                maxLifetime: meleeRange / speed
                             });
                         }
 
@@ -33263,7 +33341,9 @@
                     const frameTime = currentFrameTime;
                     performanceMetrics.frameTime = frameTime;
                     performanceMetrics.activeEnemies = store.enemies ? store.enemies.length : 0;
-                    performanceMetrics.activeBullets = store.bullets ? store.bullets.length : 0;
+                    const primaryBullets = store.bullets ? store.bullets.length : 0;
+                    const fragmentBullets = store.fragmentProjectiles ? store.fragmentProjectiles.length : 0;
+                    performanceMetrics.activeBullets = primaryBullets + fragmentBullets;
                     performanceMetrics.activeFlames = store._activeFlamesCache ? store._activeFlamesCache.length : 0;
 
                     if (frameTime > perfWorstFrameTime) {
