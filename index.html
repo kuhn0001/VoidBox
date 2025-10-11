@@ -7585,13 +7585,19 @@
 
                 reward.apply();
 
-                if (!skipPopup) {
+                // Use announce() instead of popup to avoid spamming the player
+                // Only show popup for the first champion upgrade, then use announcements
+                const championUpgradeCount = (state.primaryPicked || 0) + (state.defensePicked || 0) + (state.utilityPicked || 0);
+                if (!skipPopup && championUpgradeCount <= 1) {
                     showUpgradePopup({
                         name: reward.name,
                         icon: reward.icon || '🧬',
                         desc: reward.desc || 'Guardian systems enhanced.',
                         tier: 'champion'
                     });
+                } else {
+                    // Use green announcement strip instead of popup
+                    announce(`${reward.icon || '🧬'} ${reward.name} - ${reward.desc || 'Guardian systems enhanced.'}`);
                 }
 
                 return true;
@@ -8665,7 +8671,28 @@
                             }
                         }
                     } else {
+                        // Non-preemptive defeat - still give a reward to ensure reaper always drops something
                         store.activeEffects.push(createEffect('voidReaperDissolve', enemy.x, enemy.y, (enemy.r || 24) * 2.2));
+                        
+                        // Guaranteed reward even for non-preemptive defeat
+                        const consolationGold = 20;
+                        addWorldGold(consolationGold);
+                        spawnUpgradePowerup(enemy.x, enemy.y, 'midTier', { championChance: 0.3, allowChampion: true });
+                        announce('Void Reaper banished - Consolation reward acquired!');
+                        
+                        // Spawn a few coins
+                        for (let i = 0; i < 3; i++) {
+                            const angle = (i / 3) * Math.PI * 2;
+                            const dist = 35;
+                            spawnVoidReaperLootPowerup(
+                                enemy.x + Math.cos(angle) * dist,
+                                enemy.y + Math.sin(angle) * dist,
+                                {
+                                    championChance: 0.3,
+                                    pulseOffset: i * 0.3
+                                }
+                            );
+                        }
                     }
                 }
 
@@ -9795,13 +9822,18 @@
                     });
                 }
 
+                // Factor in player speed upgrades to make beef charge faster with speed upgrades
+                const baseChargeSpeed = p.beefChargeSpeed || 1.35;
+                const speedUpgradeMultiplier = Math.max(1.0, (p.speed || 2.5) / 2.5); // Speed upgrades make charge faster
+                const effectiveChargeSpeed = baseChargeSpeed * speedUpgradeMultiplier;
+                
                 return {
                     context,
                     origin,
                     segments,
                     chainDelay: p.beefChainMode ? 0.08 : 0,
                     recoveryDelay: returnToOrigin ? 0.1 : 0.12,
-                    segmentDuration: 0.24 / Math.max(p.beefChargeSpeed || 1.35, 0.6),
+                    segmentDuration: 0.24 / Math.max(effectiveChargeSpeed, 0.6),
                     returnToOrigin
                 };
             }
@@ -14479,7 +14511,9 @@
             }
             function fireBullet(x, y, vx, vy, props = {}) {
                 const p = store.player;
-                const swirlFlag = props.isSwirl !== undefined ? props.isSwirl : !!p.swirlShots;
+                // Beef/Marauder should NEVER have swirl shots - they use charge attacks, not circular bullets
+                const isBeefPilot = p.pilotGenome === 'beef' || p.subclass === 'marauder' || p.subclass === 'juggernaut';
+                const swirlFlag = isBeefPilot ? false : (props.isSwirl !== undefined ? props.isSwirl : !!p.swirlShots);
                 return spawnBullet({
                     x, y, vx, vy,
                     r: p.explosive ? 5 : 3,
