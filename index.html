@@ -5001,7 +5001,14 @@
                     lastVoidReaperWave: 0,
                     voidReaperCooldown: 0,
                     pendingVoidReaper: null,
-                    voidReaperWarningIssued: false
+                    voidReaperWarningIssued: false,
+                    cubeBurglarCooldown: 0,
+                    cubeBurglarActive: false,
+                    cubeBurglarLastSpawnWave: 0,
+                    cubeBurglarLastSpawnTime: 0,
+                    cubeBurglarSpawnTimer: 0,
+                    cubeBurglarSpawnAttempts: 0,
+                    cubeBurglarDefeated: 0
                 },
                 settings: {
                     showShopTutorial: storedShopTutorialEnabled,
@@ -5030,6 +5037,7 @@
                 lastChampionPresetCode: null,
                 temporalBeam: null,
                 championMinions: [],
+                cubeBurglarId: null,
                 empCharges: [],
                 empGlobalCooldown: 0,
                 playerChampion: null,
@@ -6089,6 +6097,9 @@
                     dmg = applyChampionVulnerabilityScaling(dmg, e, b.vulnerabilityProfile);
                 }
                 let didCrit = false;
+                let impactPoint = null;
+                let skipDefaultDamage = false;
+                let skipDefaultDeathHandling = false;
                 if (e === store.boss && b.isDrone) dmg *= 0.4;
 
                 if (Math.random() < store.player.critChance) {
@@ -6132,6 +6143,20 @@
                     baseDamage: dmg
                 });
                 dmg = vulnBullet.damage;
+
+                if (e.type === 'cube_burglar') {
+                    const cubeResult = applyCubeBurglarHit(e, b, dmg);
+                    if (!cubeResult.hit) {
+                        if (!b.pierce) b.dead = true;
+                        return;
+                    }
+                    dmg = cubeResult.damageApplied;
+                    if (cubeResult.impactPoint) {
+                        impactPoint = cubeResult.impactPoint;
+                    }
+                    skipDefaultDamage = true;
+                    skipDefaultDeathHandling = true;
+                }
                 if (e === store.boss && e.behavior === 'aegis_architect') {
                     const interceptResult = tryAegisShieldInterceptBullet(e, b, dmg);
                     if (interceptResult && interceptResult.blocked) {
@@ -6161,12 +6186,14 @@
                         skipShield: true
                     });
                     dmg = bossDamageResult.amount;
-                } else {
+                } else if (!skipDefaultDamage) {
                     e.hp -= dmg;
                 }
 
                 if (dmg > 0) {
-                    const impactAngle = Math.atan2(e.y - b.y, e.x - b.x);
+                    const hitX = impactPoint ? impactPoint.x : e.x;
+                    const hitY = impactPoint ? impactPoint.y : e.y;
+                    const impactAngle = Math.atan2(hitY - b.y, hitX - b.x);
                     registerEnemyHit(e, {
                         angle: impactAngle,
                         knockbackStrength: 0,
@@ -6197,7 +6224,7 @@
                         });
                     }
 
-                    if (e !== store.boss && e.hp <= 0) {
+                    if (e !== store.boss && e.hp <= 0 && !skipDefaultDeathHandling) {
                         e.dead = true;
                         if (e.type === 'void_champion') {
                             store.enemies.forEach(minion => {
@@ -9101,6 +9128,13 @@
                             }
                         }
                     }
+                    if (store.world.wave % 5 !== 0) {
+                        trySpawnCubeBurglar({
+                            hpScale: Math.min(2.6, threatScale * 1.1),
+                            lateGameScaling,
+                            damageMult: Math.min(2.1, threatScale * 0.9)
+                        });
+                    }
                     const spawnSpecs = buildWaveSpawnSpecs(store.world.wave, spawnCount, threatScale, lateGameScaling);
 
                     if (spawnSpecs.length === 0) {
@@ -11344,6 +11378,35 @@
                 processWaveSpawnQueue(dt);
                 processVulnerabilityEvents(dt);
 
+                if (store.world.cubeBurglarCooldown > 0) {
+                    store.world.cubeBurglarCooldown = Math.max(0, store.world.cubeBurglarCooldown - dt);
+                }
+                if (store.world.cubeBurglarActive) {
+                    const activeBurglar = getCubeBurglarActiveEnemy();
+                    if (!activeBurglar) {
+                        store.world.cubeBurglarActive = false;
+                        store.cubeBurglarId = null;
+                    }
+                } else if (store.world.wave >= CUBE_BURGLAR_CONFIG.minWave && store.world.cubeBurglarCooldown <= 0) {
+                    store.world.cubeBurglarSpawnTimer = (store.world.cubeBurglarSpawnTimer || 0) + dt;
+                    if (store.world.cubeBurglarSpawnTimer >= CUBE_BURGLAR_CONFIG.passiveSpawnInterval) {
+                        const threatScale = Math.max(0.6, store.world.lastThreatScale || 1);
+                        const lateGameScaling = Math.max(0.8, store.world.lateGameDamageScaling || 1);
+                        const spawn = trySpawnCubeBurglar({
+                            hpScale: Math.min(2.6, threatScale * 1.1),
+                            lateGameScaling,
+                            damageMult: Math.min(2.1, threatScale * 0.9)
+                        });
+                        if (spawn) {
+                            store.world.cubeBurglarSpawnTimer = 0;
+                        } else {
+                            store.world.cubeBurglarSpawnTimer = Math.max(0, store.world.cubeBurglarSpawnTimer - CUBE_BURGLAR_CONFIG.passiveSpawnInterval * 0.5);
+                        }
+                    }
+                } else {
+                    store.world.cubeBurglarSpawnTimer = 0;
+                }
+
                 if (store.world.pendingVoidReaper) {
                     store.world.pendingVoidReaper.timer -= dt;
                     const plan = store.world.pendingVoidReaper;
@@ -11586,10 +11649,30 @@
 
                 const activeFlames = store._activeFlamesCache && store._activeFlamesCache.length ? store._activeFlamesCache : EMPTY_FLAME_CACHE;
                 const flameCount = activeFlames.length;
+                const activeCubeBurglar = getCubeBurglarActiveEnemy();
 
                 // CONSOLIDATED enemy processing - flame collision + movement in single loop for performance
                 store.enemies.forEach(e => {
                     if (e.dead) return;
+
+                    if (e.cubeBurglarBuffTimer !== undefined) {
+                        e.cubeBurglarBuffTimer = Math.max(0, e.cubeBurglarBuffTimer - dt);
+                        const sourceActive = activeCubeBurglar && activeCubeBurglar.id === e.cubeBurglarBuffSource;
+                        if (e.cubeBurglarBuffTimer <= 0 || !sourceActive) {
+                            if (e._cubeBurglarBaseDamageMult !== undefined) {
+                                e.damageMult = e._cubeBurglarBaseDamageMult;
+                                delete e._cubeBurglarBaseDamageMult;
+                            }
+                            delete e.cubeBurglarBuffTimer;
+                            delete e.cubeBurglarBuffSource;
+                            e.cubeBurglarAuraGlow = 0;
+                        }
+                    } else if (e.cubeBurglarAuraGlow) {
+                        e.cubeBurglarAuraGlow = Math.max(0, e.cubeBurglarAuraGlow - dt * 2.2);
+                        if (e.cubeBurglarAuraGlow <= 0) {
+                            delete e.cubeBurglarAuraGlow;
+                        }
+                    }
 
                     if (e.isVoidReaper) {
                         updateVoidReaper(e, dt);
@@ -11679,11 +11762,17 @@
 
                             if (distSq < collisionRadiusSq) {
                                 e.stunTimer = Math.max(e.stunTimer || 0, 0.5);
-                                e.hp -= flame.damage;
+                                let appliedFlameDamage = flame.damage;
+                                if (e.type === 'cube_burglar') {
+                                    const flameResult = applyCubeBurglarHit(e, { x: flame.x, y: flame.y }, flame.damage);
+                                    appliedFlameDamage = flameResult.damageApplied || 0;
+                                } else {
+                                    e.hp -= flame.damage;
+                                }
 
                                 // Apply vampirism healing for flamethrower damage
-                                if (store.player.vampirism > 0) {
-                                    let healAmount = flame.damage * store.player.vampirism;
+                                if (store.player.vampirism > 0 && appliedFlameDamage > 0) {
+                                    let healAmount = appliedFlameDamage * store.player.vampirism;
                                     healAmount = Math.max(healAmount, 0.3); // Minimum 0.3 HP for flame
                                     healAmount = Math.min(healAmount, 2); // Cap at 2 HP for flame
                                     store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
@@ -11694,6 +11783,11 @@
                                 break; // Exit early on first collision for performance
                             }
                         }
+                    }
+
+                    if (e.type === 'cube_burglar') {
+                        updateCubeBurglar(e, dt);
+                        return;
                     }
 
                     // MOVEMENT AND AI UPDATES
@@ -12246,7 +12340,8 @@
                     store.activeEffects.splice(0, store.activeEffects.length - MAX_ACTIVE_EFFECTS);
                 }
 
-                if (!store.boss && store.enemies.length === 0) {
+                const hasNonBurglarEnemies = store.enemies.some(enemy => enemy && !enemy.dead && enemy.type !== 'cube_burglar');
+                if (!store.boss && !hasNonBurglarEnemies) {
                     // Add some delay before starting next wave to prevent rapid cycling
                     if (!store.world.waveTransitionTimer) {
                         store.world.waveTransitionTimer = performance.now();
@@ -12922,6 +13017,772 @@
             // --- RENDER & DRAW FUNCTIONS ---
             const TAU = Math.PI * 2;
             const THEME_TRANSITION_DURATION = 3.3;
+
+            const CUBE_BURGLAR_CONFIG = Object.freeze({
+                cubeSize: 4.5,
+                detailCubeScale: 0.55,
+                easeFactor: 6.5,
+                damageFlashDuration: 0.32,
+                baseCubeHealth: 110,
+                baseDetailHealth: 55,
+                baseAuraDamageBonus: 0.22,
+                stackDamageBonus: 0.08,
+                auraDuration: 1.3,
+                auraRange: 260,
+                vacuumRange: 340,
+                vacuumStrength: 260,
+                captureRadius: 36,
+                spawnCooldown: 42,
+                passiveSpawnInterval: 18,
+                minRespawnDelay: 28,
+                forcedSpawnAttempts: 4,
+                minWave: 10,
+                minWaveGap: 4,
+                spawnChanceBase: 0.08,
+                spawnChancePerWave: 0.004,
+                maxStacks: 6,
+                perCubeGold: 2,
+                perCubeXp: 6,
+                lootGold: 120,
+                lootXp: 220,
+                lootScore: 800
+            });
+
+            const CUBE_BURGLAR_SHAPE = [
+                { type: 'head', data: [0, 0, 1, 1, 0, 0] },
+                { type: 'head', data: [0, 1, 1, 1, 1, 0] },
+                { type: 'arms', data: [1, 1, 1, 1, 1, 1] },
+                { type: 'torso', data: [0, 0, 1, 1, 0, 0] },
+                { type: 'torso', data: [0, 0, 1, 1, 0, 0] },
+                { type: 'legs', data: [0, 1, 0, 1, 0, 0] },
+                { type: 'legs', data: [0, 1, 0, 0, 1, 0] },
+                {
+                    type: 'knapsack',
+                    shape: [
+                        [0, 1, 1, 1, 0],
+                        [1, 1, 1, 1, 1],
+                        [1, 1, 1, 1, 1],
+                        [0, 1, 1, 1, 0]
+                    ],
+                    offsetX: -0.5,
+                    offsetY: -2,
+                    offsetZ: -3
+                }
+            ];
+
+            class CubeBurglarCube {
+                constructor(index, targetX, targetY, targetZ, size, partType = 'body', partIdentifier = '', opts = {}) {
+                    this.id = index;
+                    this.targetX = targetX;
+                    this.targetY = targetY;
+                    this.targetZ = targetZ;
+                    this.animX = targetX;
+                    this.animY = targetY;
+                    this.animZ = targetZ;
+                    this.size = size;
+                    this.partType = partType;
+                    this.partIdentifier = partIdentifier;
+                    this.isDetail = opts.isDetail === true;
+                    const hue = partType === 'knapsack' ? 45 + Math.random() * 12 : 188 + Math.random() * 18;
+                    const saturation = partType === 'knapsack' ? 85 : 78;
+                    const lightness = partType === 'knapsack' ? 58 : 60;
+                    this.baseColor = `hsl(${hue.toFixed(1)}, ${saturation}%, ${lightness}%)`;
+                    this.color = this.baseColor;
+                    const baseHp = this.isDetail ? CUBE_BURGLAR_CONFIG.baseDetailHealth : CUBE_BURGLAR_CONFIG.baseCubeHealth;
+                    this.hpMax = baseHp * (opts.healthMultiplier || 1);
+                    this.hp = this.hpMax;
+                    this.damageTimer = 0;
+                    this.destroyed = false;
+                    this.pulseOffset = Math.random() * TAU;
+                    this.screen = { x: 0, y: 0, z: 0 };
+                }
+
+                update(dt) {
+                    const ease = Math.max(0.08, Math.min(0.35, CUBE_BURGLAR_CONFIG.easeFactor * dt));
+                    this.animX += (this.targetX - this.animX) * ease;
+                    this.animY += (this.targetY - this.animY) * ease;
+                    this.animZ += (this.targetZ - this.animZ) * ease;
+                    if (this.damageTimer > 0) {
+                        this.damageTimer = Math.max(0, this.damageTimer - dt);
+                        const ratio = Math.max(0, Math.min(1, this.damageTimer / CUBE_BURGLAR_CONFIG.damageFlashDuration));
+                        const l = 70 - ratio * 22;
+                        this.color = `hsl(0, 80%, ${l}%)`;
+                    } else {
+                        this.color = this.baseColor;
+                    }
+                }
+
+                takeDamage(amount) {
+                    if (this.destroyed) return 0;
+                    const applied = Math.min(this.hp, amount);
+                    this.hp -= applied;
+                    this.damageTimer = CUBE_BURGLAR_CONFIG.damageFlashDuration;
+                    if (this.hp <= 0.0001) {
+                        this.destroyed = true;
+                        this.hp = 0;
+                    }
+                    return applied;
+                }
+            }
+
+            function degToRad(deg) {
+                return deg * Math.PI / 180;
+            }
+
+            function adjustHslLightness(hsl, delta) {
+                const matches = hsl.match(/-?\d+(?:\.\d+)?/g);
+                if (!matches || matches.length < 3) return hsl;
+                const h = parseFloat(matches[0]);
+                const s = parseFloat(matches[1]);
+                const l = parseFloat(matches[2]);
+                if (Number.isNaN(l)) return hsl;
+                const nextL = Math.max(0, Math.min(100, l + delta));
+                return `hsl(${h.toFixed(1)}, ${s.toFixed(1)}%, ${nextL.toFixed(1)}%)`;
+            }
+
+            function lightenHsl(hsl, amount) {
+                return adjustHslLightness(hsl, Math.abs(amount));
+            }
+
+            function darkenHsl(hsl, amount) {
+                return adjustHslLightness(hsl, -Math.abs(amount));
+            }
+
+            function buildCubeBurglarCubes(enemy, healthMultiplier) {
+                const cubes = [];
+                const size = CUBE_BURGLAR_CONFIG.cubeSize;
+                const spacing = size * 2.2;
+                const figureRows = CUBE_BURGLAR_SHAPE.filter(def => def.data).length;
+                let currentRow = 0;
+                let index = 0;
+
+                CUBE_BURGLAR_SHAPE.forEach(def => {
+                    if (def.data) {
+                        const row = def.data;
+                        const width = row.length;
+                        for (let col = 0; col < width; col++) {
+                            if (!row[col]) continue;
+                            let identifier = def.type;
+                            if (def.type === 'arms') {
+                                identifier = col < width / 2 ? 'leftArm' : 'rightArm';
+                            } else if (def.type === 'legs') {
+                                identifier = col < width / 2 ? 'leftLeg' : 'rightLeg';
+                            }
+                            const targetX = (col - width / 2) * spacing;
+                            const targetY = (currentRow - figureRows / 2) * spacing;
+                            const targetZ = (Math.random() - 0.5) * size * 1.6;
+                            cubes.push(new CubeBurglarCube(
+                                index++,
+                                targetX,
+                                targetY,
+                                targetZ,
+                                size,
+                                def.type,
+                                identifier,
+                                { healthMultiplier }
+                            ));
+
+                            const detailCount = 1;
+                            for (let detail = 0; detail < detailCount; detail++) {
+                                cubes.push(new CubeBurglarCube(
+                                    index++,
+                                    targetX + (Math.random() - 0.5) * spacing * 0.9,
+                                    targetY + (Math.random() - 0.5) * spacing * 0.9,
+                                    targetZ + (Math.random() - 0.5) * spacing * 1.9,
+                                    size * CUBE_BURGLAR_CONFIG.detailCubeScale,
+                                    def.type,
+                                    identifier,
+                                    {
+                                        isDetail: true,
+                                        healthMultiplier: healthMultiplier * 0.6
+                                    }
+                                ));
+                            }
+                        }
+                        currentRow++;
+                    } else if (def.type === 'knapsack') {
+                        const shape = def.shape || [];
+                        for (let row = 0; row < shape.length; row++) {
+                            for (let col = 0; col < shape[row].length; col++) {
+                                if (!shape[row][col]) continue;
+                                const targetX = ((col - shape[row].length / 2) * spacing) + (def.offsetX || 0) * spacing;
+                                const targetY = ((row - shape.length / 2) * spacing) + (def.offsetY || 0) * spacing;
+                                const targetZ = (Math.random() - 0.5) * size * 1.2 + (def.offsetZ || 0) * spacing;
+                                cubes.push(new CubeBurglarCube(
+                                    index++,
+                                    targetX,
+                                    targetY,
+                                    targetZ,
+                                    size,
+                                    'knapsack',
+                                    'knapsack',
+                                    { healthMultiplier }
+                                ));
+                            }
+                        }
+                    }
+                });
+
+                enemy.cubeDetailCount = cubes.filter(c => c.isDetail).length;
+                return cubes;
+            }
+
+            function projectCubeForBurglar(enemy, cube) {
+                const PROJECTION_ANGLE = 0.35;
+                const time = enemy.time || 0;
+                const tilt = enemy.rotationX;
+                const pan = enemy.rotationY;
+                const spin = enemy.rotationZ;
+
+                let limbOffsetX = 0;
+                let limbOffsetY = 0;
+                let limbOffsetZ = 0;
+                const armSpeed = 1.6;
+                const legSpeed = 2.0;
+
+                switch (cube.partIdentifier) {
+                    case 'leftArm':
+                        limbOffsetZ = Math.sin(time * armSpeed) * 18;
+                        limbOffsetY = Math.cos(time * armSpeed) * 6 + 6;
+                        limbOffsetX = Math.cos(time * armSpeed * 0.5) * 4;
+                        break;
+                    case 'rightArm':
+                        limbOffsetZ = Math.sin(time * armSpeed + Math.PI) * 18;
+                        limbOffsetY = Math.cos(time * armSpeed + Math.PI) * 6 + 6;
+                        limbOffsetX = Math.cos(time * armSpeed * 0.5 + Math.PI) * 4;
+                        break;
+                    case 'leftLeg':
+                        limbOffsetZ = Math.sin(time * legSpeed) * 14;
+                        break;
+                    case 'rightLeg':
+                        limbOffsetZ = Math.sin(time * legSpeed + Math.PI) * 14;
+                        break;
+                }
+
+                let currentX = cube.animX + limbOffsetX;
+                let currentY = cube.animY + limbOffsetY + enemy.renderOffsetY;
+                let currentZ = cube.animZ + limbOffsetZ + enemy.renderOffsetZ;
+
+                const bob = Math.sin(time * 1.8) * 12;
+                currentY += bob;
+
+                const x1 = currentX * Math.cos(spin) + currentZ * Math.sin(spin);
+                const z1 = -currentX * Math.sin(spin) + currentZ * Math.cos(spin);
+                const y1 = currentY;
+
+                const y2 = y1 * Math.cos(tilt) - z1 * Math.sin(tilt);
+                const z2 = y1 * Math.sin(tilt) + z1 * Math.cos(tilt);
+                const x2 = x1;
+
+                const finalX = x2 * Math.cos(pan) + z2 * Math.sin(pan);
+                const finalZ = -x2 * Math.sin(pan) + z2 * Math.cos(pan);
+                const finalY = y2;
+
+                let screenX = (finalX - finalY) * Math.cos(PROJECTION_ANGLE);
+                let screenY = (finalX + finalY) * Math.sin(PROJECTION_ANGLE) - finalZ;
+
+                cube.screen.x = screenX;
+                cube.screen.y = screenY;
+                cube.screen.z = finalZ;
+                return cube.screen;
+            }
+
+            function getCubeBurglarActiveEnemy() {
+                if (!store.cubeBurglarId) return null;
+                const enemy = store.enemies.find(en => en && en.id === store.cubeBurglarId && !en.dead && en.type === 'cube_burglar');
+                return enemy || null;
+            }
+
+            function createCubeBurglar(options = {}) {
+                const hpScale = Math.max(0.6, options.hpScale || 1);
+                const lateGameScaling = Math.max(0.8, options.lateGameScaling || 1);
+                const damageMult = Math.max(1, options.damageMult || 1);
+                const x = Math.max(120, Math.min(W - 120, options.x !== undefined ? options.x : store.player.x + (Math.random() - 0.5) * 220));
+                const y = options.y !== undefined ? options.y : -160;
+                const enemy = {
+                    type: 'cube_burglar',
+                    id: Date.now() + Math.random(),
+                    x,
+                    y,
+                    r: 28,
+                    cubes: [],
+                    time: 0,
+                    rotationX: degToRad(68),
+                    rotationY: degToRad(-204),
+                    rotationZ: degToRad(38),
+                    renderOffsetY: 0,
+                    renderOffsetZ: 0,
+                    moveSpeed: 70 + Math.random() * 20,
+                    baseContactDamage: 18,
+                    contactDamage: 18 * damageMult,
+                    damageMult,
+                    auraRange: CUBE_BURGLAR_CONFIG.auraRange,
+                    auraDuration: CUBE_BURGLAR_CONFIG.auraDuration,
+                    baseAuraDamageMult: 1 + CUBE_BURGLAR_CONFIG.baseAuraDamageBonus,
+                    auraDamageMult: 1 + CUBE_BURGLAR_CONFIG.baseAuraDamageBonus,
+                    buffStacks: 0,
+                    stolenPowerups: [],
+                    vacuumRange: CUBE_BURGLAR_CONFIG.vacuumRange,
+                    vacuumStrength: CUBE_BURGLAR_CONFIG.vacuumStrength,
+                    captureRadius: CUBE_BURGLAR_CONFIG.captureRadius,
+                    gold: CUBE_BURGLAR_CONFIG.lootGold,
+                    xp: CUBE_BURGLAR_CONFIG.lootXp,
+                    score: CUBE_BURGLAR_CONFIG.lootScore,
+                    spawnDuration: 0.85,
+                    spawnDropDistance: 160,
+                    spawnEffectColor: '#ff6ad5',
+                    spawnIntroGlow: 1.2,
+                    cannotBeKnocked: true,
+                    cubeAliveCount: 0,
+                    hp: 0,
+                    hpMax: 0,
+                    topClampDelay: 1.5,
+                    target: null,
+                    targetTimer: 0,
+                    highlightTimer: 0,
+                    captureCooldown: 0,
+                    auraPulse: 0,
+                    contactCooldown: 0,
+                    shadowGround: 70
+                };
+
+                const healthMultiplier = hpScale * lateGameScaling;
+                enemy.cubes = buildCubeBurglarCubes(enemy, healthMultiplier);
+                enemy.cubeAliveCount = enemy.cubes.filter(c => !c.isDetail).length;
+                enemy.hpMax = enemy.cubes.reduce((sum, cube) => sum + cube.hpMax, 0);
+                enemy.hp = enemy.hpMax;
+                enemy.auraDamageMult = enemy.baseAuraDamageMult;
+                return enemy;
+            }
+
+            function trySpawnCubeBurglar(options = {}) {
+                const world = store.world;
+                if (!world) return null;
+                if (world.cubeBurglarActive) return null;
+                if (world.wave < CUBE_BURGLAR_CONFIG.minWave) return null;
+                const waveGap = world.wave - (world.cubeBurglarLastSpawnWave || 0);
+                const now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+                const lastTime = world.cubeBurglarLastSpawnTime || 0;
+                const elapsedSeconds = lastTime > 0 ? (now - lastTime) / 1000 : Infinity;
+                const readyByWave = waveGap >= CUBE_BURGLAR_CONFIG.minWaveGap;
+                const readyByTime = elapsedSeconds >= CUBE_BURGLAR_CONFIG.minRespawnDelay;
+                if (!readyByWave && !readyByTime) return null;
+                if (world.cubeBurglarCooldown > 0) return null;
+                const maxChance = Math.min(0.42, CUBE_BURGLAR_CONFIG.spawnChanceBase + Math.max(0, world.wave - CUBE_BURGLAR_CONFIG.minWave) * CUBE_BURGLAR_CONFIG.spawnChancePerWave);
+                world.cubeBurglarSpawnAttempts = (world.cubeBurglarSpawnAttempts || 0) + 1;
+                const forced = world.cubeBurglarSpawnAttempts >= (CUBE_BURGLAR_CONFIG.forcedSpawnAttempts || 4);
+                if (!forced && Math.random() >= maxChance) {
+                    return null;
+                }
+
+                const burglar = createCubeBurglar(options);
+                store.world.cubeBurglarActive = true;
+                store.world.cubeBurglarLastSpawnWave = store.world.wave;
+                store.world.cubeBurglarLastSpawnTime = now;
+                store.world.cubeBurglarSpawnTimer = 0;
+                store.world.cubeBurglarSpawnAttempts = 0;
+                store.cubeBurglarId = burglar.id;
+                activateSpawnIntro(burglar, {
+                    duration: burglar.spawnDuration,
+                    dropDistance: burglar.spawnDropDistance,
+                    effectColor: burglar.spawnEffectColor,
+                    clusterIndex: -1,
+                    clusterSize: 1,
+                    fireDelayBuffer: 0.75
+                });
+                store.enemies.push(burglar);
+                store.world.lastSpawnCount = (store.world.lastSpawnCount || 0) + 1;
+                store.activeEffects.push(createEffect('spawnTeleport', burglar.x, burglar.spawnTargetY ?? burglar.y, 48, {
+                    color: burglar.spawnEffectColor,
+                    duration: (burglar.spawnDuration || 0.8) + 0.35
+                }));
+                if (typeof announce === 'function') {
+                    announce('⚠️ Cube Burglar inbound! Secure your spoils.');
+                }
+                if (typeof playSound === 'function') {
+                    playSound('thunder');
+                }
+                return burglar;
+            }
+
+            function pullPowerupsToCubeBurglar(enemy, dt) {
+                if (!store.powerups || !store.powerups.length) return;
+                const rangeSq = enemy.vacuumRange * enemy.vacuumRange;
+                for (let i = store.powerups.length - 1; i >= 0; i--) {
+                    const powerup = store.powerups[i];
+                    if (!powerup) continue;
+                    const dx = powerup.x - enemy.x;
+                    const dy = powerup.y - enemy.y;
+                    const distSq = dx * dx + dy * dy;
+                    if (distSq > rangeSq) continue;
+                    const dist = Math.max(8, Math.sqrt(distSq));
+                    const pull = enemy.vacuumStrength * (1 + enemy.buffStacks * 0.14);
+                    powerup.x -= (dx / dist) * pull * dt;
+                    powerup.y -= (dy / dist) * pull * dt;
+                    const captureRadius = enemy.captureRadius;
+                    if (dist <= captureRadius) {
+                        enemy.stolenPowerups.push({
+                            type: powerup.type,
+                            championVariant: powerup.championVariant,
+                            upgradeTier: powerup.upgradeTier,
+                            pulseOffset: powerup.pulseOffset,
+                            fallbackTier: powerup.fallbackTier,
+                            source: powerup.source,
+                            isVoidReaper: powerup.isVoidReaper,
+                            r: powerup.r,
+                            value: powerup.value,
+                            xp: powerup.xp,
+                            pulse: powerup.pulse
+                        });
+                        store.powerups.splice(i, 1);
+                        enemy.buffStacks = Math.min(CUBE_BURGLAR_CONFIG.maxStacks, enemy.buffStacks + 1);
+                        enemy.highlightTimer = 0.6;
+                        enemy.auraDamageMult = enemy.baseAuraDamageMult + enemy.buffStacks * CUBE_BURGLAR_CONFIG.stackDamageBonus;
+                        enemy.auraDuration = CUBE_BURGLAR_CONFIG.auraDuration + enemy.buffStacks * 0.1;
+                        if (typeof announce === 'function') {
+                            announce('💎 Cube Burglar pilfered a powerup!');
+                        }
+                        store.activeEffects.push(createEffect('spawnTeleport', enemy.x, enemy.y, 40 + enemy.buffStacks * 6, {
+                            color: '#ff6ad5',
+                            duration: 0.45
+                        }));
+                    }
+                }
+            }
+
+            function applyCubeBurglarAura(enemy, dt) {
+                const auraRangeSq = enemy.auraRange * enemy.auraRange;
+                const auraDuration = enemy.auraDuration || CUBE_BURGLAR_CONFIG.auraDuration;
+                const auraMult = enemy.auraDamageMult || enemy.baseAuraDamageMult;
+                for (let i = 0; i < store.enemies.length; i++) {
+                    const target = store.enemies[i];
+                    if (!target || target.dead || target === enemy || target.type === 'cube_burglar') continue;
+                    const dx = target.x - enemy.x;
+                    const dy = target.y - enemy.y;
+                    const distSq = dx * dx + dy * dy;
+                    if (distSq > auraRangeSq) continue;
+                    if (target._cubeBurglarBaseDamageMult === undefined) {
+                        target._cubeBurglarBaseDamageMult = target.damageMult || 1;
+                    }
+                    target.damageMult = (target._cubeBurglarBaseDamageMult || 1) * auraMult;
+                    target.cubeBurglarBuffTimer = auraDuration;
+                    target.cubeBurglarBuffSource = enemy.id;
+                    target.cubeBurglarAuraGlow = Math.min(1, (target.cubeBurglarAuraGlow || 0) + dt * 2.4);
+                }
+                enemy.auraPulse = Math.sin((enemy.time || 0) * 4) * 0.5 + 0.5;
+            }
+
+            function defeatCubeBurglar(enemy) {
+                if (!enemy || enemy.dead) return;
+                enemy.dead = true;
+                store.world.cubeBurglarActive = false;
+                store.world.cubeBurglarCooldown = CUBE_BURGLAR_CONFIG.spawnCooldown;
+                store.world.cubeBurglarDefeated = (store.world.cubeBurglarDefeated || 0) + 1;
+                store.cubeBurglarId = null;
+                const now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+                store.world.cubeBurglarLastSpawnTime = now;
+                store.world.cubeBurglarSpawnTimer = 0;
+                const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
+                const gold = Math.floor((enemy.gold || 0) * collarBonus);
+                const xp = Math.floor((enemy.xp || 0) * collarBonus);
+                const score = Math.floor((enemy.score || 0) * collarBonus);
+                if (gold > 0) addWorldGold(gold);
+                if (xp > 0) store.world.xp += xp;
+                if (score > 0) store.world.score += score;
+                store.world.kills++;
+                spawnGibs(enemy.x, enemy.y, '#ff6ad5');
+                store.activeEffects.push(createEffect('spawnTeleport', enemy.x, enemy.y, 64, {
+                    color: '#ff6ad5',
+                    duration: 0.55
+                }));
+                dropCubeBurglarLoot(enemy);
+                if (typeof announce === 'function') {
+                    announce('✅ Cube Burglar dismantled! All loot recovered.');
+                }
+            }
+
+            function dropCubeBurglarLoot(enemy) {
+                const centerX = enemy.x;
+                const centerY = enemy.y;
+                const stolen = enemy.stolenPowerups || [];
+                if (stolen.length) {
+                    const radius = 45;
+                    stolen.forEach((powerup, index) => {
+                        const angle = (index / stolen.length) * TAU;
+                        store.powerups.push({
+                            ...powerup,
+                            x: centerX + Math.cos(angle) * radius,
+                            y: centerY + Math.sin(angle) * radius,
+                            r: 14,
+                            vx: (Math.random() - 0.5) * 0.25,
+                            vy: -Math.random() * 0.25,
+                            pulse: powerup.pulse || 0
+                        });
+                    });
+                }
+
+                spawnUpgradePowerup(centerX, centerY - 24, 'bossTier', {
+                    championChance: 0.65,
+                    fallbackTier: 'bossTier',
+                    source: 'cube_burglar',
+                    allowChampion: true
+                });
+                spawnCashBundle(centerX, centerY + 16);
+            }
+
+            function applyCubeBurglarHit(enemy, bullet, damage) {
+                const localX = bullet.x - enemy.x;
+                const localY = bullet.y - enemy.y;
+                let bestCube = null;
+                let bestDist = Infinity;
+                const fallback = [];
+                const distanceToCore = Math.hypot(localX, localY);
+                for (let i = 0; i < enemy.cubes.length; i++) {
+                    const cube = enemy.cubes[i];
+                    if (!cube || cube.destroyed) continue;
+                    const screen = cube.screen || projectCubeForBurglar(enemy, cube);
+                    const dx = localX - screen.x;
+                    const dy = localY - screen.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const baseSize = cube.size || CUBE_BURGLAR_CONFIG.cubeSize;
+                    const hitRadius = baseSize * (cube.isDetail ? 2 : 2.8);
+                    fallback.push({ cube, dist, hitRadius });
+                    if (dist <= hitRadius && dist < bestDist) {
+                        bestDist = dist;
+                        bestCube = cube;
+                    }
+                }
+
+                if (!bestCube && fallback.length) {
+                    fallback.sort((a, b) => a.dist - b.dist);
+                    const candidate = fallback[0];
+                    if (candidate && candidate.dist < candidate.hitRadius * 1.3) {
+                        bestCube = candidate.cube;
+                    }
+                }
+
+                if (!bestCube && fallback.length) {
+                    const primary = fallback.find(entry => !entry.cube.isDetail) || fallback[0];
+                    const radius = (enemy.r || 40) * 1.25;
+                    if (primary && distanceToCore <= radius) {
+                        bestCube = primary.cube;
+                    }
+                }
+
+                if (!bestCube && distanceToCore <= (enemy.r || 40) * 1.4) {
+                    bestCube = enemy.cubes.find(c => c && !c.destroyed && !c.isDetail) || enemy.cubes.find(c => c && !c.destroyed) || null;
+                }
+
+                if (!bestCube) {
+                    return { hit: false, damageApplied: 0 };
+                }
+
+                const applied = bestCube.takeDamage(damage);
+                if (applied <= 0) {
+                    return { hit: false, damageApplied: 0 };
+                }
+                enemy.hp = Math.max(0, enemy.hp - applied);
+                enemy.highlightCubeId = bestCube.id;
+                enemy.highlightTimer = 0.35;
+
+                if (bestCube.destroyed && !bestCube.isDetail) {
+                    enemy.cubeAliveCount = Math.max(0, enemy.cubeAliveCount - 1);
+                    const gold = CUBE_BURGLAR_CONFIG.perCubeGold;
+                    if (gold > 0) addWorldGold(gold);
+                    const xp = CUBE_BURGLAR_CONFIG.perCubeXp;
+                    if (xp > 0) store.world.xp += xp;
+                    store.activeEffects.push(createEffect('hitSpark', enemy.x + bestCube.screen.x, enemy.y + bestCube.screen.y, (bestCube.size || 8) * 2, {
+                        strength: 42,
+                        crit: false
+                    }));
+                }
+
+                if (enemy.cubeAliveCount <= 0 || enemy.hp <= 0.0001) {
+                    defeatCubeBurglar(enemy);
+                }
+
+                return {
+                    hit: true,
+                    damageApplied: applied,
+                    impactPoint: {
+                        x: enemy.x + (bestCube.screen?.x || 0),
+                        y: enemy.y + (bestCube.screen?.y || 0)
+                    }
+                };
+            }
+
+            function updateCubeBurglar(enemy, dt) {
+                if (enemy.spawnPhase === 'teleport') {
+                    const duration = Math.max(0.001, enemy.spawnDuration || 0.6);
+                    enemy.spawnTimer = (enemy.spawnTimer ?? duration) - dt;
+                    const remaining = Math.max(0, enemy.spawnTimer);
+                    const progress = Math.min(1, 1 - remaining / duration);
+                    const eased = 1 - Math.pow(1 - progress, 3);
+                    const startY = enemy.spawnStartY ?? (enemy.spawnTargetY ?? enemy.y);
+                    const targetY = enemy.spawnTargetY ?? enemy.y;
+                    enemy.y = startY + (targetY - startY) * eased;
+                    enemy.spawnOpacity = Math.min(1, Math.max(enemy.spawnOpacity ?? 0, eased * 1.1));
+                    if (enemy.spawnTimer <= 0) {
+                        enemy.spawnPhase = null;
+                        enemy.spawnOpacity = 1;
+                        enemy.y = targetY;
+                    }
+                }
+
+                enemy.time = (enemy.time || 0) + dt;
+                enemy.renderOffsetY = Math.sin(enemy.time * 1.4) * 12;
+                enemy.renderOffsetZ = Math.cos(enemy.time * 1.1) * 8;
+                enemy.rotationY += (degToRad(-208 + Math.sin(enemy.time * 0.6) * 22) - enemy.rotationY) * dt * 1.2;
+                enemy.rotationZ += (degToRad(34 + Math.cos(enemy.time * 0.8) * 18) - enemy.rotationZ) * dt * 1.1;
+
+                enemy.targetTimer = (enemy.targetTimer || 0) - dt;
+                if (enemy.targetTimer <= 0 || !enemy.target) {
+                    const radius = 140 + Math.random() * 120;
+                    const angle = Math.random() * TAU;
+                    const px = store.player.x;
+                    const py = store.player.y - 90;
+                    enemy.target = {
+                        x: clamp(px + Math.cos(angle) * radius, 120, W - 120),
+                        y: clamp(py + Math.sin(angle) * radius, 80, H * 0.65)
+                    };
+                    enemy.targetTimer = 1.9 + Math.random() * 1.6;
+                }
+
+                if (enemy.kiteTimer > 0) {
+                    enemy.kiteTimer -= dt;
+                }
+
+                const dx = enemy.target.x - enemy.x;
+                const dy = enemy.target.y - enemy.y;
+                const dist = Math.max(1, Math.hypot(dx, dy));
+                const moveSpeed = enemy.moveSpeed + enemy.buffStacks * 12;
+                enemy.x += (dx / dist) * moveSpeed * dt;
+                enemy.y += (dy / dist) * (moveSpeed * 0.85) * dt;
+
+                const margin = enemy.r || 54;
+                enemy.x = Math.max(margin, Math.min(W - margin, enemy.x));
+                enemy.y = Math.max(margin, Math.min(H * 0.75, enemy.y));
+
+                enemy.cubes.forEach(cube => {
+                    cube.update(dt);
+                    projectCubeForBurglar(enemy, cube);
+                });
+
+                applyCubeBurglarAura(enemy, dt);
+                pullPowerupsToCubeBurglar(enemy, dt);
+
+                if (enemy.highlightTimer > 0) {
+                    enemy.highlightTimer = Math.max(0, enemy.highlightTimer - dt);
+                }
+
+                if (enemy.contactCooldown > 0) {
+                    enemy.contactCooldown -= dt;
+                }
+
+                if (enemy.contactCooldown <= 0 && !store.isDamageOff && collide(enemy, store.player)) {
+                    takeDamage(enemy.contactDamage);
+                    enemy.contactCooldown = 0.6;
+                }
+
+                enemy.auraDamageMult = enemy.baseAuraDamageMult + enemy.buffStacks * CUBE_BURGLAR_CONFIG.stackDamageBonus;
+                enemy.hp = enemy.hpMax - enemy.cubes.reduce((sum, cube) => sum + (cube.hpMax - cube.hp), 0);
+            }
+
+            function drawCubeBurglar(enemy) {
+                if (!enemy || enemy.dead) return;
+                const auraPulse = 1 + (enemy.auraPulse || 0) * 0.22;
+                const auraRange = enemy.auraRange || 220;
+                ctx.save();
+                ctx.globalAlpha *= 0.28 + (enemy.buffStacks * 0.04);
+                ctx.fillStyle = 'rgba(255,106,213,0.35)';
+                ctx.beginPath();
+                ctx.arc(0, 0, auraRange * auraPulse, 0, TAU);
+                ctx.fill();
+                ctx.restore();
+
+                const cubes = enemy.cubes.filter(cube => cube && !cube.destroyed);
+                const sorted = cubes.slice().sort((a, b) => (a.screen?.z || 0) - (b.screen?.z || 0));
+                const highlightId = enemy.highlightTimer > 0 ? enemy.highlightCubeId : null;
+
+                const groundY = enemy.shadowGround ?? 70;
+                ctx.save();
+                ctx.fillStyle = 'rgba(0,0,0,0.18)';
+                ctx.filter = 'blur(6px)';
+                ctx.beginPath();
+                ctx.ellipse(0, groundY, 30, 15, 0, 0, TAU);
+                ctx.fill();
+                ctx.filter = 'none';
+                ctx.restore();
+
+                sorted.forEach(cube => {
+                    const screen = cube.screen;
+                    let screenX = screen.x;
+                    let screenY = screen.y;
+                    if (cube.damageTimer > 0) {
+                        screenX += (Math.random() - 0.5) * 3;
+                        screenY += (Math.random() - 0.5) * 3;
+                    }
+                    const size = cube.size + Math.sin((enemy.time || 0) * 0.9 + cube.pulseOffset) * 0.8;
+                    const points = [
+                        { x: 0, y: -size },
+                        { x: size, y: -size / 2 },
+                        { x: size, y: size / 2 },
+                        { x: 0, y: size },
+                        { x: -size, y: size / 2 },
+                        { x: -size, y: -size / 2 }
+                    ];
+
+                    ctx.save();
+                    ctx.translate(screenX, screenY);
+                    const topColor = lightenHsl(cube.color, 18);
+                    const leftColor = cube.color;
+                    const rightColor = darkenHsl(cube.color, 18);
+                    ctx.lineWidth = 0.6;
+
+                    ctx.beginPath();
+                    ctx.moveTo(points[0].x, points[0].y);
+                    ctx.lineTo(points[1].x, points[1].y);
+                    ctx.lineTo(points[2].x, points[2].y - size);
+                    ctx.lineTo(points[5].x, points[5].y - size);
+                    ctx.closePath();
+                    ctx.fillStyle = topColor;
+                    ctx.strokeStyle = darkenHsl(topColor, 12);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    ctx.beginPath();
+                    ctx.moveTo(points[0].x, points[0].y);
+                    ctx.lineTo(points[5].x, points[5].y);
+                    ctx.lineTo(points[4].x, points[4].y);
+                    ctx.lineTo(points[3].x, points[3].y);
+                    ctx.closePath();
+                    ctx.fillStyle = leftColor;
+                    ctx.strokeStyle = darkenHsl(leftColor, 12);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    ctx.beginPath();
+                    ctx.moveTo(points[0].x, points[0].y);
+                    ctx.lineTo(points[1].x, points[1].y);
+                    ctx.lineTo(points[2].x, points[2].y);
+                    ctx.lineTo(points[3].x, points[3].y);
+                    ctx.closePath();
+                    ctx.fillStyle = rightColor;
+                    ctx.strokeStyle = darkenHsl(rightColor, 12);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    if (highlightId === cube.id) {
+                        ctx.globalAlpha = Math.max(0.2, enemy.highlightTimer);
+                        ctx.strokeStyle = '#ffdfef';
+                        ctx.lineWidth = 1.2;
+                        ctx.beginPath();
+                        ctx.ellipse(0, 0, size * 1.25, size * 0.75, 0, 0, TAU);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                });
+            }
 
             let activeMapThemeState = null;
             let transitioningMapThemeState = null;
@@ -22148,6 +23009,9 @@
                     }
                 }
                 l < s && l > 0 && (ctx.fillStyle = 'rgba(0,0,0,0.5)', ctx.fillRect(-a, -a - 8, 2 * a, 3), ctx.fillStyle = "#b266ff", ctx.fillRect(-a, -a - 8, 2 * a * (l / s), 3)); ctx.lineWidth = 2; ctx.beginPath(); switch (r) {
+                    case "cube_burglar":
+                        drawCubeBurglar(e);
+                        break;
                     case "avian_hatchling": ctx.fillStyle = n + "aa"; ctx.strokeStyle = n; ctx.lineWidth = 2; ctx.moveTo(0, -a * 1.2); ctx.lineTo(a, -a * 0.5); ctx.lineTo(a, a * 0.5); ctx.lineTo(0, a * 1.2); ctx.lineTo(-a, a * 0.5); ctx.lineTo(-a, -a * 0.5); ctx.closePath(); ctx.fill(); ctx.stroke(); break; case "construct_gold": ctx.fillStyle = n + "aa"; ctx.strokeStyle = n; ctx.lineWidth = 2; ctx.moveTo(0, -a); ctx.lineTo(a, 0); ctx.lineTo(0, a); ctx.lineTo(-a, 0); ctx.closePath(); ctx.fill(); ctx.stroke(); break; case "trap_king_add": case "drone": const droneGradient = ctx.createLinearGradient(-a, -a, a, a); droneGradient.addColorStop(0, "#E0E0E0"); droneGradient.addColorStop(1, "#A0A0A0"); ctx.fillStyle = droneGradient; ctx.strokeStyle = "#808080"; ctx.beginPath(); ctx.moveTo(-1.2 * a, 0); ctx.quadraticCurveTo(0, -a, 1.2 * a, 0); ctx.quadraticCurveTo(0, .6 * a, -1.2 * a, 0); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#aaddff"; ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, -.2 * a, .6 * a, Math.PI, 0); ctx.fill(); ctx.stroke(); ctx.fillStyle = r === "trap_king_add" ? "#ffc83d" : "#32CD32"; ctx.beginPath(); ctx.ellipse(0, -.2 * a, .3 * a, .4 * a, 0, 0, 2 * Math.PI); ctx.fill(); ctx.fillStyle = "#000000"; ctx.beginPath(); ctx.ellipse(-.1 * a, -.25 * a, .08 * a, .15 * a, -.5, 0, 2 * Math.PI); ctx.ellipse(.1 * a, -.25 * a, .08 * a, .15 * a, .5, 0, 2 * Math.PI); ctx.fill(); break;
                     case "hunter": {
                         const time = performance.now() / 1000;
