@@ -4451,6 +4451,42 @@
             const STAR_CANNON_HITBOX_SCALE = 1.0;
             const STAR_CANNON_CLONE_DELAY = 0.35;
             const STAR_CANNON_ICEMAN_DAMAGE_SCALE = 0.3;
+            const STAR_CANNON_MINI_DAMAGE_SCALE = 0.18;
+            const STAR_CANNON_MINI_SIZE_SCALE = 0.68;
+            const STAR_CANNON_MINI_SPEED_SCALE = 0.92;
+            const STAR_CANNON_MINI_CLONE_DELAY = 0.44;
+            const STAR_CANNON_MINI_STAGGER = 0.08;
+
+            const STAR_VARIANT_PALETTES = {
+                player: {
+                    trailFillBase: 'rgba(255, 255, 200, ',
+                    trailShadowBase: 'rgba(255, 240, 150, ',
+                    primaryFill: 'rgba(255, 255, 140, 0.85)',
+                    shadowFill: 'rgba(255, 220, 120, 0.9)',
+                    coreFill: '#fffbe6'
+                },
+                'iceman-main': {
+                    trailFillBase: 'rgba(190, 225, 255, ',
+                    trailShadowBase: 'rgba(140, 200, 255, ',
+                    primaryFill: 'rgba(180, 215, 255, 0.85)',
+                    shadowFill: 'rgba(140, 200, 255, 0.9)',
+                    coreFill: '#eef7ff'
+                },
+                'iceman-mini': {
+                    trailFillBase: 'rgba(205, 235, 255, ',
+                    trailShadowBase: 'rgba(155, 210, 255, ',
+                    primaryFill: 'rgba(200, 230, 255, 0.78)',
+                    shadowFill: 'rgba(150, 205, 255, 0.85)',
+                    coreFill: '#f6fbff'
+                },
+                enemy: {
+                    trailFillBase: 'rgba(150, 160, 220, ',
+                    trailShadowBase: 'rgba(80, 90, 160, ',
+                    primaryFill: 'rgba(200, 205, 255, 0.82)',
+                    shadowFill: 'rgba(70, 80, 160, 0.9)',
+                    coreFill: '#c8ccff'
+                }
+            };
 
             function getStarCannonCooldown(level) {
                 if (!level || level <= 0) {
@@ -14012,28 +14048,6 @@
                     });
                 }
                 
-                // Star Cannon: Iceman mirrors player's star cannon (smaller, precise shots)
-                if (p.starCannonLevel > 0 && p.starCannonIcemanSupport) {
-                    const starCount = getStarCannonBurstCount(p.starCannonLevel);
-                    const spreadAngle = 15;
-                    for (let i = 0; i < starCount; i++) {
-                        const angle = (i - (starCount - 1) / 2) * spreadAngle * Math.PI / 180;
-                        spawnBullet({
-                            x: store.iceman.x,
-                            y: store.iceman.y - 15,
-                            vx: Math.sin(angle) * 320,
-                            vy: -Math.cos(angle) * 320,
-                            r: 3, // Smaller for better visibility
-                            col: "#ffee88", // Slightly different shade
-                            dmg: 45 * p.dmgMult * icemanDamageCoefficient * icemanDamageMult,
-                            pierce: true,
-                            explosive: false,
-                            isStar: true,
-                            isIceman: true,
-                            life: 0
-                        });
-                    }
-                }
             }
             function firePlayer() {
                 const p = store.player;
@@ -14162,15 +14176,17 @@
 
             function launchStarProjectile(originX, originY, angle, options = {}) {
                 const speedMultiplier = options.speedMultiplier ?? 1;
+                const sizeScale = options.sizeScale ?? 1;
+                const trailScale = options.trailLengthScale ?? sizeScale;
                 const projectile = {
                     x: originX,
                     y: originY,
                     vx: Math.sin(angle) * STAR_CANNON_SPEED * speedMultiplier,
                     vy: -Math.cos(angle) * STAR_CANNON_SPEED * speedMultiplier,
-                    size: STAR_CANNON_SIZE,
+                    size: STAR_CANNON_SIZE * sizeScale,
                     rotation: 0,
                     trail: [],
-                    maxTrailLength: 28,
+                    maxTrailLength: Math.max(12, Math.round(28 * trailScale)),
                     hitIds: new Set(),
                     damageScale: options.damageScale ?? 1,
                     isIceman: options.isIceman || false,
@@ -14180,7 +14196,8 @@
                     coreColor: options.coreColor || null,
                     shadowColor: options.shadowColor || null,
                     isEnemy: options.isEnemy || false,
-                    enemyDamage: options.enemyDamage ?? 0
+                    enemyDamage: options.enemyDamage ?? 0,
+                    variant: options.variant || null
                 };
                 store.starProjectiles.push(projectile);
             }
@@ -14203,7 +14220,8 @@
                         damageScale: 1,
                         speedMultiplier,
                         playSound: i === 0,
-                        sourceLevel: level
+                        sourceLevel: level,
+                        sequenceIndex: i
                     });
 
                     if (alternating) {
@@ -14230,20 +14248,34 @@
                             launchStarProjectile(originX, originY, angle, {
                                 hitboxScale: STAR_CANNON_HITBOX_SCALE,
                                 damageScale: salvo.damageScale,
-                                speedMultiplier: salvo.speedMultiplier
+                                speedMultiplier: salvo.speedMultiplier,
+                                variant: 'player'
                             });
                             if (salvo.playSound) {
                                 playSound('stargun');
                             }
 
-                            if (p.starCannonIcemanSupport && p.hasIceman && store.iceman) {
+                            if (p.hasIceman && store.iceman) {
+                                const hasSupport = !!p.starCannonIcemanSupport;
+                                const cloneVariant = hasSupport ? 'iceman-main' : 'iceman-mini';
+                                const cloneDamageScale = hasSupport ? STAR_CANNON_ICEMAN_DAMAGE_SCALE : STAR_CANNON_MINI_DAMAGE_SCALE;
+                                const cloneDelayBase = hasSupport ? STAR_CANNON_CLONE_DELAY : STAR_CANNON_MINI_CLONE_DELAY;
+                                const cloneDelayExtra = hasSupport ? 0 : (salvo.sequenceIndex || 0) * STAR_CANNON_MINI_STAGGER;
+                                const cloneOffsetMultiplier = hasSupport ? 1 : 0.75;
+                                const cloneSpeedMultiplier = (salvo.speedMultiplier ?? 1) * (hasSupport ? 1 : STAR_CANNON_MINI_SPEED_SCALE);
+                                const cloneSizeScale = hasSupport ? 1 : STAR_CANNON_MINI_SIZE_SCALE;
                                 store.pendingStarClones.push({
-                                    delay: STAR_CANNON_CLONE_DELAY,
-                                    originX: store.iceman.x + offset,
+                                    delay: cloneDelayBase + cloneDelayExtra,
+                                    originX: store.iceman.x + offset * cloneOffsetMultiplier,
                                     originY: store.iceman.y - 12,
                                     angle,
-                                    damageScale: STAR_CANNON_ICEMAN_DAMAGE_SCALE,
-                                    playSound: salvo.playSound
+                                    damageScale: cloneDamageScale,
+                                    playSound: hasSupport && salvo.playSound,
+                                    isIceman: true,
+                                    sizeScale: cloneSizeScale,
+                                    speedMultiplier: cloneSpeedMultiplier,
+                                    variant: cloneVariant,
+                                    hitboxScale: STAR_CANNON_HITBOX_SCALE
                                 });
                             }
 
@@ -14254,7 +14286,11 @@
                                     originY: store.beefClone.y - 12,
                                     angle,
                                     damageScale: STAR_CANNON_ICEMAN_DAMAGE_SCALE,
-                                    playSound: salvo.playSound
+                                    playSound: salvo.playSound,
+                                    variant: 'iceman-main',
+                                    hitboxScale: STAR_CANNON_HITBOX_SCALE,
+                                    speedMultiplier: salvo.speedMultiplier ?? 1,
+                                    sizeScale: 1
                                 });
                             }
 
@@ -14270,8 +14306,15 @@
                         if (pending.delay <= 0) {
                             launchStarProjectile(pending.originX, pending.originY, pending.angle, {
                                 damageScale: pending.damageScale,
-                                isIceman: true,
-                                hitboxScale: STAR_CANNON_HITBOX_SCALE
+                                isIceman: pending.isIceman || false,
+                                hitboxScale: pending.hitboxScale ?? STAR_CANNON_HITBOX_SCALE,
+                                speedMultiplier: pending.speedMultiplier ?? 1,
+                                sizeScale: pending.sizeScale ?? 1,
+                                variant: pending.variant,
+                                trailColor: pending.trailColor,
+                                primaryColor: pending.primaryColor,
+                                coreColor: pending.coreColor,
+                                shadowColor: pending.shadowColor
                             });
                             if (pending.playSound) {
                                 playSound('stargun');
@@ -14442,13 +14485,12 @@
                 if (!store.starProjectiles.length) return;
                 for (const star of store.starProjectiles) {
                     const isEnemyStar = !!star.isEnemy;
-                    const isIcemanStar = !!star.isIceman && !isEnemyStar;
-                    const trailFillBase = isEnemyStar
-                        ? (star.trailColor || 'rgba(150, 160, 220, ')
-                        : (isIcemanStar ? 'rgba(190, 225, 255, ' : 'rgba(255, 255, 200, ');
-                    const trailShadowBase = isEnemyStar
-                        ? 'rgba(80, 90, 160, '
-                        : (isIcemanStar ? 'rgba(140, 200, 255, ' : 'rgba(255, 240, 150, ');
+                    const paletteKey = isEnemyStar
+                        ? 'enemy'
+                        : (star.variant || (star.isIceman ? 'iceman-main' : 'player'));
+                    const palette = STAR_VARIANT_PALETTES[paletteKey] || STAR_VARIANT_PALETTES.player;
+                    const trailFillBase = star.trailColor || palette.trailFillBase;
+                    const trailShadowBase = palette.trailShadowBase;
                     for (const particle of star.trail) {
                         const trailAlpha = Math.max(0, Math.min(1, particle.life * 0.6));
                         const shadowAlpha = Math.max(0, Math.min(1, particle.life));
@@ -14464,19 +14506,13 @@
                     ctx.translate(star.x, star.y);
                     ctx.rotate(star.rotation);
 
-                    ctx.fillStyle = isEnemyStar
-                        ? (star.primaryColor || 'rgba(200, 205, 255, 0.82)')
-                        : (isIcemanStar ? 'rgba(180, 215, 255, 0.85)' : 'rgba(255, 255, 140, 0.85)');
-                    ctx.shadowColor = isEnemyStar
-                        ? (star.shadowColor || 'rgba(70, 80, 160, 0.9)')
-                        : (isIcemanStar ? 'rgba(140, 200, 255, 0.9)' : 'rgba(255, 220, 120, 0.9)');
+                    ctx.fillStyle = star.primaryColor || palette.primaryFill;
+                    ctx.shadowColor = star.shadowColor || palette.shadowFill;
                     ctx.shadowBlur = 24;
                     drawStarShape(ctx, 0, 0, 5, star.size, star.size * 0.45);
                     ctx.fill();
 
-                    ctx.fillStyle = isEnemyStar
-                        ? (star.coreColor || '#c8ccff')
-                        : (isIcemanStar ? '#eef7ff' : '#fffbe6');
+                    ctx.fillStyle = star.coreColor || palette.coreFill;
                     ctx.shadowBlur = 12;
                     drawStarShape(ctx, 0, 0, 5, star.size * 0.65, star.size * 0.28);
                     ctx.fill();
