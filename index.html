@@ -4355,8 +4355,6 @@
                 hasBlink: false, autoBlinkEnabled: false, autoBlinkRange: 0, autoBlinkLookahead: 0.45, autoBlinkLastTrigger: 0,
                 isBlinkSlashing: false,
                 enhancedClusters: false, enhancedPierce: false, hasStormbringer: false, hasPhasestriker: false,
-                // Omega multishot abilities
-                hasOmegaMultishot: false, omegaMultishotType: null,
                 // Void caller enhanced options
                 hasDoubleStorm: false, hasHybridVoid: false, hasImpactPhase: false,
                 // Skill tree progress
@@ -6075,12 +6073,6 @@
                         }
                         explode(e.x, e.y);
                     }
-                }
-
-                // Trigger Omega Multishot explosion on impact
-                if (b.isOmegaShot && !b.omegaExplosionTriggered) {
-                    triggerOmegaMultishotExplosion(b, e);
-                    b.omegaExplosionTriggered = true; // Only explode once
                 }
                 
                 if (b.explosive) explode(b.x, b.y, false, true);
@@ -13992,65 +13984,10 @@
                 
                 const icemanLevel = store.iceman.level || 1;
                 const icemanDamageMult = icemanLevel >= 3 ? 1.5 : 1.0; // Level 3: +50% damage
-                const icemanDamageCoefficient = 0.35; // Iceman deals 35% of player damage
+                // Iceman damage scaling: 35% of player damage
+                const icemanDamageCoefficient = 0.35;
                 
-                // OMEGA MULTISHOT: Copy player's omega orbs if they have it
-                if (p.hasOmegaMultishot && p.omegaMultishotType) {
-                    const baseBulletSpeed = 380;
-                    const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0);
-                    const orbCount = Math.max(1, Math.ceil(totalMultishot / 3)); // Combine 3 shots into 1 orb
-                    const angleSpread = 12;
-                    
-                    console.log(`Iceman firing ${orbCount} OMEGA orbs (combined from ${totalMultishot} shots)`);
-                    
-                    for (let i = 0; i < orbCount; i++) {
-                        const angle = (i - (orbCount - 1) / 2) * angleSpread * Math.PI / 180;
-                        const damagePerShot = 15 * p.dmgMult;
-                        const combinedDamage = damagePerShot * Math.floor(totalMultishot / orbCount) * 1.3 * icemanDamageCoefficient * icemanDamageMult;
-                        
-                        spawnBullet({
-                            x: store.iceman.x + 12 * Math.sin(angle),
-                            y: store.iceman.y - 12,
-                            vx: Math.sin(angle) * baseBulletSpeed,
-                            vy: -Math.cos(angle) * baseBulletSpeed,
-                            r: 8, // Larger projectile
-                            col: getOmegaMultishotColor(p.omegaMultishotType),
-                            dmg: combinedDamage,
-                            pierce: p.piercing,
-                            explosive: false, // Handled by omega explosion
-                            isSwirl: false,
-                            isOmegaShot: true,
-                            omegaType: p.omegaMultishotType,
-                            isIceman: true
-                        });
-                    }
-                    
-                    // Star Cannon works with Omega too
-                    if (p.starCannonLevel > 0) {
-                        const starCount = getStarCannonBurstCount(p.starCannonLevel);
-                        const spreadAngle = 15;
-                        for (let i = 0; i < starCount; i++) {
-                            const angle = (i - (starCount - 1) / 2) * spreadAngle * Math.PI / 180;
-                            spawnBullet({
-                                x: store.iceman.x,
-                                y: store.iceman.y - 15,
-                                vx: Math.sin(angle) * 320,
-                                vy: -Math.cos(angle) * 320,
-                                r: 6,
-                                col: "#ffff66",
-                                dmg: 45 * p.dmgMult * icemanDamageCoefficient * icemanDamageMult,
-                                pierce: true,
-                                explosive: false,
-                                isStar: true,
-                                isIceman: true,
-                                life: 0
-                            });
-                        }
-                    }
-                    return;
-                }
-                
-                // NORMAL MULTISHOT: Match player's firing exactly
+                // STANDARD FIRING: Match player's multishot exactly
                 const baseBulletSpeed = 420;
                 const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0);
                 const angleSpread = 10; // Match player's angle spread
@@ -14075,10 +14012,10 @@
                     });
                 }
                 
-                // Star Cannon: Iceman copies player's star cannon shots when player has it
-                if (p.starCannonLevel > 0) {
+                // Star Cannon: Iceman mirrors player's star cannon (smaller, precise shots)
+                if (p.starCannonLevel > 0 && p.starCannonIcemanSupport) {
                     const starCount = getStarCannonBurstCount(p.starCannonLevel);
-                    const spreadAngle = 15; // degrees between stars
+                    const spreadAngle = 15;
                     for (let i = 0; i < starCount; i++) {
                         const angle = (i - (starCount - 1) / 2) * spreadAngle * Math.PI / 180;
                         spawnBullet({
@@ -14086,8 +14023,8 @@
                             y: store.iceman.y - 15,
                             vx: Math.sin(angle) * 320,
                             vy: -Math.cos(angle) * 320,
-                            r: 6,
-                            col: "#ffff66",
+                            r: 3, // Smaller for better visibility
+                            col: "#ffee88", // Slightly different shade
                             dmg: 45 * p.dmgMult * icemanDamageCoefficient * icemanDamageMult,
                             pierce: true,
                             explosive: false,
@@ -14098,149 +14035,11 @@
                     }
                 }
             }
-            function getOmegaMultishotColor(type) {
-                switch (type) {
-                    case 'marauder_burst': return '#ff6b35'; // Fiery orange
-                    case 'juggernaut_hammer': return '#ffd700'; // Golden
-                    case 'railgunner_lance': return '#00ffff'; // Cyan
-                    case 'demolitioner_nova': return '#ff1744'; // Explosive red
-                    case 'phasestriker_void': return '#9c27b0'; // Void purple
-                    case 'stormbringer_storm': return '#00bfff'; // Electric blue
-                    default: return '#ffffff';
-                }
-            }
-            
-            function triggerOmegaMultishotExplosion(bullet, enemy) {
-                if (!bullet.isOmegaShot || !bullet.omegaType) return;
-                
-                const p = store.player;
-                const explosionRadius = 90;
-                const radiusSq = explosionRadius * explosionRadius;
-                
-                // Create visual effect
-                store.activeEffects.push(createEffect('omegaExplosion', bullet.x, bullet.y, explosionRadius, {
-                    color: getOmegaMultishotColor(bullet.omegaType),
-                    omegaType: bullet.omegaType
-                }));
-                
-                // Apply AOE damage based on omega type
-                const targets = store.boss ? [...store.enemies, store.boss] : store.enemies;
-                targets.forEach(e => {
-                    if (!e || e.dead || e === enemy) return; // Skip the primary target (already hit)
-                    const dx = e.x - bullet.x;
-                    const dy = e.y - bullet.y;
-                    const distSq = dx * dx + dy * dy;
-                    
-                    if (distSq <= radiusSq) {
-                        const aoeDamage = bullet.dmg * 0.7; // 70% damage to nearby enemies
-                        const isBoss = e === store.boss;
-                        
-                        if (isBoss) {
-                            applyBossDamage(e, aoeDamage, { point: { x: e.x, y: e.y } });
-                        } else {
-                            e.hp -= aoeDamage;
-                            store.world.totalDamage += aoeDamage;
-                        }
-                        
-                        // Add special effects based on omega type
-                        switch (bullet.omegaType) {
-                            case 'marauder_burst':
-                                e.jugBurnTimer = Math.max(e.jugBurnTimer || 0, 2);
-                                break;
-                            case 'juggernaut_hammer':
-                                e.stunTimer = Math.max(e.stunTimer || 0, 0.8);
-                                e.hitSlowFactor = 0.5;
-                                e.hitSlowTimer = 1.2;
-                                break;
-                            case 'railgunner_lance':
-                                // Pierce effect - already handled by pierce property
-                                break;
-                            case 'demolitioner_nova':
-                                // Chain explosion - trigger smaller explosions
-                                if (Math.random() < 0.4) {
-                                    store.activeEffects.push(createEffect('explosion', e.x, e.y, 35));
-                                }
-                                break;
-                            case 'phasestriker_void':
-                                e.phaseLockTimer = Math.max(e.phaseLockTimer || 0, 1.5);
-                                e.phaseLockSlowFactor = 0.4;
-                                break;
-                            case 'stormbringer_storm':
-                                e.stormShockTimer = Math.max(e.stormShockTimer || 0, 1.8);
-                                e.stormShockIntensity = 0.8;
-                                break;
-                        }
-                        
-                        store.activeEffects.push(createEffect('hitSpark', e.x, e.y, e.r || 16));
-                    }
-                });
-                
-                playSound('explosion');
-            }
-            
             function firePlayer() {
                 const p = store.player;
                 if (p.beefChargeState && p.beefChargeState !== 'ready') return;
                 
-                // OMEGA MULTISHOT: Transform regular multishot into special AOE projectiles
-                if (p.hasOmegaMultishot && p.omegaMultishotType) {
-                    const baseBulletSpeed = 380;
-                    const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0);
-                    // Combine shots: fire fewer but more powerful projectiles
-                    const orbCount = Math.max(1, Math.ceil(totalMultishot / 3)); // Combine 3 shots into 1 orb
-                    const angleSpread = 12;
-                    
-                    // Player fires Omega orbs
-                    for (let i = 0; i < orbCount; i++) {
-                        const angle = (i - (orbCount - 1) / 2) * angleSpread * Math.PI / 180;
-                        const damagePerShot = 15 * p.dmgMult;
-                        const combinedDamage = damagePerShot * Math.floor(totalMultishot / orbCount) * 1.3; // 30% bonus for omega
-                        
-                        spawnBullet({
-                            x: p.x + 12 * Math.sin(angle),
-                            y: p.y - 12,
-                            vx: Math.sin(angle) * baseBulletSpeed,
-                            vy: -Math.cos(angle) * baseBulletSpeed,
-                            r: 8, // Larger projectile
-                            col: getOmegaMultishotColor(p.omegaMultishotType),
-                            dmg: combinedDamage,
-                            pierce: p.piercing,
-                            explosive: false, // Handled by omega explosion
-                            isSwirl: false,
-                            isOmegaShot: true,
-                            omegaType: p.omegaMultishotType
-                        });
-                    }
-                    
-                    // Beef Clone also fires Omega orbs (35% damage)
-                    if (p.hasBeefClone && store.beefClone && store.beefClone.mode !== 'juggernaut_bomber') {
-                        for (let i = 0; i < orbCount; i++) {
-                            const angle = (i - (orbCount - 1) / 2) * angleSpread * Math.PI / 180;
-                            const damagePerShot = 15 * p.dmgMult;
-                            const combinedDamage = damagePerShot * Math.floor(totalMultishot / orbCount) * 1.3 * 0.35; // Beef clone: 35% damage
-                            
-                            spawnBullet({
-                                x: store.beefClone.x + 12 * Math.sin(angle),
-                                y: store.beefClone.y - 12,
-                                vx: Math.sin(angle) * baseBulletSpeed,
-                                vy: -Math.cos(angle) * baseBulletSpeed,
-                                r: 8,
-                                col: getOmegaMultishotColor(p.omegaMultishotType),
-                                dmg: combinedDamage,
-                                pierce: p.piercing,
-                                explosive: false,
-                                isSwirl: false,
-                                isOmegaShot: true,
-                                omegaType: p.omegaMultishotType,
-                                isBeefClone: true
-                            });
-                        }
-                    }
-                    
-                    return;
-                }
-                
-                // NORMAL MULTISHOT
+                // STANDARD MULTISHOT FIRING
                 const baseBulletSpeed = 420;
                 const bulletSpeed = baseBulletSpeed;
                 const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0);
@@ -24998,7 +24797,7 @@
                 }
 
                 const summaryLines = [
-                    `GENOME ROUTE ▸ ${genomeName} ➜ ${subclassDisplay}${player.hasOmegaMultishot ? ' ⭐ OMEGA' : ''}`,
+                    `GENOME ROUTE ▸ ${genomeName} ➜ ${subclassDisplay}`,
                     `MISSION STATUS ▸ W${pad(world.wave || 1)} | LV ${pad(world.level || 1)} | BOSSES ${pad(world.bosses || 0)} | KILLS ${pad(world.kills || 0, 3)}`,
                     `FORGE LEDGER ▸ GOLD ${pad(gold, 4)} | XP ${pad(world.xp || 0, 4)} | SCORE ${pad(world.score || 0, 6)}`,
                     `PROGRESSION ▸ TOTAL ${pad(player.totalProgressionPoints || 0)} | SPENT ${pad(player.skillPointsSpent || 0)} | UNSPENT ${pad(player.unspentProgressionPoints || 0)}`
@@ -25053,7 +24852,7 @@
                     {
                         key: 'Volley Matrix',
                         value: `${fmt(shotsPerSecond, 1)} /s`,
-                        detail: `Projectiles ${pad(player.multishot || 1)} • Pierce ${pad(player.piercing || player.missilePierce || 0)}${player.hasOmegaMultishot ? ' • OMEGA MODE' : ''}`
+                        detail: `Projectiles ${pad(player.multishot || 1)} • Pierce ${pad(player.piercing || player.missilePierce || 0)}`
                     },
                     {
                         key: 'Arsenal',
@@ -25255,20 +25054,6 @@
                     }
                     if (p.wiperLasers) {
                         systems.push(`Wiper Lasers ▸ Sweeping laser array online`);
-                    }
-                    
-                    // Omega Multishot
-                    if (p.hasOmegaMultishot && p.omegaMultishotType) {
-                        const omegaNames = {
-                            'marauder_burst': 'Omega Burst',
-                            'juggernaut_hammer': 'Omega Hammer',
-                            'railgunner_lance': 'Omega Lance',
-                            'demolitioner_nova': 'Omega Nova',
-                            'phasestriker_void': 'Omega Void',
-                            'stormbringer_storm': 'Omega Storm'
-                        };
-                        const name = omegaNames[p.omegaMultishotType] || 'Omega Multishot';
-                        systems.push(`⭐ ${name} ▸ AOE projectile transformation active`);
                     }
                     
                     // Buffs & Stacks
@@ -32116,38 +31901,6 @@
                         p.stormGodPower = true;
                         p.omnipotentLightning = true;
                         announce('STORM GOD ACTIVATED - Divine Electrical Mastery!');
-                        break;
-
-                    // OMEGA MULTISHOT NODES (Tier 5 - requires all previous nodes)
-                    case 'marauder_omega_burst':
-                        p.hasOmegaMultishot = true;
-                        p.omegaMultishotType = 'marauder_burst';
-                        announce('⭐ OMEGA BURST - Explosive Energy Orbs!');
-                        break;
-                    case 'juggernaut_omega_hammer':
-                        p.hasOmegaMultishot = true;
-                        p.omegaMultishotType = 'juggernaut_hammer';
-                        announce('⭐ OMEGA HAMMER - Shattering Projectiles!');
-                        break;
-                    case 'railgunner_omega_lance':
-                        p.hasOmegaMultishot = true;
-                        p.omegaMultishotType = 'railgunner_lance';
-                        announce('⭐ OMEGA LANCE - Piercing Energy!');
-                        break;
-                    case 'demolitioner_omega_nova':
-                        p.hasOmegaMultishot = true;
-                        p.omegaMultishotType = 'demolitioner_nova';
-                        announce('⭐ OMEGA NOVA - Unstable Chain Explosions!');
-                        break;
-                    case 'phasestriker_omega_void':
-                        p.hasOmegaMultishot = true;
-                        p.omegaMultishotType = 'phasestriker_void';
-                        announce('⭐ OMEGA VOID - Collapsing Singularities!');
-                        break;
-                    case 'stormbringer_omega_storm':
-                        p.hasOmegaMultishot = true;
-                        p.omegaMultishotType = 'stormbringer_storm';
-                        announce('⭐ OMEGA STORM - Plasma Lightning!');
                         break;
 
                     // CLASS ABILITY UNLOCKS (5th node rewards)
