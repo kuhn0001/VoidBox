@@ -4314,7 +4314,7 @@
             // --- GAME STATE & DATA ---
             const player_initial_state = {
                 x: W / 2, y: H * 0.8, r: 14, hp: 80, hpMax: 100, fireT: 0, speed: 380, dmgMult: 1.2, fireRate: 0.16,
-                vampirism: 0, shield: 25, shieldMax: 50, multishot: 2, isInvincible: false, piercing: 0, explosive: false,
+                vampirism: 0, shield: 25, shieldMax: 50, multishot: 2, maxMultishot: 2, isInvincible: false, piercing: 0, explosive: false,
                 timeShardStacks: 0, timeShardTimer: 0, timeShardMultiplier: 1,
                 hasShieldBubble: false, powerupTimers: {},
                 swirlShots: false, attackSpeedStacks: 0,
@@ -4338,7 +4338,7 @@
                 luckBoost: 0, magnetRadius: 0, hasIceman: false, icemanFireT: 0, hasBeefClone: false, critChance: 0.02, critDamage: 1.85,
                 pilotGenome: null, missileVolley: 2,
                 hasRearGuard: false, rearGuardCooldown: 0, rearGuardReady: true,
-                rearMultishot: 0, addFrontNext: true,
+                rearMultishot: 0, maxRearMultishot: 0, addFrontNext: true,
                 flameWallCooldown: 0,
                 flameWallCooldownMax: 10,
                 flameWallCharge: 0,
@@ -5115,6 +5115,26 @@
                 }
                 store.bullets.push(bullet);
                 return bullet;
+            }
+
+            function ensurePlayerMultishotIntegrity(player) {
+                if (!player) return;
+
+                const current = Number.isFinite(player.multishot) ? player.multishot : 2;
+                const sanitized = Math.max(1, Math.round(current));
+                if (!Number.isFinite(player.maxMultishot)) {
+                    player.maxMultishot = Math.max(1, sanitized);
+                }
+                player.maxMultishot = Math.max(player.maxMultishot, sanitized);
+                player.multishot = Math.max(sanitized, player.maxMultishot);
+
+                const rearCurrent = Number.isFinite(player.rearMultishot) ? player.rearMultishot : 0;
+                const rearSanitized = Math.max(0, Math.round(rearCurrent));
+                if (!Number.isFinite(player.maxRearMultishot)) {
+                    player.maxRearMultishot = Math.max(0, rearSanitized);
+                }
+                player.maxRearMultishot = Math.max(player.maxRearMultishot, rearSanitized);
+                player.rearMultishot = Math.max(rearSanitized, player.maxRearMultishot);
             }
 
             function getEBulletFromPool(props = {}) {
@@ -9424,6 +9444,8 @@
 
             function stepPlayer(dt) {
                 const p = store.player;
+                if (!p) return;
+                ensurePlayerMultishotIntegrity(p);
                 
                 // Check if star power invincibility should expire
                 if (p.isInvincible && p.starPowerEndTime && performance.now() >= p.starPowerEndTime) {
@@ -14094,7 +14116,9 @@
                 
                 // STANDARD FIRING: Match player's multishot exactly
                 const baseBulletSpeed = 420;
-                const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0);
+                const baseMultishot = Number.isFinite(p.multishot) ? p.multishot : 2;
+                const cheatMultishot = Number.isFinite(p.cheatMultishotBonus) ? p.cheatMultishotBonus : 0;
+                const totalMultishot = Math.max(1, baseMultishot + cheatMultishot);
                 const angleSpread = 10; // Match player's angle spread
                 
                 console.log(`Iceman firing ${totalMultishot} shots (player multishot: ${p.multishot}, cheat: ${p.cheatMultishotBonus || 0})`);
@@ -14125,7 +14149,9 @@
                 // STANDARD MULTISHOT FIRING
                 const baseBulletSpeed = 420;
                 const bulletSpeed = baseBulletSpeed;
-                const totalMultishot = p.multishot + (p.cheatMultishotBonus || 0);
+                const baseMultishot = Number.isFinite(p.multishot) ? p.multishot : 2;
+                const cheatMultishot = Number.isFinite(p.cheatMultishotBonus) ? p.cheatMultishotBonus : 0;
+                const totalMultishot = Math.max(1, baseMultishot + cheatMultishot);
                 const angleSpread = 10;
                 for (let i = 0; i < totalMultishot; i++) {
                     const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180;
@@ -14160,10 +14186,11 @@
                         });
                     }
                 }
-                if (p.rearMultishot > 0) {
+                const rearMultishotCount = Math.max(0, Number.isFinite(p.rearMultishot) ? p.rearMultishot : 0);
+                if (rearMultishotCount > 0) {
                     const rearAngleSpread = 15;
-                    for (let i = 0; i < p.rearMultishot; i++) {
-                        const angle = (i - (p.rearMultishot - 1) / 2) * rearAngleSpread;
+                    for (let i = 0; i < rearMultishotCount; i++) {
+                        const angle = (i - (rearMultishotCount - 1) / 2) * rearAngleSpread;
                         const radAngle = angle * Math.PI / 180;
                         spawnBullet({
                             x: p.x + 10 * Math.sin(radAngle),
@@ -30312,6 +30339,8 @@
                         p.hasLauncher = !!p.hasLauncher;
                         break;
                 }
+
+                ensurePlayerMultishotIntegrity(p);
             }
 
             // 5-Node Skill Tree Data Structure + Separate Class Ability - Single focused path per subclass with Omega node
@@ -32123,6 +32152,8 @@
                 p.multishot = preservedMultishot;
                 p.rearMultishot = preservedRearMultishot;
                 p.addFrontNext = preservedAddFront;
+
+                ensurePlayerMultishotIntegrity(p);
             }
 
             function showSpecSelect(isAdditive = false) {
