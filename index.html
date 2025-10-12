@@ -5046,6 +5046,7 @@
                 shadowChampionDefeated: false,
                 shadowChampionTokenDropped: false,
                 shadowChampionLastPos: null,
+                floatingTexts: [],
                 _enemySpatial: {
                     cellSize: 160,
                     buckets: new Map(),
@@ -7689,9 +7690,11 @@
                 }
             }
 
-            function applyPowerup(typeKey) {
+            function applyPowerup(typeKey, x, y) {
                 const p = store.player;
                 const powerup = POWERUP_TYPES[typeKey];
+                const hasCoords = typeof x === 'number' && typeof y === 'number';
+                
                 if (typeKey === 'shadow_champion_token') {
                     grantChampionCompanion();
                     return;
@@ -7702,12 +7705,22 @@
                     const variant = pending.variant || pending.championVariant || 'minor';
                     const fallbackTier = pending.fallbackTier || 'midTier';
                     const source = pending.source || 'powerup';
-                    announce(powerup.name);
+                    if (hasCoords) {
+                        addFloatingText(x, y, powerup.name, { color: '#FF1493', fontSize: 18 });
+                    } else {
+                        announce(powerup.name);
+                    }
                     grantChampionUpgradeReward(variant, { fallbackTier, source });
                     return;
                 }
                 if (typeKey === 'missile') {
                     if (p.pilotGenome === 'rocketman') { p.missileVolley = Math.min(5, p.missileVolley + 2); } else { p.missileVolley = 2; }
+                    if (hasCoords) {
+                        addFloatingText(x, y, '🚀 MISSILES', { color: '#FF6B35', fontSize: 14 });
+                    } else {
+                        announce(powerup.name);
+                    }
+                    return;
                 }
                 if (typeKey === 'collar_fragment') {
                     const collarGain = 1.75;
@@ -7745,7 +7758,7 @@
                         announce('SWIRL SHOTS ONLINE!');
                     } else {
                         announce('Swirl core overloaded! Diverting to hyper drive.');
-                        applyPowerup('attack_speed');
+                        applyPowerup('attack_speed', x, y);
                     }
                     return;
                 }
@@ -7760,7 +7773,7 @@
                             announce('STAR CANNON BLUEPRINT ACQUIRED (FREE)!');
                         } else {
                             announce('Star core surplus! Converting to hyper drive.');
-                            applyPowerup('attack_speed');
+                            applyPowerup('attack_speed', x, y);
                         }
                     }
                     return;
@@ -7814,10 +7827,23 @@
                     if (typeKey === 'double') {
                         const p = store.player;
                         if (p.multishot < 5) { p.multishot++; } else { if (p.addFrontNext) { p.multishot++; } else { p.rearMultishot = (p.rearMultishot || 0) + 1; } p.addFrontNext = !p.addFrontNext; }
-                        announce('SCATTER SHOT!');
+                        if (hasCoords) {
+                            addFloatingText(x, y, 'SCATTER SHOT', { color: '#00FFFF', fontSize: 14 });
+                        } else {
+                            announce('SCATTER SHOT!');
+                        }
+                        return;
                     }
                 }
-                announce(powerup.name);
+                
+                // Use floating text for basic powerups (shield, repair, drones), announcements for special ones
+                if (hasCoords && (typeKey === 'shield' || typeKey === 'repair' || typeKey === 'drones')) {
+                    const colors = { shield: '#4169E1', repair: '#FF1493', drones: '#32CD32' };
+                    addFloatingText(x, y, powerup.name, { color: colors[typeKey] || '#FFD700', fontSize: 14 });
+                } else if (!hasCoords || typeKey === 'void_core' || typeKey === 'upgrade') {
+                    // Keep announcements for special powerups and when coordinates aren't available
+                    announce(powerup.name);
+                }
             }
 
             function applyRandomUpgrade(forcedTier = null, options = {}) {
@@ -7923,7 +7949,7 @@
                 }
                 return store.world.collarStacks;
             }
-            const MAX_COLLAR_STACKS = 50; // Increased from 40 to allow longer runs
+            const MAX_COLLAR_STACKS = 100; // Increased from 50 to prevent exponential snowballing
             const COLLAR_TARGET_GAIN_MULTIPLIER = 1.6;
 
             function calculateCollarBonus(stacks) {
@@ -8639,7 +8665,7 @@
                     if (preemptive) {
                         const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
                         const baseGold = Number.isFinite(enemy.gold) ? enemy.gold : 0;
-                        const bonusGold = Math.max(50, Math.floor(baseGold * VOID_REAPER_CONFIG.preemptiveGoldBonus * collarBonus)); // Increased minimum from 12 to 50
+                        const bonusGold = Math.max(8, Math.floor(baseGold * VOID_REAPER_CONFIG.preemptiveGoldBonus * collarBonus)); // Reduced from 50 to 8 for balance
                         const bonusScore = Math.floor((enemy.score || 0) * VOID_REAPER_CONFIG.bonusScoreRatio);
                         const bonusXp = Math.floor((enemy.xp || 0) * VOID_REAPER_CONFIG.bonusXpRatio);
                         if (bonusGold) addWorldGold(bonusGold);
@@ -8677,7 +8703,7 @@
                         } else if (rewardRoll < 0.70) {
                             // 30% chance: Boss tier upgrade + bonus money
                             spawnUpgradePowerup(enemy.x - 25, enemy.y - 20, 'bossTier', { championChance: 0.65, allowChampion: true });
-                            const extraGold = 25;
+                            const extraGold = 5;
                             addWorldGold(extraGold);
                             // Spawn extra gold coins
                             for (let i = 0; i < 3; i++) {
@@ -8694,7 +8720,7 @@
                             }
                         } else {
                             // 30% chance: Large money reward (no upgrade)
-                            const largeGoldBonus = 35;
+                            const largeGoldBonus = 7;
                             addWorldGold(largeGoldBonus);
                             announce('💰 Major Gold Cache Secured!');
                             // Spawn extra gold powerups in a circle
@@ -8716,7 +8742,7 @@
                         store.activeEffects.push(createEffect('voidReaperDissolve', enemy.x, enemy.y, (enemy.r || 24) * 2.2));
                         
                         // Guaranteed reward even for non-preemptive defeat
-                        const consolationGold = 20;
+                        const consolationGold = 4;
                         addWorldGold(consolationGold);
                         spawnUpgradePowerup(enemy.x, enemy.y, 'midTier', { championChance: 0.3, allowChampion: true });
                         announce('Void Reaper banished - Consolation reward acquired!');
@@ -9286,7 +9312,7 @@
                     shadow_champion: { r: 18, v: 70, vx: 0, hp: 620, color: '#cbd4ff', xp: 60, score: 480, gold: 12, fireRateChance: 1, fireCooldown: 1.45, contactDamage: 14 },
                     void_champion: { r: 16, v: 48, vx: 0, hp: 190, color: '#5A28D8', xp: 32, score: 325, gold: 9, fireRateChance: 0.75, fireCooldown: 1.65, contactDamage: 10 },
                     void_champion_orb: { r: 6, v: 0, vx: 0, hp: 22, color: '#FF7DEB', xp: 2, score: 24, gold: 0, fireRateChance: 0.55, fireCooldown: 1.25, contactDamage: 4 },
-                    void_reaper: { r: 20, v: 0, vx: 0, hp: 165, color: '#9f74ff', xp: 55, score: 520, gold: 15, contactDamage: 11 }
+                    void_reaper: { r: 20, v: 0, vx: 0, hp: 165, color: '#9f74ff', xp: 55, score: 520, gold: 2, contactDamage: 11 }
                 };
                 const baseCfg = cfgs[type];
                 if (!baseCfg) {
@@ -10696,7 +10722,7 @@
                                     source: powerup.source || 'powerup'
                                 };
                             }
-                            applyPowerup(powerup.type);
+                            applyPowerup(powerup.type, powerup.x, powerup.y);
                             return;
                         }
 
@@ -10719,7 +10745,7 @@
                                 source: powerup.source || 'powerup'
                             };
                         }
-                        applyPowerup(powerup.type);
+                        applyPowerup(powerup.type, powerup.x, powerup.y);
                     }
                 });
             }
@@ -11462,6 +11488,7 @@
                 stepShadowHounds(dt);
                 stepVoidRifts(dt);
                 updateGibs(dt);
+                updateFloatingTexts(dt);
 
                 stepMissiles(dt);
                 stepJuggernautBombs(dt);
@@ -13211,9 +13238,9 @@
                 spawnChanceBase: 0.08,
                 spawnChancePerWave: 0.004,
                 maxStacks: 6,
-                perCubeGold: 2,
+                perCubeGold: 1,
                 perCubeXp: 6,
-                lootGold: 120,
+                lootGold: 12,
                 lootXp: 220,
                 lootScore: 800
             });
@@ -14627,6 +14654,7 @@
 
                 store.enemies.forEach(e => drawEnemy(e));
                 drawGibs(ctx); // <-- ADD THIS LINE TO DRAW THE GIBS
+                drawFloatingTexts(ctx);
                 drawTemporalEchoes();
                 drawShadowEchoes();
                 drawTemporalBeam();
@@ -15378,6 +15406,56 @@
 
             function escapeHtml(s) { s = String(s ?? ''); return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
             function announce(text) { const el = q('announce'); el.textContent = text; el.classList.remove('hide'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('hide'), 2500); }
+            
+            // Floating text system for powerup pickups
+            function addFloatingText(x, y, text, options = {}) {
+                if (!store.floatingTexts) store.floatingTexts = [];
+                store.floatingTexts.push({
+                    x, y,
+                    text,
+                    vx: (Math.random() - 0.5) * 20,
+                    vy: options.vy || -80,
+                    life: options.life || 1.5,
+                    maxLife: options.life || 1.5,
+                    color: options.color || '#FFD700',
+                    fontSize: options.fontSize || 16,
+                    fadeDelay: options.fadeDelay || 0.3
+                });
+            }
+
+            function updateFloatingTexts(dt) {
+                if (!store.floatingTexts) return;
+                for (let i = store.floatingTexts.length - 1; i >= 0; i--) {
+                    const ft = store.floatingTexts[i];
+                    ft.x += ft.vx * dt;
+                    ft.y += ft.vy * dt;
+                    ft.vy += 60 * dt; // Slight gravity
+                    ft.life -= dt;
+                    if (ft.life <= 0) {
+                        store.floatingTexts.splice(i, 1);
+                    }
+                }
+            }
+
+            function drawFloatingTexts(ctx) {
+                if (!store.floatingTexts) return;
+                store.floatingTexts.forEach(ft => {
+                    const fadeTime = ft.maxLife - ft.fadeDelay;
+                    const alpha = ft.life < fadeTime ? ft.life / fadeTime : 1;
+                    ctx.save();
+                    ctx.font = `bold ${ft.fontSize}px Arial`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillStyle = ft.color;
+                    ctx.globalAlpha = alpha;
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 3;
+                    ctx.strokeText(ft.text, ft.x, ft.y);
+                    ctx.fillText(ft.text, ft.x, ft.y);
+                    ctx.restore();
+                });
+            }
+
             function updateHUD() {
                 const player = store.player;
                 if (!player) return;
