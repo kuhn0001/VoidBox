@@ -10873,7 +10873,20 @@
                     let collarStacksToAdd = 0;
                     sanitizeCollarStacks();
 
-                    if (waveClearTime < 2) {
+                    const waveOverdriveReset = waveClearTime > 10;
+                    const activeBossName = store.world.boss && !store.world.boss.dead ? store.world.boss.name : null;
+
+                    if (waveOverdriveReset && activeBossName !== 'DEATH ENGINE') {
+                        setCollarStacks(0);
+                        store.world.collarTargetStacks = 0;
+                        store.world.enemyHealthBonus = 1;
+                        store.world.enemyDensityBonus = 0.4;
+                        store.world.lastEnemyOverdriveAnnounce = 0;
+                        store.world.consecutiveFastKills = 0;
+                        store.world.fastKillBonus = 0;
+                        store.world.xpMultiplier = Math.max(1, store.world.xpMultiplier * 0.92);
+                        announce('🐢 WAVE STALEMATE - COLLAR RESET');
+                    } else if (waveClearTime < 2) {
                         collarStacksToAdd = 9;
                         if (store.world.bosses >= 1) store.world.enemyDensityBonus *= 1.15;
                         store.world.xpMultiplier *= 1.1;
@@ -10888,18 +10901,9 @@
                         if (store.world.bosses >= 1) store.world.enemyDensityBonus *= 1.05;
                         store.world.xpMultiplier *= 1.03;
                         announce("⚡ FAST WAVE CLEAR! COLLAR TIGHTENS +3 ⚡");
-                    } else if (waveClearTime < 12) {
+                    } else if (waveClearTime <= 10) {
                         collarStacksToAdd = 1;
                         announce("⚡ COLLAR TIGHTENS +1 ⚡");
-                    } else if (waveClearTime > 20) {
-                        const isDeathEngineFight = store.world.boss && store.world.boss.name === 'DEATH ENGINE';
-                        if (!isDeathEngineFight) {
-                            const loosenedStacks = Math.max(0, sanitizeCollarStacks() - 2);
-                            setCollarStacks(loosenedStacks);
-                            announce("🐌 SLOW CLEAR - COLLAR LOOSENS");
-                        } else {
-                            announce("THE DEATH ENGINE'S CURSE MAINTAINS THE COLLAR!");
-                        }
                     }
 
                     collarStacksToAdd = ensureFiniteNumber(collarStacksToAdd, 0);
@@ -14030,13 +14034,16 @@
                 if (traveled >= travelThreshold) return;
                 if ((store.world?.wave || 1) < 3) return;
 
-                const multiplier = Math.min(25, Math.max(1.5, 10 / Math.max(0.18, killTime)));
-                world.enemyHealthBonus = ensureFiniteNumber(world.enemyHealthBonus, 1) * multiplier;
-                world.enemyDensityBonus *= 1 + (multiplier - 1) * 0.1;
+                const rawMultiplier = Math.min(12, Math.max(1.2, 6 / (Math.max(0.18, killTime) * 1.25)));
+                const appliedMultiplier = 1 + (rawMultiplier - 1) * 0.45; // Apply damping so scaling is gentler
+                const healthBaseline = ensureFiniteNumber(world.enemyHealthBonus, 1);
+                const densityBaseline = ensureFiniteNumber(world.enemyDensityBonus, 0.4);
+                world.enemyHealthBonus = Math.min(60, healthBaseline * appliedMultiplier);
+                world.enemyDensityBonus = Math.min(20, Math.max(0.35, densityBaseline * (1 + (appliedMultiplier - 1) * 0.28)));
                 world.lastThreatScale = Math.max(world.lastThreatScale || 1, world.enemyHealthBonus);
 
                 if (now - world.lastEnemyOverdriveAnnounce > 1800) {
-                    announce(`⚠️ ENEMY OVERDRIVE x${multiplier.toFixed(1)} ⚠️`);
+                    announce(`⚠️ ENEMY OVERDRIVE x${appliedMultiplier.toFixed(2)} ⚠️`);
                     world.lastEnemyOverdriveAnnounce = now;
                 }
             }
@@ -14084,8 +14091,9 @@
                 const now = performance.now();
                 const bossSpawnTime = ensureFiniteNumber(store.world.bossSpawnTime, now);
                 const fightDuration = ensureFiniteNumber((now - bossSpawnTime) / 1000, 0);
-                const rapidKillMultiplier = fightDuration > 0 && fightDuration <= 2 ? Math.min(40, Math.max(1.5, 10 / Math.max(0.1, fightDuration))) : 1;
-                store.world.lastBossRapidKillMultiplier = rapidKillMultiplier;
+                const rawRapidKillMultiplier = fightDuration > 0 && fightDuration <= 2 ? Math.min(30, Math.max(1.4, 10 / (Math.max(0.1, fightDuration) * 1.25))) : 1;
+                const bossOverdrive = rawRapidKillMultiplier > 1 ? 1 + (rawRapidKillMultiplier - 1) * 0.5 : 1;
+                store.world.lastBossRapidKillMultiplier = bossOverdrive;
 
                 // Use progression logic with point award
                 checkProgressionLogic(true);
@@ -14133,13 +14141,16 @@
 
                 if (fightDuration <= 2) {
                     const world = store.world;
-                    const overdrive = Math.max(rapidKillMultiplier, 1.5);
-                    collarStacksToAdd = Math.min(150, Math.max(12, Math.ceil(overdrive * 4)));
+                    const overdrive = Math.max(bossOverdrive, 1.35);
+                    collarStacksToAdd = Math.min(120, Math.max(10, Math.ceil(overdrive * 3.5)));
                     announcedAdaptation = true;
                     if (world) {
-                        world.bossHealthBonus = ensureFiniteNumber(world.bossHealthBonus, 1) * overdrive;
-                        world.enemyHealthBonus = ensureFiniteNumber(world.enemyHealthBonus, 1) * overdrive;
-                        world.enemyDensityBonus = ensureFiniteNumber(world.enemyDensityBonus, 0.4) * (1 + (overdrive - 1) * 0.2);
+                        const bossBaseline = ensureFiniteNumber(world.bossHealthBonus, 1);
+                        const enemyBaseline = ensureFiniteNumber(world.enemyHealthBonus, 1);
+                        const densityBaseline = ensureFiniteNumber(world.enemyDensityBonus, 0.4);
+                        world.bossHealthBonus = Math.min(30, bossBaseline * overdrive);
+                        world.enemyHealthBonus = Math.min(40, enemyBaseline * (1 + (overdrive - 1) * 0.45));
+                        world.enemyDensityBonus = Math.min(15, Math.max(0.35, densityBaseline * (1 + (overdrive - 1) * 0.22)));
                     }
                     if (world && world.wave >= 15) {
                         world.consecutiveFastKills++;
@@ -14170,7 +14181,7 @@
                     store.world.consecutiveFastKills = 0;
                     store.world.fastKillBonus = 0;
                     announce(`⚡ COLLAR TIGHTENS +${collarStacksToAdd} ⚡`);
-                } else if (fightDuration < 12) {
+                } else if (fightDuration <= 10) {
                     // Slow boss kill: minimal collar bonus
                     collarStacksToAdd = 1;
                     announcedAdaptation = true;
@@ -14179,11 +14190,16 @@
                     store.world.fastKillBonus = 0;
                     announce(`⚡ COLLAR TIGHTENS +${collarStacksToAdd} ⚡`);
                 } else {
-                    // Very slow kill: reduce collar stacks (except for DEATH ENGINE)
+                    // Very slow kill: reset collar stacks and boss adaptation (except for DEATH ENGINE)
                     if (bossName !== 'DEATH ENGINE') {
-                        const loosened = Math.max(0, sanitizeCollarStacks() - 3);
-                        setCollarStacks(loosened);
-                        announce("⚖️ COLLAR LOOSENS - ADAPTATION WEAKENS");
+                        setCollarStacks(0);
+                        store.world.collarTargetStacks = 0;
+                        store.world.bossHealthBonus = 1;
+                        store.world.lastBossRapidKillMultiplier = 1;
+                        store.world.enemyHealthBonus = Math.max(1, store.world.enemyHealthBonus * 0.85);
+                        store.world.enemyDensityBonus = Math.max(0.4, store.world.enemyDensityBonus * 0.85);
+                        store.world.lastEnemyOverdriveAnnounce = 0;
+                        announce("🐢 BOSS STALEMATE - COLLAR RESET");
                     } else {
                         announce("THE DEATH ENGINE'S CURSE PERSISTS!");
                     }
