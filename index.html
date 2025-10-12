@@ -6299,7 +6299,7 @@
                         const xpGain = Math.floor((Number.isFinite(e.xp) ? e.xp : 0) * collarBonus);
                         if (scoreGain) store.world.score += scoreGain;
                         if (goldGain) addWorldGold(goldGain);
-                        if (xpGain) store.world.xp += xpGain;
+                        if (xpGain) awardXp(xpGain); // Apply XP diminishing returns
                         store.world.kills++;
 
                         if (e.type !== 'shadow_champion') {
@@ -6422,7 +6422,7 @@
 
                             if (puddle.hp <= 0) {
                                 addWorldGold(1);
-                                store.world.xp += 1;
+                                awardXp(1); // Apply XP diminishing returns
 
                                 for (let j = 0; j < 5; j++) {
                                     store.flameParticles.push({
@@ -8003,6 +8003,270 @@
                 return 1 + bonus;
             }
 
+            // ═══════════════════════════════════════════════════════════════════════
+            // CONTINUOUS SPAWN SYSTEM - Dynamic Movement Behaviors
+            // ═══════════════════════════════════════════════════════════════════════
+            
+            const MOVEMENT_BEHAVIORS = Object.freeze({
+                STRAIGHT: 'straight',       // Move straight down
+                ZIGZAG: 'zigzag',          // Sinusoidal weaving
+                FOLLOW: 'follow',          // Track player position
+                STRAFE: 'strafe',          // Horizontal movement + slow descent
+                CIRCLE: 'circle',          // Circular orbit pattern
+                DIVE: 'dive',              // Rapid diagonal dives
+                RETREAT: 'retreat',        // Move up if player gets close
+                SWARM: 'swarm'             // Aggressive homing
+            });
+
+            // Apply movement behavior to enemy
+            function applyMovementBehavior(enemy, dt) {
+                if (!enemy || enemy.dead || enemy.spawnPhase === 'teleport') return;
+                if (enemy.type === 'cube_burglar' || enemy.isVoidReaper || enemy.type === 'shadow_champion' || enemy.type === 'void_champion') {
+                    return; // Skip special enemies with custom movement
+                }
+
+                const behavior = enemy.movementBehavior || MOVEMENT_BEHAVIORS.STRAIGHT;
+                const speedMult = enemy.speedMultiplier || 1;
+                const baseSpeed = enemy.v || 60;
+                
+                enemy.behaviorTime = (enemy.behaviorTime || 0) + dt;
+
+                switch (behavior) {
+                    case MOVEMENT_BEHAVIORS.ZIGZAG:
+                        {
+                            const zigzagSpeed = 120;
+                            const zigzagFreq = 2.5;
+                            const horizontalMove = Math.sin(enemy.behaviorTime * zigzagFreq) * zigzagSpeed;
+                            enemy.x += horizontalMove * speedMult * dt;
+                            enemy.y += baseSpeed * 0.7 * speedMult * dt;
+                        }
+                        break;
+
+                    case MOVEMENT_BEHAVIORS.FOLLOW:
+                        {
+                            const dx = store.player.x - enemy.x;
+                            const dy = store.player.y - enemy.y;
+                            const dist = Math.max(1, Math.hypot(dx, dy));
+                            const followSpeed = baseSpeed * 1.2;
+                            enemy.x += (dx / dist) * followSpeed * speedMult * dt;
+                            enemy.y += (dy / dist) * followSpeed * speedMult * dt;
+                        }
+                        break;
+
+                    case MOVEMENT_BEHAVIORS.STRAFE:
+                        {
+                            if (enemy.strafeDir === undefined) {
+                                enemy.strafeDir = Math.random() < 0.5 ? -1 : 1;
+                            }
+                            const strafeSpeed = 90;
+                            enemy.x += enemy.strafeDir * strafeSpeed * speedMult * dt;
+                            enemy.y += baseSpeed * 0.5 * speedMult * dt;
+                            
+                            if (enemy.x < enemy.r + 20 || enemy.x > W - enemy.r - 20) {
+                                enemy.strafeDir *= -1;
+                            }
+                        }
+                        break;
+
+                    case MOVEMENT_BEHAVIORS.CIRCLE:
+                        {
+                            if (enemy.orbitAngle === undefined) {
+                                enemy.orbitAngle = Math.atan2(enemy.y - H/2, enemy.x - W/2);
+                                enemy.orbitRadius = Math.hypot(enemy.x - W/2, enemy.y - H/2);
+                            }
+                            enemy.orbitAngle += 1.5 * dt;
+                            enemy.orbitRadius = Math.max(100, enemy.orbitRadius - 15 * dt);
+                            enemy.x = W/2 + Math.cos(enemy.orbitAngle) * enemy.orbitRadius;
+                            enemy.y = H/2 + Math.sin(enemy.orbitAngle) * enemy.orbitRadius;
+                        }
+                        break;
+
+                    case MOVEMENT_BEHAVIORS.DIVE:
+                        {
+                            if (enemy.diveTimer === undefined) {
+                                enemy.diveTimer = 1.5 + Math.random();
+                                enemy.diving = false;
+                            }
+
+                            if (!enemy.diving) {
+                                enemy.diveTimer -= dt;
+                                const dx = store.player.x - enemy.x;
+                                enemy.x += Math.sign(dx) * Math.min(Math.abs(dx), 80 * dt);
+                                enemy.y += baseSpeed * 0.3 * speedMult * dt;
+
+                                if (enemy.diveTimer <= 0) {
+                                    enemy.diving = true;
+                                    const angle = Math.atan2(store.player.y - enemy.y, store.player.x - enemy.x);
+                                    enemy.diveVX = Math.cos(angle) * baseSpeed * 2.5;
+                                    enemy.diveVY = Math.sin(angle) * baseSpeed * 2.5;
+                                }
+                            } else {
+                                enemy.x += enemy.diveVX * speedMult * dt;
+                                enemy.y += enemy.diveVY * speedMult * dt;
+                            }
+                        }
+                        break;
+
+                    case MOVEMENT_BEHAVIORS.RETREAT:
+                        {
+                            const dx = store.player.x - enemy.x;
+                            const dy = store.player.y - enemy.y;
+                            const distToPlayer = Math.hypot(dx, dy);
+                            const retreatThreshold = 150;
+
+                            if (distToPlayer < retreatThreshold) {
+                                const angle = Math.atan2(dy, dx) + Math.PI;
+                                const retreatSpeed = baseSpeed * 1.5;
+                                enemy.x += Math.cos(angle) * retreatSpeed * speedMult * dt;
+                                enemy.y += Math.sin(angle) * retreatSpeed * 0.5 * speedMult * dt;
+                            } else {
+                                enemy.y += baseSpeed * speedMult * dt;
+                            }
+                        }
+                        break;
+
+                    case MOVEMENT_BEHAVIORS.SWARM:
+                        {
+                            const dx = store.player.x - enemy.x;
+                            const dy = store.player.y - enemy.y;
+                            const dist = Math.max(1, Math.hypot(dx, dy));
+                            const swarmSpeed = baseSpeed * 1.4;
+                            const weave = Math.sin(enemy.behaviorTime * 4) * 30;
+                            enemy.x += (dx / dist) * swarmSpeed * speedMult * dt + weave * dt;
+                            enemy.y += (dy / dist) * swarmSpeed * speedMult * dt;
+                        }
+                        break;
+
+                    case MOVEMENT_BEHAVIORS.STRAIGHT:
+                    default:
+                        enemy.y += baseSpeed * speedMult * dt;
+                        break;
+                }
+
+                enemy.x = Math.max(enemy.r + 5, Math.min(W - enemy.r - 5, enemy.x));
+            }
+
+            // Assign random movement behavior based on enemy type and sector theme
+            function assignMovementBehavior(enemy, sectorTheme) {
+                if (enemy.type === 'phantom') {
+                    enemy.movementBehavior = MOVEMENT_BEHAVIORS.ZIGZAG;
+                    return;
+                }
+                if (enemy.type === 'hunter') {
+                    enemy.movementBehavior = MOVEMENT_BEHAVIORS.FOLLOW;
+                    return;
+                }
+                if (enemy.type === 'manta') {
+                    enemy.movementBehavior = MOVEMENT_BEHAVIORS.ZIGZAG;
+                    return;
+                }
+
+                const rand = Math.random();
+                
+                switch (sectorTheme) {
+                    case 'SWARM_HELL':
+                        enemy.movementBehavior = rand < 0.6 ? MOVEMENT_BEHAVIORS.SWARM : MOVEMENT_BEHAVIORS.FOLLOW;
+                        break;
+                    case 'DODGE_HELL':
+                        enemy.movementBehavior = rand < 0.5 ? MOVEMENT_BEHAVIORS.ZIGZAG : MOVEMENT_BEHAVIORS.STRAFE;
+                        break;
+                    case 'TANK_RUSH':
+                        enemy.movementBehavior = rand < 0.7 ? MOVEMENT_BEHAVIORS.STRAIGHT : MOVEMENT_BEHAVIORS.FOLLOW;
+                        break;
+                    case 'ELITE_ASSAULT':
+                        enemy.movementBehavior = rand < 0.4 ? MOVEMENT_BEHAVIORS.DIVE : MOVEMENT_BEHAVIORS.FOLLOW;
+                        break;
+                    case 'PRECISION_TEST':
+                        enemy.movementBehavior = rand < 0.6 ? MOVEMENT_BEHAVIORS.STRAFE : MOVEMENT_BEHAVIORS.CIRCLE;
+                        break;
+                    default:
+                        const behaviors = [
+                            MOVEMENT_BEHAVIORS.STRAIGHT,
+                            MOVEMENT_BEHAVIORS.ZIGZAG,
+                            MOVEMENT_BEHAVIORS.FOLLOW,
+                            MOVEMENT_BEHAVIORS.STRAFE
+                        ];
+                        enemy.movementBehavior = behaviors[Math.floor(Math.random() * behaviors.length)];
+                }
+            }
+
+            /**
+             * XP DIMINISHING RETURNS SYSTEM
+             * 
+             * Purpose: Prevents excessive XP farming from collar-accelerated spawn rates while still rewarding skilled play.
+             * 
+             * How it works:
+             * 1. Each wave establishes a "base XP pool" = base spawn count (without collar bonus) × avg XP per enemy (5)
+             * 2. Track actual XP earned during the wave
+             * 3. When earned XP exceeds 120% of base pool, apply exponential diminishing returns
+             * 4. At exactly 120% threshold, excess XP is reduced by ~95%
+             * 
+             * Example:
+             * - Wave spawns 10 enemies base, collar gives 1.5x = 15 enemies total
+             * - Base XP pool = 10 × 5 = 50 XP
+             * - Threshold = 50 × 1.2 = 60 XP
+             * - First 60 XP earned = full value
+             * - XP beyond 60 = exponentially diminished (e^(-20 × percentOver))
+             * 
+             * Result: High collar stacks still feel rewarding but can't infinitely farm XP
+             */
+            function calculateXpDiminishingReturns(rawXp) {
+                if (!store.world || !store.world.waveBaseXpPool) {
+                    return rawXp; // No diminishing returns if base pool not established
+                }
+
+                const basePool = store.world.waveBaseXpPool;
+                const currentWaveXp = store.world.waveXpEarned || 0;
+                const projectedTotal = currentWaveXp + rawXp;
+
+                // Threshold: 20% over base pool (1.2x multiplier)
+                const threshold = basePool * 1.2;
+
+                if (projectedTotal <= threshold) {
+                    // Under threshold - full XP awarded
+                    return rawXp;
+                }
+
+                // Calculate how much XP is "over budget"
+                const excessXp = projectedTotal - threshold;
+                const safeXp = rawXp - excessXp;
+
+                // Steep exponential decay for excess XP: each additional percent over threshold gives exponentially less
+                // At 120% of base (threshold), multiplier is ~0.05 (95% diminished)
+                // Formula: multiplier = e^(-20 * percentOverThreshold)
+                const percentOver = excessXp / basePool;
+                const diminishingMultiplier = Math.exp(-20 * percentOver);
+
+                const diminishedExcessXp = excessXp * diminishingMultiplier;
+                const finalXp = safeXp + diminishedExcessXp;
+
+                // Optional: Log when significant diminishing returns kick in
+                if (diminishingMultiplier < 0.5 && rawXp > 0) {
+                    // console.log(`XP Diminishing: ${rawXp.toFixed(1)} → ${finalXp.toFixed(1)} (${(diminishingMultiplier * 100).toFixed(1)}% of excess)`);
+                }
+
+                return Math.max(0, finalXp);
+            }
+
+            // Award XP with diminishing returns applied
+            function awardXp(amount) {
+                if (!amount || amount <= 0) return 0;
+                
+                const finalXp = calculateXpDiminishingReturns(amount);
+                store.world.xp += finalXp;
+                store.world.waveXpEarned = (store.world.waveXpEarned || 0) + finalXp;
+                
+                return finalXp;
+            }
+
+            // Initialize wave XP tracking - call at start of each wave
+            function initializeWaveXpTracking(baseSpawnCount, avgXpPerEnemy = 5) {
+                const baseXpPool = baseSpawnCount * avgXpPerEnemy;
+                store.world.waveBaseXpPool = baseXpPool;
+                store.world.waveXpEarned = 0;
+                // console.log(`Wave ${store.world.wave} Base XP Pool: ${baseXpPool} (${baseSpawnCount} enemies × ${avgXpPerEnemy} XP)`);
+            }
+
             function setCollarStacks(value) {
                 const clamped = Math.max(0, Math.min(MAX_COLLAR_STACKS, ensureFiniteNumber(value, 0)));
                 store.world.collarStacks = clamped;
@@ -8709,7 +8973,7 @@
                         const bonusXp = Math.floor((enemy.xp || 0) * VOID_REAPER_CONFIG.bonusXpRatio);
                         if (bonusGold) addWorldGold(bonusGold);
                         if (bonusScore) store.world.score += bonusScore;
-                        if (bonusXp) store.world.xp += bonusXp;
+                        if (bonusXp) awardXp(bonusXp); // Apply XP diminishing returns
                         announce('⭐ VOID REAPER DEFEATED! STAR POWER ACTIVATED! ⭐');
                         store.activeEffects.push(createEffect('voidReaperReward', enemy.x, enemy.y, (enemy.r || 24) * 3.2, { gold: bonusGold }));
                         
@@ -9185,6 +9449,10 @@
 
                     // Store late-game scaling factor globally for damage calculations
                     store.world.lateGameDamageScaling = lateGameScaling;
+
+                    // Initialize XP tracking for this wave (base spawn count = XP budget without collar bonuses)
+                    const avgXpPerEnemy = 5; // Average XP per enemy kill
+                    initializeWaveXpTracking(baseSpawnCount, avgXpPerEnemy);
 
                     // Apply collar bonus to spawn count with defensive guards
                     const collarStacks = sanitizeCollarStacks();
@@ -9673,6 +9941,11 @@
                     }
 
                     applySpawnSpecToEnemy(enemy, spec);
+                    
+                    // Assign movement behavior based on sector theme
+                    const currentTheme = waveProfile?.theme || 'MIXED_BASICS';
+                    assignMovementBehavior(enemy, currentTheme);
+                    
                     activateSpawnIntro(enemy, {
                         duration: spec.spawnDuration,
                         dropDistance: spec.spawnDropDistance,
@@ -12430,6 +12703,9 @@
                                 e.x += ((dx / dist) * e.v + perpX * wobble) * speedMultiplier * dt;
                                 e.y += ((dy / dist) * e.v + perpY * wobble) * speedMultiplier * dt;
                             }
+                        } else if (e.movementBehavior) {
+                            // CONTINUOUS SPAWN SYSTEM: Use assigned movement behavior
+                            applyMovementBehavior(e, dt);
                         } else if (e.type === 'drone') {
                             // BASIC PROTOCOL: Simple downward movement with slight tracking
                             const wave = store.world.wave || 1;
@@ -13209,7 +13485,7 @@
                 const xpBonus = Math.floor(100 * collarBonus);
                 if (scoreBonus) store.world.score += scoreBonus;
                 if (goldBonus) addWorldGold(goldBonus);
-                if (xpBonus) store.world.xp += xpBonus;
+                if (xpBonus) awardXp(xpBonus); // Apply XP diminishing returns (bosses bypass wave limits)
                 store.world.bosses++;
                 if (store.goldenOrbs) {
                     store.goldenOrbs.length = 0;
@@ -14390,7 +14666,7 @@
                 const xp = Math.floor((enemy.xp || 0) * collarBonus);
                 const score = Math.floor((enemy.score || 0) * collarBonus);
                 if (gold > 0) addWorldGold(gold);
-                if (xp > 0) store.world.xp += xp;
+                if (xp > 0) awardXp(xp); // Apply XP diminishing returns
                 if (score > 0) store.world.score += score;
                 store.world.kills++;
                 spawnGibs(enemy.x, enemy.y, '#ff6ad5');
@@ -14493,7 +14769,7 @@
                     const gold = CUBE_BURGLAR_CONFIG.perCubeGold;
                     if (gold > 0) addWorldGold(gold);
                     const xp = CUBE_BURGLAR_CONFIG.perCubeXp;
-                    if (xp > 0) store.world.xp += xp;
+                    if (xp > 0) awardXp(xp); // Apply XP diminishing returns
                     store.activeEffects.push(createEffect('hitSpark', enemy.x + bestCube.screen.x, enemy.y + bestCube.screen.y, (bestCube.size || 8) * 2, {
                         strength: 42,
                         crit: false
@@ -16915,7 +17191,7 @@
                         spawnGibs(target.x, target.y, target.color);
                         store.world.score += target.score;
                         addWorldGold(target.gold);
-                        store.world.xp += target.xp;
+                        awardXp(target.xp); // Apply XP diminishing returns
                         store.world.kills++;
 
                         spawnPowerup(target.x, target.y);
