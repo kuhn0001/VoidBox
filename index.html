@@ -4398,6 +4398,7 @@
                 timeShardStacks: 0, timeShardTimer: 0, timeShardMultiplier: 1,
                 hasShieldBubble: false, powerupTimers: {},
                 swirlShots: false, attackSpeedStacks: 0,
+                hasRicochet: false,
                 upgradeLevels: { dmg: 0, speed: 0, hp: 0, max_shield: 0, crit_chance: 0, ghost_hounds: 0, launcher: 0, lazarus_beam: 0, gravity_well: 0, star_cannon: 0, fragment_blast: 0 },
                 grenades: 0, hasVoidBeam: false, voidBeamCooldown: 0,
                 hasLazarusBeam: false, lazarusBeamCooldown: 0,
@@ -4510,6 +4511,10 @@
                 bullet.isDrone = false;
                 bullet.isLavaChunk = false;
                 bullet.isLevelUpPulse = false;
+                bullet.hasRicocheted = false;
+                bullet.ricochetDist = 0;
+                bullet.maxRicochetDist = 0;
+                bullet.originalDmg = undefined;
                 bullet.gravity = undefined;
                 bullet.target = undefined;
                 bullet.particles = null;
@@ -5227,6 +5232,10 @@
             function spawnBullet(props = {}) {
                 const bullet = bulletPool.get();
                 Object.assign(bullet, props);
+                bullet.hasRicocheted = props.hasRicocheted === true;
+                bullet.ricochetDist = typeof props.ricochetDist === 'number' ? props.ricochetDist : 0;
+                bullet.maxRicochetDist = typeof props.maxRicochetDist === 'number' ? props.maxRicochetDist : 0;
+                bullet.originalDmg = typeof props.originalDmg === 'number' ? props.originalDmg : undefined;
                 bullet.dead = false;
                 if (bullet.isFlame && !Array.isArray(bullet.particles)) {
                     bullet.particles = [];
@@ -6381,7 +6390,59 @@
                     if (b.life <= 0) b.dead = true;
                 }
 
-                if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) {
+                // Ricochet handling - bounce off boundaries
+                if (store.player && store.player.hasRicochet && !b.hasRicocheted && !b.isFragment && !b.isFlame && !b.isLavaChunk && !b.isLevelUpPulse && !b.dead) {
+                    let bounced = false;
+                    const margin = 5;
+                    const travelDistance = 200; // Distance bullet can travel after bounce
+                    
+                    // Check horizontal boundaries
+                    if (b.x <= margin && b.vx < 0) {
+                        b.vx = -b.vx * 0.85; // Reverse and slow down by 15%
+                        b.x = margin + 1; // Push slightly inward to avoid re-triggering
+                        bounced = true;
+                    } else if (b.x >= W - margin && b.vx > 0) {
+                        b.vx = -b.vx * 0.85;
+                        b.x = W - margin - 1;
+                        bounced = true;
+                    }
+                    
+                    // Check vertical boundaries
+                    if (b.y <= margin && b.vy < 0) {
+                        b.vy = -b.vy * 0.85;
+                        b.y = margin + 1;
+                        bounced = true;
+                    } else if (b.y >= H - margin && b.vy > 0) {
+                        b.vy = -b.vy * 0.85;
+                        b.y = H - margin - 1;
+                        bounced = true;
+                    }
+                    
+                    if (bounced) {
+                        b.hasRicocheted = true;
+                        const originalDmg = b.originalDmg || b.dmg;
+                        b.originalDmg = originalDmg;
+                        b.dmg = originalDmg * 0.3; // Set to 30% of original (not multiply current)
+                        b.ricochetDist = 0; // Track distance traveled after ricochet
+                        b.maxRicochetDist = travelDistance;
+                        // Visual indicator - change color slightly
+                        if (b.col === "#b266ff") b.col = "#9955dd";
+                        else if (b.col === "#cc99ff") b.col = "#bb88ee";
+                        else if (b.col === "#ED2F32") b.col = "#cc2820";
+                    }
+                }
+                
+                // Track ricochet travel distance and kill bullet when it exceeds limit
+                if (b.hasRicocheted && !b.dead) {
+                    const speed = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+                    b.ricochetDist = (b.ricochetDist || 0) + speed * dt;
+                    if (b.ricochetDist >= (b.maxRicochetDist || 200)) {
+                        b.dead = true;
+                    }
+                }
+                
+                // Regular boundary check (kill bullets that go too far out)
+                if (!b.dead && (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20)) {
                     b.dead = true;
                 }
 
@@ -6855,6 +6916,25 @@
                         return 'Max Level';
                     }
                 },
+                'ricochet': {
+                    name: "RICOCHET ROUNDS",
+                    icon: '🔄',
+                    cost: 85,
+                    isPremium: true,
+                    isUnlock: true,
+                    category: 'attack',
+                    apply: () => {
+                        if (!store.player.hasRicochet) {
+                            store.player.hasRicochet = true;
+                            announce('🔄 Ricochet rounds armed!');
+                            return true;
+                        }
+                        return false;
+                    },
+                    desc: () => store.player.hasRicochet 
+                        ? `Bullets bounce off screen edges at reduced damage (30%) and speed.` 
+                        : `Bullets bounce off screen edges, dealing 30% damage after ricochet.`
+                },
                 'max_shield': {
                     name: "MAX SHIELD",
                     icon: '🛡️',
@@ -7317,6 +7397,8 @@
                 'dmg',
                 'crit_chance',
                 'grenade',
+                'fragment_blast',
+                'ricochet',
                 'launcher',
                 'star_cannon',
                 'ghost_hounds',
@@ -28409,9 +28491,11 @@
                             (key === 'launcher' && player.hasLauncher) ||
                             (key === 'luck_boost' && player.luckBoost > 0) ||
                             (key === 'magnet_pull' && player.magnetRadius > 0) ||
-                            (key === 'rear_guard' && player.hasRearGuard);
+                            (key === 'rear_guard' && player.hasRearGuard) ||
+                            (key === 'ricochet' && player.hasRicochet);
                         if (alreadyUnlocked) {
-                            return { cost: Infinity, available: false, premium: true, reason: 'Already unlocked.' };
+                            const reason = key === 'ricochet' ? 'Ricochet rounds already installed.' : 'Already unlocked.';
+                            return { cost: Infinity, available: false, premium: true, reason };
                         }
                     }
                     
@@ -28938,7 +29022,9 @@
                     const name = typeof upgrade.getName === 'function' ? upgrade.getName(info, level) : upgrade.name;
                     let desc = typeof upgrade.desc === 'function' ? upgrade.desc(level, info) : upgrade.desc;
                     const costValue = info && Number.isFinite(info.cost) ? info.cost : upgrade.cost;
-                    const costText = Number.isFinite(costValue) ? costValue : '---';
+                    const costText = Number.isFinite(costValue)
+                        ? costValue
+                        : (info && info.reason && /already/i.test(info.reason) ? 'Owned' : '---');
                     const available = info ? !!info.available : (Number.isFinite(costValue) && (store.world?.gold ?? 0) >= costValue);
                     const isDisabled = !available;
                     if (isDisabled && info && info.reason) {
