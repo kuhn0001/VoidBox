@@ -14202,6 +14202,164 @@
                 }
             }
 
+            function collectCubeBurglarPlayerUnits() {
+                const units = [];
+                const addUnit = (unit, weight = 1) => {
+                    if (!unit || unit.dead || unit.destroyed || unit.removed || unit.hp <= 0) return;
+                    const ux = unit.x ?? unit.posX ?? unit.position?.x;
+                    const uy = unit.y ?? unit.posY ?? unit.position?.y;
+                    if (!Number.isFinite(ux) || !Number.isFinite(uy)) return;
+                    units.push({ x: ux, y: uy, weight: weight || 1 });
+                };
+
+                addUnit(store.player, 1.5);
+                addUnit(store.playerChampion, 1.2);
+
+                const sources = [
+                    { list: store.drones, weight: 1 },
+                    { list: store.hounds, weight: 1 },
+                    { list: store.shadowHounds, weight: 1 },
+                    { list: store.championMinions, weight: 1 },
+                    { list: store.empCharges, weight: 0.6 }
+                ];
+
+                for (let i = 0; i < sources.length; i++) {
+                    const source = sources[i];
+                    if (!Array.isArray(source.list) || !source.list.length) continue;
+                    const weight = source.weight || 1;
+                    for (let j = 0; j < source.list.length; j++) {
+                        addUnit(source.list[j], weight);
+                    }
+                }
+
+                return units;
+            }
+
+            function findCubeBurglarUnitCluster() {
+                const units = collectCubeBurglarPlayerUnits();
+                if (!units || units.length < 3) return null;
+
+                const radius = 150;
+                const radiusSq = radius * radius;
+                let bestCluster = null;
+
+                for (let i = 0; i < units.length; i++) {
+                    const anchor = units[i];
+                    let weightSum = anchor.weight || 1;
+                    let sumX = anchor.x * weightSum;
+                    let sumY = anchor.y * weightSum;
+
+                    for (let j = 0; j < units.length; j++) {
+                        if (i === j) continue;
+                        const other = units[j];
+                        const dx = other.x - anchor.x;
+                        const dy = other.y - anchor.y;
+                        if (dx * dx + dy * dy > radiusSq) continue;
+                        const weight = other.weight || 1;
+                        weightSum += weight;
+                        sumX += other.x * weight;
+                        sumY += other.y * weight;
+                    }
+
+                    if (!bestCluster || weightSum > bestCluster.weight) {
+                        bestCluster = {
+                            x: sumX / weightSum,
+                            y: sumY / weightSum,
+                            weight: weightSum
+                        };
+                    }
+                }
+
+                if (bestCluster && bestCluster.weight >= 3) {
+                    return bestCluster;
+                }
+                return null;
+            }
+
+            function findNearestPowerupForCubeBurglar(enemy) {
+                if (!store.powerups || store.powerups.length === 0) return null;
+                let closest = null;
+                let closestDist = Infinity;
+                for (let i = 0; i < store.powerups.length; i++) {
+                    const powerup = store.powerups[i];
+                    if (!powerup) continue;
+                    const dx = powerup.x - enemy.x;
+                    const dy = powerup.y - enemy.y;
+                    const distSq = dx * dx + dy * dy;
+                    if (distSq < closestDist) {
+                        closestDist = distSq;
+                        closest = powerup;
+                    }
+                }
+                if (!closest) return null;
+                return {
+                    x: closest.x + (closest.vx || 0) * 12,
+                    y: closest.y + (closest.vy || 0) * 12
+                };
+            }
+
+            function computeCubeBurglarPatrolTarget(enemy) {
+                const margin = (enemy.r || 54) + 20;
+                const minX = margin;
+                const maxX = Math.max(minX, W - margin);
+                const topBand = Math.max(margin, H * 0.08);
+                const topBandMax = Math.max(topBand, H * 0.1);
+
+                if (!Number.isFinite(enemy.patrolDirection) || enemy.patrolDirection === 0) {
+                    enemy.patrolDirection = Math.random() < 0.5 ? -1 : 1;
+                }
+
+                const stride = Math.max(60, (maxX - minX) * (0.25 + Math.random() * 0.35));
+                let targetX = enemy.x + enemy.patrolDirection * stride;
+
+                if (targetX <= minX) {
+                    targetX = minX;
+                    enemy.patrolDirection = 1;
+                } else if (targetX >= maxX) {
+                    targetX = maxX;
+                    enemy.patrolDirection = -1;
+                }
+
+                const jitterY = randRange(-12, 18);
+                const targetY = clamp(topBandMax + jitterY, margin, Math.min(H - margin, H * 0.2));
+
+                return { x: targetX, y: targetY };
+            }
+
+            function chooseCubeBurglarTarget(enemy) {
+                const powerupTarget = findNearestPowerupForCubeBurglar(enemy);
+                if (powerupTarget) {
+                    return {
+                        x: powerupTarget.x,
+                        y: powerupTarget.y,
+                        behavior: 'powerup',
+                        reacquire: 0.4
+                    };
+                }
+
+                const cluster = findCubeBurglarUnitCluster();
+                if (cluster) {
+                    return {
+                        x: cluster.x,
+                        y: cluster.y,
+                        behavior: 'cluster',
+                        reacquire: 1.1
+                    };
+                }
+
+                const patrol = computeCubeBurglarPatrolTarget(enemy);
+                if (patrol) {
+                    return {
+                        x: patrol.x,
+                        y: patrol.y,
+                        behavior: 'patrol',
+                        reacquire: 1.6
+                    };
+                }
+
+                return null;
+            }
+
             function applyCubeBurglarAura(enemy, dt) {
                 const auraRangeSq = enemy.auraRange * enemy.auraRange;
                 const auraDuration = enemy.auraDuration || CUBE_BURGLAR_CONFIG.auraDuration;
@@ -14401,15 +14559,16 @@
 
                 enemy.targetTimer = (enemy.targetTimer || 0) - dt;
                 if (enemy.targetTimer <= 0 || !enemy.target) {
-                    const horizontalRange = 160; // Allow some side-to-side movement
-                    const baseY = 90; // Keep near the top
-                    const playerX = store.player.x;
-                    const offsetX = (Math.random() - 0.5) * horizontalRange;
-                    enemy.target = {
-                        x: clamp(playerX + offsetX, enemy.r + 20, W - enemy.r - 20),
-                        y: baseY + Math.random() * 20 // Slight vertical variation
-                    };
-                    enemy.targetTimer = 2.2 + Math.random() * 1.4; // Less frequent repositioning
+                    const selection = chooseCubeBurglarTarget(enemy);
+                    if (selection) {
+                        enemy.target = { x: selection.x, y: selection.y };
+                        enemy.targetBehavior = selection.behavior;
+                        enemy.targetTimer = selection.reacquire || 0.7;
+                    } else {
+                        enemy.target = enemy.target || { x: enemy.x, y: enemy.y };
+                        enemy.targetBehavior = null;
+                        enemy.targetTimer = 0.7;
+                    }
                 }
 
                 if (enemy.kiteTimer > 0) {
@@ -14425,7 +14584,7 @@
 
                 const margin = enemy.r || 54;
                 enemy.x = Math.max(margin, Math.min(W - margin, enemy.x));
-                enemy.y = Math.max(margin, Math.min(H * 0.75, enemy.y));
+                enemy.y = Math.max(margin, Math.min(H - margin, enemy.y));
 
                 enemy.cubes.forEach(cube => {
                     cube.update(dt);
