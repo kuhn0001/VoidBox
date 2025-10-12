@@ -4984,7 +4984,7 @@
                     waveTransitionTimer: null,
                     enemyHealthBonus: 1.0,
                     bossHealthBonus: 1.0,
-                    enemyDensityBonus: 1.0,
+                    enemyDensityBonus: 0.4,
                     powerupCooldown: 0,
                     xpMultiplier: 1.0,
                     collarStacks: 0,
@@ -10285,7 +10285,8 @@
                 }
                 
                 const baseValue = DYNAMIC_DIRECTOR_CONFIG.baseIncome + Math.max(0, wave - 1) * DYNAMIC_DIRECTOR_CONFIG.incomePerWave;
-                return baseValue * earlyGameMultiplier;
+                const densityBonus = store?.world?.enemyDensityBonus ?? 1.0;
+                return baseValue * earlyGameMultiplier * densityBonus;
             }
 
             function computeBudgetCapForWave(wave) {
@@ -10302,7 +10303,8 @@
                 }
                 
                 const baseValue = DYNAMIC_DIRECTOR_CONFIG.baseBudgetCap + Math.max(0, wave - 1) * DYNAMIC_DIRECTOR_CONFIG.budgetCapPerWave;
-                return baseValue * earlyGameMultiplier;
+                const densityBonus = store?.world?.enemyDensityBonus ?? 1.0;
+                return baseValue * earlyGameMultiplier * densityBonus;
             }
 
             function computeThreatScale(wave) {
@@ -10566,17 +10568,17 @@
 
                     if (waveClearTime < 2) {
                         collarStacksToAdd = 9;
-                        store.world.enemyDensityBonus *= 1.15;
+                        if (store.world.bosses >= 1) store.world.enemyDensityBonus *= 1.15;
                         store.world.xpMultiplier *= 1.1;
                         announce("💥 ULTRA-INSTANT CLEAR! COLLAR CRUSHES +9 💥");
                     } else if (waveClearTime < 4) {
                         collarStacksToAdd = 6;
-                        store.world.enemyDensityBonus *= 1.1;
+                        if (store.world.bosses >= 1) store.world.enemyDensityBonus *= 1.1;
                         store.world.xpMultiplier *= 1.07;
                         announce("⚡ INSTANT WAVE CLEAR! COLLAR TIGHTENS +6 ⚡");
                     } else if (waveClearTime < 8) {
                         collarStacksToAdd = 3;
-                        store.world.enemyDensityBonus *= 1.05;
+                        if (store.world.bosses >= 1) store.world.enemyDensityBonus *= 1.05;
                         store.world.xpMultiplier *= 1.03;
                         announce("⚡ FAST WAVE CLEAR! COLLAR TIGHTENS +3 ⚡");
                     } else if (waveClearTime < 12) {
@@ -13813,7 +13815,8 @@
                 }
                 // FIXED: Don't permanently modify health bonuses - collar handles this dynamically
                 // Instead, only apply temporary density and XP bonuses based on performance
-                if (announcedAdaptation) {
+                // Only apply density scaling after first boss is defeated
+                if (announcedAdaptation && store.world.bosses >= 1) {
                     // Only apply density bonuses, not permanent health increases
                     if (healthBonusMultiplier > 1.3) {
                         store.world.enemyDensityBonus *= 1.15;
@@ -13991,7 +13994,7 @@
                     lastBossAwardToken: null,
                     enemyHealthBonus: 1.0,
                     bossHealthBonus: 1.0,
-                    enemyDensityBonus: 1.0,
+                    enemyDensityBonus: 0.4,
                     powerupCooldown: 0,
                     xpMultiplier: 1.0,
                     collarStacks: 0,
