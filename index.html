@@ -4781,7 +4781,7 @@
             const BOSS_DEFINITIONS = Object.freeze([
                 { key: 'void_sentinel', name: 'VOID SENTINEL', baseHp: 4000, r: 55, behavior: 'sentinel', color: '#8B4A9C' },
                 { key: 'nexus_phantom', name: 'NEXUS PHANTOM', baseHp: 2200, r: 50, behavior: 'hex', color: '#66aaff' },
-                { key: 'aegis_architect', name: 'AEGIS ARCHITECT', baseHp: 3600, r: 68, behavior: 'aegis_architect', color: '#5dd0ff' },
+                { key: 'aegis_architect', name: 'AEGIS ARCHITECT', baseHp: 2650, r: 68, behavior: 'aegis_architect', color: '#5dd0ff' },
                 { key: 'hive_sovereign', name: 'HIVE SOVEREIGN', baseHp: 8500, r: 85, behavior: 'broodlord', color: '#2d5016' },
                 { key: 'shadow_mirror', name: 'SHADOW MIRROR', baseHp: 7200, r: 58, behavior: 'shadow_clone', color: '#cbd4ff' },
                 { key: 'death_engine', name: 'DEATH ENGINE', baseHp: 9000, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true },
@@ -5008,6 +5008,7 @@
                     cubeBurglarLastSpawnTime: 0,
                     cubeBurglarSpawnTimer: 0,
                     cubeBurglarSpawnAttempts: 0,
+                    cubeBurglarLastAttemptTime: 0,
                     cubeBurglarDefeated: 0
                 },
                 settings: {
@@ -9733,6 +9734,86 @@
                 }
             }
 
+            function getChargeUpgradeDamageBonus(p) {
+                // Calculate upgrade-based damage bonus for standard enemies
+                let bonus = 0;
+                
+                // Base charge unlocked: starts at 30% (no bonus)
+                
+                // Enhanced charge: +15%
+                if (p.beefChargeDamageMultiplier && p.beefChargeDamageMultiplier >= 1.5) {
+                    bonus += 0.15;
+                }
+                
+                // Juggernaut skills: +10%
+                if (p.skillTree && p.skillTree.juggernaut) {
+                    bonus += 0.10;
+                }
+                
+                // Enhanced juggernaut: +15%
+                if (p.skillTree && p.skillTree.juggernaut_enhanced) {
+                    bonus += 0.15;
+                }
+                
+                // Multi-charge (marauder): +5%
+                if (p.beefMaxCharges && p.beefMaxCharges >= 3) {
+                    bonus += 0.05;
+                }
+                
+                // Chain assault (marauder): +10%
+                if (p.beefChainMode) {
+                    bonus += 0.10;
+                }
+                
+                return bonus;
+            }
+
+            function getChargeUpgradeBossDamageBonus(p) {
+                // Calculate upgrade-based damage bonus for bosses (only with Demolitioner)
+                if (p.subclass !== 'demolitioner') return 0;
+                
+                let bonus = 0;
+                
+                // Enhanced charge: +0.5%
+                if (p.beefChargeDamageMultiplier && p.beefChargeDamageMultiplier >= 1.5) {
+                    bonus += 0.005;
+                }
+                
+                // Demolitioner skills provide incremental boss damage
+                if (p.skillTree && p.skillTree.demolitioner_bigger_clusters) {
+                    bonus += 0.008;
+                }
+                
+                if (p.skillTree && p.skillTree.demolitioner_cluster_mastery) {
+                    bonus += 0.012;
+                }
+                
+                return bonus;
+            }
+
+            function calculatePercentageBasedChargeDamage(p, enemy, basePercentage, upgradeBonus) {
+                const isBoss = enemy === store.boss || enemy.type === 'void_champion' || enemy.type === 'shadow_champion';
+                
+                if (!isBoss) {
+                    // Standard enemy: 30% base, scales to 85% max with upgrades
+                    let damagePercentage = basePercentage;
+                    damagePercentage += upgradeBonus;
+                    damagePercentage = Math.min(damagePercentage, 0.85);
+                    return enemy.hpMax * damagePercentage;
+                } else {
+                    // Boss: 4% base, scales to 6.5% max with Demolitioner upgrades
+                    let damagePercentage = 0.04;
+                    
+                    if (p.subclass === 'demolitioner') {
+                        const bossBonus = getChargeUpgradeBossDamageBonus(p);
+                        damagePercentage += bossBonus;
+                        damagePercentage = Math.min(damagePercentage, 0.065);
+                    }
+                    
+                    return enemy.hpMax * damagePercentage;
+                }
+            }
+
             function computeBeefChargeContext(p) {
                 let impactRadius = 80;
                 if (p.skillTree && p.skillTree.juggernaut) impactRadius = 120;
@@ -9740,9 +9821,9 @@
                 if (p.beefExplosionRadius) impactRadius *= p.beefExplosionRadius;
                 if (p.subclass === 'juggernaut') impactRadius = Math.max(impactRadius, 120);
 
-                // Reduced base damage for better balance - charge is utility/mobility first, damage second
-                let baseDamage = 35; // Reduced from 80
-                if (p.beefBigExplosion || (p.skillTree && p.skillTree.juggernaut_enhanced)) baseDamage = 65; // Reduced from 150
+                // NOTE: baseDamage is now used as a fallback only - actual damage is percentage-based
+                let baseDamage = 35;
+                if (p.beefBigExplosion || (p.skillTree && p.skillTree.juggernaut_enhanced)) baseDamage = 65;
                 if (p.beefChargeDamage) baseDamage *= p.beefChargeDamage;
                 if (p.beefExplosionDamage) baseDamage *= p.beefExplosionDamage;
                 if (p.beefChargeDamageMultiplier) baseDamage *= p.beefChargeDamageMultiplier;
@@ -9916,7 +9997,12 @@
                         if (context.chainDamageBonus) damageMultiplier *= context.chainDamageBonus;
                         if (p.beefChainBonus) damageMultiplier *= p.beefChainBonus;
                     }
-                    let chargeDmg = context.baseDamage * damageMultiplier * p.dmgMult;
+                    
+                    // Calculate percentage-based damage
+                    const upgradeBonus = getChargeUpgradeDamageBonus(p);
+                    let chargeDmg = calculatePercentageBasedChargeDamage(p, e, 0.30, upgradeBonus);
+                    chargeDmg *= damageMultiplier * p.dmgMult;
+                    
                     const enemyId = e.id || `${e.x}_${e.y}_${e.type}`;
                     let isDoubleHit = false;
 
@@ -11386,6 +11472,8 @@
                     if (!activeBurglar) {
                         store.world.cubeBurglarActive = false;
                         store.cubeBurglarId = null;
+                        store.world.cubeBurglarSpawnAttempts = 0;
+                        store.world.cubeBurglarLastAttemptTime = 0;
                     }
                 } else if (store.world.wave >= CUBE_BURGLAR_CONFIG.minWave && store.world.cubeBurglarCooldown <= 0) {
                     store.world.cubeBurglarSpawnTimer = (store.world.cubeBurglarSpawnTimer || 0) + dt;
@@ -11663,8 +11751,15 @@
                                 e.damageMult = e._cubeBurglarBaseDamageMult;
                                 delete e._cubeBurglarBaseDamageMult;
                             }
+                            if (e.baseContactDamage !== undefined) {
+                                e.contactDamage = e.baseContactDamage * (e.damageMult || 1);
+                            }
                             delete e.cubeBurglarBuffTimer;
                             delete e.cubeBurglarBuffSource;
+                            delete e.cubeBurglarBuffStats;
+                            delete e.cubeBurglarFireRateMultiplier;
+                            delete e.cubeBurglarSpeedMultiplier;
+                            delete e.cubeBurglarProjectileSpeedMultiplier;
                             e.cubeBurglarAuraGlow = 0;
                         }
                     } else if (e.cubeBurglarAuraGlow) {
@@ -11837,6 +11932,10 @@
                         }
                         if (e.stormShockTimer > 0) {
                             speedMultiplier *= 0.6;
+                        }
+
+                        if (e.cubeBurglarSpeedMultiplier && e.cubeBurglarSpeedMultiplier !== 1) {
+                            speedMultiplier *= e.cubeBurglarSpeedMultiplier;
                         }
 
                         // SWARM PROTOCOL: Fast homing enemies (construct_gold, avian_hatchling)
@@ -12052,18 +12151,22 @@
                         }
                     }
 
-                    if (e.fireT > 0) e.fireT -= dt;
-                    if (e.fireT <= 0 && e.y > 0 && Math.random() < e.fireRateChance) {
+                    const fireRateMult = e.cubeBurglarFireRateMultiplier || 1;
+                    if (e.fireT > 0) e.fireT -= dt * fireRateMult;
+                    const fireChance = Math.min(1, (e.fireRateChance || 0) * fireRateMult);
+                    if (e.fireT <= 0 && e.y > 0 && Math.random() < fireChance) {
                         const damageMult = e.damageMult || 1;
                         switch (e.type) {
                             case 'hunter': {
                                 const a = Math.atan2(store.player.y - e.y, store.player.x - e.x);
                                 const bullet = getEBulletFromPool({ x: e.x, y: e.y, vx: Math.cos(a) * 180, vy: Math.sin(a) * 180, r: 3, col: e.color, dmg: 6 * dmgScale * damageMult });
+                                empowerEnemyProjectile(e, bullet);
                                 store.eBullets.push(bullet);
                                 e.fireT = 1; break;
                             }
                             case 'phantom': {
                                 const bullet = getEBulletFromPool({ x: e.x, y: e.y, vx: 0, vy: 180, r: 3, col: e.color, dmg: 5 * dmgScale * damageMult });
+                                empowerEnemyProjectile(e, bullet);
                                 store.eBullets.push(bullet);
                                 e.fireT = e.fireCooldown; break;
                             }
@@ -12074,9 +12177,17 @@
                                     // Shoulder cannon attack (less frequent now)
                                     const shoulderLeftX = e.x - e.r * 1.2, shoulderRightX = e.x + e.r * 1.2, shoulderY = e.y - e.r;
                                     const angleLeft = Math.atan2(store.player.y - shoulderY, store.player.x - shoulderLeftX);
-                                    store.eBullets.push({ x: shoulderLeftX, y: shoulderY, vx: Math.cos(angleLeft) * 160, vy: Math.sin(angleLeft) * 160, r: 4, col: e.color, dmg: 12 * dmgScale * damageMult });
+                                    {
+                                        const bulletLeft = { x: shoulderLeftX, y: shoulderY, vx: Math.cos(angleLeft) * 160, vy: Math.sin(angleLeft) * 160, r: 4, col: e.color, dmg: 12 * dmgScale * damageMult };
+                                        empowerEnemyProjectile(e, bulletLeft);
+                                        store.eBullets.push(bulletLeft);
+                                    }
                                     const angleRight = Math.atan2(store.player.y - shoulderY, store.player.x - shoulderRightX);
-                                    store.eBullets.push({ x: shoulderRightX, y: shoulderY, vx: Math.cos(angleRight) * 160, vy: Math.sin(angleRight) * 160, r: 4, col: e.color, dmg: 12 * dmgScale * damageMult });
+                                    {
+                                        const bulletRight = { x: shoulderRightX, y: shoulderY, vx: Math.cos(angleRight) * 160, vy: Math.sin(angleRight) * 160, r: 4, col: e.color, dmg: 12 * dmgScale * damageMult };
+                                        empowerEnemyProjectile(e, bulletRight);
+                                        store.eBullets.push(bulletRight);
+                                    }
                                 } else {
                                     // Lob attack with randomized target location (more frequent now)
                                     // Limit target area to stay on screen with reasonable arc
@@ -12098,17 +12209,33 @@
                                     const vx = dx / timeToTarget;
                                     const vy = (dy - 0.5 * gravity * timeToTarget * timeToTarget) / timeToTarget;
 
-                                    store.eBullets.push({
+                                    const lob = {
                                         x: e.x, y: e.y, vx: vx, vy: vy, r: 6,
-                                        col: '#40e0d0', dmg: 18 * dmgScale * damageMult, // Turquoise projectile color to match mech
+                                        col: '#40e0d0', dmg: 18 * dmgScale * damageMult,
                                         gravity: gravity, isMechVolley: true, sourceId: e.id,
-                                        targetX: targetX, targetY: targetY // Store intended target location
-                                    });
+                                        targetX: targetX, targetY: targetY
+                                    };
+                                    empowerEnemyProjectile(e, lob);
+                                    store.eBullets.push(lob);
                                 }
                                 e.fireT = 0.8; break; // Much more frequent attacks - reduced from 1.2 to 0.8
                             }
-                            case 'angler': { const a = Math.atan2(store.player.y - e.y, store.player.x - e.x); store.eBullets.push({ x: e.x, y: e.y, vx: Math.cos(a) * 120, vy: Math.sin(a) * 120, r: 4, col: e.color, dmg: 15 * dmgScale * damageMult, life: 5 }); e.fireT = 2.5; break; }
-                            case 'manta': { for (let i = -1; i <= 1; i++) { const angle = (90 + i * 30) * Math.PI / 180; store.eBullets.push({ x: e.x, y: e.y, vx: Math.cos(angle) * 150, vy: Math.sin(angle) * 150, r: 3, col: e.color, dmg: 12 * dmgScale * damageMult }); } e.fireT = 2.8; break; }
+                            case 'angler': {
+                                const a = Math.atan2(store.player.y - e.y, store.player.x - e.x);
+                                const bullet = { x: e.x, y: e.y, vx: Math.cos(a) * 120, vy: Math.sin(a) * 120, r: 4, col: e.color, dmg: 15 * dmgScale * damageMult, life: 5 };
+                                empowerEnemyProjectile(e, bullet);
+                                store.eBullets.push(bullet);
+                                e.fireT = 2.5; break;
+                            }
+                            case 'manta': {
+                                for (let i = -1; i <= 1; i++) {
+                                    const angle = (90 + i * 30) * Math.PI / 180;
+                                    const bolt = { x: e.x, y: e.y, vx: Math.cos(angle) * 150, vy: Math.sin(angle) * 150, r: 3, col: e.color, dmg: 12 * dmgScale * damageMult };
+                                    empowerEnemyProjectile(e, bolt);
+                                    store.eBullets.push(bolt);
+                                }
+                                e.fireT = 2.8; break;
+                            }
                             case 'shadow_champion': {
                                 const boss = store.boss && store.boss.behavior === 'shadow_clone' ? store.boss : null;
                                 const enrageThreshold = e.enrageThreshold ?? 0.45;
@@ -12122,7 +12249,7 @@
                                     for (let i = 0; i < volley; i++) {
                                         const offset = (i - (volley - 1) / 2) * spread;
                                         const speed = 320 + (isEnraged ? 90 : 60);
-                                        store.eBullets.push(getEBulletFromPool({
+                                        const shard = getEBulletFromPool({
                                             x: e.x + Math.cos(angle) * (e.r * 0.3),
                                             y: e.y + Math.sin(angle) * (e.r * 0.3),
                                             vx: Math.cos(angle + offset) * speed,
@@ -12131,7 +12258,9 @@
                                             col: isEnraged ? '#a89fff' : '#d6dbff',
                                             dmg: 16 * attackMult,
                                             life: 1.6
-                                        }));
+                                        });
+                                        empowerEnemyProjectile(e, shard);
+                                        store.eBullets.push(shard);
                                     }
                                     e.fireT = isEnraged ? 1.05 : 1.35;
                                 } else {
@@ -12152,7 +12281,7 @@
                                     spreads.forEach((offset, idx) => {
                                         const finalAngle = baseAngle + offset;
                                         const speed = 210 + idx * 25;
-                                        store.eBullets.push({
+                                        const beam = {
                                             x: e.x,
                                             y: e.y,
                                             vx: Math.cos(finalAngle) * speed,
@@ -12161,14 +12290,16 @@
                                             col: '#ffb3ff',
                                             dmg: 18 * dmgScale * damageMult,
                                             life: 5
-                                        });
+                                        };
+                                        empowerEnemyProjectile(e, beam);
+                                        store.eBullets.push(beam);
                                     });
                                     e.nextPattern = 'burst';
                                 } else {
                                     const bolts = 8;
                                     for (let i = 0; i < bolts; i++) {
                                         const angle = (i / bolts) * Math.PI * 2;
-                                        store.eBullets.push({
+                                        const bolt = {
                                             x: e.x,
                                             y: e.y,
                                             vx: Math.cos(angle) * 150,
@@ -12177,7 +12308,9 @@
                                             col: '#de6cff',
                                             dmg: 12 * dmgScale * damageMult,
                                             life: 4
-                                        });
+                                        };
+                                        empowerEnemyProjectile(e, bolt);
+                                        store.eBullets.push(bolt);
                                     }
                                     e.nextPattern = 'beam';
                                     // Trigger orbiting shards to fire immediately
@@ -12196,7 +12329,7 @@
                                 const module = e.attackModule || 'default';
                                 const abilityTheme = e.abilityTheme || getChampionMinionAbilityTheme(module);
                                 const projectileColor = abilityTheme?.trail || abilityTheme?.ring || e.color || '#ff6ad5';
-                                store.eBullets.push({
+                                const orb = {
                                     x: e.x,
                                     y: e.y,
                                     vx: Math.cos(angle) * speed,
@@ -12205,15 +12338,30 @@
                                     col: projectileColor,
                                     dmg: 6 * dmgScale * damageMult,
                                     life: 4
-                                });
+                                };
+                                empowerEnemyProjectile(e, orb);
+                                store.eBullets.push(orb);
                                 e.fireT = e.fireCooldown || 1.1;
                                 break;
                             }
-                            default: { store.eBullets.push({ x: e.x, y: e.y, vx: 0, vy: 150, r: 3, col: e.color, dmg: 5 * dmgScale * damageMult }); e.fireT = .5; }
+                            default: {
+                                const bullet = { x: e.x, y: e.y, vx: 0, vy: 150, r: 3, col: e.color, dmg: 5 * dmgScale * damageMult };
+                                empowerEnemyProjectile(e, bullet);
+                                store.eBullets.push(bullet);
+                                e.fireT = .5;
+                            }
                         }
                     }
 
-                    if (e.y > H + 30 || e.x < -30 || e.x > W + 30) e.dead = true;
+                    if (e.y > H + 30 || e.x < -30 || e.x > W + 30) {
+                        if (e.type !== 'cube_burglar') {
+                            e.dead = true;
+                        } else {
+                            // Cube Burglar: clamp back to screen instead of dying
+                            e.x = clamp(e.x, e.r + 10, W - e.r - 10);
+                            e.y = clamp(e.y, e.r + 10, H - e.r - 10);
+                        }
+                    }
                     if (collide(e, store.player)) {
                         const contactDmg = (e.contactDamage || 8) * dmgScale;
                         takeDamage(contactDmg); // Reduced baseline from 15 to 8 for better balance
@@ -12963,7 +13111,15 @@
                     themeTransitionProgress: 1,
                     themeTransitionActive: false,
                     gameStartTime: now,
-                    autoForgeProfileId: store.settings.autoForgeProfile
+                    autoForgeProfileId: store.settings.autoForgeProfile,
+                    cubeBurglarCooldown: 0,
+                    cubeBurglarActive: false,
+                    cubeBurglarLastSpawnWave: 0,
+                    cubeBurglarLastSpawnTime: 0,
+                    cubeBurglarSpawnTimer: 0,
+                    cubeBurglarSpawnAttempts: 0,
+                    cubeBurglarLastAttemptTime: 0,
+                    cubeBurglarDefeated: 0
                 };
 
                 if (store.bullets && store.bullets.length) {
@@ -13036,6 +13192,7 @@
                 passiveSpawnInterval: 18,
                 minRespawnDelay: 28,
                 forcedSpawnAttempts: 4,
+                minAttemptGap: 0.35,
                 minWave: 10,
                 minWaveGap: 4,
                 spawnChanceBase: 0.08,
@@ -13297,7 +13454,11 @@
                 const hpScale = Math.max(0.6, options.hpScale || 1);
                 const lateGameScaling = Math.max(0.8, options.lateGameScaling || 1);
                 const damageMult = Math.max(1, options.damageMult || 1);
-                const x = Math.max(120, Math.min(W - 120, options.x !== undefined ? options.x : store.player.x + (Math.random() - 0.5) * 220));
+                const playerRef = store.player || { x: W / 2, y: H / 2 };
+                const centerX = Number.isFinite(playerRef.x) ? playerRef.x : W / 2;
+                const centerY = Number.isFinite(playerRef.y) ? playerRef.y : H / 2;
+                const spawnX = options.x !== undefined ? options.x : centerX + (Math.random() - 0.5) * 220;
+                const x = Math.max(120, Math.min(W - 120, spawnX));
                 const y = options.y !== undefined ? options.y : -160;
                 const enemy = {
                     type: 'cube_burglar',
@@ -13352,6 +13513,7 @@
                 enemy.hpMax = enemy.cubes.reduce((sum, cube) => sum + cube.hpMax, 0);
                 enemy.hp = enemy.hpMax;
                 enemy.auraDamageMult = enemy.baseAuraDamageMult;
+                recalcCubeBurglarEmpowerments(enemy);
                 return enemy;
             }
 
@@ -13363,13 +13525,17 @@
                 const waveGap = world.wave - (world.cubeBurglarLastSpawnWave || 0);
                 const now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
                 const lastTime = world.cubeBurglarLastSpawnTime || 0;
+                const lastAttemptTime = world.cubeBurglarLastAttemptTime || 0;
                 const elapsedSeconds = lastTime > 0 ? (now - lastTime) / 1000 : Infinity;
+                const elapsedSinceAttempt = lastAttemptTime > 0 ? (now - lastAttemptTime) / 1000 : Infinity;
                 const readyByWave = waveGap >= CUBE_BURGLAR_CONFIG.minWaveGap;
                 const readyByTime = elapsedSeconds >= CUBE_BURGLAR_CONFIG.minRespawnDelay;
                 if (!readyByWave && !readyByTime) return null;
+                if (elapsedSinceAttempt < (CUBE_BURGLAR_CONFIG.minAttemptGap || 0.3)) return null;
                 if (world.cubeBurglarCooldown > 0) return null;
                 const maxChance = Math.min(0.42, CUBE_BURGLAR_CONFIG.spawnChanceBase + Math.max(0, world.wave - CUBE_BURGLAR_CONFIG.minWave) * CUBE_BURGLAR_CONFIG.spawnChancePerWave);
                 world.cubeBurglarSpawnAttempts = (world.cubeBurglarSpawnAttempts || 0) + 1;
+                world.cubeBurglarLastAttemptTime = now;
                 const forced = world.cubeBurglarSpawnAttempts >= (CUBE_BURGLAR_CONFIG.forcedSpawnAttempts || 4);
                 if (!forced && Math.random() >= maxChance) {
                     return null;
@@ -13381,6 +13547,7 @@
                 store.world.cubeBurglarLastSpawnTime = now;
                 store.world.cubeBurglarSpawnTimer = 0;
                 store.world.cubeBurglarSpawnAttempts = 0;
+                store.world.cubeBurglarLastAttemptTime = now;
                 store.cubeBurglarId = burglar.id;
                 activateSpawnIntro(burglar, {
                     duration: burglar.spawnDuration,
@@ -13403,6 +13570,107 @@
                     playSound('thunder');
                 }
                 return burglar;
+            }
+
+            function computeCubeBurglarEmpowerments(enemy) {
+                const weights = {
+                    speed: 0,
+                    fire: 0,
+                    damage: 0,
+                    projectile: 0
+                };
+
+                const stolen = Array.isArray(enemy?.stolenPowerups) ? enemy.stolenPowerups : [];
+                for (let i = 0; i < stolen.length; i++) {
+                    const item = stolen[i];
+                    if (!item) continue;
+                    switch (item.type) {
+                        case 'attack_speed':
+                            weights.fire += 1.2;
+                            weights.projectile += 0.5;
+                            break;
+                        case 'double':
+                            weights.fire += 1;
+                            break;
+                        case 'missile':
+                            weights.projectile += 1;
+                            break;
+                        case 'drones':
+                            weights.fire += 0.6;
+                            weights.speed += 0.5;
+                            break;
+                        case 'swirly_upgrade':
+                            weights.projectile += 1;
+                            break;
+                        case 'star_upgrade':
+                            weights.damage += 1;
+                            break;
+                        case 'void_core':
+                            weights.damage += 1;
+                            weights.fire += 0.5;
+                            break;
+                        case 'upgrade':
+                            weights.damage += 0.6;
+                            break;
+                        case 'cash':
+                            weights.speed += 0.4;
+                            break;
+                        case 'collar_fragment':
+                            weights.damage += 0.5;
+                            break;
+                        case 'champion_upgrade':
+                            weights.damage += 0.8;
+                            weights.fire += 0.3;
+                            break;
+                        case 'shadow_champion_token':
+                            weights.damage += 0.6;
+                            break;
+                        case 'shield':
+                        case 'repair':
+                            weights.damage += 0.4;
+                            break;
+                        default:
+                            weights.fire += 0.2;
+                            break;
+                    }
+                }
+
+                const speedMult = clamp(1 + weights.speed * 0.1, 1, 1.75);
+                const fireRateMult = clamp(1 + weights.fire * 0.15, 1, 2);
+                const damageMult = clamp(1 + weights.damage * 0.18, 1, 2.2);
+                const projectileSpeedMult = clamp(1 + weights.projectile * 0.18, 1, 2);
+
+                return {
+                    speedMult,
+                    fireRateMult,
+                    damageMult,
+                    projectileSpeedMult,
+                    weights
+                };
+            }
+
+            function recalcCubeBurglarEmpowerments(enemy) {
+                if (!enemy) return {
+                    speedMult: 1,
+                    fireRateMult: 1,
+                    damageMult: 1,
+                    projectileSpeedMult: 1,
+                    weights: { speed: 0, fire: 0, damage: 0, projectile: 0 }
+                };
+                const computed = computeCubeBurglarEmpowerments(enemy);
+                enemy.cubeBurglarEmpowerments = computed;
+                return computed;
+            }
+
+            function empowerEnemyProjectile(owner, projectile) {
+                if (!owner || !projectile) return projectile;
+                const stats = owner.cubeBurglarBuffStats || owner.cubeBurglarEmpowerments;
+                const speedMult = owner.cubeBurglarProjectileSpeedMultiplier || stats?.projectileSpeedMult || 1;
+                if (speedMult !== 1 && Number.isFinite(speedMult)) {
+                    projectile.vx = (projectile.vx || 0) * speedMult;
+                    projectile.vy = (projectile.vy || 0) * speedMult;
+                }
+                return projectile;
             }
 
             function pullPowerupsToCubeBurglar(enemy, dt) {
@@ -13439,6 +13707,7 @@
                         enemy.highlightTimer = 0.6;
                         enemy.auraDamageMult = enemy.baseAuraDamageMult + enemy.buffStacks * CUBE_BURGLAR_CONFIG.stackDamageBonus;
                         enemy.auraDuration = CUBE_BURGLAR_CONFIG.auraDuration + enemy.buffStacks * 0.1;
+                        recalcCubeBurglarEmpowerments(enemy);
                         if (typeof announce === 'function') {
                             announce('💎 Cube Burglar pilfered a powerup!');
                         }
@@ -13454,6 +13723,7 @@
                 const auraRangeSq = enemy.auraRange * enemy.auraRange;
                 const auraDuration = enemy.auraDuration || CUBE_BURGLAR_CONFIG.auraDuration;
                 const auraMult = enemy.auraDamageMult || enemy.baseAuraDamageMult;
+                const empowerment = enemy.cubeBurglarEmpowerments || recalcCubeBurglarEmpowerments(enemy);
                 for (let i = 0; i < store.enemies.length; i++) {
                     const target = store.enemies[i];
                     if (!target || target.dead || target === enemy || target.type === 'cube_burglar') continue;
@@ -13464,9 +13734,17 @@
                     if (target._cubeBurglarBaseDamageMult === undefined) {
                         target._cubeBurglarBaseDamageMult = target.damageMult || 1;
                     }
-                    target.damageMult = (target._cubeBurglarBaseDamageMult || 1) * auraMult;
+                    const damageBoost = empowerment?.damageMult || 1;
+                    target.damageMult = (target._cubeBurglarBaseDamageMult || 1) * auraMult * damageBoost;
+                    if (target.baseContactDamage !== undefined) {
+                        target.contactDamage = target.baseContactDamage * (target.damageMult || 1);
+                    }
                     target.cubeBurglarBuffTimer = auraDuration;
                     target.cubeBurglarBuffSource = enemy.id;
+                    target.cubeBurglarBuffStats = empowerment;
+                    target.cubeBurglarFireRateMultiplier = empowerment?.fireRateMult || 1;
+                    target.cubeBurglarSpeedMultiplier = empowerment?.speedMult || 1;
+                    target.cubeBurglarProjectileSpeedMultiplier = empowerment?.projectileSpeedMult || 1;
                     target.cubeBurglarAuraGlow = Math.min(1, (target.cubeBurglarAuraGlow || 0) + dt * 2.4);
                 }
                 enemy.auraPulse = Math.sin((enemy.time || 0) * 4) * 0.5 + 0.5;
@@ -13482,6 +13760,8 @@
                 const now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
                 store.world.cubeBurglarLastSpawnTime = now;
                 store.world.cubeBurglarSpawnTimer = 0;
+                store.world.cubeBurglarSpawnAttempts = 0;
+                store.world.cubeBurglarLastAttemptTime = now;
                 const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
                 const gold = Math.floor((enemy.gold || 0) * collarBonus);
                 const xp = Math.floor((enemy.xp || 0) * collarBonus);
@@ -13637,15 +13917,15 @@
 
                 enemy.targetTimer = (enemy.targetTimer || 0) - dt;
                 if (enemy.targetTimer <= 0 || !enemy.target) {
-                    const radius = 140 + Math.random() * 120;
-                    const angle = Math.random() * TAU;
-                    const px = store.player.x;
-                    const py = store.player.y - 90;
+                    const horizontalRange = 160; // Allow some side-to-side movement
+                    const baseY = 90; // Keep near the top
+                    const playerX = store.player.x;
+                    const offsetX = (Math.random() - 0.5) * horizontalRange;
                     enemy.target = {
-                        x: clamp(px + Math.cos(angle) * radius, 120, W - 120),
-                        y: clamp(py + Math.sin(angle) * radius, 80, H * 0.65)
+                        x: clamp(playerX + offsetX, enemy.r + 20, W - enemy.r - 20),
+                        y: baseY + Math.random() * 20 // Slight vertical variation
                     };
-                    enemy.targetTimer = 1.9 + Math.random() * 1.6;
+                    enemy.targetTimer = 2.2 + Math.random() * 1.4; // Less frequent repositioning
                 }
 
                 if (enemy.kiteTimer > 0) {
@@ -19741,8 +20021,8 @@
 
                 const rawCycle = Math.max(0, Math.floor((ensureFiniteNumber(b.spawnWave, store.world.wave) - 5) / 5));
                 const loopIndex = Math.max(0, Math.floor(rawCycle / BOSS_DEFINITIONS.length));
-                const difficultyScale = 1 + loopIndex * 0.2;
-                const segmentHp = Math.max(320, b.hpMax * 0.18 * difficultyScale);
+                const difficultyScale = 1 + loopIndex * 0.22;
+                const segmentHp = Math.max(260, b.hpMax * 0.16 * difficultyScale);
                 const segmentDefs = [
                     { id: 'solar', label: 'Solar Keystone', color: '#ffb347', baseAngle: 0, arc: Math.PI * 0.58, unlock: 'solar_burst', unlockMessage: 'Solar torrents ignite the field!' },
                     { id: 'prismatic', label: 'Prismatic Keystone', color: '#7de8ff', baseAngle: (2 * Math.PI) / 3, arc: Math.PI * 0.58, unlock: 'prismatic_grid', unlockMessage: 'Prismatic lattices refract across the arena!' },
@@ -19760,7 +20040,7 @@
 
                 const state = {
                     rotationAngle: 0,
-                    rotationSpeed: 0.45,
+                    rotationSpeed: 0.52,
                     rotationDirection: 1,
                     shieldRadius: Math.max(90, b.r * 1.08),
                     coreRadius: Math.max(44, b.r * 0.62),
@@ -19773,7 +20053,11 @@
                     loopIndex,
                     corePulse: 0,
                     enraged: false,
-                    coreExposed: false
+                    coreExposed: false,
+                    anchorX: W / 2,
+                    anchorY: 130,
+                    repositionTimer: 0,
+                    repositionTarget: null
                 };
 
                 b.aegisState = state;
@@ -20103,16 +20387,48 @@
                     }
                 }
 
-                if (b.y < 130) {
-                    b.y = Math.min(130, b.y + 140 * dt);
-                } else {
-                    // Smooth circular/figure-8 movement pattern
-                    b.moveT += dt * (state.enraged ? 0.65 : 0.5);
-                    const radiusX = 180;
-                    const radiusY = 50;
-                    b.x = W / 2 + Math.sin(b.moveT) * radiusX;
-                    b.y = 130 + Math.sin(b.moveT * 2) * radiusY; // Figure-8 pattern
+                if (!Number.isFinite(b.moveT)) b.moveT = 0;
+                const margin = b.r || 68;
+                const baseAscendSpeed = state.enraged ? 170 : 140;
+                if (b.y < state.anchorY) {
+                    b.y = Math.min(state.anchorY, b.y + baseAscendSpeed * dt);
                 }
+
+                const playerInfluence = Math.min(0.18, 0.08 + (state.loopIndex || 0) * 0.015);
+                const player = store.player || { x: W / 2, y: H / 2 };
+                state.anchorX += (player.x - state.anchorX) * playerInfluence * dt;
+                const baseAnchorY = state.enraged ? 140 : 132;
+                state.anchorY += (baseAnchorY - state.anchorY) * 0.05 * dt;
+                state.anchorX = clamp(state.anchorX, margin, W - margin);
+                state.anchorY = clamp(state.anchorY, 120, H * 0.42);
+
+                state.repositionTimer -= dt;
+                if (state.repositionTimer <= 0 && !state.repositionTarget) {
+                    state.repositionTimer = state.enraged ? 4.2 : 5.6;
+                    state.repositionTarget = {
+                        x: clamp(W / 2 + (Math.random() - 0.5) * 320, margin, W - margin),
+                        y: clamp(125 + Math.random() * 60, 110, H * 0.46)
+                    };
+                }
+
+                if (state.repositionTarget) {
+                    const follow = state.enraged ? 3.6 : 2.6;
+                    state.anchorX += (state.repositionTarget.x - state.anchorX) * Math.min(1, follow * dt);
+                    state.anchorY += (state.repositionTarget.y - state.anchorY) * Math.min(1, follow * 0.75 * dt);
+                    if (Math.hypot(state.anchorX - state.repositionTarget.x, state.anchorY - state.repositionTarget.y) < 6) {
+                        state.repositionTarget = null;
+                    }
+                }
+
+                b.moveT += dt * (state.enraged ? 0.78 : 0.6);
+                const baseRadiusX = state.enraged ? 210 : 180;
+                const baseRadiusY = state.enraged ? 74 : 54;
+                const wobble = Math.sin(b.moveT * 0.45) * 65;
+                const verticalWobble = Math.cos(b.moveT * 0.8) * 24;
+                const oscillateX = Math.sin(b.moveT) * baseRadiusX + wobble;
+                const oscillateY = Math.sin(b.moveT * 2.1) * baseRadiusY + verticalWobble;
+                b.x = clamp(state.anchorX + oscillateX, margin, W - margin);
+                b.y = clamp(state.anchorY + oscillateY, 100, H * 0.5);
 
                 const spinMultiplier = state.enraged ? 1.35 : 1;
                 state.rotationAngle += state.rotationSpeed * dt * state.rotationDirection * spinMultiplier;
@@ -31199,6 +31515,56 @@
                 rifts.push({ x1, y1, x2, y2, birth: performance.now(), life, dead: false });
             }
 
+            function getBlinkUpgradeDamageBonus(player) {
+                // Calculate upgrade-based damage bonus for standard enemies
+                let bonus = 0;
+                
+                // Base blink unlocked: starts at 30% (no bonus)
+                
+                // Enhanced blink: +15%
+                if (player.blinkDamageEnhanced) {
+                    bonus += 0.15;
+                }
+                
+                // Area damage: +10%
+                if (player.blinkAreaDamage) {
+                    bonus += 0.10;
+                }
+                
+                // Phasestriker skills: +10%
+                if (player.hasPhasestriker) {
+                    bonus += 0.10;
+                }
+                
+                // Void laser enhancement: +5%
+                if (player.voidLaserEnhanced) {
+                    bonus += 0.05;
+                }
+                
+                // Impact phase enhancement: +15%
+                if (player.hasImpactPhase) {
+                    bonus += 0.15;
+                }
+                
+                return bonus;
+            }
+
+            function calculatePercentageBasedBlinkDamage(player, enemy, basePercentage, upgradeBonus) {
+                const isBoss = enemy === store.boss || enemy.type === 'void_champion' || enemy.type === 'shadow_champion';
+                
+                if (!isBoss) {
+                    // Standard enemy: 30% base, scales to 85% max with upgrades
+                    let damagePercentage = basePercentage;
+                    damagePercentage += upgradeBonus;
+                    damagePercentage = Math.min(damagePercentage, 0.85);
+                    return enemy.hpMax * damagePercentage;
+                } else {
+                    // Boss: 4% base (no scaling for Voidmancer - they don't get Demolitioner buff)
+                    // Voidmancer maintains mobility advantage but consistent boss damage
+                    return enemy.hpMax * 0.04;
+                }
+            }
+
             function executeBlinkLineDamage(player, start, end, damageMultiplier = 1) {
                 if (!player || !player.blinkDamage) return;
 
@@ -31207,8 +31573,7 @@
                 const distSq = dx * dx + dy * dy;
                 if (distSq <= 0.001) return;
 
-                // Reduced blink damage for better balance - blink is mobility first, damage second
-                const baseDamage = (player.blinkDamageEnhanced ? 45 : 30) * player.dmgMult * damageMultiplier; // Reduced from 200/150
+                const upgradeBonus = getBlinkUpgradeDamageBonus(player);
 
                 store.enemies.forEach(e => {
                     if (e.dead) return;
@@ -31220,13 +31585,17 @@
                     const distToLine = Math.sqrt((e.x - closestX) ** 2 + (e.y - closestY) ** 2);
                     if (distToLine > e.r + 10) return;
 
-                    e.hp -= baseDamage;
-                    store.world.totalDamage += baseDamage;
+                    // Calculate percentage-based damage
+                    let blinkDmg = calculatePercentageBasedBlinkDamage(player, e, 0.30, upgradeBonus);
+                    blinkDmg *= damageMultiplier * player.dmgMult;
+
+                    e.hp -= blinkDmg;
+                    store.world.totalDamage += blinkDmg;
 
                     if (player.vampirism > 0) {
-                        let healAmount = baseDamage * player.vampirism;
+                        let healAmount = blinkDmg * player.vampirism;
                         healAmount = Math.max(healAmount, 1);
-                        healAmount = Math.min(healAmount, 6);
+                        healAmount = Math.min(healAmount, 8);
                         player.hp = Math.min(player.hpMax, player.hp + healAmount);
                     }
                 });
@@ -31266,14 +31635,17 @@
                     // Create time ripple explosion effect
                     store.activeEffects.push(createEffect("timeRippleExplosion", nx, ny));
 
-                    // Damage enemies in explosion radius (reduced for balance)
+                    // Damage enemies in explosion radius with percentage-based damage
                     const explosionRadius = 80;
-                    const explosionDamage = 40 * player.dmgMult; // Reduced from 120
+                    const upgradeBonus = getBlinkUpgradeDamageBonus(player);
                     const targets = store.boss ? [store.boss, ...store.enemies] : store.enemies;
                     targets.forEach(e => {
                         if (e.dead) return;
                         const distSq = (e.x - nx) ** 2 + (e.y - ny) ** 2;
                         if (distSq < explosionRadius ** 2) {
+                            // Use percentage-based damage for explosion too
+                            let explosionDamage = calculatePercentageBasedBlinkDamage(player, e, 0.30, upgradeBonus);
+                            explosionDamage *= player.dmgMult * 0.8; // Explosion does 80% of line damage
                             e.hp -= explosionDamage;
                             store.world.totalDamage += explosionDamage;
                         }
@@ -34539,6 +34911,69 @@
                 cheatCodeBuffer = "";
             }
 
+            function activateCubeBurglarCheat() {
+                if (!store || !store.world || store.isGameOver) {
+                    announce('CHEAT FAILED: Start a run first.');
+                    cheatCodeBuffer = "";
+                    return;
+                }
+
+                const existing = getCubeBurglarActiveEnemy();
+                if (existing) {
+                    announce('CHEAT: Cube Burglar already active.');
+                    cheatCodeBuffer = "";
+                    return;
+                }
+
+                if (!Array.isArray(store.enemies)) {
+                    store.enemies = [];
+                }
+
+                store.cheatsUsed = true;
+
+                const world = store.world;
+                const threatScale = Math.max(1, world.enemyHealthBonus || 1);
+                const lateGameScaling = Math.max(1, world.lateGameDamageScaling || 1);
+                const burglar = createCubeBurglar({
+                    hpScale: threatScale,
+                    lateGameScaling,
+                    damageMult: 1 + Math.max(0, (world.collarStacks || 0) * 0.05)
+                });
+
+                const now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+                world.cubeBurglarActive = true;
+                world.cubeBurglarLastSpawnWave = world.wave;
+                world.cubeBurglarLastSpawnTime = now;
+                world.cubeBurglarSpawnTimer = 0;
+                world.cubeBurglarSpawnAttempts = 0;
+                world.cubeBurglarLastAttemptTime = now;
+                store.cubeBurglarId = burglar.id;
+
+                activateSpawnIntro(burglar, {
+                    duration: burglar.spawnDuration,
+                    dropDistance: burglar.spawnDropDistance,
+                    effectColor: burglar.spawnEffectColor,
+                    clusterIndex: -1,
+                    clusterSize: 1,
+                    fireDelayBuffer: 0.75
+                });
+
+                store.enemies.push(burglar);
+                store.world.lastSpawnCount = (store.world.lastSpawnCount || 0) + 1;
+
+                store.activeEffects.push(createEffect('spawnTeleport', burglar.x, burglar.spawnTargetY ?? burglar.y, 48, {
+                    color: burglar.spawnEffectColor,
+                    duration: (burglar.spawnDuration || 0.8) + 0.35
+                }));
+
+                announce('CHEAT: Cube Burglar inbound on demand.');
+                if (typeof playSound === 'function') {
+                    playSound('thunder');
+                }
+
+                cheatCodeBuffer = "";
+            }
+
             q('diagBox').children[0].addEventListener('click', () => {
                 const now = performance.now();
                 if (now - lastCheatTap > 500) {
@@ -34586,6 +35021,8 @@
                     } else if (cheatCodeBuffer.endsWith('sigil') || cheatCodeBuffer.endsWith('champ')) {
                         activateChampionCheat();
                         cheatCodeBuffer = "";
+                    } else if (cheatCodeBuffer.endsWith('burglar')) {
+                        activateCubeBurglarCheat();
                     } else {
                         const subclassCode = Object.keys(SUBCLASS_CHEAT_CODES).find(code => cheatCodeBuffer.endsWith(code));
                         if (subclassCode) {
