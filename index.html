@@ -7986,20 +7986,36 @@
                 }
                 return store.world.collarStacks;
             }
-            const MAX_COLLAR_STACKS = 100; // Increased from 50 to prevent exponential snowballing
+            
+            // NO UPPER LIMIT - Collar can scale infinitely to handle any broken build
             const COLLAR_TARGET_GAIN_MULTIPLIER = 1.6;
 
             function calculateCollarBonus(stacks) {
+                // UNLIMITED SCALING: No cap, aggressive growth at high stacks
                 const safeStacks = Math.max(0, Number.isFinite(stacks) ? stacks : 0);
-                const tierOneLimit = 5; // First 5 stacks at 8% each (increased from 6%)
-                const tierTwoLimit = 10; // Next 5 stacks at 6% each (increased from 4%)
-                const tierThreeLimit = 20; // Next 10 stacks at 5% each (increased from 2%)
-                const cappedStacks = Math.min(safeStacks, MAX_COLLAR_STACKS);
-                const tierOne = Math.min(cappedStacks, tierOneLimit);
-                const tierTwo = Math.min(Math.max(cappedStacks - tierOneLimit, 0), tierTwoLimit - tierOneLimit);
-                const tierThree = Math.min(Math.max(cappedStacks - tierTwoLimit, 0), tierThreeLimit - tierTwoLimit);
-                const tierFour = Math.max(cappedStacks - tierThreeLimit, 0); // Stacks beyond 20 at 4% each
-                const bonus = tierOne * 0.08 + tierTwo * 0.06 + tierThree * 0.05 + tierFour * 0.04;
+                
+                // Tiered scaling that accelerates at high stacks to counter broken builds
+                const tierOneLimit = 5;   // First 5 stacks: 8% each (gentle start)
+                const tierTwoLimit = 10;  // Next 5 stacks: 10% each (moderate)
+                const tierThreeLimit = 20; // Next 10 stacks: 12% each (aggressive)
+                const tierFourLimit = 40;  // Next 20 stacks: 15% each (very aggressive)
+                const tierFiveLimit = 70;  // Next 30 stacks: 18% each (extreme)
+                
+                const tierOne = Math.min(safeStacks, tierOneLimit);
+                const tierTwo = Math.min(Math.max(safeStacks - tierOneLimit, 0), tierTwoLimit - tierOneLimit);
+                const tierThree = Math.min(Math.max(safeStacks - tierTwoLimit, 0), tierThreeLimit - tierTwoLimit);
+                const tierFour = Math.min(Math.max(safeStacks - tierThreeLimit, 0), tierFourLimit - tierThreeLimit);
+                const tierFive = Math.min(Math.max(safeStacks - tierFourLimit, 0), tierFiveLimit - tierFourLimit);
+                const tierSix = Math.max(safeStacks - tierFiveLimit, 0); // Beyond 70: 20% each (unstoppable)
+                
+                const bonus = 
+                    tierOne * 0.08 +    // 0-5: 8% per stack
+                    tierTwo * 0.10 +    // 5-10: 10% per stack
+                    tierThree * 0.12 +  // 10-20: 12% per stack
+                    tierFour * 0.15 +   // 20-40: 15% per stack
+                    tierFive * 0.18 +   // 40-70: 18% per stack
+                    tierSix * 0.20;     // 70+: 20% per stack (cheater territory)
+                
                 return 1 + bonus;
             }
 
@@ -8336,7 +8352,7 @@
             }
 
             function setCollarStacks(value) {
-                const clamped = Math.max(0, Math.min(MAX_COLLAR_STACKS, ensureFiniteNumber(value, 0)));
+                const clamped = Math.max(0, ensureFiniteNumber(value, 0)); // No upper limit
                 store.world.collarStacks = clamped;
                 store.world.collarTargetStacks = clamped;
                 return clamped;
@@ -8347,12 +8363,12 @@
                 if (!Number.isFinite(store.world.collarTargetStacks)) {
                     store.world.collarTargetStacks = currentStacks;
                 }
-                const targetStacks = Math.min(MAX_COLLAR_STACKS, store.world.collarTargetStacks);
+                const targetStacks = store.world.collarTargetStacks; // No cap
                 const stackGap = targetStacks - currentStacks;
                 if (stackGap > 0) {
                     const maxIncrease = 1 + Math.min(2, currentStacks * 0.05);
                     const appliedIncrease = Math.min(stackGap, maxIncrease);
-                    store.world.collarStacks = Math.min(MAX_COLLAR_STACKS, currentStacks + appliedIncrease);
+                    store.world.collarStacks = currentStacks + appliedIncrease; // No cap
                 } else if (stackGap < 0) {
                     setCollarStacks(targetStacks);
                 }
@@ -8370,7 +8386,7 @@
                     store.world.collarTargetStacks = currentStacks;
                 }
                 const boostedDelta = delta * COLLAR_TARGET_GAIN_MULTIPLIER;
-                store.world.collarTargetStacks = Math.min(MAX_COLLAR_STACKS, store.world.collarTargetStacks + boostedDelta);
+                store.world.collarTargetStacks = store.world.collarTargetStacks + boostedDelta; // No cap
                 approachCollarTarget();
             }
 
@@ -13775,7 +13791,7 @@
                     const originalStacks = ensureFiniteNumber(store.world.deathEngineCollarStacks, sanitizeCollarStacks());
                     const originalTarget = ensureFiniteNumber(store.world.deathEngineCollarTargetStacks, originalStacks);
                     setCollarStacks(Math.max(0, originalStacks));
-                    store.world.collarTargetStacks = Math.min(MAX_COLLAR_STACKS, Math.max(store.world.collarStacks, originalTarget));
+                    store.world.collarTargetStacks = Math.max(store.world.collarStacks, originalTarget); // No cap
                     const addAfterRestore = ensureFiniteNumber(collarStacksToAdd, 0);
                     if (addAfterRestore > 0) {
                         scheduleCollarIncrease(addAfterRestore);
