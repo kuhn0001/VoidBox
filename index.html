@@ -7307,6 +7307,19 @@
                 let finalChance = Math.max(0.025, baseChance - (wave - 1) * waveReductionFactor);
                 let types = Object.keys(POWERUP_TYPES).filter(key => key !== 'void_core' && !POWERUP_TYPES[key].isSpecial);
                 let bonusType = null;
+
+                // Check for nearby Cube Burglars - boost drop rate significantly
+                const cubeBurglar = store.enemies.find(e => e.type === 'cube_burglar' && !e.dead);
+                if (cubeBurglar) {
+                    const dx = cubeBurglar.x - x;
+                    const dy = cubeBurglar.y - y;
+                    const distSq = dx * dx + dy * dy;
+                    const burglarAuraRange = 300;
+                    if (distSq <= burglarAuraRange * burglarAuraRange) {
+                        // 3x drop rate for enemies near Cube Burglar
+                        finalChance *= 3.0;
+                    }
+                }
                 if (p.pilotGenome === 'beef') {
                     // Enhanced drop rates for beef - additional powerups, not replacing existing ones
                     if (Math.random() < 0.4) bonusType = 'shield'; // Increased from 0.25 to 0.4
