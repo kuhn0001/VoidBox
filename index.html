@@ -13692,25 +13692,31 @@
                     this.partType = partType;
                     this.partIdentifier = partIdentifier;
                     this.isDetail = opts.isDetail === true;
+                    this.stripeIndex = Number.isFinite(opts.stripeIndex) ? opts.stripeIndex : 0;
                     
-                    // Color scheme: knapsack = translucent red, body = dark industrial colors
+                    // Color scheme: knapsack = translucent red, body = black/white prison stripes
                     if (partType === 'knapsack') {
                         // Red knapsack (translucent handled in draw)
                         this.baseColor = `hsl(0, 85%, 45%)`;
                         this.isKnapsack = true;
                     } else {
-                        // Dark industrial color palette: black, grey, carbon, steel, void purple
-                        const colors = [
-                            '#1a1a1a', // Matte black
-                            '#2d2d2d', // Carbon grey
-                            '#3a3a3a', // Dark steel
-                            '#252525', // Coal black
-                            '#454545', // Carbon fiber grey
-                            '#5a1b80', // Void purple
-                            '#2e2e2e', // Charcoal
-                            '#1e1e1e'  // Deep black
-                        ];
-                        this.baseColor = colors[Math.floor(Math.random() * colors.length)];
+                        const stripeParity = Math.abs(this.stripeIndex) % 2;
+                        const stripePalette = ['#101010', '#f2f2f2'];
+                        let baseColor = stripePalette[stripeParity];
+
+                        if (this.isDetail) {
+                            const detailVariance = 10 + Math.random() * 6;
+                            baseColor = stripeParity === 0
+                                ? lightenHsl(baseColor, detailVariance)
+                                : darkenHsl(baseColor, detailVariance);
+                        } else {
+                            const bodyVariance = 2 + Math.random() * 5;
+                            baseColor = stripeParity === 0
+                                ? lightenHsl(baseColor, bodyVariance)
+                                : darkenHsl(baseColor, bodyVariance);
+                        }
+
+                        this.baseColor = baseColor;
                         this.isKnapsack = false;
                     }
                     this.color = this.baseColor;
@@ -13821,7 +13827,10 @@
                                 size,
                                 def.type,
                                 identifier,
-                                { healthMultiplier }
+                                {
+                                    healthMultiplier,
+                                    stripeIndex: currentRow
+                                }
                             ));
 
                             const detailCount = 1;
@@ -13836,7 +13845,8 @@
                                     identifier,
                                     {
                                         isDetail: true,
-                                        healthMultiplier: healthMultiplier * 0.6
+                                        healthMultiplier: healthMultiplier * 0.6,
+                                        stripeIndex: currentRow
                                     }
                                 ));
                             }
