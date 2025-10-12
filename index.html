@@ -8665,7 +8665,7 @@
                     if (preemptive) {
                         const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
                         const baseGold = Number.isFinite(enemy.gold) ? enemy.gold : 0;
-                        const bonusGold = Math.max(8, Math.floor(baseGold * VOID_REAPER_CONFIG.preemptiveGoldBonus * collarBonus)); // Reduced from 50 to 8 for balance
+                        const bonusGold = Math.max(2, Math.floor(baseGold * VOID_REAPER_CONFIG.preemptiveGoldBonus * collarBonus)); // Further reduced to 2 for balance
                         const bonusScore = Math.floor((enemy.score || 0) * VOID_REAPER_CONFIG.bonusScoreRatio);
                         const bonusXp = Math.floor((enemy.xp || 0) * VOID_REAPER_CONFIG.bonusXpRatio);
                         if (bonusGold) addWorldGold(bonusGold);
@@ -8703,7 +8703,7 @@
                         } else if (rewardRoll < 0.70) {
                             // 30% chance: Boss tier upgrade + bonus money
                             spawnUpgradePowerup(enemy.x - 25, enemy.y - 20, 'bossTier', { championChance: 0.65, allowChampion: true });
-                            const extraGold = 5;
+                            const extraGold = 1;
                             addWorldGold(extraGold);
                             // Spawn extra gold coins
                             for (let i = 0; i < 3; i++) {
@@ -8720,7 +8720,7 @@
                             }
                         } else {
                             // 30% chance: Large money reward (no upgrade)
-                            const largeGoldBonus = 7;
+                            const largeGoldBonus = 2;
                             addWorldGold(largeGoldBonus);
                             announce('💰 Major Gold Cache Secured!');
                             // Spawn extra gold powerups in a circle
@@ -8742,7 +8742,7 @@
                         store.activeEffects.push(createEffect('voidReaperDissolve', enemy.x, enemy.y, (enemy.r || 24) * 2.2));
                         
                         // Guaranteed reward even for non-preemptive defeat
-                        const consolationGold = 4;
+                        const consolationGold = 1;
                         addWorldGold(consolationGold);
                         spawnUpgradePowerup(enemy.x, enemy.y, 'midTier', { championChance: 0.3, allowChampion: true });
                         announce('Void Reaper banished - Consolation reward acquired!');
@@ -9051,8 +9051,11 @@
                     store.world.lastSpawnOverflow = 0;
                     store.world.lastThreatScale = 1;
                     store.world.lastSpawnFallback = false;
-                    if (store.boss.name === 'VOID SENTINEL') playSound('trap');
-                    else if (store.boss.name === 'NEURAL CORE') playSound('horn');
+                    if (store.boss.name === 'VOID SENTINEL' && !store.boss.trapSoundPlayed) {
+                        playSound('trap');
+                        store.boss.trapSoundPlayed = true; // Only play once per boss spawn
+                    }
+                    // Horn removed from boss spawns - only for class selection
                     announce(`📡 [Command Relay] "Sector ${store.world.wave}: Guardian signature ${store.boss.name}. That's your mark."`);
                     if (!store.world.firstBossOrbsGifted && store.world.bosses === 0 && store.boss.name === 'VOID SENTINEL') {
                         spawnGoldenSentinelOrbs(3);
@@ -9309,8 +9312,8 @@
                     avian_hatchling: { r: 8, v: 150, vx: 0, hp: 22, color: '#9370DB', xp: 4, score: 40, gold: 1, contactDamage: 6 },
                     angler: { r: 22, v: 30, vx: 0, hp: 150, color: '#00008b', xp: 18, score: 180, gold: 4, fireRateChance: 0.008, contactDamage: 10 },
                     manta: { r: 26, v: 50, vx: 0, hp: 175, color: '#53B6FF', xp: 22, score: 220, gold: 5, fireRateChance: 0.009, contactDamage: 10 },
-                    shadow_champion: { r: 18, v: 70, vx: 0, hp: 620, color: '#cbd4ff', xp: 60, score: 480, gold: 12, fireRateChance: 1, fireCooldown: 1.45, contactDamage: 14 },
-                    void_champion: { r: 16, v: 48, vx: 0, hp: 190, color: '#5A28D8', xp: 32, score: 325, gold: 9, fireRateChance: 0.75, fireCooldown: 1.65, contactDamage: 10 },
+                    shadow_champion: { r: 18, v: 70, vx: 0, hp: 620, color: '#cbd4ff', xp: 60, score: 480, gold: 3, fireRateChance: 1, fireCooldown: 1.45, contactDamage: 14 },
+                    void_champion: { r: 16, v: 48, vx: 0, hp: 190, color: '#5A28D8', xp: 32, score: 325, gold: 2, fireRateChance: 0.75, fireCooldown: 1.65, contactDamage: 10 },
                     void_champion_orb: { r: 6, v: 0, vx: 0, hp: 22, color: '#FF7DEB', xp: 2, score: 24, gold: 0, fireRateChance: 0.55, fireCooldown: 1.25, contactDamage: 4 },
                     void_reaper: { r: 20, v: 0, vx: 0, hp: 165, color: '#9f74ff', xp: 55, score: 520, gold: 2, contactDamage: 11 }
                 };
@@ -11541,7 +11544,7 @@
                     if (!store.world.voidReaperWarningIssued && plan.timer <= 2.4) {
                         store.world.voidReaperWarningIssued = true;
                         announce('📡 [Encrypted Relay] "A pair of anomalies traveling at an infeasible rate was detected..."');
-                        playSound('thunder');
+                        // Thunder sound removed - only for Stormbringer
                     }
                     if (plan.timer <= 0) {
                         const spawned = spawnVoidReaper({
@@ -13238,9 +13241,9 @@
                 spawnChanceBase: 0.08,
                 spawnChancePerWave: 0.004,
                 maxStacks: 6,
-                perCubeGold: 1,
+                perCubeGold: 0,
                 perCubeXp: 6,
-                lootGold: 12,
+                lootGold: 3,
                 lootXp: 220,
                 lootScore: 800
             });
@@ -13280,10 +13283,27 @@
                     this.partType = partType;
                     this.partIdentifier = partIdentifier;
                     this.isDetail = opts.isDetail === true;
-                    const hue = partType === 'knapsack' ? 45 + Math.random() * 12 : 188 + Math.random() * 18;
-                    const saturation = partType === 'knapsack' ? 85 : 78;
-                    const lightness = partType === 'knapsack' ? 58 : 60;
-                    this.baseColor = `hsl(${hue.toFixed(1)}, ${saturation}%, ${lightness}%)`;
+                    
+                    // Color scheme: knapsack = translucent red, body = dark industrial colors
+                    if (partType === 'knapsack') {
+                        // Red knapsack (translucent handled in draw)
+                        this.baseColor = `hsl(0, 85%, 45%)`;
+                        this.isKnapsack = true;
+                    } else {
+                        // Dark industrial color palette: black, grey, carbon, steel, void purple
+                        const colors = [
+                            '#1a1a1a', // Matte black
+                            '#2d2d2d', // Carbon grey
+                            '#3a3a3a', // Dark steel
+                            '#252525', // Coal black
+                            '#454545', // Carbon fiber grey
+                            '#5a1b80', // Void purple
+                            '#2e2e2e', // Charcoal
+                            '#1e1e1e'  // Deep black
+                        ];
+                        this.baseColor = colors[Math.floor(Math.random() * colors.length)];
+                        this.isKnapsack = false;
+                    }
                     this.color = this.baseColor;
                     const baseHp = this.isDetail ? CUBE_BURGLAR_CONFIG.baseDetailHealth : CUBE_BURGLAR_CONFIG.baseCubeHealth;
                     this.hpMax = baseHp * (opts.healthMultiplier || 1);
@@ -13326,23 +13346,39 @@
                 return deg * Math.PI / 180;
             }
 
-            function adjustHslLightness(hsl, delta) {
-                const matches = hsl.match(/-?\d+(?:\.\d+)?/g);
-                if (!matches || matches.length < 3) return hsl;
+            function adjustHslLightness(color, delta) {
+                // Handle hex colors
+                if (color.startsWith('#')) {
+                    const hex = color.slice(1);
+                    const r = parseInt(hex.slice(0, 2), 16);
+                    const g = parseInt(hex.slice(2, 4), 16);
+                    const b = parseInt(hex.slice(4, 6), 16);
+                    
+                    const adjust = delta / 100; // Convert to 0-1 range
+                    const nr = Math.max(0, Math.min(255, r + (adjust * 255)));
+                    const ng = Math.max(0, Math.min(255, g + (adjust * 255)));
+                    const nb = Math.max(0, Math.min(255, b + (adjust * 255)));
+                    
+                    return `rgb(${Math.round(nr)}, ${Math.round(ng)}, ${Math.round(nb)})`;
+                }
+                
+                // Handle HSL colors
+                const matches = color.match(/-?\d+(?:\.\d+)?/g);
+                if (!matches || matches.length < 3) return color;
                 const h = parseFloat(matches[0]);
                 const s = parseFloat(matches[1]);
                 const l = parseFloat(matches[2]);
-                if (Number.isNaN(l)) return hsl;
+                if (Number.isNaN(l)) return color;
                 const nextL = Math.max(0, Math.min(100, l + delta));
                 return `hsl(${h.toFixed(1)}, ${s.toFixed(1)}%, ${nextL.toFixed(1)}%)`;
             }
 
-            function lightenHsl(hsl, amount) {
-                return adjustHslLightness(hsl, Math.abs(amount));
+            function lightenHsl(color, amount) {
+                return adjustHslLightness(color, Math.abs(amount));
             }
 
-            function darkenHsl(hsl, amount) {
-                return adjustHslLightness(hsl, -Math.abs(amount));
+            function darkenHsl(color, amount) {
+                return adjustHslLightness(color, -Math.abs(amount));
             }
 
             function buildCubeBurglarCubes(enemy, healthMultiplier) {
@@ -13606,9 +13642,7 @@
                 if (typeof announce === 'function') {
                     announce('⚠️ Cube Burglar inbound! Secure your spoils.');
                 }
-                if (typeof playSound === 'function') {
-                    playSound('thunder');
-                }
+                // Thunder sound removed - only for Stormbringer
                 return burglar;
             }
 
@@ -13917,7 +13951,8 @@
                     }));
                 }
 
-                if (enemy.cubeAliveCount <= 0 || enemy.hp <= 0.0001) {
+                // Only defeat when ALL cubes are destroyed, not just HP reaching zero
+                if (enemy.cubeAliveCount <= 0) {
                     defeatCubeBurglar(enemy);
                 }
 
@@ -14005,7 +14040,15 @@
                 }
 
                 enemy.auraDamageMult = enemy.baseAuraDamageMult + enemy.buffStacks * CUBE_BURGLAR_CONFIG.stackDamageBonus;
-                enemy.hp = enemy.hpMax - enemy.cubes.reduce((sum, cube) => sum + (cube.hpMax - cube.hp), 0);
+                
+                // Recalculate HP based on cube integrity
+                const totalCubeDamage = enemy.cubes.reduce((sum, cube) => sum + (cube.hpMax - cube.hp), 0);
+                enemy.hp = Math.max(1, enemy.hpMax - totalCubeDamage); // Never let HP reach exactly 0 from calculation
+                
+                // Safety check: prevent spurious defeat from HP calculation errors
+                if (enemy.hp <= 0 && enemy.cubeAliveCount > 0) {
+                    enemy.hp = 1; // Keep alive if cubes remain
+                }
             }
 
             function drawCubeBurglar(enemy) {
@@ -14054,6 +14097,14 @@
 
                     ctx.save();
                     ctx.translate(screenX, screenY);
+                    
+                    // Apply translucency for better depth perception
+                    if (cube.isKnapsack) {
+                        ctx.globalAlpha = 0.65; // Translucent red knapsack
+                    } else {
+                        ctx.globalAlpha = 0.85; // Slightly translucent body for depth
+                    }
+                    
                     const topColor = lightenHsl(cube.color, 18);
                     const leftColor = cube.color;
                     const rightColor = darkenHsl(cube.color, 18);
@@ -19473,7 +19524,7 @@
                     color: '#6ff2ff',
                     duration: 0.4
                 }));
-                playSound('thunder');
+                // Thunder sound removed - only for Stormbringer
                 return true;
             }
 
