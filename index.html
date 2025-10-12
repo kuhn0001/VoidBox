@@ -4400,7 +4400,7 @@
                 swirlShots: false, attackSpeedStacks: 0,
                 hasRicochet: false,
                 upgradeLevels: { dmg: 0, speed: 0, hp: 0, max_shield: 0, crit_chance: 0, ghost_hounds: 0, launcher: 0, lazarus_beam: 0, gravity_well: 0, star_cannon: 0, fragment_blast: 0 },
-                grenades: 0, hasVoidBeam: false, voidBeamCooldown: 0,
+                grenades: 0, knockbackShields: 0, hasVoidBeam: false, voidBeamCooldown: 0,
                 hasLazarusBeam: false, lazarusBeamCooldown: 0,
                 hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 1, vampirismLevel: 0, flamethrowerLevel: 0,
                 flamethrowerT: 0, // Separate timer for lava chunks, unaffected by overclock
@@ -4713,7 +4713,7 @@
                     groups: [
                         { keys: ['dmg', 'crit_chance'], sort: 'cost-desc', isFun: true },
                         { keys: ['speed', 'launcher'], sort: 'cost-desc', isFun: true },
-                        { keys: ['grenade', 'star_cannon'], sort: 'cost-desc', isFun: true }
+                        { keys: ['grenade', 'knockback_shield', 'star_cannon'], sort: 'cost-desc', isFun: true }
                     ],
                     fallback: ['hp', 'repair', 'max_shield'],
                     repairThreshold: 0.74
@@ -4739,7 +4739,7 @@
                     groups: [
                         { keys: ['speed', 'magnet_pull'], sort: 'cost-desc' },
                         { keys: ['max_shield', 'nano_save'], sort: 'cost-desc' },
-                        { keys: ['grenade', 'dmg'], sort: 'cost-desc', isFun: true }
+                        { keys: ['grenade', 'knockback_shield', 'dmg'], sort: 'cost-desc', isFun: true }
                     ],
                     fallback: ['hp', 'repair', 'luck_boost'],
                     repairThreshold: 0.8
@@ -5073,7 +5073,9 @@
                 championMinions: [],
                 cubeBurglarId: null,
                 empCharges: [],
+                knockbackCharges: [],
                 empGlobalCooldown: 0,
+                knockbackGlobalCooldown: 0,
                 playerChampion: null,
                 shadowChampionId: null,
                 shadowChampionDefeated: false,
@@ -6809,6 +6811,23 @@
                 { id: 'flamethrower', name: 'LAVA CHUNKS', icon: '🌋', desc: 'Spews chunks of molten rock in a cone.', apply: () => { store.player.flamethrowerLevel++; } }
             ];
 
+            const KNOCKBACK_SHIELD_CONFIG = {
+                radius: 440,
+                proximityTriggerRadius: 180,
+                chargeCooldown: 30,
+                globalCooldown: 4.5,
+                maxCharges: 3,
+                orbitRadius: 110,
+                orbitSpeed: 0.95,
+                knockbackStrength: 720,
+                knockbackDuration: 0.32,
+                stunDuration: 0.8,
+                slowFactor: 0.65,
+                slowDuration: 1.8,
+                projectilePurgeRadiusRatio: 0.55,
+                screenFlashColor: 'rgba(40, 40, 55, 0.4)'
+            };
+
 
             const SHOP_UPGRADES = {
                 'repair': { name: "NANO REPAIR", icon: '🔧', cost: 3, isPremium: true, category: 'health', apply: () => { if (store.player.hp < store.player.hpMax) { store.player.hp = Math.min(store.player.hpMax, store.player.hp + store.player.hpMax * 0.25); return true; } return false; }, desc: () => `Restore 25% of max HP.` },
@@ -6874,6 +6893,7 @@
                             if (longestCooldownCharge) {
                                 longestCooldownCharge.cooldown = 0; // Instantly recharge
                                 announce('⚡ Shield Pulse Recharged! ⚡');
+                                store.player.grenades = store.empCharges.length;
                                 return true;
                             }
                             return false;
@@ -6886,6 +6906,45 @@
                         } else {
                             return `Shield Pulse (3/3). Additional pickups recharge your longest cooldown.`;
                         }
+                    }
+                },
+                'knockback_shield': {
+                    name: "KNOCKBACK SHIELD",
+                    icon: '⚫',
+                    cost: 70,
+                    isPremium: true,
+                    max: 3,
+                    category: 'utility',
+                    apply: () => {
+                        ensureKnockbackChargeList();
+                        if (store.knockbackCharges.length < (KNOCKBACK_SHIELD_CONFIG.maxCharges || 3)) {
+                            createKnockbackShieldCharge();
+                            announce('⚫ Knockback shield online!');
+                            return true;
+                        } else {
+                            let longestCooldownCharge = null;
+                            let maxCooldown = 0;
+                            for (const charge of store.knockbackCharges) {
+                                if (charge && !charge.dead && (charge.cooldown || 0) > maxCooldown) {
+                                    maxCooldown = charge.cooldown;
+                                    longestCooldownCharge = charge;
+                                }
+                            }
+                            if (longestCooldownCharge) {
+                                longestCooldownCharge.cooldown = 0;
+                                announce('⚫ Knockback shield recharged!');
+                                if (store.player) store.player.knockbackShields = store.knockbackCharges.length;
+                                return true;
+                            }
+                            return false;
+                        }
+                    },
+                    desc: () => {
+                        const count = store.knockbackCharges?.length || 0;
+                        if (count < (KNOCKBACK_SHIELD_CONFIG.maxCharges || 3)) {
+                            return `Add Knockback Shield charge (${count}/3). Blasts enemies back on contact.`;
+                        }
+                        return `Knockback Shield (3/3). Extra pickups reset your slowest charge.`;
                     }
                 },
                 'fragment_blast': { 
@@ -7397,6 +7456,7 @@
                 'dmg',
                 'crit_chance',
                 'grenade',
+                'knockback_shield',
                 'fragment_blast',
                 'ricochet',
                 'launcher',
@@ -7844,7 +7904,21 @@
                     return;
                 }
                 if (typeKey === 'missile') {
-                    if (p.pilotGenome === 'rocketman') { p.missileVolley = Math.min(5, p.missileVolley + 2); } else { p.missileVolley = 2; }
+                    const duration = powerup.duration || 20;
+                    const timer = p.powerupTimers[typeKey];
+                    if (timer) {
+                        timer.remaining += duration;
+                    } else {
+                        p.powerupTimers[typeKey] = { remaining: duration, max: duration };
+                    }
+
+                    if (p.pilotGenome === 'rocketman') {
+                        const currentVolley = Number.isFinite(p.missileVolley) ? p.missileVolley : 2;
+                        p.missileVolley = Math.min(5, currentVolley + 2);
+                    } else {
+                        p.missileVolley = Math.max(2, p.missileVolley || 0);
+                    }
+
                     if (hasCoords) {
                         addFloatingText(x, y, '🚀 MISSILES', { color: '#FF6B35', fontSize: 14 });
                     } else {
@@ -9653,10 +9727,8 @@
                                             charge.cooldown = EMP_BURST_CONFIG.chargeCooldown;
                                             store.empGlobalCooldown = Math.max(store.empGlobalCooldown || 0, EMP_BURST_CONFIG.globalCooldown || 0);
                                             announce('⚡ SHIELD PULSE STOPPED THE REAPER! ⚡');
-                                            playSound('thunder');
                                             screenFlash(1, 200, 'rgba(100, 200, 255, 0.4)');
-                                            // Stun and damage the reaper
-                                            enemy.hp -= 80;
+                                            // Stun the reaper without dealing direct damage
                                             enemy.stunTimer = 3.5;
                                             enemy.phase = 'recovering';
                                             enemy.hitSlowFactor = 0.3;
@@ -12836,6 +12908,7 @@
                 stepPlayerChampion(dt);
                 stepChampionMinions(dt);
                 stepEmpCharges(dt);
+                stepKnockbackShieldCharges(dt);
                 stepHounds(dt);
                 stepShadowHounds(dt);
                 stepVoidRifts(dt);
@@ -14557,7 +14630,13 @@
                 store.championMinions = [];
                 store.pendingChampionUpgrade = null;
                 store.empCharges = [];
+                store.knockbackCharges = [];
                 store.empGlobalCooldown = 0;
+                store.knockbackGlobalCooldown = 0;
+                if (store.player) {
+                    store.player.grenades = 0;
+                    store.player.knockbackShields = 0;
+                }
                 store.playerChampion = null;
                 store.shadowChampionId = null;
                 store.shadowChampionDefeated = false;
@@ -15199,7 +15278,8 @@
                     { list: store.hounds, weight: 1 },
                     { list: store.shadowHounds, weight: 1 },
                     { list: store.championMinions, weight: 1 },
-                    { list: store.empCharges, weight: 0.6 }
+                    { list: store.empCharges, weight: 0.6 },
+                    { list: store.knockbackCharges, weight: 0.6 }
                 ];
 
                 for (let i = 0; i < sources.length; i++) {
@@ -16487,6 +16567,8 @@
                         ctx.restore();
                     });
                 }
+
+                drawKnockbackShieldCharges();
 
                 if (store.iceman) drawIceman(store.iceman);
                 drawEscortDrones();
@@ -24309,6 +24391,135 @@
                         ctx.fill();
                     }
                 }
+
+            }
+
+            function drawKnockbackShieldCharges() {
+                // Render orbiting knockback shield charges and their cooldown effects around the player.
+                if (!store.knockbackCharges || store.knockbackCharges.length === 0) {
+                    return;
+                }
+
+                ctx.save();
+                store.knockbackCharges.forEach(charge => {
+                    if (!charge || charge.dead) return;
+
+                    const chargeCooldown = KNOCKBACK_SHIELD_CONFIG?.chargeCooldown ?? 30;
+                    const cooldownRemaining = Math.max(0, charge.cooldown || 0);
+                    const cooldownRatio = chargeCooldown > 0 ? Math.min(1, cooldownRemaining / chargeCooldown) : 0;
+                    const isRecharging = cooldownRatio > 0;
+
+                    ctx.globalAlpha = isRecharging ? 0.08 : 0.28;
+                    const gradient = ctx.createLinearGradient(store.player.x, store.player.y, charge.x, charge.y);
+                    if (isRecharging) {
+                        gradient.addColorStop(0, 'rgba(20, 20, 35, 0.3)');
+                        gradient.addColorStop(1, 'rgba(10, 10, 25, 0.06)');
+                    } else {
+                        gradient.addColorStop(0, 'rgba(90, 70, 150, 0.45)');
+                        gradient.addColorStop(1, 'rgba(40, 30, 90, 0.18)');
+                    }
+                    ctx.strokeStyle = gradient;
+                    ctx.lineWidth = 2.2;
+                    ctx.beginPath();
+                    ctx.moveTo(store.player.x, store.player.y);
+                    ctx.lineTo(charge.x, charge.y);
+                    ctx.stroke();
+                });
+                ctx.restore();
+
+                store.knockbackCharges.forEach(charge => {
+                    if (!charge || charge.dead) return;
+
+                    const chargeCooldown = KNOCKBACK_SHIELD_CONFIG?.chargeCooldown ?? 30;
+                    const cooldownRemaining = Math.max(0, charge.cooldown || 0);
+                    const cooldownRatio = chargeCooldown > 0 ? Math.min(1, cooldownRemaining / chargeCooldown) : 0;
+                    const readiness = Math.max(0, 1 - cooldownRatio);
+
+                    const globalCooldown = KNOCKBACK_SHIELD_CONFIG?.globalCooldown ?? 0;
+                    const globalRemaining = Math.max(0, store.knockbackGlobalCooldown || 0);
+                    const globalRatio = globalCooldown > 0 ? Math.min(1, globalRemaining / globalCooldown) : (globalRemaining > 0 ? 1 : 0);
+                    const globalFactor = globalRatio > 0 ? Math.max(0.4, 1 - globalRatio * 0.85) : 1;
+                    const availability = Math.min(1, readiness * globalFactor);
+
+                    const pulseStrength = isFinite(availability) ? 0.12 * (0.35 + 0.65 * availability) : 0.04;
+                    const baseRadius = 10;
+                    const pulseScale = 1 + Math.sin(charge.pulsePhase || 0) * pulseStrength;
+                    const radius = baseRadius * pulseScale;
+
+                    ctx.save();
+                    ctx.translate(charge.x, charge.y);
+
+                    if (cooldownRatio > 0) {
+                        ctx.globalAlpha = 0.22;
+                        const outerGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 2.4);
+                        outerGlow.addColorStop(0, 'rgba(40, 40, 70, 0.6)');
+                        outerGlow.addColorStop(0.65, 'rgba(30, 30, 55, 0.25)');
+                        outerGlow.addColorStop(1, 'rgba(20, 20, 40, 0)');
+                        ctx.fillStyle = outerGlow;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, radius * 2.4, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        ctx.globalAlpha = 0.28;
+                        const core = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+                        core.addColorStop(0, '#1d1b2a');
+                        core.addColorStop(0.45, '#2a233c');
+                        core.addColorStop(1, '#161325');
+                        ctx.fillStyle = core;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+                        ctx.fill();
+                    } else {
+                        ctx.globalAlpha = 0.32 + 0.4 * availability;
+                        const outerGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 2.6);
+                        outerGlow.addColorStop(0, 'rgba(140, 110, 255, 0.65)');
+                        outerGlow.addColorStop(0.6, 'rgba(80, 60, 160, 0.28)');
+                        outerGlow.addColorStop(1, 'rgba(20, 10, 60, 0)');
+                        ctx.fillStyle = outerGlow;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, radius * 2.6, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        ctx.globalAlpha = 0.7 + 0.25 * availability;
+                        const core = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+                        core.addColorStop(0, '#ffffff');
+                        core.addColorStop(0.35, '#c9b7ff');
+                        core.addColorStop(1, '#3c2f66');
+                        ctx.fillStyle = core;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                    if (cooldownRatio > 0) {
+                        const recoveredRatio = 1 - cooldownRatio;
+                        ctx.globalAlpha = 0.75;
+                        ctx.strokeStyle = 'rgba(110, 90, 190, 0.85)';
+                        ctx.lineWidth = 2.4;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, radius + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * recoveredRatio, false);
+                        ctx.stroke();
+
+                        ctx.globalAlpha = 0.22;
+                        ctx.fillStyle = 'rgba(40, 30, 70, 0.35)';
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        ctx.arc(0, 0, radius + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * recoveredRatio, false);
+                        ctx.closePath();
+                        ctx.fill();
+                    } else {
+                        ctx.globalAlpha = 0.22 + 0.18 * availability;
+                        ctx.strokeStyle = 'rgba(220, 210, 255, 0.55)';
+                        ctx.lineWidth = 1.8;
+                        ctx.setLineDash([4, 6]);
+                        ctx.beginPath();
+                        ctx.arc(0, 0, radius + 6 + Math.sin((charge.pulsePhase || 0) * 1.7) * 1.2, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+
+                    ctx.restore();
+                });
             }
 
             function drawBoss(t) {
@@ -28007,6 +28218,46 @@
                             ctx.restore();
                         };
                         break;
+                    case "knockbackShockwave":
+                        effect.maxLife = opts?.duration ?? 0.55;
+                        effect.life = effect.maxLife;
+                        effect.radius = radius || 260;
+                        effect.step = function (dt) {
+                            this.life -= dt;
+                            if (this.life <= 0) this.isActive = false;
+                        };
+                        effect.draw = function () {
+                            const progress = 1 - (this.life / this.maxLife);
+                            const outerRadius = this.radius * (0.45 + progress * 0.55);
+                            const innerRadius = outerRadius * 0.6;
+                            const alpha = Math.max(0, 0.65 * (1 - progress));
+
+                            ctx.save();
+                            ctx.translate(this.x, this.y);
+                            ctx.globalCompositeOperation = 'lighter';
+
+                            ctx.strokeStyle = `rgba(120, 90, 255, ${alpha})`;
+                            ctx.lineWidth = 7 * (1 - progress) + 2;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, outerRadius, 0, Math.PI * 2);
+                            ctx.stroke();
+
+                            ctx.setLineDash([6, 8]);
+                            ctx.strokeStyle = `rgba(40, 20, 80, ${alpha * 0.9})`;
+                            ctx.lineWidth = 3;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, innerRadius, 0, Math.PI * 2);
+                            ctx.stroke();
+                            ctx.setLineDash([]);
+
+                            ctx.fillStyle = `rgba(20, 15, 40, ${alpha * 0.45})`;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, innerRadius * 0.7, 0, Math.PI * 2);
+                            ctx.fill();
+
+                            ctx.restore();
+                        };
+                        break;
                     case "empStatic":
                         effect.maxLife = opts.duration ?? 0.35;
                         effect.radius = radius || 20;
@@ -28484,6 +28735,13 @@
                         }
                         return { cost: upgrade.cost, available: availableGold >= upgrade.cost, premium: true };
                     }
+                    if (key === 'knockback_shield') {
+                        const currentCharges = store.knockbackCharges ? store.knockbackCharges.length : 0;
+                        if (currentCharges >= (KNOCKBACK_SHIELD_CONFIG.maxCharges || upgrade.max || 3)) {
+                            return { cost: Infinity, available: false, premium: true, reason: 'At maximum capacity.' };
+                        }
+                        return { cost: upgrade.cost, available: availableGold >= upgrade.cost, premium: true };
+                    }
                     if (upgrade.isUnlock) {
                         const alreadyUnlocked =
                             (key === 'gravity_well' && player.hasVoidBeam) ||
@@ -28730,6 +28988,7 @@
 
                 const reserves = [];
                 if (player.grenades > 0) reserves.push(`<li><strong>Shield Pulses</strong> • Charges: ${player.grenades}</li>`);
+                if (player.knockbackShields > 0) reserves.push(`<li><strong>Knockback Shields</strong> • Charges: ${player.knockbackShields}</li>`);
                 if (player.nanoSaves > 0) reserves.push(`<li><strong>Nano Saves</strong> • Emergency rewinds: ${player.nanoSaves}</li>`);
                 if (player.hasLauncher) reserves.push('<li><strong>Fragment Launcher</strong> • Passive ordnance online</li>');
                 if (player.hasHounds) reserves.push('<li><strong>Ghost Hounds</strong> • Spectral escorts deployed</li>');
@@ -29276,7 +29535,7 @@
                     {
                         key: 'Safety Net',
                         value: `Nano ${pad(player.nanoSaves || 0)} • Vamp ${pct(player.vampirism || 0)}`,
-                        detail: `Shield Pulses ${pad(player.grenades || 0)} • Collar ${pad(world.collarStacks || 0)}`
+                        detail: `Shield Pulses ${pad(player.grenades || 0)} • Knockback ${pad(player.knockbackShields || 0)} • Collar ${pad(world.collarStacks || 0)}`
                     }
                 ];
                 sections.push(renderGridSection('Core Systems', coreRows));
@@ -29296,7 +29555,7 @@
                     },
                     {
                         key: 'Arsenal',
-                        value: `Missiles ${pad(player.missileVolley || 0)} • Shield Pulses ${pad(player.grenades || 0)}`,
+                        value: `Missiles ${pad(player.missileVolley || 0)} • Shield Pulses ${pad(player.grenades || 0)} • Knockback ${pad(player.knockbackShields || 0)}`,
                         detail: `Fragment Launcher ${player.hasLauncher ? 'ONLINE' : 'LOCKED'} • Lazarus ${player.hasLazarusBeam ? 'ONLINE' : 'LOCKED'}`
                     },
                     {
@@ -29444,6 +29703,9 @@
                     }
                     if (p.grenades > 0) {
                         systems.push(`Shield Pulse (EMP) ▸ ${pad(p.grenades)} charges • REAPER COUNTER`);
+                    }
+                    if (p.knockbackShields > 0) {
+                        systems.push(`Knockback Shield ▸ ${pad(p.knockbackShields)} charges • CONCUSSIVE BARRIER`);
                     }
                     if (p.beefShieldMax > 0) {
                         systems.push(`Beef Shield ▸ ${pad(Math.floor(p.beefShield || 0))}/${pad(Math.floor(p.beefShieldMax))} armor`);
@@ -33569,28 +33831,29 @@
             // Shield Pulse System Configuration (internal name: EMP_BURST_CONFIG for backwards compatibility)
             const EMP_BURST_CONFIG = {
                 radius: 480, // Doubled from 240
-                baseDamage: 62,
-                bossDamageScale: 0.45,
                 baseStun: 2.8,
-                mechanicalDamageBonus: 0.25,
-                mechanicalStunBonus: 1.2,
-                electrifiedDamageBonus: 0.35,
-                electrifiedStunBonus: 1.1,
-                burningDamageBonus: 0.2,
                 shockDuration: 1.6,
+                mechanicalStunBonus: 1.2,
+                mechanicalShockBonus: 0.8,
+                electrifiedStunBonus: 1.1,
+                electrifiedShockBonus: 0.9,
                 slowFactor: 0.5,
+                slowDuration: 2.6,
                 projectilePurgeRadiusRatio: 0.75,
                 proximityTriggerRadius: 180, // Auto-activate when enemy within this range (imminent threat)
                 chargeCooldown: 30, // Per-charge cooldown in seconds
                 globalCooldown: 4.5, // Prevent overlapping bursts while effects resolve
                 maxCharges: 3,
                 orbitRadius: 85,
-                orbitSpeed: 1.2
+                orbitSpeed: 1.2,
+                bossMaxStun: 2.2,
+                bossMaxShock: 2.0
             };
 
             function createEmpCharge() {
                 if (!store.empCharges) store.empCharges = [];
                 if (store.empCharges.length >= (EMP_BURST_CONFIG.maxCharges || 3)) {
+                    store.player.grenades = store.empCharges.length;
                     return;
                 }
                 const chargeCount = store.empCharges.length;
@@ -33605,6 +33868,7 @@
                     dead: false
                 };
                 store.empCharges.push(charge);
+                store.player.grenades = store.empCharges.length;
 
                 const total = store.empCharges.length;
                 if (total > 0) {
@@ -33622,6 +33886,7 @@
                 if (!p || p.dead) {
                     store.empCharges.length = 0;
                     store.empGlobalCooldown = 0;
+                    store.player.grenades = 0;
                     return;
                 }
 
@@ -33636,6 +33901,7 @@
                     const charge = store.empCharges[i];
                     if (!charge || charge.dead) {
                         store.empCharges.splice(i, 1);
+                        store.player.grenades = store.empCharges.length;
                         continue;
                     }
 
@@ -33703,13 +33969,13 @@
                         store.empGlobalCooldown = Math.max(store.empGlobalCooldown || 0, EMP_BURST_CONFIG.globalCooldown || 0);
                     }
                 }
+
+                store.player.grenades = store.empCharges.length;
             }
 
             function triggerEmpBurst(x, y) {
                 const p = store.player;
                 if (!p || store.isPaused) return;
-
-                playSound('thunder');
 
                 const isMini = p.miniAbilities && p.miniAbilities.has('grenade');
                 const radius = isMini ? EMP_BURST_CONFIG.radius * 0.6 : EMP_BURST_CONFIG.radius; // Mini EMP is 60% radius
@@ -33729,27 +33995,18 @@
                     const type = typeof enemy.type === 'string' ? enemy.type.toLowerCase() : '';
                     const isMechanical = /mech|drone|sentinel|turret|construct|omega/.test(type);
 
-                    let damage = EMP_BURST_CONFIG.baseDamage * p.dmgMult;
                     let stunDuration = EMP_BURST_CONFIG.baseStun;
                     let shockDuration = EMP_BURST_CONFIG.shockDuration;
 
                     if (isMechanical) {
-                        damage *= 1 + EMP_BURST_CONFIG.mechanicalDamageBonus;
                         stunDuration += EMP_BURST_CONFIG.mechanicalStunBonus;
-                        shockDuration += 0.8;
+                        shockDuration += EMP_BURST_CONFIG.mechanicalShockBonus || 0;
                     }
 
                     const isElectrified = enemy.stormShockTimer && enemy.stormShockTimer > 0;
                     if (isElectrified) {
-                        damage *= 1 + EMP_BURST_CONFIG.electrifiedDamageBonus;
                         stunDuration += EMP_BURST_CONFIG.electrifiedStunBonus;
-                        shockDuration += 0.9;
-                    }
-
-                    const isBurning = (enemy.jugBurnTimer && enemy.jugBurnTimer > 0) || enemy.isBurning;
-                    if (isBurning) {
-                        damage *= 1 + EMP_BURST_CONFIG.burningDamageBonus;
-                        store.activeEffects.push(createEffect('demolitionPulseCharge', enemy.x, enemy.y, (enemy.r || 24) * 1.4));
+                        shockDuration += EMP_BURST_CONFIG.electrifiedShockBonus || 0;
                     }
 
                     if (enemy.phaseLockTimer && enemy.phaseLockTimer > 0) {
@@ -33758,43 +34015,9 @@
                         enemy.phaseLockSlowFactor = Math.min(enemy.phaseLockSlowFactor || 1, 0.35);
                     }
 
-                    if (enemy.shield !== undefined) {
-                        enemy.shield = Math.max(0, enemy.shield - 75);
-                    }
-
                     if (isBoss) {
-                        damage *= EMP_BURST_CONFIG.bossDamageScale;
-                        stunDuration = Math.min(stunDuration, 2.2);
-                        shockDuration = Math.min(shockDuration, 2.0);
-                    }
-
-                    const vulnResult = applySubclassVulnerability(enemy, damage, {
-                        player: p,
-                        damageTags: ['lightning', 'emp'],
-                        source: 'empBurst',
-                        allowVulnerabilityTrigger: true
-                    });
-                    const finalDamage = vulnResult.damage;
-                    let damageApplied = finalDamage;
-                    let shieldBlocked = false;
-
-                    if (isBoss) {
-                        const bossResult = applyBossDamage(enemy, finalDamage, {
-                            point: { x: enemy.x, y: enemy.y }
-                        });
-                        if (bossResult.blocked || bossResult.amount <= 0) {
-                            damageApplied = 0;
-                            shieldBlocked = true;
-                        } else {
-                            damageApplied = bossResult.amount;
-                        }
-                    } else {
-                        enemy.hp -= finalDamage;
-                        store.world.totalDamage += finalDamage;
-                    }
-
-                    if (shieldBlocked) {
-                        return;
+                        stunDuration = Math.min(stunDuration, EMP_BURST_CONFIG.bossMaxStun ?? 2.2);
+                        shockDuration = Math.min(shockDuration, EMP_BURST_CONFIG.bossMaxShock ?? 2.0);
                     }
 
                     enemy.stunTimer = Math.max(enemy.stunTimer || 0, stunDuration);
@@ -33802,7 +34025,7 @@
                     enemy.stormShockIntensity = Math.max(enemy.stormShockIntensity || 0, 1);
 
                     enemy.hitSlowFactor = Math.min(enemy.hitSlowFactor || 1, EMP_BURST_CONFIG.slowFactor);
-                    enemy.hitSlowTimer = Math.max(enemy.hitSlowTimer || 0, 2.6);
+                    enemy.hitSlowTimer = Math.max(enemy.hitSlowTimer || 0, EMP_BURST_CONFIG.slowDuration ?? 2.6);
 
                     store.activeEffects.push(createEffect('stormDischarge', enemy.x, enemy.y, Math.max(enemy.r || 24, 24) * 1.6));
                 });
@@ -33818,6 +34041,191 @@
                         if (dx * dx + dy * dy <= purgeRadiusSq) {
                             store.eBullets.splice(i, 1);
                             store.activeEffects.push(createEffect('empStatic', bullet.x, bullet.y, 20));
+                        }
+                    }
+                }
+            }
+
+            function ensureKnockbackChargeList() {
+                if (!store.knockbackCharges) store.knockbackCharges = [];
+            }
+
+            function createKnockbackShieldCharge() {
+                ensureKnockbackChargeList();
+                if (store.knockbackCharges.length >= (KNOCKBACK_SHIELD_CONFIG.maxCharges || 3)) {
+                    if (store.player) store.player.knockbackShields = store.knockbackCharges.length;
+                    return;
+                }
+
+                const chargeCount = store.knockbackCharges.length;
+                const charge = {
+                    x: store.player.x,
+                    y: store.player.y,
+                    orbitAngle: (chargeCount / (chargeCount + 1)) * Math.PI * 2,
+                    orbitRadius: KNOCKBACK_SHIELD_CONFIG.orbitRadius,
+                    orbitSpeed: KNOCKBACK_SHIELD_CONFIG.orbitSpeed,
+                    pulsePhase: Math.random() * Math.PI * 2,
+                    cooldown: 0,
+                    dead: false
+                };
+
+                store.knockbackCharges.push(charge);
+
+                const total = store.knockbackCharges.length;
+                if (total > 0) {
+                    for (let i = 0; i < total; i++) {
+                        const c = store.knockbackCharges[i];
+                        if (!c) continue;
+                        c.orbitAngle = (i / total) * Math.PI * 2;
+                    }
+                }
+
+                if (store.player) store.player.knockbackShields = store.knockbackCharges.length;
+            }
+
+            function stepKnockbackShieldCharges(dt) {
+                ensureKnockbackChargeList();
+
+                if (store.knockbackCharges.length === 0) {
+                    store.knockbackGlobalCooldown = Math.max(0, (store.knockbackGlobalCooldown || 0) - dt);
+                    if (store.player) store.player.knockbackShields = 0;
+                    return;
+                }
+
+                const p = store.player;
+                if (!p || p.dead) {
+                    store.knockbackCharges.length = 0;
+                    store.knockbackGlobalCooldown = 0;
+                    if (store.player) store.player.knockbackShields = 0;
+                    return;
+                }
+
+                store.knockbackGlobalCooldown = Math.max(0, (store.knockbackGlobalCooldown || 0) - dt);
+
+                const proximityRadiusSq = KNOCKBACK_SHIELD_CONFIG.proximityTriggerRadius ** 2;
+                const targets = store.boss
+                    ? [...(store.enemies || []), store.boss]
+                    : [...(store.enemies || [])];
+
+                for (let i = store.knockbackCharges.length - 1; i >= 0; i--) {
+                    const charge = store.knockbackCharges[i];
+                    if (!charge || charge.dead) {
+                        store.knockbackCharges.splice(i, 1);
+                        if (store.player) store.player.knockbackShields = store.knockbackCharges.length;
+                        continue;
+                    }
+
+                    charge.orbitAngle += charge.orbitSpeed * dt;
+                    charge.pulsePhase += dt * 3.6;
+                    const radius = charge.orbitRadius * (1 + Math.sin(charge.pulsePhase) * 0.06);
+                    const targetX = p.x + Math.cos(charge.orbitAngle) * radius;
+                    const targetY = p.y + Math.sin(charge.orbitAngle) * radius * 0.65;
+                    charge.x += (targetX - charge.x) * Math.min(1, 10 * dt);
+                    charge.y += (targetY - charge.y) * Math.min(1, 10 * dt);
+
+                    charge.cooldown = Math.max(0, (charge.cooldown || 0) - dt);
+                    if (charge.cooldown > 0) {
+                        continue;
+                    }
+
+                    if ((store.knockbackGlobalCooldown || 0) > 0) {
+                        continue;
+                    }
+
+                    if (!targets.length) {
+                        continue;
+                    }
+
+                    let validTargets = 0;
+                    const shieldRadius = KNOCKBACK_SHIELD_CONFIG.radius;
+                    const shieldRadiusSq = shieldRadius * shieldRadius;
+
+                    for (const enemy of targets) {
+                        if (!enemy || enemy.dead) continue;
+
+                        const dx = enemy.x - charge.x;
+                        const dy = enemy.y - charge.y;
+                        const distSq = dx * dx + dy * dy;
+
+                        if (distSq > proximityRadiusSq) continue;
+                        if (distSq > shieldRadiusSq) continue;
+
+                        validTargets++;
+                        if (validTargets >= 2) break;
+                    }
+
+                    const isBossNearby = store.boss && !store.boss.dead &&
+                        ((store.boss.x - charge.x) ** 2 + (store.boss.y - charge.y) ** 2 < proximityRadiusSq);
+                    const minTargetsRequired = isBossNearby ? 1 : 2;
+
+                    if (validTargets >= minTargetsRequired) {
+                        triggerKnockbackShieldBurst(charge.x, charge.y);
+                        charge.cooldown = KNOCKBACK_SHIELD_CONFIG.chargeCooldown;
+                        store.knockbackGlobalCooldown = Math.max(store.knockbackGlobalCooldown || 0, KNOCKBACK_SHIELD_CONFIG.globalCooldown || 0);
+                    }
+                }
+
+                if (store.player) store.player.knockbackShields = store.knockbackCharges.length;
+            }
+
+            function triggerKnockbackShieldBurst(x, y) {
+                const p = store.player;
+                if (!p || store.isPaused) return;
+
+                const radius = KNOCKBACK_SHIELD_CONFIG.radius;
+                const radiusSq = radius * radius;
+
+                if (typeof screenFlash === 'function') {
+                    screenFlash(1, 120, KNOCKBACK_SHIELD_CONFIG.screenFlashColor || 'rgba(40, 40, 55, 0.35)');
+                }
+
+                store.activeEffects.push(createEffect('knockbackShockwave', x, y, radius));
+
+                const targets = store.boss ? [...store.enemies, store.boss] : store.enemies;
+
+                targets.forEach(enemy => {
+                    if (!enemy || enemy.dead) return;
+                    const dx = enemy.x - x;
+                    const dy = enemy.y - y;
+                    const distSq = dx * dx + dy * dy;
+                    if (distSq > radiusSq) return;
+
+                    const angle = Math.atan2(dy, dx);
+                    registerEnemyHit(enemy, {
+                        angle,
+                        knockbackStrength: KNOCKBACK_SHIELD_CONFIG.knockbackStrength,
+                        knockbackDuration: KNOCKBACK_SHIELD_CONFIG.knockbackDuration,
+                        shakeIntensity: 6,
+                        shakeDuration: 0.24,
+                        slowFactor: KNOCKBACK_SHIELD_CONFIG.slowFactor,
+                        slowDuration: KNOCKBACK_SHIELD_CONFIG.slowDuration,
+                        effect: false
+                    });
+
+                    if (enemy.knockback) {
+                        enemy.knockback.type = 'knockbackShield';
+                        enemy.knockback.duration = Math.max(enemy.knockback.duration || 0, KNOCKBACK_SHIELD_CONFIG.knockbackDuration);
+                    }
+
+                    enemy.stunTimer = Math.max(enemy.stunTimer || 0, KNOCKBACK_SHIELD_CONFIG.stunDuration);
+                    enemy.hitSlowFactor = Math.min(enemy.hitSlowFactor || 1, KNOCKBACK_SHIELD_CONFIG.slowFactor);
+                    enemy.hitSlowTimer = Math.max(enemy.hitSlowTimer || 0, KNOCKBACK_SHIELD_CONFIG.slowDuration);
+                });
+
+                if (store.eBullets && store.eBullets.length) {
+                    const purgeRatio = KNOCKBACK_SHIELD_CONFIG.projectilePurgeRadiusRatio || 0;
+                    if (purgeRatio > 0) {
+                        const purgeRadius = radius * purgeRatio;
+                        const purgeRadiusSq = purgeRadius * purgeRadius;
+                        for (let i = store.eBullets.length - 1; i >= 0; i--) {
+                            const bullet = store.eBullets[i];
+                            if (!bullet) continue;
+                            const dx = bullet.x - x;
+                            const dy = bullet.y - y;
+                            if (dx * dx + dy * dy <= purgeRadiusSq) {
+                                store.eBullets.splice(i, 1);
+                                store.activeEffects.push(createEffect('empStatic', bullet.x, bullet.y, 20));
+                            }
                         }
                     }
                 }
