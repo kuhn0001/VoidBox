@@ -12997,21 +12997,19 @@
 
                 const director = store.director;
                 const directorSupervising = director && director.mode && director.mode !== 'idle';
-                const hasNonBurglarEnemies = store.enemies.some(enemy => enemy && !enemy.dead && enemy.type !== 'cube_burglar');
-                if (!store.boss && !hasNonBurglarEnemies) {
-                    if (directorSupervising) {
-                        store.world.waveTransitionTimer = null;
-                    } else {
-                        if (!store.world.waveTransitionTimer) {
-                            store.world.waveTransitionTimer = performance.now();
-                            return;
-                        }
-                        if (performance.now() - store.world.waveTransitionTimer < 500) {
-                            return;
-                        }
-                        store.world.waveTransitionTimer = null;
-                        initWave();
+                if (directorSupervising) {
+                    // Director is active, let it manage spawns and wave completion
+                } else if (!store.boss && store.enemies.every(e => e.dead || e.type === 'cube_burglar')) {
+                    // No director, no boss, and only burglars are left - start next wave
+                    if (!store.world.waveTransitionTimer) {
+                        store.world.waveTransitionTimer = performance.now();
+                        return;
                     }
+                    if (performance.now() - store.world.waveTransitionTimer < 500) {
+                        return;
+                    }
+                    store.world.waveTransitionTimer = null;
+                    initWave();
                 } else {
                     store.world.waveTransitionTimer = null;
                 }
