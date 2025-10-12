@@ -4442,6 +4442,8 @@
                 // Skill tree progress
                 skillPoints: 0, skillPointsSpent: 0, skillTree: { juggernaut: false, marauder: false, double_charge: false, big_explosion: false, triple_charge: false },
                 clusterSoundCounter: 0,
+                geminiHitSlowTimer: 0,
+                geminiHitSlowStrength: 1,
                 // EMP nova effects
                 empDisabled: false, empDisabledTimer: 0,
                 championUnlocked: false,
@@ -4780,21 +4782,23 @@
 
             const BOSS_DEFINITIONS = Object.freeze([
                 { key: 'void_sentinel', name: 'VOID SENTINEL', baseHp: 4000, r: 55, behavior: 'sentinel', color: '#8B4A9C' },
-                { key: 'nexus_phantom', name: 'NEXUS PHANTOM', baseHp: 2200, r: 50, behavior: 'hex', color: '#66aaff' },
+                { key: 'trap_god', name: 'TRAPEZOID GOD', baseHp: 2200, r: 50, behavior: 'hex', color: '#66aaff' },
                 { key: 'aegis_architect', name: 'AEGIS ARCHITECT', baseHp: 2650, r: 68, behavior: 'aegis_architect', color: '#5dd0ff' },
                 { key: 'hive_sovereign', name: 'HIVE SOVEREIGN', baseHp: 8500, r: 85, behavior: 'broodlord', color: '#2d5016' },
                 { key: 'shadow_mirror', name: 'SHADOW MIRROR', baseHp: 7200, r: 58, behavior: 'shadow_clone', color: '#cbd4ff' },
                 { key: 'death_engine', name: 'DEATH ENGINE', baseHp: 9000, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true },
+                { key: 'sol_luna', name: 'SOL & LUNA', baseHp: 8800, r: 60, behavior: 'gemini', color: '#ff9f3b' },
                 { key: 'asynchronos', name: 'ASYNCHRONOS', baseHp: 7800, r: 62, behavior: 'asynchronos', color: '#6ff2ff' }
             ]);
 
             const BOSS_THEME_MAP = Object.freeze({
                 'VOID SENTINEL': 'void_sentinel',
-                'NEXUS PHANTOM': 'nexus_phantom',
+                'TRAPEZOID GOD': 'trap_god',
                 'AEGIS ARCHITECT': 'aegis_architect',
                 'HIVE SOVEREIGN': 'hive_sovereign',
                 'SHADOW MIRROR': 'shadow_mirror',
                 'DEATH ENGINE': 'death_engine',
+                'SOL & LUNA': 'sol_luna',
                 'ASYNCHRONOS': 'asynchronos'
             });
 
@@ -4820,8 +4824,8 @@
                         { y: 0.22, thickness: 0.14, alpha: 0.42, waveSpeed: 0.32, waveAmplitude: 0.12, rotation: 0.14, colorStops: ['rgba(60, 0, 120, 0)', 'rgba(240, 160, 255, 0.55)', 'rgba(10, 0, 30, 0)'] }
                     ]
                 },
-                nexus_phantom: {
-                    key: 'nexus_phantom',
+                trap_god: {
+                    key: 'trap_god',
                     label: 'Phantom Glacial Drift',
                     baseFill: '#031024',
                     gradient: {
@@ -4913,6 +4917,26 @@
                     ],
                     auroraBands: [
                         { y: 0.4, thickness: 0.26, alpha: 0.38, waveSpeed: 0.5, waveAmplitude: 0.2, rotation: -0.12, colorStops: ['rgba(120, 20, 0, 0)', 'rgba(255, 140, 60, 0.6)', 'rgba(40, 6, 2, 0)'] }
+                    ]
+                },
+                sol_luna: {
+                    key: 'sol_luna',
+                    label: 'Gemini Ballroom',
+                    baseFill: '#0c0616',
+                    gradient: {
+                        type: 'radial', x: 0.5, y: 0.38, radius: 0.95, stops: [
+                            { offset: 0, color: 'rgba(255, 160, 80, 0.82)' },
+                            { offset: 0.4, color: 'rgba(80, 140, 255, 0.65)' },
+                            { offset: 1, color: 'rgba(10, 8, 24, 1)' }
+                        ]
+                    },
+                    starLayers: [
+                        { count: 140, speed: 24, color: 'rgba(255, 200, 120, 0.7)', pulseColor: 'rgba(255, 240, 200, 0.95)', minRadius: 0.28, maxRadius: 1.4, twinkleSpeed: 1.8, twinkleAmplitude: 0.5 },
+                        { count: 110, speed: 38, color: 'rgba(120, 200, 255, 0.65)', pulseColor: 'rgba(180, 235, 255, 0.92)', minRadius: 0.24, maxRadius: 1.8, twinkleSpeed: 1.4, twinkleAmplitude: 0.45 }
+                    ],
+                    auroraBands: [
+                        { y: 0.3, thickness: 0.2, alpha: 0.36, waveSpeed: 0.34, waveAmplitude: 0.12, rotation: -0.1, colorStops: ['rgba(255, 160, 80, 0)', 'rgba(255, 200, 120, 0.6)', 'rgba(60, 30, 10, 0)'] },
+                        { y: 0.62, thickness: 0.22, alpha: 0.33, waveSpeed: 0.4, waveAmplitude: 0.18, rotation: 0.16, colorStops: ['rgba(40, 140, 255, 0)', 'rgba(120, 210, 255, 0.55)', 'rgba(12, 30, 80, 0)'] }
                     ]
                 },
                 asynchronos: {
@@ -5034,6 +5058,7 @@
                 shadowEchoes: [],
                 temporalEchoes: [],
                 timeShards: [],
+                geminiSlowFields: [],
                 championPresetCache: null,
                 lastChampionPresetCode: null,
                 temporalBeam: null,
@@ -6066,6 +6091,10 @@
             function applyBossDamage(boss, amount, options = {}) {
                 if (!boss || amount <= 0) return { amount: 0, blocked: false };
 
+                if (boss.behavior === 'gemini') {
+                    return applyGeminiBossDamage(boss, amount, options);
+                }
+
                 if (!options.skipShield && boss.behavior === 'aegis_architect') {
                     const result = applyAegisShieldDamage(boss, amount, options);
                     if (result && result.blocked) {
@@ -6183,10 +6212,18 @@
                 }
 
                 if (e === store.boss) {
-                    const bossDamageResult = applyBossDamage(e, dmg, {
+                    const bossOptions = {
                         point: { x: b.x, y: b.y },
                         skipShield: true
-                    });
+                    };
+                    if (e.behavior === 'gemini') {
+                        const hitInfo = testGeminiBulletCollision(e, b);
+                        if (hitInfo) {
+                            bossOptions.subBoss = hitInfo.id;
+                            impactPoint = impactPoint || { x: hitInfo.x, y: hitInfo.y };
+                        }
+                    }
+                    const bossDamageResult = applyBossDamage(e, dmg, bossOptions);
                     dmg = bossDamageResult.amount;
                 } else if (!skipDefaultDamage) {
                     e.hp -= dmg;
@@ -7736,7 +7773,7 @@
                     return;
                 }
                 if (typeKey === 'cash') {
-                    const baseGoldValue = 80;
+                    const baseGoldValue = 8;
                     const waveScaling = Math.max(1, store.world.wave * 1.5);
                     const goldAmount = Math.floor(baseGoldValue * waveScaling);
                     if (goldAmount > 0) {
@@ -8152,6 +8189,7 @@
                         minWave: 40,
                         theme: 'ULTIMATE_CHAOS',
                         description: 'All enemy types, maximum chaos',
+                        duration: 90,
                         forced: ['manta', 'angler', 'mech', 'phantom'],
                         weights: {
                             manta: 3.2,
@@ -8175,6 +8213,7 @@
                         minWave: 35,
                         theme: 'ELITE_ASSAULT',
                         description: 'Tanky elites with support swarms - tests single-target DPS',
+                        duration: 85,
                         forced: ['manta', 'manta', 'angler', 'mech'],
                         weights: {
                             manta: 3.0,      // Dodge tanks (Marauder weak)
@@ -8197,6 +8236,7 @@
                         minWave: 30,
                         theme: 'DODGE_HELL',
                         description: 'Evasive enemies that dodge attacks - rewards AOE and prediction',
+                        duration: 80,
                         forced: ['manta', 'phantom', 'phantom'],
                         weights: {
                             manta: 2.8,       // Sinusoidal dodge
@@ -8219,6 +8259,7 @@
                         minWave: 25,
                         theme: 'VULNERABILITY_TEST',
                         description: 'Mixed enemies with vulnerability focus - rewards class-specific builds',
+                        duration: 80,
                         forced: ['angler', 'mech', 'phantom'],
                         weights: {
                             angler: 2.2,      // Stormbringer target
@@ -8241,6 +8282,7 @@
                         minWave: 20,
                         theme: 'MIXED_TACTICS',
                         description: 'Balanced mix - tests adaptability',
+                        duration: 75,
                         forced: ['angler', 'mech', 'phantom'],
                         weights: {
                             manta: 2.0,
@@ -8263,6 +8305,7 @@
                         minWave: 16,
                         theme: 'TANK_RUSH',
                         description: 'Fewer but tankier enemies - tests single-target damage',
+                        duration: 75,
                         forced: ['mech', 'mech'],
                         weights: {
                             mech: 2.4,        // Slow, tanky, high damage
@@ -8285,6 +8328,7 @@
                         minWave: 13,
                         theme: 'PRECISION_TEST',
                         description: 'Spread formation - tests multi-target abilities',
+                        duration: 70,
                         forced: ['phantom', 'hunter'],
                         weights: {
                             phantom: 2.0,     // Phase enemies spread out
@@ -8305,6 +8349,7 @@
                         minWave: 9,
                         theme: 'SWARM_HELL',
                         description: 'Many weak, fast enemies - AOE abilities shine',
+                        duration: 65,
                         forced: ['construct_gold', 'avian_hatchling'],
                         weights: {
                             construct_gold: 2.2,  // Fast homing
@@ -8325,6 +8370,7 @@
                         minWave: 6,
                         theme: 'TANK_INTRO',
                         description: 'Introducing tanky mechs mixed with basic enemies',
+                        duration: 60,
                         forced: ['mech'],
                         weights: {
                             mech: 1.4,        // First tank enemy
@@ -8342,6 +8388,7 @@
                         minWave: 3,
                         theme: 'MIXED_BASICS',
                         description: 'Introduction to enemy variety',
+                        duration: 55,
                         forced: ['hunter'],
                         weights: {
                             drone: 2.0,
@@ -8358,6 +8405,7 @@
                         minWave: 1,
                         theme: 'TUTORIAL',
                         description: 'Basic drones only - learning the ropes',
+                        duration: 50,
                         forced: [],
                         weights: {
                             drone: 3.0,
@@ -8460,6 +8508,13 @@
                     }
                 }
 
+                if (!window.composeWaveTransmission) {
+                    window.composeWaveTransmission = composeWaveTransmission;
+                }
+                if (!window.broadcastTransmission) {
+                    window.broadcastTransmission = broadcastTransmission;
+                }
+
                 function getSpawnProfileForWave(wave) {
                     for (let i = 0; i < WAVE_SPAWN_PROFILES.length; i++) {
                         const profile = WAVE_SPAWN_PROFILES[i];
@@ -8468,6 +8523,10 @@
                         }
                     }
                     return WAVE_SPAWN_PROFILES[WAVE_SPAWN_PROFILES.length - 1];
+                }
+
+                if (!window.getSpawnProfileForWave) {
+                    window.getSpawnProfileForWave = getSpawnProfileForWave;
                 }
 
                 function pickWeightedType(weights) {
@@ -8489,6 +8548,10 @@
                     return entries[entries.length - 1][0];
                 }
 
+                if (!window.pickWeightedType) {
+                    window.pickWeightedType = pickWeightedType;
+                }
+
                 function createSpawnSpec(type, threatScale, lateGameScaling) {
                     return {
                         type,
@@ -8500,6 +8563,10 @@
                     };
                 }
 
+                if (!window.createSpawnSpec) {
+                    window.createSpawnSpec = createSpawnSpec;
+                }
+
                 function shuffleInPlace(list) {
                     for (let i = list.length - 1; i > 0; i--) {
                         const j = Math.floor(Math.random() * (i + 1));
@@ -8507,6 +8574,10 @@
                         list[i] = list[j];
                         list[j] = tmp;
                     }
+                }
+
+                if (!window.shuffleInPlace) {
+                    window.shuffleInPlace = shuffleInPlace;
                 }
 
                 function buildWaveSpawnSpecs(wave, spawnCount, threatScale, lateGameScaling) {
@@ -8682,7 +8753,7 @@
                         
                         // Spawn purple & gold coins (New Orleans style) to make loot visible
                         if (!store.powerups) store.powerups = [];
-                        const numCoins = Math.min(8, Math.floor(bonusGold / 8)); // 1 coin per 8 gold, max 8 coins (increased from 5)
+                        const numCoins = Math.min(8, Math.floor(bonusGold / 4)); // 1 coin per 8 gold, max 8 coins (increased from 5)
                         for (let i = 0; i < numCoins; i++) {
                             const angle = (i / numCoins) * Math.PI * 2;
                             const dist = 30 + Math.random() * 30;
@@ -9015,11 +9086,16 @@
                 if (store.poisonPuddles) {
                     store.poisonPuddles = [];
                 }
+                if (store.geminiSlowFields) {
+                    store.geminiSlowFields = [];
+                }
 
                 if (isBossWave) {
                     store.enemies = [];
+                    store.waveSpawnQueue = [];
                     store.world.pendingVoidReaper = null;
                     store.world.voidReaperWarningIssued = false;
+                    store.world.lastSpawnCount = 0;
 
                     // FIXED: Balanced boss scaling instead of aggressive exponential growth
                     // Old: 1 + (wave/5 - 1) * 1.5 caused 4x HP by wave 15
@@ -9067,6 +9143,17 @@
                     const bossLoopCount = Math.floor(bossesDefeated / BOSS_CHAMPION_LOOP);
                     if (bossLoopCount > 0) {
                         spawnBossLoopChampions(bossLoopCount, bossHpScale);
+                    }
+
+                    const bossCarryBudget = store.director ? store.director.carryBudget || 0 : 0;
+                    const bossDirector = initializeDynamicWaveDirector({
+                        wave: store.world.wave,
+                        carryBudget: bossCarryBudget,
+                        overrideThreatScale: bossHpScale,
+                        overrideLateGameScaling: bossHpScale
+                    });
+                    if (bossDirector) {
+                        bossDirector.mode = 'boss';
                     }
                 } else {
                     store.enemies = [];
@@ -9178,34 +9265,8 @@
                             damageMult: Math.min(2.1, threatScale * 0.9)
                         });
                     }
-                    const spawnSpecs = buildWaveSpawnSpecs(store.world.wave, spawnCount, threatScale, lateGameScaling);
-
-                    if (spawnSpecs.length === 0) {
-                        spawnSpecs.push({
-                            type: 'drone',
-                            props: { hpScale: threatScale, damageMult: threatScale },
-                            lateGameScaling,
-                            spawnDuration: 0.6,
-                            spawnDropDistance: 120,
-                            effectColor: teleportAuraByType.drone
-                        });
-                        store.world.lastSpawnFallback = true;
-                    }
-
-                    const plannedClusters = Math.max(1, Math.ceil(spawnSpecs.length / 4));
-                    const clusterCount = Math.min(6, plannedClusters);
-                    const spawnTempo = Math.max(0.2, 0.55 - Math.min(store.world.wave, 25) * 0.015);
-
-                    store.pendingSpawnCount = spawnSpecs.length;
-                    store.world.lastSpawnQueueLength = spawnSpecs.length;
-                    store.world.lastSpawnTempo = spawnTempo;
+                    const directorCarryBudget = store.director ? store.director.carryBudget || 0 : 0;
                     store.world.lastSpawnCount = store.enemies.length;
-
-                    scheduleWaveSpawnClusters(spawnSpecs, {
-                        clusterCount,
-                        baseDelay: spawnTempo,
-                        jitter: spawnTempo * 0.6
-                    });
 
                     const cooldownReady = !store.world.voidReaperCooldown || store.world.voidReaperCooldown <= 0;
                     const recentWaveGap = store.world.lastVoidReaperWave ? (store.world.wave - store.world.lastVoidReaperWave) : Infinity;
@@ -9235,10 +9296,16 @@
                         store.world.voidReaperWarningIssued = false;
                     }
 
-                    store.world.waveStartTime = performance.now();
-                    const waveProfile = currentWaveProfile || getSpawnProfileForWave(store.world.wave);
-                    const openingTransmission = composeWaveTransmission(waveProfile?.theme, store.world.wave);
-                    broadcastTransmission(openingTransmission);
+                    const directorInstance = initializeDynamicWaveDirector({
+                        wave: store.world.wave,
+                        carryBudget: directorCarryBudget,
+                        overrideThreatScale: threatScale,
+                        overrideLateGameScaling: lateGameScaling
+                    });
+
+                    if (directorInstance) {
+                        directorInstance.mode = 'phase';
+                    }
                 }
             }
 
@@ -9719,6 +9786,375 @@
                 enemy.topClampDelay = Math.max(enemy.topClampDelay || 0, duration + (opts.topClampBuffer ?? 0.5));
                 enemy.fireT = Math.max(enemy.fireT || 0, duration + (opts.fireDelayBuffer ?? 0.25));
                 enemy.y = startY;
+            }
+
+            const ENEMY_THREAT_COST = Object.freeze({
+                drone: 6,
+                avian_hatchling: 8,
+                construct_gold: 9,
+                hunter: 12,
+                phantom: 15,
+                mech: 25,
+                angler: 28,
+                manta: 30,
+                void_champion: 42,
+                void_champion_orb: 8
+            });
+
+            const DYNAMIC_DIRECTOR_CONFIG = Object.freeze({
+                defaultPhaseDuration: 70,
+                baseIncome: 12,
+                incomePerWave: 1.35,
+                incomeRampBonus: 0.35,
+                lullFraction: 0.18,
+                lullMinimum: 5,
+                baseBudgetCap: 150,
+                budgetCapPerWave: 7,
+                carryoverFraction: 0.6,
+                spawnCooldownMin: 0.35,
+                spawnCooldownMax: 1.1,
+                forcedSpawnGrace: 5,
+                specialCooldownFloor: 1.5,
+                budgetBoostOnPhaseStart: 20,
+                minSpawnThreat: 6,
+                bossRecoveryDelay: 6,
+                threatScalePerWave: 0.06,
+                lateGameScalingWave: 35,
+                lateGameScalingStep: 0.04,
+                eventBudgetReserve: 10
+            });
+
+            function getDirectorInstance() {
+                if (!store.director) {
+                    store.director = {
+                        wave: 1,
+                        mode: 'idle',
+                        threatBudget: 0,
+                        threatIncome: 0,
+                        budgetCap: DYNAMIC_DIRECTOR_CONFIG.baseBudgetCap,
+                        spawnCooldown: 0,
+                        forcedQueue: [],
+                        forceWindow: 0,
+                        specialTimers: [],
+                        profile: null,
+                        phaseTimer: 0,
+                        phaseDuration: 0,
+                        lullDuration: 0,
+                        baseIncome: DYNAMIC_DIRECTOR_CONFIG.baseIncome,
+                        threatScale: 1,
+                        lateGameScaling: 1,
+                        bossRecoveryTimer: 0,
+                        minCost: DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat,
+                        carryBudget: 0
+                    };
+                }
+                return store.director;
+            }
+
+            function fetchDirectorProfile(wave) {
+                if (typeof window !== 'undefined' && typeof window.getSpawnProfileForWave === 'function') {
+                    return window.getSpawnProfileForWave(wave);
+                }
+                return null;
+            }
+
+            function computePhaseDuration(profile, wave) {
+                const base = profile && Number.isFinite(profile.duration) ? profile.duration : DYNAMIC_DIRECTOR_CONFIG.defaultPhaseDuration;
+                const bonus = Math.min(18, Math.max(0, wave - 1) * 0.6);
+                return base + bonus;
+            }
+
+            function computeThreatIncomeForWave(wave) {
+                return DYNAMIC_DIRECTOR_CONFIG.baseIncome + Math.max(0, wave - 1) * DYNAMIC_DIRECTOR_CONFIG.incomePerWave;
+            }
+
+            function computeBudgetCapForWave(wave) {
+                return DYNAMIC_DIRECTOR_CONFIG.baseBudgetCap + Math.max(0, wave - 1) * DYNAMIC_DIRECTOR_CONFIG.budgetCapPerWave;
+            }
+
+            function computeThreatScale(wave) {
+                return 1 + Math.max(0, wave - 1) * DYNAMIC_DIRECTOR_CONFIG.threatScalePerWave;
+            }
+
+            function computeLateGameScaling(wave) {
+                if (wave <= DYNAMIC_DIRECTOR_CONFIG.lateGameScalingWave) return 1;
+                const extra = wave - DYNAMIC_DIRECTOR_CONFIG.lateGameScalingWave;
+                return 1 + extra * DYNAMIC_DIRECTOR_CONFIG.lateGameScalingStep;
+            }
+
+            function computeCheapestCost(profile) {
+                if (!profile || !profile.weights) return DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat;
+                let cheapest = Infinity;
+                for (const type of Object.keys(profile.weights)) {
+                    const cost = ENEMY_THREAT_COST[type] ?? Infinity;
+                    if (cost < cheapest) cheapest = cost;
+                }
+                if (!Number.isFinite(cheapest) || cheapest === Infinity) {
+                    return DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat;
+                }
+                return Math.max(DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat, cheapest);
+            }
+
+            function spawnDirectorEnemy(type, director, { threatScale, lateGameScaling, priority } = {}) {
+                if (!store || !store.world) return false;
+                const enemyCap = Math.max(10, store.world.enemyCap || 43);
+                if (store.enemies.length >= enemyCap) return false;
+
+                const cost = ENEMY_THREAT_COST[type] ?? DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat;
+                if (director.threatBudget < cost) return false;
+
+                const auraMap = (typeof window !== 'undefined' && window.teleportAuraByType) || {};
+                const createSpecFn = (typeof window !== 'undefined' && window.createSpawnSpec) || null;
+                const resolvedThreatScale = threatScale ?? director.threatScale ?? 1;
+                const resolvedLateScaling = lateGameScaling ?? director.lateGameScaling ?? 1;
+                let spec = null;
+                if (createSpecFn) {
+                    spec = createSpecFn(type, resolvedThreatScale, resolvedLateScaling);
+                } else {
+                    spec = {
+                        type,
+                        props: { hpScale: resolvedThreatScale, damageMult: resolvedThreatScale },
+                        lateGameScaling: resolvedLateScaling,
+                        effectColor: auraMap[type] || auraMap.drone
+                    };
+                }
+
+                const enemy = spawnEnemy(type, spec && spec.props ? spec.props : { hpScale: resolvedThreatScale, damageMult: resolvedThreatScale });
+                if (!enemy) return false;
+
+                applySpawnSpecToEnemy(enemy, spec || {});
+
+                const introOptions = {
+                    duration: spec?.spawnDuration,
+                    dropDistance: spec?.spawnDropDistance,
+                    effectColor: spec?.effectColor,
+                    clusterIndex: priority === 'event' ? -1 : 0,
+                    clusterSize: priority === 'event' ? (spec?.types?.length || 1) : 1
+                };
+                activateSpawnIntro(enemy, introOptions);
+
+                store.enemies.push(enemy);
+                director.threatBudget = Math.max(0, director.threatBudget - cost);
+                store.world.lastSpawnCount = (store.world.lastSpawnCount || 0) + 1;
+                return true;
+            }
+
+            function initializeDynamicWaveDirector({ wave, carryBudget = 0, overrideThreatScale = null, overrideLateGameScaling = null } = {}) {
+                const director = getDirectorInstance();
+                const nextWave = Number.isFinite(wave) && wave > 0 ? wave : (store?.world?.wave || director.wave || 1);
+                const profile = fetchDirectorProfile(nextWave);
+                const carry = Number.isFinite(carryBudget) ? carryBudget : (director.carryBudget || 0);
+
+                director.wave = nextWave;
+                director.profile = profile;
+                director.phaseDuration = computePhaseDuration(profile, nextWave);
+                director.phaseTimer = director.phaseDuration;
+                director.lullDuration = Math.max(DYNAMIC_DIRECTOR_CONFIG.lullMinimum, director.phaseDuration * DYNAMIC_DIRECTOR_CONFIG.lullFraction);
+                director.baseIncome = computeThreatIncomeForWave(nextWave);
+                director.budgetCap = computeBudgetCapForWave(nextWave);
+                director.threatScale = overrideThreatScale ?? computeThreatScale(nextWave);
+                director.lateGameScaling = overrideLateGameScaling ?? computeLateGameScaling(nextWave);
+                director.threatBudget = Math.min(director.budgetCap, Math.max(0, carry) + DYNAMIC_DIRECTOR_CONFIG.budgetBoostOnPhaseStart);
+                director.threatIncome = director.baseIncome;
+                director.spawnCooldown = 0.1;
+                director.forcedQueue = Array.isArray(profile?.forced) ? profile.forced.slice() : [];
+                director.forceWindow = DYNAMIC_DIRECTOR_CONFIG.forcedSpawnGrace;
+                director.specialTimers = Array.isArray(profile?.special)
+                    ? profile.special.map(rule => ({
+                        rule,
+                        timer: Math.max(DYNAMIC_DIRECTOR_CONFIG.specialCooldownFloor, rule.offset ?? 0)
+                    }))
+                    : [];
+                director.minCost = computeCheapestCost(profile);
+                director.mode = nextWave % 5 === 0 ? 'boss' : 'phase';
+                director.bossRecoveryTimer = DYNAMIC_DIRECTOR_CONFIG.bossRecoveryDelay;
+
+                if (store && store.world) {
+                    store.world.wave = nextWave;
+                    store.world.waveStartTime = performance.now();
+                    store.world.lastPlannedSpawnCount = 0;
+                    store.world.lastSpawnTempo = director.spawnCooldown;
+                    store.world.lastSpawnQueueLength = 0;
+                    store.world.lastSpawnOverflow = 0;
+                    store.world.pendingSpawnCount = 0;
+                }
+
+                if (director.mode === 'phase') {
+                    const composer = (typeof window !== 'undefined' && window.composeWaveTransmission) || null;
+                    const broadcaster = (typeof window !== 'undefined' && window.broadcastTransmission) || null;
+                    if (composer && broadcaster && profile && profile.theme) {
+                        const message = composer(profile.theme, nextWave);
+                        if (message) broadcaster(message);
+                    }
+                }
+
+                director.carryBudget = 0;
+
+                return director;
+            }
+
+            function updateDynamicWaveDirector(dt) {
+                if (!store || store.isPaused || dt <= 0) return;
+                const director = store.director;
+                if (!director || !store.world) return;
+
+                if (director.mode === 'idle') {
+                    return;
+                }
+
+                if (director.mode === 'boss') {
+                    const bossAlive = store.boss && !store.boss.dead;
+                    if (bossAlive) {
+                        return;
+                    }
+                    director.bossRecoveryTimer -= dt;
+                    if (director.bossRecoveryTimer <= 0) {
+                        const carry = Math.min(director.budgetCap * DYNAMIC_DIRECTOR_CONFIG.carryoverFraction, director.threatBudget);
+                        completeWaveAndAdvance({ carryBudget: carry });
+                    }
+                    return;
+                }
+
+                director.phaseTimer = Math.max(0, director.phaseTimer - dt);
+                const elapsed = director.phaseDuration - director.phaseTimer;
+                const progress = director.phaseDuration > 0 ? Math.max(0, Math.min(1, elapsed / director.phaseDuration)) : 0;
+
+                const ramp = 1 + progress * DYNAMIC_DIRECTOR_CONFIG.incomeRampBonus;
+                const lullMultiplier = director.phaseTimer < director.lullDuration
+                    ? Math.max(0.2, director.phaseTimer / Math.max(1e-3, director.lullDuration))
+                    : 1;
+                const income = director.baseIncome * ramp * lullMultiplier;
+                director.threatBudget = Math.min(director.budgetCap, director.threatBudget + income * dt);
+                director.threatIncome = income;
+
+                if (director.forcedQueue && director.forcedQueue.length) {
+                    director.forceWindow -= dt;
+                    while (director.forcedQueue.length) {
+                        const type = director.forcedQueue[0];
+                        const cost = ENEMY_THREAT_COST[type] ?? DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat;
+                        if (store.enemies.length >= Math.max(10, store.world.enemyCap || 43)) break;
+                        if (director.threatBudget < cost && director.forceWindow > 0) break;
+                        if (!spawnDirectorEnemy(type, director, { priority: 'forced' })) {
+                            break;
+                        }
+                        director.forcedQueue.shift();
+                    }
+                }
+
+                if (director.specialTimers && director.specialTimers.length) {
+                    for (const timer of director.specialTimers) {
+                        timer.timer -= dt;
+                        if (timer.timer <= 0) {
+                            const types = Array.isArray(timer.rule.types) ? timer.rule.types : [];
+                            if (types.length) {
+                                const totalCost = types.reduce((sum, type) => sum + (ENEMY_THREAT_COST[type] ?? DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat), 0);
+                                const enemyCap = Math.max(10, store.world.enemyCap || 43);
+                                if (store.enemies.length + types.length <= enemyCap && director.threatBudget >= Math.max(DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat, totalCost - DYNAMIC_DIRECTOR_CONFIG.eventBudgetReserve)) {
+                                    let spawnedAll = true;
+                                    for (const type of types) {
+                                        if (!spawnDirectorEnemy(type, director, { priority: 'event' })) {
+                                            spawnedAll = false;
+                                            break;
+                                        }
+                                    }
+                                    if (!spawnedAll) {
+                                        // roll back budget if needed (simplified: re-add unspent cost)
+                                    }
+                                }
+                            }
+                            timer.timer += Math.max(DYNAMIC_DIRECTOR_CONFIG.specialCooldownFloor, timer.rule.interval || DYNAMIC_DIRECTOR_CONFIG.specialCooldownFloor);
+                        }
+                    }
+                }
+
+                director.spawnCooldown -= dt;
+                const cheapestCost = Math.max(DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat, director.minCost || DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat);
+                if (director.spawnCooldown <= 0 && director.threatBudget >= cheapestCost) {
+                    const picker = (typeof window !== 'undefined' && window.pickWeightedType) || null;
+                    let selectedType = 'drone';
+                    if (picker && director.profile?.weights) {
+                        selectedType = picker(director.profile.weights);
+                    } else if (director.profile?.weights) {
+                        const entries = Object.keys(director.profile.weights);
+                        if (entries.length) selectedType = entries[Math.floor(Math.random() * entries.length)];
+                    }
+                    if (spawnDirectorEnemy(selectedType, director, {})) {
+                        const intensity = Math.min(1, director.threatBudget / Math.max(1, director.budgetCap));
+                        const cooldownRange = DYNAMIC_DIRECTOR_CONFIG.spawnCooldownMax - DYNAMIC_DIRECTOR_CONFIG.spawnCooldownMin;
+                        director.spawnCooldown = DYNAMIC_DIRECTOR_CONFIG.spawnCooldownMax - cooldownRange * Math.min(1, intensity + progress * 0.4);
+                    } else {
+                        director.spawnCooldown = 0.25;
+                    }
+                }
+
+                if (director.phaseTimer <= 0 && (!store.boss || store.boss.dead)) {
+                    const carry = Math.min(director.budgetCap * DYNAMIC_DIRECTOR_CONFIG.carryoverFraction, director.threatBudget);
+                    completeWaveAndAdvance({ carryBudget: carry });
+                }
+            }
+
+            function completeWaveAndAdvance({ carryBudget = 0 } = {}) {
+                if (!store || !store.world || !store.player) return;
+
+                const now = performance.now();
+                if (store.world.waveStartTime > 0 && store.world.wave > 1) {
+                    const waveClearTime = (now - store.world.waveStartTime) / 1000;
+
+                    let collarStacksToAdd = 0;
+                    sanitizeCollarStacks();
+
+                    if (waveClearTime < 2) {
+                        collarStacksToAdd = 9;
+                        store.world.enemyDensityBonus *= 1.15;
+                        store.world.xpMultiplier *= 1.1;
+                        announce("💥 ULTRA-INSTANT CLEAR! COLLAR CRUSHES +9 💥");
+                    } else if (waveClearTime < 4) {
+                        collarStacksToAdd = 6;
+                        store.world.enemyDensityBonus *= 1.1;
+                        store.world.xpMultiplier *= 1.07;
+                        announce("⚡ INSTANT WAVE CLEAR! COLLAR TIGHTENS +6 ⚡");
+                    } else if (waveClearTime < 8) {
+                        collarStacksToAdd = 3;
+                        store.world.enemyDensityBonus *= 1.05;
+                        store.world.xpMultiplier *= 1.03;
+                        announce("⚡ FAST WAVE CLEAR! COLLAR TIGHTENS +3 ⚡");
+                    } else if (waveClearTime < 12) {
+                        collarStacksToAdd = 1;
+                        announce("⚡ COLLAR TIGHTENS +1 ⚡");
+                    } else if (waveClearTime > 20) {
+                        const isDeathEngineFight = store.world.boss && store.world.boss.name === 'DEATH ENGINE';
+                        if (!isDeathEngineFight) {
+                            const loosenedStacks = Math.max(0, sanitizeCollarStacks() - 2);
+                            setCollarStacks(loosenedStacks);
+                            announce("🐌 SLOW CLEAR - COLLAR LOOSENS");
+                        } else {
+                            announce("THE DEATH ENGINE'S CURSE MAINTAINS THE COLLAR!");
+                        }
+                    }
+
+                    collarStacksToAdd = ensureFiniteNumber(collarStacksToAdd, 0);
+                    if (store.world.bosses >= 2) {
+                        if (collarStacksToAdd > 0) {
+                            scheduleCollarIncrease(collarStacksToAdd);
+                        } else {
+                            approachCollarTarget();
+                        }
+                    }
+                }
+
+                store.world.wave++;
+                store.world.waveTransitionTimer = null;
+
+                const hpBonus = 1;
+                store.player.hpMax += hpBonus;
+                store.player.hp += hpBonus;
+
+                if (store.director) {
+                    store.director.carryBudget = Math.max(0, carryBudget);
+                    store.director.mode = 'transition';
+                }
+
+                initWave();
             }
 
             function registerEnemyHit(enemy, impact = {}) {
@@ -10242,10 +10678,12 @@
                         }
                     }
                 } else {
+                    const slowMultiplier = computeGeminiSlowMultiplier(p);
+                    p.geminiSlowMultiplier = slowMultiplier;
                     // MOVEMENT LOGIC
                     if (document.body.classList.contains('mobile-controls-active')) {
                         // Joystick Movement
-                        const moveSpeed = p.speed;
+                        const moveSpeed = p.speed * slowMultiplier;
                         p.x += joystickState.input.x * moveSpeed * dt;
                         p.y += joystickState.input.y * moveSpeed * dt;
                         p.x = clamp(p.x, 20, W - 20); p.y = clamp(p.y, 20, H - 20);
@@ -10256,7 +10694,7 @@
                             p.x = mouse.x;
                             p.y = mouse.y;
                         } else {
-                            const accelFactor = 0.0125;
+                            const accelFactor = 0.0125 * slowMultiplier;
                             p.x += vx * p.speed * dt * accelFactor;
                             p.y += vy * p.speed * dt * accelFactor;
                         }
@@ -10680,6 +11118,13 @@
                 // Fragment Blaster auto-targeting system
                 if (p.fragmentBlasters && p.fragmentBlasters.length > 0) {
                     stepFragmentBlasters(dt, p);
+                }
+
+                if (p.geminiHitSlowTimer && p.geminiHitSlowTimer > 0) {
+                    p.geminiHitSlowTimer = Math.max(0, p.geminiHitSlowTimer - dt);
+                    if (p.geminiHitSlowTimer <= 0) {
+                        p.geminiHitSlowStrength = 1;
+                    }
                 }
             }
             function stepPowerups(dt) {
@@ -11504,6 +11949,7 @@
                 stepLightning(dt);
                 stepEmpNovas(dt);
                 stepFlamePulses(dt);
+                updateDynamicWaveDirector(dt);
                 processWaveSpawnQueue(dt);
                 processVulnerabilityEvents(dt);
 
@@ -11578,6 +12024,7 @@
                 updateImpactSystem();
                 runAutoForge(dt);
                 stepGoldenOrbs(dt);
+                stepGeminiSlowFields(dt);
 
                 store.activeEffects.forEach(e => { if (e.step) e.step(dt); });
                 if (store.world.powerupCooldown > 0) {
@@ -11708,6 +12155,20 @@
                         }
                     }
 
+                    if (b.geminiTag === 'sol_fire' && b.homeDuration !== undefined && b.homeDuration > 0) {
+                        const target = player;
+                        if (target) {
+                            b.homeDuration = Math.max(0, b.homeDuration - dt);
+                            const speed = Math.hypot(b.vx, b.vy) || 0.0001;
+                            const angle = Math.atan2(target.y - b.y, target.x - b.x);
+                            const desiredVx = Math.cos(angle) * speed;
+                            const desiredVy = Math.sin(angle) * speed;
+                            const turnRate = clamp((b.homeStrength || 150) * dt / Math.max(speed, 60), 0, 0.25);
+                            b.vx += (desiredVx - b.vx) * turnRate;
+                            b.vy += (desiredVy - b.vy) * turnRate;
+                        }
+                    }
+
                     if (b.path === 'aegis_spiral') {
                         if (b.y > H + 70) {
                             b.dead = true;
@@ -11755,6 +12216,9 @@
                             }
 
                             takeDamage((b.dmg || 10) * damageMultiplier);
+                            if (b.geminiTag === 'ice_shard') {
+                                applyGeminiHitSlow(p, b.slowFactor || 0.6, b.slowDuration || 1.5);
+                            }
                             b.dead = true;
                         }
                     }
@@ -12531,82 +12995,24 @@
                     store.activeEffects.splice(0, store.activeEffects.length - MAX_ACTIVE_EFFECTS);
                 }
 
+                const director = store.director;
+                const directorSupervising = director && director.mode && director.mode !== 'idle';
                 const hasNonBurglarEnemies = store.enemies.some(enemy => enemy && !enemy.dead && enemy.type !== 'cube_burglar');
                 if (!store.boss && !hasNonBurglarEnemies) {
-                    // Add some delay before starting next wave to prevent rapid cycling
-                    if (!store.world.waveTransitionTimer) {
-                        store.world.waveTransitionTimer = performance.now();
-                        return;
-                    }
-
-                    // Wait at least 0.5 seconds before progressing to next wave
-                    if (performance.now() - store.world.waveTransitionTimer < 500) {
-                        return;
-                    }
-
-                    // console.log(`Wave ${store.world.wave} completed, transitioning to wave ${store.world.wave + 1}`);
-
-                    if (store.world.waveStartTime > 0 && store.world.wave > 1) {
-                        const waveClearTime = (performance.now() - store.world.waveStartTime) / 1000;
-
-                        // Guaranteed minimum collar stacks for any reasonable clear
-                        let collarStacksToAdd = 0;
-                        sanitizeCollarStacks();
-
-                        if (waveClearTime < 2) {
-                            // Ultra-instant clear: +9 collar stacks (addresses missing 9 stack issue)
-                            collarStacksToAdd = 9;
-                            store.world.enemyDensityBonus *= 1.15;
-                            store.world.xpMultiplier *= 1.1;
-                            announce("💥 ULTRA-INSTANT CLEAR! COLLAR CRUSHES +9 💥");
-                        } else if (waveClearTime < 4) {
-                            // Instant clear: +6 collar stacks
-                            collarStacksToAdd = 6;
-                            store.world.enemyDensityBonus *= 1.1;
-                            store.world.xpMultiplier *= 1.07;
-                            announce("⚡ INSTANT WAVE CLEAR! COLLAR TIGHTENS +6 ⚡");
-                        } else if (waveClearTime < 8) {
-                            // Fast clear: +3 collar stacks
-                            collarStacksToAdd = 3;
-                            store.world.enemyDensityBonus *= 1.05;
-                            store.world.xpMultiplier *= 1.03;
-                            announce("⚡ FAST WAVE CLEAR! COLLAR TIGHTENS +3 ⚡");
-                        } else if (waveClearTime < 12) {
-                            // Normal clear: +1 collar stack
-                            collarStacksToAdd = 1;
-                            announce("⚡ COLLAR TIGHTENS +1 ⚡");
-                        } else if (waveClearTime > 20) {
-                            // Very slow clear: reset collar stacks (except during Death Engine fight)
-                            const isDeathEngineFight = store.world.boss && store.world.boss.name === 'DEATH ENGINE';
-                            if (!isDeathEngineFight) {
-                                const loosenedStacks = Math.max(0, sanitizeCollarStacks() - 2);
-                                setCollarStacks(loosenedStacks);
-                                announce("🐌 SLOW CLEAR - COLLAR LOOSENS");
-                            } else {
-                                announce("THE DEATH ENGINE'S CURSE MAINTAINS THE COLLAR!");
-                            }
+                    if (directorSupervising) {
+                        store.world.waveTransitionTimer = null;
+                    } else {
+                        if (!store.world.waveTransitionTimer) {
+                            store.world.waveTransitionTimer = performance.now();
+                            return;
                         }
-
-                        // Add collar stacks only after 2nd boss is defeated - let first two bosses play normally
-                        collarStacksToAdd = ensureFiniteNumber(collarStacksToAdd, 0);
-                        if (store.world.bosses >= 2) {
-                            if (collarStacksToAdd > 0) {
-                                scheduleCollarIncrease(collarStacksToAdd);
-                            } else {
-                                approachCollarTarget();
-                            }
+                        if (performance.now() - store.world.waveTransitionTimer < 500) {
+                            return;
                         }
+                        store.world.waveTransitionTimer = null;
+                        initWave();
                     }
-
-                    store.world.wave++;
-                    store.world.waveTransitionTimer = null; // Reset timer
-
-                    const hpBonus = 1;
-                    store.player.hpMax += hpBonus;
-                    store.player.hp += hpBonus;
-                    initWave();
                 } else {
-                    // Reset wave transition timer if there are still enemies or boss
                     store.world.waveTransitionTimer = null;
                 }
 
@@ -12840,6 +13246,9 @@
                 // Clear any poison puddles and poison blobs from HIVE SOVEREIGN when boss is defeated
                 if (store.poisonPuddles) {
                     store.poisonPuddles = [];
+                }
+                if (store.geminiSlowFields) {
+                    store.geminiSlowFields = [];
                 }
                 // Also clear poison blobs still in flight to prevent persistent puddles
                 store.bullets = store.bullets.filter(b => {
@@ -14472,10 +14881,44 @@
                         ctx.globalAlpha = alpha;
                     }
 
-                    ctx.fillStyle = b.col;
-                    ctx.beginPath();
-                    ctx.arc(b.x, b.y, b.r, 0, 6.283185307179586); // Use constant
-                    ctx.fill();
+                    if (b.geminiTag === 'ice_shard') {
+                        ctx.save();
+                        ctx.translate(b.x, b.y);
+                        ctx.rotate(Math.atan2(b.vy || 0, b.vx || 1) + Math.PI / 2);
+                        const baseRadius = Math.max(4, (b.r || 7) * 0.9);
+                        const shardLength = baseRadius * 3.5;
+                        const gradient = ctx.createLinearGradient(0, -shardLength, 0, shardLength * 0.4);
+                        gradient.addColorStop(0, 'rgba(200, 255, 255, 0.95)');
+                        gradient.addColorStop(0.5, 'rgba(120, 220, 255, 0.65)');
+                        gradient.addColorStop(1, 'rgba(80, 180, 255, 0.15)');
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.moveTo(0, -shardLength);
+                        ctx.lineTo(baseRadius, shardLength * 0.25);
+                        ctx.lineTo(0, shardLength * 0.5);
+                        ctx.lineTo(-baseRadius, shardLength * 0.25);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.restore();
+                    } else if (b.geminiTag === 'sol_fire' || b.geminiTag === 'solar_wave') {
+                        ctx.save();
+                        ctx.translate(b.x, b.y);
+                        const radius = (b.r || 8) * 1.4;
+                        const gradient = ctx.createRadialGradient(0, 0, radius * 0.25, 0, 0, radius);
+                        gradient.addColorStop(0, 'rgba(255, 255, 220, 0.95)');
+                        gradient.addColorStop(0.45, b.geminiTag === 'solar_wave' ? 'rgba(255, 170, 70, 0.85)' : 'rgba(255, 190, 90, 0.9)');
+                        gradient.addColorStop(1, 'rgba(255, 120, 40, 0)');
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                    } else {
+                        ctx.fillStyle = b.col;
+                        ctx.beginPath();
+                        ctx.arc(b.x, b.y, b.r, 0, 6.283185307179586); // Use constant
+                        ctx.fill();
+                    }
 
                     if (alpha < 1.0) {
                         ctx.restore();
@@ -14709,6 +15152,7 @@
                 drawTemporalEchoes();
                 drawShadowEchoes();
                 drawTemporalBeam();
+                drawGeminiSlowFields();
                 if (store.boss && store.boss.visible !== false) drawBoss(store.boss);
                 store.flameParticles.forEach(p => {
                     if (p.draw) p.draw(ctx);
@@ -15259,31 +15703,87 @@
 
                     const proxFactor = 1.0 - (dist / proximityThreshold);
 
-                    ctx.save();
-                    ctx.globalCompositeOperation = 'lighter';
-                    ctx.globalAlpha = proxFactor * fadeAlpha;
-                    const glowRadius = b.r * 2;
-                    const gradient = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, glowRadius);
-                    gradient.addColorStop(0.3, b.col);
-                    gradient.addColorStop(1, b.col + '00');
-                    ctx.fillStyle = gradient;
-                    ctx.beginPath();
-                    ctx.arc(b.x, b.y, glowRadius, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.restore();
+                    const isGeminiIce = b.geminiTag === 'ice_shard';
+                    const isGeminiSolar = b.geminiTag === 'sol_fire' || b.geminiTag === 'solar_wave';
 
-                    ctx.save();
-                    ctx.globalAlpha = fadeAlpha;
-                    ctx.fillStyle = b.col;
-                    ctx.beginPath();
-                    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-                    ctx.fill();
+                    if (isGeminiIce || isGeminiSolar) {
+                        ctx.save();
+                        ctx.globalCompositeOperation = 'lighter';
+                        ctx.globalAlpha = (proxFactor * 0.8 + 0.2) * fadeAlpha;
+                        const glowRadius = (b.r || 7) * (isGeminiIce ? 3 : 3.2);
+                        const gradient = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, glowRadius);
+                        if (isGeminiIce) {
+                            gradient.addColorStop(0, 'rgba(200, 255, 255, 0.9)');
+                            gradient.addColorStop(0.6, 'rgba(110, 210, 255, 0.5)');
+                            gradient.addColorStop(1, 'rgba(80, 150, 255, 0)');
+                        } else {
+                            gradient.addColorStop(0, 'rgba(255, 255, 210, 0.95)');
+                            gradient.addColorStop(0.5, isGeminiSolar && b.geminiTag === 'solar_wave' ? 'rgba(255, 160, 70, 0.65)' : 'rgba(255, 190, 90, 0.7)');
+                            gradient.addColorStop(1, 'rgba(255, 120, 40, 0)');
+                        }
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(b.x, b.y, glowRadius, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
 
-                    ctx.fillStyle = `rgba(255, 255, 255, ${proxFactor * 0.8 * fadeAlpha})`;
-                    ctx.beginPath();
-                    ctx.arc(b.x, b.y, b.r * 0.5, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.restore();
+                        ctx.save();
+                        ctx.globalAlpha = fadeAlpha;
+                        ctx.translate(b.x, b.y);
+                        if (isGeminiIce) {
+                            ctx.rotate(Math.atan2(b.vy || 0, b.vx || 1) + Math.PI / 2);
+                            const baseRadius = Math.max(4, (b.r || 7) * 1);
+                            const shardLength = baseRadius * 3.6;
+                            ctx.fillStyle = 'rgba(210, 255, 255, 0.9)';
+                            ctx.beginPath();
+                            ctx.moveTo(0, -shardLength);
+                            ctx.lineTo(baseRadius, shardLength * 0.28);
+                            ctx.lineTo(0, shardLength * 0.52);
+                            ctx.lineTo(-baseRadius, shardLength * 0.28);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.strokeStyle = 'rgba(120, 220, 255, 0.8)';
+                            ctx.lineWidth = 1.2;
+                            ctx.stroke();
+                        } else {
+                            const radius = (b.r || 8) * 1.6;
+                            const coreGradient = ctx.createRadialGradient(0, 0, radius * 0.2, 0, 0, radius);
+                            coreGradient.addColorStop(0, 'rgba(255, 255, 230, 1)');
+                            coreGradient.addColorStop(0.45, b.geminiTag === 'solar_wave' ? 'rgba(255, 180, 90, 0.9)' : 'rgba(255, 200, 120, 0.95)');
+                            coreGradient.addColorStop(1, 'rgba(255, 130, 40, 0.05)');
+                            ctx.fillStyle = coreGradient;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, radius, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                        ctx.restore();
+                    } else {
+                        ctx.save();
+                        ctx.globalCompositeOperation = 'lighter';
+                        ctx.globalAlpha = proxFactor * fadeAlpha;
+                        const glowRadius = b.r * 2;
+                        const gradient = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, glowRadius);
+                        gradient.addColorStop(0.3, b.col);
+                        gradient.addColorStop(1, b.col + '00');
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(b.x, b.y, glowRadius, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+
+                        ctx.save();
+                        ctx.globalAlpha = fadeAlpha;
+                        ctx.fillStyle = b.col;
+                        ctx.beginPath();
+                        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        ctx.fillStyle = `rgba(255, 255, 255, ${proxFactor * 0.8 * fadeAlpha})`;
+                        ctx.beginPath();
+                        ctx.arc(b.x, b.y, b.r * 0.5, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                    }
                 });
 
                 store.activeEffects.forEach(e => e.draw && e.draw());
@@ -19720,6 +20220,545 @@
                 announce('⚡ ASYNCHRONOS WARPS BEHIND YOU!');
             }
 
+            const GEMINI_CONFIG = Object.freeze({
+                entryDuration: 1.65,
+                sol: {
+                    baseSpeed: 190,
+                    enragedSpeed: 245,
+                    radius: 56,
+                    primaryCooldown: { base: 1.55, enraged: 1.05 },
+                    waveCooldown: { base: 3.6, enraged: 2.4 },
+                    spreadAngle: 0.28
+                },
+                luna: {
+                    baseSpeed: 150,
+                    retreatSpeed: 210,
+                    radius: 50,
+                    primaryCooldown: { base: 1.8, enraged: 1.25 },
+                    shieldCooldown: { base: 12.5, enraged: 9.5 },
+                    slowFieldCooldown: { base: 6.2, enraged: 4.4 }
+                },
+                shared: {
+                    separation: 180,
+                    minY: 105,
+                    maxY: () => H * 0.55
+                }
+            });
+
+            function ensureGeminiState(boss) {
+                if (!boss) return null;
+                if (boss.geminiState) {
+                    return boss.geminiState;
+                }
+
+                const totalHp = Math.max(1, boss.hpMax || boss.baseHp || 8000);
+                const solHpMax = totalHp * 0.55;
+                const lunaHpMax = totalHp - solHpMax;
+                const state = {
+                    entry: {
+                        duration: GEMINI_CONFIG.entryDuration,
+                        progress: 0,
+                        startY: -160,
+                        targetSolY: 120,
+                        targetLunaY: 110,
+                        announced: false,
+                        complete: false
+                    },
+                    sol: {
+                        id: 'sol',
+                        label: 'SOL',
+                        x: W * 0.35,
+                        y: -200,
+                        hp: solHpMax,
+                        hpMax: solHpMax,
+                        radius: GEMINI_CONFIG.sol.radius,
+                        fireTimer: GEMINI_CONFIG.sol.primaryCooldown.base,
+                        waveTimer: GEMINI_CONFIG.sol.waveCooldown.base,
+                        enraged: false,
+                        shieldActive: false,
+                        shieldTimer: 0,
+                        shieldHp: 0,
+                        defeated: false
+                    },
+                    luna: {
+                        id: 'luna',
+                        label: 'LUNA',
+                        x: W * 0.65,
+                        y: -220,
+                        hp: lunaHpMax,
+                        hpMax: lunaHpMax,
+                        radius: GEMINI_CONFIG.luna.radius,
+                        fireTimer: GEMINI_CONFIG.luna.primaryCooldown.base,
+                        shieldCooldown: GEMINI_CONFIG.luna.shieldCooldown.base,
+                        slowFieldCooldown: GEMINI_CONFIG.luna.slowFieldCooldown.base,
+                        enraged: false,
+                        defeated: false
+                    },
+                    timers: {
+                        shared: 0,
+                        announcementSol: false,
+                        announcementLuna: false,
+                        dualCallout: false
+                    }
+                };
+
+                boss.geminiState = state;
+                boss.hpMax = solHpMax + lunaHpMax;
+                boss.hp = boss.hpMax;
+                boss.r = Math.max(GEMINI_CONFIG.sol.radius, GEMINI_CONFIG.luna.radius) + 42;
+                boss.isInvincible = true;
+                boss.isEnraged = false;
+                boss.x = (state.sol.x + state.luna.x) * 0.5;
+                boss.y = (state.sol.y + state.luna.y) * 0.5;
+                return state;
+            }
+
+            function geminiUpdateCenter(boss, state) {
+                if (!boss || !state) return;
+                boss.x = (state.sol.x + state.luna.x) * 0.5;
+                boss.y = (state.sol.y + state.luna.y) * 0.5;
+                boss.hp = Math.max(0, Math.max(0, state.sol.hp) + Math.max(0, state.luna.hp));
+                boss.hpMax = Math.max(1, Math.max(0, state.sol.hpMax) + Math.max(0, state.luna.hpMax));
+                boss.isEnraged = (!!state.sol.enraged && state.sol.hp > 0) || (!!state.luna.enraged && state.luna.hp > 0);
+            }
+
+            function getGeminiHitInfo(boss, point, padding = 0) {
+                if (!boss || boss.behavior !== 'gemini' || !point) {
+                    return null;
+                }
+                const state = ensureGeminiState(boss);
+                if (!state || !state.entry.complete) {
+                    return null;
+                }
+
+                let best = null;
+                const subs = [state.sol, state.luna];
+                for (let i = 0; i < subs.length; i++) {
+                    const sub = subs[i];
+                    if (!sub || sub.hp <= 0) continue;
+                    const radius = Math.max(12, (sub.radius || 50) + padding);
+                    const dx = point.x - sub.x;
+                    const dy = point.y - sub.y;
+                    const distSq = dx * dx + dy * dy;
+                    if (distSq <= radius * radius) {
+                        if (!best || distSq < best.distSq) {
+                            best = { id: sub.id, x: sub.x, y: sub.y, radius, distSq };
+                        }
+                    }
+                }
+                return best;
+            }
+
+            function applyGeminiBossDamage(boss, amount, options = {}) {
+                const state = ensureGeminiState(boss);
+                if (!state) {
+                    return { amount: 0, blocked: true };
+                }
+                if (!state.entry.complete && !options.ignoreEntry) {
+                    return { amount: 0, blocked: true };
+                }
+                let targetKey = options.subBoss || (options.point ? (getGeminiHitInfo(boss, options.point)?.id) : null) || 'sol';
+                let target = targetKey === 'luna' ? state.luna : state.sol;
+                if (!target || target.hp <= 0) {
+                    targetKey = targetKey === 'luna' ? 'sol' : 'luna';
+                    target = targetKey === 'luna' ? state.luna : state.sol;
+                    if (!target || target.hp <= 0) {
+                        return { amount: 0, blocked: true };
+                    }
+                }
+
+                let remaining = Math.max(0, amount);
+                let applied = 0;
+                if (target.id === 'sol' && target.shieldActive && target.shieldHp > 0) {
+                    const absorbed = Math.min(target.shieldHp, remaining);
+                    target.shieldHp -= absorbed;
+                    remaining -= absorbed;
+                    if (target.shieldHp <= 0) {
+                        target.shieldActive = false;
+                        target.shieldTimer = 0;
+                        store.activeEffects.push(createEffect('spawnTeleport', target.x, target.y, target.radius + 24, {
+                            color: '#66f2ff',
+                            duration: 0.5
+                        }));
+                    }
+                    if (remaining <= 0) {
+                        geminiUpdateCenter(boss, state);
+                        return { amount: 0, blocked: true };
+                    }
+                }
+
+                const hpBefore = target.hp;
+                target.hp = Math.max(0, target.hp - remaining);
+                applied = Math.max(0, hpBefore - target.hp);
+                if (target.hp <= 0 && !target.defeated) {
+                    target.defeated = true;
+                    target.defeatTime = performance.now();
+                    store.activeEffects.push(createEffect('bossPhaseChange', target.x, target.y));
+                }
+
+                store.world.totalDamage += applied;
+                geminiUpdateCenter(boss, state);
+
+                if (boss.hp <= 0) {
+                    handleBossDefeat();
+                }
+
+                return { amount: applied, blocked: applied <= 0 };
+            }
+
+            function testGeminiBulletCollision(boss, bullet) {
+                if (!bullet) return null;
+                return getGeminiHitInfo(boss, { x: bullet.x, y: bullet.y }, bullet.r || 0);
+            }
+
+            function spawnGeminiSlowField({ x, y, radius, slowFactor, duration }) {
+                if (!store.geminiSlowFields) {
+                    store.geminiSlowFields = [];
+                }
+                const field = {
+                    x: clamp(x, 80, W - 80),
+                    y: clamp(y, 90, H - 120),
+                    radius: radius,
+                    maxRadius: radius,
+                    slowFactor: clamp(slowFactor, 0.3, 0.9),
+                    life: duration,
+                    maxLife: duration,
+                    pulse: Math.random() * Math.PI * 2
+                };
+                store.geminiSlowFields.push(field);
+                store.activeEffects.push(createEffect('spawnTeleport', field.x, field.y, radius * 0.75, {
+                    color: '#66f2ff',
+                    duration: 0.6
+                }));
+                return field;
+            }
+
+            function stepGeminiSlowFields(dt) {
+                const fields = store.geminiSlowFields;
+                if (!fields || !fields.length) return;
+                for (let i = fields.length - 1; i >= 0; i--) {
+                    const field = fields[i];
+                    field.life -= dt;
+                    field.pulse += dt * 2.4;
+                    if (field.life <= 0) {
+                        fields.splice(i, 1);
+                    }
+                }
+            }
+
+            function drawGeminiSlowFields() {
+                const fields = store.geminiSlowFields;
+                if (!fields || !fields.length) return;
+                const now = performance.now() / 1000;
+                fields.forEach(field => {
+                    const lifeRatio = clamp(field.life / field.maxLife, 0, 1);
+                    const pulseScale = 1 + Math.sin(field.pulse + now * 0.8) * 0.08;
+                    const radius = field.radius * pulseScale;
+                    ctx.save();
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.globalAlpha = 0.45 * lifeRatio;
+                    const gradient = ctx.createRadialGradient(field.x, field.y, radius * 0.2, field.x, field.y, radius);
+                    gradient.addColorStop(0, 'rgba(140, 230, 255, 0.7)');
+                    gradient.addColorStop(0.6, 'rgba(120, 200, 255, 0.35)');
+                    gradient.addColorStop(1, 'rgba(120, 200, 255, 0)');
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(field.x, field.y, radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                });
+            }
+
+            function computeGeminiSlowMultiplier(player) {
+                if (!player) return 1;
+                let multiplier = 1;
+                if (player.geminiHitSlowTimer && player.geminiHitSlowTimer > 0) {
+                    const hitStrength = clamp(player.geminiHitSlowStrength || 0.6, 0.25, 0.95);
+                    multiplier = Math.min(multiplier, hitStrength);
+                }
+                const fields = store.geminiSlowFields;
+                if (fields && fields.length) {
+                    for (let i = 0; i < fields.length; i++) {
+                        const field = fields[i];
+                        const dx = player.x - field.x;
+                        const dy = player.y - field.y;
+                        const distSq = dx * dx + dy * dy;
+                        const radius = field.radius;
+                        if (distSq <= radius * radius) {
+                            const dist = Math.sqrt(distSq);
+                            const ratio = clamp(dist / radius, 0, 1);
+                            const factor = field.slowFactor + (1 - field.slowFactor) * ratio;
+                            multiplier = Math.min(multiplier, factor);
+                        }
+                    }
+                }
+                return clamp(multiplier, 0.3, 1);
+            }
+
+            function applyGeminiHitSlow(player, strength, duration) {
+                if (!player) return;
+                const clampedStrength = clamp(strength, 0.25, 0.95);
+                const clampedDuration = Math.max(0.3, duration);
+                player.geminiHitSlowStrength = Math.min(player.geminiHitSlowStrength || 1, clampedStrength);
+                player.geminiHitSlowTimer = Math.max(player.geminiHitSlowTimer || 0, clampedDuration);
+            }
+
+            function geminiFireSolPrimary(boss, state, dmgScale, angle) {
+                const sol = state.sol;
+                const speed = sol.enraged ? 280 : 240;
+                const bullet = getEBulletFromPool({
+                    x: sol.x,
+                    y: sol.y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    r: sol.enraged ? 9 : 7,
+                    col: sol.enraged ? '#ff7b26' : '#ffc968',
+                    dmg: (sol.enraged ? 26 : 22) * dmgScale,
+                    life: 4.2,
+                    geminiTag: 'sol_fire',
+                    homeDuration: sol.enraged ? 0.75 : 0.5,
+                    homeStrength: sol.enraged ? 190 : 150
+                });
+                store.eBullets.push(bullet);
+                store.activeEffects.push(createEffect('spawnTeleport', sol.x, sol.y, sol.radius * 0.85, {
+                    color: '#ffb35a',
+                    duration: 0.3
+                }));
+            }
+
+            function geminiFireSolWave(boss, state, dmgScale) {
+                const sol = state.sol;
+                const count = sol.enraged ? 12 : 8;
+                const baseSpeed = sol.enraged ? 220 : 190;
+                for (let i = 0; i < count; i++) {
+                    const angle = (i / count) * Math.PI * 2;
+                    const bullet = getEBulletFromPool({
+                        x: sol.x,
+                        y: sol.y,
+                        vx: Math.cos(angle) * baseSpeed,
+                        vy: Math.sin(angle) * baseSpeed,
+                        r: 6,
+                        col: sol.enraged ? '#ff924b' : '#ffd27a',
+                        dmg: (sol.enraged ? 18 : 15) * dmgScale,
+                        life: 3.6,
+                        geminiTag: 'solar_wave'
+                    });
+                    store.eBullets.push(bullet);
+                }
+                store.activeEffects.push(createEffect('novaRing', sol.x, sol.y, sol.radius + 90, {
+                    color: '#ffaf5a',
+                    duration: 0.45
+                }));
+            }
+
+            function geminiFireLunaShard(boss, state, dmgScale, angle, speedMultiplier = 1) {
+                const luna = state.luna;
+                const speed = (luna.enraged ? 250 : 210) * speedMultiplier;
+                const shard = getEBulletFromPool({
+                    x: luna.x,
+                    y: luna.y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    r: luna.enraged ? 8 : 7,
+                    col: '#66f2ff',
+                    dmg: (luna.enraged ? 22 : 18) * dmgScale,
+                    life: 4.8,
+                    geminiTag: 'ice_shard',
+                    slowFactor: luna.enraged ? 0.45 : 0.6,
+                    slowDuration: luna.enraged ? 2.2 : 1.6
+                });
+                store.eBullets.push(shard);
+                store.activeEffects.push(createEffect('spawnTeleport', luna.x, luna.y, luna.radius * 0.75, {
+                    color: '#66f2ff',
+                    duration: 0.3
+                }));
+            }
+
+            function geminiTriggerSolarShield(state) {
+                const sol = state.sol;
+                const luna = state.luna;
+                if (!sol || sol.hp <= 0 || sol.shieldActive) return;
+                sol.shieldActive = true;
+                sol.shieldTimer = luna.enraged ? 6 : 4.6;
+                sol.shieldHp = sol.hpMax * (luna.enraged ? 0.12 : 0.08);
+                store.activeEffects.push(createEffect('spawnTeleport', sol.x, sol.y, sol.radius + 32, {
+                    color: '#9de7ff',
+                    duration: 0.6
+                }));
+                if (!state.timers.shieldAnnounce) {
+                    announce('"Luna casts a frostguard over Sol!"');
+                    state.timers.shieldAnnounce = true;
+                }
+            }
+
+            function stepBossGemini(dt, boss, dmgScale) {
+                const state = ensureGeminiState(boss);
+                if (!state) return;
+
+                state.timers.shared += dt;
+
+                const player = store.player;
+                if (!player) return;
+
+                const entry = state.entry;
+                if (!entry.complete) {
+                    entry.progress = Math.min(1, entry.progress + dt / Math.max(0.2, entry.duration));
+                    const eased = 1 - Math.pow(1 - entry.progress, 3);
+                    state.sol.y = entry.startY + (entry.targetSolY - entry.startY) * eased;
+                    state.luna.y = entry.startY - 20 + (entry.targetLunaY - entry.startY + 20) * eased;
+                    state.sol.x += (W * 0.35 - state.sol.x) * Math.min(1, dt * 3.2);
+                    state.luna.x += (W * 0.65 - state.luna.x) * Math.min(1, dt * 3.2);
+                    if (!entry.announced && entry.progress >= 0.65) {
+                        entry.announced = true;
+                        announce('"The Gemini dancers descend in tandem."');
+                    }
+                    if (entry.progress >= 1) {
+                        entry.complete = true;
+                        boss.isInvincible = false;
+                    }
+                    geminiUpdateCenter(boss, state);
+                    return;
+                }
+
+                const sol = state.sol;
+                const luna = state.luna;
+
+                sol.enraged = (luna.hp > 0 && luna.hp / luna.hpMax <= 0.5) || luna.hp <= 0;
+                luna.enraged = (sol.hp > 0 && sol.hp / sol.hpMax <= 0.5) || sol.hp <= 0;
+
+                if (sol.enraged && !state.timers.announcementSol) {
+                    state.timers.announcementSol = true;
+                    announce('SOL blazes hotter as Luna falters!');
+                }
+                if (luna.enraged && !state.timers.announcementLuna) {
+                    state.timers.announcementLuna = true;
+                    announce('LUNA channels icy focus as Sol weakens!');
+                }
+                if (sol.enraged && luna.enraged && !state.timers.dualCallout) {
+                    state.timers.dualCallout = true;
+                    announce('The Gemini dancers synchronize their fury!');
+                }
+
+                if (sol.hp > 0) {
+                    const dx = player.x - sol.x;
+                    const dy = (player.y - 30) - sol.y;
+                    const dist = Math.hypot(dx, dy) || 1;
+                    const speed = sol.enraged ? GEMINI_CONFIG.sol.enragedSpeed : GEMINI_CONFIG.sol.baseSpeed;
+                    sol.x += (dx / dist) * speed * dt;
+                    sol.y += (dy / dist) * speed * dt;
+                    sol.x = clamp(sol.x, sol.radius + 40, W - sol.radius - 40);
+                    sol.y = clamp(sol.y, GEMINI_CONFIG.shared.minY, GEMINI_CONFIG.shared.maxY());
+                }
+
+                if (luna.hp > 0) {
+                    const dx = player.x - luna.x;
+                    const dy = (player.y - 50) - luna.y;
+                    const dist = Math.hypot(dx, dy) || 1;
+                    const desired = luna.enraged ? 340 : 300;
+                    const retreatSpeed = luna.enraged ? GEMINI_CONFIG.luna.retreatSpeed : GEMINI_CONFIG.luna.retreatSpeed * 0.9;
+                    const advanceSpeed = luna.enraged ? GEMINI_CONFIG.luna.baseSpeed * 1.1 : GEMINI_CONFIG.luna.baseSpeed;
+                    if (dist < desired - 40) {
+                        luna.x -= (dx / dist) * retreatSpeed * dt;
+                        luna.y -= (dy / dist) * retreatSpeed * dt;
+                    } else if (dist > desired + 60) {
+                        luna.x += (dx / dist) * advanceSpeed * dt;
+                        luna.y += (dy / dist) * advanceSpeed * 0.6 * dt;
+                    } else {
+                        const strafeAngle = Math.atan2(dy, dx) + Math.PI / 2;
+                        luna.x += Math.cos(strafeAngle) * advanceSpeed * 0.55 * dt;
+                        luna.y += Math.sin(strafeAngle) * advanceSpeed * 0.4 * dt;
+                    }
+                    luna.x = clamp(luna.x, luna.radius + 40, W - luna.radius - 40);
+                    luna.y = clamp(luna.y, GEMINI_CONFIG.shared.minY - 10, GEMINI_CONFIG.shared.maxY() - 20);
+                }
+
+                // Maintain separation
+                const dxPair = sol.x - luna.x;
+                const dyPair = sol.y - luna.y;
+                const distPair = Math.hypot(dxPair, dyPair);
+                if (distPair > 0 && distPair < GEMINI_CONFIG.shared.separation) {
+                    const push = (GEMINI_CONFIG.shared.separation - distPair) * 0.5;
+                    const nx = dxPair / distPair;
+                    const ny = dyPair / distPair;
+                    sol.x += nx * push * dt * 6;
+                    sol.y += ny * push * dt * 6;
+                    luna.x -= nx * push * dt * 6;
+                    luna.y -= ny * push * dt * 6;
+                }
+
+                geminiUpdateCenter(boss, state);
+
+                if (sol.shieldActive) {
+                    sol.shieldTimer -= dt;
+                    if (sol.shieldTimer <= 0 || sol.hp <= 0) {
+                        sol.shieldActive = false;
+                        sol.shieldHp = 0;
+                    }
+                }
+
+                if (sol.hp > 0) {
+                    sol.fireTimer -= dt;
+                    if (sol.fireTimer <= 0) {
+                        const angle = Math.atan2(player.y - sol.y, player.x - sol.x);
+                        geminiFireSolPrimary(boss, state, dmgScale, angle);
+                        if (sol.enraged) {
+                            for (let i = -2; i <= 2; i++) {
+                                if (i === 0) continue;
+                                geminiFireSolPrimary(boss, state, dmgScale, angle + i * GEMINI_CONFIG.sol.spreadAngle);
+                            }
+                        }
+                        sol.fireTimer = sol.enraged ? GEMINI_CONFIG.sol.primaryCooldown.enraged : GEMINI_CONFIG.sol.primaryCooldown.base;
+                    }
+
+                    sol.waveTimer -= dt;
+                    if (sol.waveTimer <= 0 && sol.enraged) {
+                        geminiFireSolWave(boss, state, dmgScale);
+                        sol.waveTimer = GEMINI_CONFIG.sol.waveCooldown.enraged;
+                    } else if (sol.waveTimer <= 0) {
+                        sol.waveTimer = GEMINI_CONFIG.sol.waveCooldown.base;
+                    }
+                }
+
+                if (luna.hp > 0) {
+                    luna.fireTimer -= dt;
+                    if (luna.fireTimer <= 0) {
+                        const angle = Math.atan2((player.y - 20) - luna.y, player.x - luna.x);
+                        geminiFireLunaShard(boss, state, dmgScale, angle, 1);
+                        if (luna.enraged) {
+                            geminiFireLunaShard(boss, state, dmgScale, angle + 0.18, 0.95);
+                            geminiFireLunaShard(boss, state, dmgScale, angle - 0.18, 0.95);
+                        }
+                        luna.fireTimer = luna.enraged ? GEMINI_CONFIG.luna.primaryCooldown.enraged : GEMINI_CONFIG.luna.primaryCooldown.base;
+                    }
+
+                    luna.slowFieldCooldown -= dt;
+                    const existingFields = store.geminiSlowFields || (store.geminiSlowFields = []);
+                    if (luna.slowFieldCooldown <= 0 && existingFields.length < 5) {
+                        const targetX = clamp(player.x + (player.x - sol.x) * 0.12, 110, W - 110);
+                        const targetY = clamp(player.y - 40, 110, H - 160);
+                        spawnGeminiSlowField({
+                            x: targetX,
+                            y: targetY,
+                            radius: luna.enraged ? 135 : 110,
+                            slowFactor: luna.enraged ? 0.45 : 0.6,
+                            duration: luna.enraged ? 6 : 4.8
+                        });
+                        luna.slowFieldCooldown = luna.enraged ? GEMINI_CONFIG.luna.slowFieldCooldown.enraged : GEMINI_CONFIG.luna.slowFieldCooldown.base;
+                    }
+
+                    luna.shieldCooldown -= dt;
+                    if (luna.shieldCooldown <= 0 && sol.hp > 0 && sol.hp / sol.hpMax <= (luna.enraged ? 0.85 : 0.92)) {
+                        geminiTriggerSolarShield(state);
+                        luna.shieldCooldown = luna.enraged ? GEMINI_CONFIG.luna.shieldCooldown.enraged : GEMINI_CONFIG.luna.shieldCooldown.base;
+                    }
+                }
+
+                if (sol.hp <= 0 && luna.hp <= 0 && boss.hp > 0) {
+                    boss.hp = 0;
+                    handleBossDefeat();
+                }
+            }
+
             function stepBossAsynchronos(dt, b, dmgScale) {
                 const state = ensureAsynchronosState(b);
                 ensureTemporalSystems();
@@ -21418,6 +22457,7 @@
                 if (b.slowTimer > 0) { b.slowTimer -= dt; dt *= 0.3; }
 
                 switch (b.behavior) {
+                    case 'gemini': stepBossGemini(dt, b, dmgScale); break;
                     case 'sentinel': stepBossOmegaSentinel(dt, b, dmgScale); break;
                     case 'aegis_architect': stepBossCoreAegisArchitect(dt, b, dmgScale); break;
                     case 'hex': stepBossTheHex(dt, b, dmgScale); break;
@@ -22114,6 +23154,11 @@
 
                     // No health bar or physical form - just the void
                     ctx.restore();
+                    return;
+                }
+
+                if (t.behavior === 'gemini') {
+                    drawGeminiBoss(t);
                     return;
                 }
 
@@ -24665,6 +25710,251 @@
                                 ctx.stroke();
                             });
 
+
+                        function drawGeminiBoss(boss) {
+                            const state = ensureGeminiState(boss);
+                            if (!state) return;
+                            const sol = state.sol;
+                            const luna = state.luna;
+                            const totalHpMax = Math.max(1, (sol.hpMax || 0) + (luna.hpMax || 0));
+                            const solShare = clamp((sol.hpMax || 0) / totalHpMax, 0, 1);
+                            const lunaShare = clamp((luna.hpMax || 0) / totalHpMax, 0, 1);
+                            const solRatio = sol.hpMax > 0 ? clamp(sol.hp / sol.hpMax, 0, 1) : 0;
+                            const lunaRatio = luna.hpMax > 0 ? clamp(luna.hp / luna.hpMax, 0, 1) : 0;
+                            const now = performance.now() / 1000;
+
+                            ctx.save();
+                            ctx.translate(boss.x, boss.y);
+                            const barWidth = 200;
+                            const barHeight = 12;
+                            ctx.fillStyle = 'rgba(12, 10, 18, 0.74)';
+                            ctx.fillRect(-barWidth / 2, -boss.r - 32, barWidth, barHeight);
+                            const solWidth = barWidth * solShare;
+                            const lunaWidth = barWidth - solWidth;
+                            ctx.fillStyle = 'rgba(255, 180, 100, 0.9)';
+                            ctx.fillRect(-barWidth / 2, -boss.r - 32, solWidth * solRatio, barHeight);
+                            ctx.fillStyle = 'rgba(120, 210, 255, 0.85)';
+                            ctx.fillRect(-barWidth / 2 + solWidth, -boss.r - 32, lunaWidth * lunaRatio, barHeight);
+                            ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+                            ctx.lineWidth = 1;
+                            ctx.strokeRect(-barWidth / 2, -boss.r - 32, barWidth, barHeight);
+                            if (solWidth > 0 && solWidth < barWidth) {
+                                ctx.beginPath();
+                                ctx.moveTo(-barWidth / 2 + solWidth, -boss.r - 32);
+                                ctx.lineTo(-barWidth / 2 + solWidth, -boss.r - 20);
+                                ctx.stroke();
+                            }
+                            ctx.font = '11px Orbitron, sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.fillStyle = '#ffe8c9';
+                            ctx.fillText('SOL', -barWidth / 2 + solWidth * 0.5, -boss.r - 38);
+                            ctx.fillStyle = '#cdefff';
+                            ctx.fillText('LUNA', -barWidth / 2 + solWidth + lunaWidth * 0.5, -boss.r - 38);
+                            ctx.restore();
+
+                            drawGeminiSol(state, now);
+                            drawGeminiLuna(state, now);
+                            drawGeminiHealthBars(state);
+                        }
+
+                        function drawGeminiSol(state, now) {
+                            const sol = state.sol;
+                            ctx.save();
+                            ctx.translate(sol.x, sol.y);
+                            const alive = sol.hp > 0;
+                            const baseAlpha = alive ? 1 : 0.35;
+                            ctx.globalAlpha = baseAlpha;
+
+                            const auraPulse = 1 + 0.06 * Math.sin(now * 3.4 + sol.x * 0.012);
+                            const auraRadius = sol.radius * 1.85 * auraPulse;
+                            const aura = ctx.createRadialGradient(0, 0, sol.radius * 0.4, 0, 0, auraRadius);
+                            aura.addColorStop(0, sol.enraged ? 'rgba(255, 160, 60, 0.9)' : 'rgba(255, 190, 120, 0.75)');
+                            aura.addColorStop(1, 'rgba(255, 120, 40, 0)');
+                            ctx.save();
+                            ctx.globalCompositeOperation = 'lighter';
+                            ctx.fillStyle = aura;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.restore();
+
+                            ctx.save();
+                            ctx.rotate(now * (sol.enraged ? 1.2 : 0.7));
+                            const spikes = sol.enraged ? 14 : 10;
+                            ctx.strokeStyle = sol.enraged ? 'rgba(255, 130, 40, 0.85)' : 'rgba(255, 200, 140, 0.8)';
+                            ctx.lineWidth = 3;
+                            for (let i = 0; i < spikes; i++) {
+                                const angle = (i / spikes) * Math.PI * 2;
+                                const inner = sol.radius * 0.75;
+                                const outer = sol.radius * (1.6 + 0.12 * Math.sin(now * 4 + i));
+                                ctx.beginPath();
+                                ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+                                ctx.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
+                                ctx.stroke();
+                            }
+                            ctx.restore();
+
+                            const bodyGradient = ctx.createRadialGradient(0, 0, sol.radius * 0.2, 0, 0, sol.radius * 1.08);
+                            bodyGradient.addColorStop(0, '#fff8dd');
+                            bodyGradient.addColorStop(0.5, sol.enraged ? '#ffb54d' : '#ffdba2');
+                            bodyGradient.addColorStop(1, sol.enraged ? '#ff8430' : '#ffb86a');
+                            ctx.fillStyle = bodyGradient;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, sol.radius * 1.05, 0, Math.PI * 2);
+                            ctx.fill();
+
+                            ctx.fillStyle = '#7a2d00';
+                            ctx.beginPath();
+                            ctx.arc(-sol.radius * 0.38, -sol.radius * 0.18, sol.enraged ? 6 : 5, 0, Math.PI * 2);
+                            ctx.arc(sol.radius * 0.38, -sol.radius * 0.18, sol.enraged ? 6 : 5, 0, Math.PI * 2);
+                            ctx.fill();
+
+                            ctx.fillStyle = sol.enraged ? '#ffe9c7' : '#fff3d6';
+                            ctx.beginPath();
+                            ctx.arc(0, sol.radius * 0.32, sol.radius * 0.42, 0.1, Math.PI - 0.1);
+                            ctx.fill();
+
+                            if (sol.shieldActive && sol.shieldHp > 0) {
+                                const shieldMax = sol.hpMax * (state.luna && state.luna.enraged ? 0.12 : 0.08);
+                                const shieldRatio = shieldMax > 0 ? clamp(sol.shieldHp / shieldMax, 0, 1) : 0;
+                                const shieldRadius = sol.radius * (1.55 + 0.1 * Math.sin(now * 5.6));
+                                ctx.strokeStyle = `rgba(120, 220, 255, ${0.35 + 0.3 * shieldRatio})`;
+                                ctx.lineWidth = 4;
+                                ctx.beginPath();
+                                ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
+                                ctx.stroke();
+                                ctx.strokeStyle = `rgba(90, 170, 255, ${0.4 + 0.3 * Math.sin(now * 8)})`;
+                                ctx.lineWidth = 2;
+                                ctx.beginPath();
+                                ctx.arc(0, 0, shieldRadius + 6, 0, Math.PI * 2);
+                                ctx.stroke();
+                            }
+
+                            if (!alive) {
+                                ctx.globalAlpha = 0.6;
+                                ctx.strokeStyle = 'rgba(255, 220, 180, 0.6)';
+                                ctx.lineWidth = 1.5;
+                                ctx.setLineDash([6, 6]);
+                                ctx.beginPath();
+                                ctx.arc(0, 0, sol.radius * 1.2, 0, Math.PI * 2);
+                                ctx.stroke();
+                                ctx.setLineDash([]);
+                            }
+
+                            ctx.restore();
+                        }
+
+                        function drawGeminiLuna(state, now) {
+                            const luna = state.luna;
+                            ctx.save();
+                            ctx.translate(luna.x, luna.y);
+                            const alive = luna.hp > 0;
+                            ctx.globalAlpha = alive ? 1 : 0.35;
+
+                            const auraPulse = 1 + 0.07 * Math.sin(now * 3.8 + luna.y * 0.015);
+                            const auraRadius = luna.radius * 1.9 * auraPulse;
+                            const aura = ctx.createRadialGradient(0, 0, luna.radius * 0.3, 0, 0, auraRadius);
+                            aura.addColorStop(0, luna.enraged ? 'rgba(140, 230, 255, 0.9)' : 'rgba(160, 245, 255, 0.75)');
+                            aura.addColorStop(1, 'rgba(80, 170, 255, 0)');
+                            ctx.save();
+                            ctx.globalCompositeOperation = 'lighter';
+                            ctx.fillStyle = aura;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.restore();
+
+                            const outerR = luna.radius * 1.1;
+                            const innerOffset = luna.radius * 0.5;
+                            ctx.fillStyle = luna.enraged ? '#73d9ff' : '#8fe6ff';
+                            ctx.beginPath();
+                            ctx.arc(0, 0, outerR, Math.PI * 0.2, Math.PI * 1.8);
+                            ctx.arc(innerOffset, 0, outerR * 0.85, Math.PI * 1.8, Math.PI * 0.2, true);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.strokeStyle = luna.enraged ? 'rgba(120, 220, 255, 0.85)' : 'rgba(150, 235, 255, 0.7)';
+                            ctx.lineWidth = 2.4;
+                            ctx.stroke();
+
+                            ctx.save();
+                            ctx.rotate(Math.sin(now * 1.2) * 0.1);
+                            ctx.strokeStyle = 'rgba(180, 240, 255, 0.4)';
+                            ctx.lineWidth = 2;
+                            for (let i = 0; i < 3; i++) {
+                                const sweep = Math.PI * (0.45 + i * 0.22);
+                                const radius = outerR * (0.9 + i * 0.18);
+                                ctx.globalAlpha = 0.5 - i * 0.12;
+                                ctx.beginPath();
+                                ctx.arc(0, 0, radius, -sweep / 2, sweep / 2);
+                                ctx.stroke();
+                            }
+                            ctx.restore();
+
+                            ctx.fillStyle = '#0f2a40';
+                            ctx.beginPath();
+                            ctx.arc(-luna.radius * 0.25, -luna.radius * 0.1, luna.enraged ? 5 : 4, 0, Math.PI * 2);
+                            ctx.arc(luna.radius * 0.05, -luna.radius * 0.25, luna.enraged ? 4 : 3.5, 0, Math.PI * 2);
+                            ctx.fill();
+
+                            const sparkleCount = luna.enraged ? 14 : 9;
+                            ctx.strokeStyle = 'rgba(200, 250, 255, 0.6)';
+                            ctx.lineWidth = 1.1;
+                            for (let i = 0; i < sparkleCount; i++) {
+                                const angle = now * (1.8 + i * 0.15) + i;
+                                const radius = outerR * (0.85 + 0.15 * Math.sin(now * 2 + i));
+                                const x = Math.cos(angle) * radius;
+                                const y = Math.sin(angle) * radius;
+                                ctx.beginPath();
+                                ctx.moveTo(x - 4, y);
+                                ctx.lineTo(x + 4, y);
+                                ctx.moveTo(x, y - 4);
+                                ctx.lineTo(x, y + 4);
+                                ctx.stroke();
+                            }
+
+                            if (!alive) {
+                                ctx.globalAlpha = 0.6;
+                                ctx.strokeStyle = 'rgba(120, 200, 255, 0.55)';
+                                ctx.setLineDash([5, 5]);
+                                ctx.beginPath();
+                                ctx.arc(0, 0, outerR * 1.2, 0, Math.PI * 2);
+                                ctx.stroke();
+                                ctx.setLineDash([]);
+                            }
+
+                            ctx.restore();
+                        }
+
+                        function drawGeminiHealthBars(state) {
+                            drawGeminiIndividualBar(state.sol, '#ff9f3b');
+                            drawGeminiIndividualBar(state.luna, '#66d0ff');
+                        }
+
+                        function drawGeminiIndividualBar(dancer, color) {
+                            const ratio = dancer.hpMax > 0 ? clamp(dancer.hp / dancer.hpMax, 0, 1) : 0;
+                            const width = 140;
+                            const x = dancer.x;
+                            const y = dancer.y + dancer.radius + 14;
+                            ctx.save();
+                            ctx.fillStyle = 'rgba(0, 0, 0, 0.68)';
+                            ctx.fillRect(x - width / 2, y, width, 8);
+                            ctx.fillStyle = color;
+                            ctx.fillRect(x - width / 2, y, width * ratio, 8);
+                            ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+                            ctx.lineWidth = 1;
+                            ctx.strokeRect(x - width / 2, y, width, 8);
+                            ctx.font = '12px Orbitron, sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.fillStyle = '#fdfdfd';
+                            let label = dancer.label || '';
+                            if (dancer.hp <= 0) {
+                                label += ' — DOWN';
+                            } else if (dancer.enraged) {
+                                label += ' ★';
+                            }
+                            ctx.fillText(label, x, y + 18);
+                            ctx.restore();
+                        }
                             ctx.restore();
                         };
                         break;
