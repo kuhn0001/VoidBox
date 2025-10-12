@@ -4985,6 +4985,8 @@
                     enemyHealthBonus: 1.0,
                     bossHealthBonus: 1.0,
                     enemyDensityBonus: 0.4,
+                    lastBossRapidKillMultiplier: 1,
+                    lastEnemyOverdriveAnnounce: 0,
                     powerupCooldown: 0,
                     xpMultiplier: 1.0,
                     collarStacks: 0,
@@ -6235,6 +6237,14 @@
                 }
 
                 if (dmg > 0) {
+                    const impactTime = performance.now();
+                    if (e !== store.boss) {
+                        e.hitCount = ensureFiniteNumber(e.hitCount, 0) + 1;
+                        if (!e.firstDamageTime) {
+                            e.firstDamageTime = impactTime;
+                        }
+                        e.lastDamageTime = impactTime;
+                    }
                     const hitX = impactPoint ? impactPoint.x : e.x;
                     const hitY = impactPoint ? impactPoint.y : e.y;
                     const impactAngle = Math.atan2(hitY - b.y, hitX - b.x);
@@ -6311,6 +6321,8 @@
                             spawnPowerup(e.x, e.y);
                         }
                         explode(e.x, e.y);
+
+                        applyRapidEnemyAdaptation(e, impactTime);
                     }
                 }
                 
@@ -10049,6 +10061,7 @@
                     const depthVariance = Math.random() * Math.random(); // Bias toward closer spawns
                     spawnY = -50 - depthVariance * 300;
                 }
+                const spawnTimestamp = performance.now();
                 const e = {
                     ...c,
                     type,
@@ -10064,7 +10077,11 @@
                     stunTimer: 0,
                     knockback: null,
                     hitPulseTimer: 0,
-                    hitPulseDuration: props.hitPulseDuration || 0.22
+                    hitPulseDuration: props.hitPulseDuration || 0.22,
+                    spawnedAt: spawnTimestamp,
+                    spawnX,
+                    spawnY,
+                    hitCount: 0
                 };
 
                 if (props.hpScale && props.hpScale !== 1) {
@@ -13992,6 +14009,38 @@
                 return false; // No progression available
             }
 
+            function applyRapidEnemyAdaptation(enemy, now = performance.now()) {
+                const world = store.world;
+                if (!world || !enemy) return;
+
+                const spawnAt = ensureFiniteNumber(enemy.spawnedAt, now);
+                const killTime = ensureFiniteNumber((now - spawnAt) / 1000, 0);
+                if (!Number.isFinite(killTime) || killTime <= 0 || killTime > 2.5) return;
+
+                const hits = ensureFiniteNumber(enemy.hitCount, 0);
+                const oneShot = hits <= 1;
+                const originX = ensureFiniteNumber(enemy.spawnX, enemy.x);
+                const originY = ensureFiniteNumber(enemy.spawnY, enemy.y);
+                const dx = ensureFiniteNumber(enemy.x, originX) - originX;
+                const dy = ensureFiniteNumber(enemy.y, originY) - originY;
+                const traveled = Math.hypot(dx, dy);
+                const travelThreshold = Math.max(100, (enemy.r || 12) * 4);
+
+                if (!oneShot) return;
+                if (traveled >= travelThreshold) return;
+                if ((store.world?.wave || 1) < 3) return;
+
+                const multiplier = Math.min(25, Math.max(1.5, 10 / Math.max(0.18, killTime)));
+                world.enemyHealthBonus = ensureFiniteNumber(world.enemyHealthBonus, 1) * multiplier;
+                world.enemyDensityBonus *= 1 + (multiplier - 1) * 0.1;
+                world.lastThreatScale = Math.max(world.lastThreatScale || 1, world.enemyHealthBonus);
+
+                if (now - world.lastEnemyOverdriveAnnounce > 1800) {
+                    announce(`⚠️ ENEMY OVERDRIVE x${multiplier.toFixed(1)} ⚠️`);
+                    world.lastEnemyOverdriveAnnounce = now;
+                }
+            }
+
             function handleBossDefeat() {
                 const activeBoss = store.boss;
                 const snapshot = activeBoss || store.lastBossSnapshot;
@@ -14035,6 +14084,8 @@
                 const now = performance.now();
                 const bossSpawnTime = ensureFiniteNumber(store.world.bossSpawnTime, now);
                 const fightDuration = ensureFiniteNumber((now - bossSpawnTime) / 1000, 0);
+                const rapidKillMultiplier = fightDuration > 0 && fightDuration <= 2 ? Math.min(40, Math.max(1.5, 10 / Math.max(0.1, fightDuration))) : 1;
+                store.world.lastBossRapidKillMultiplier = rapidKillMultiplier;
 
                 // Use progression logic with point award
                 checkProgressionLogic(true);
@@ -14081,16 +14132,25 @@
                 sanitizeCollarStacks();
 
                 if (fightDuration <= 2) {
-                    // Ultra-fast boss kill: massive collar bonus
-                    collarStacksToAdd = 12;
+                    const world = store.world;
+                    const overdrive = Math.max(rapidKillMultiplier, 1.5);
+                    collarStacksToAdd = Math.min(150, Math.max(12, Math.ceil(overdrive * 4)));
                     announcedAdaptation = true;
-                    if (store.world.wave >= 15) {
-                        store.world.consecutiveFastKills++;
-                        if (store.world.consecutiveFastKills === 1) { store.world.fastKillBonus = 0.20; } else { store.world.fastKillBonus *= 2; }
-                        healthBonusMultiplier = 1.4 + store.world.fastKillBonus;
-                        announce(`STREAK x${store.world.consecutiveFastKills}! GUARDIAN OVERDRIVE!`);
-                    } else { healthBonusMultiplier = 1.4; announce("GUARDIANS ADAPTING RAPIDLY!"); }
-                    announce(`💥 COLLAR CRUSHES +${collarStacksToAdd} 💥`);
+                    if (world) {
+                        world.bossHealthBonus = ensureFiniteNumber(world.bossHealthBonus, 1) * overdrive;
+                        world.enemyHealthBonus = ensureFiniteNumber(world.enemyHealthBonus, 1) * overdrive;
+                        world.enemyDensityBonus = ensureFiniteNumber(world.enemyDensityBonus, 0.4) * (1 + (overdrive - 1) * 0.2);
+                    }
+                    if (world && world.wave >= 15) {
+                        world.consecutiveFastKills++;
+                        if (world.consecutiveFastKills === 1) { world.fastKillBonus = 0.20; } else { world.fastKillBonus *= 2; }
+                        healthBonusMultiplier = Math.max(1.4, 1.2 + (overdrive - 1) * 0.25 + world.fastKillBonus);
+                        announce(`STREAK x${world.consecutiveFastKills}! GUARDIAN OVERDRIVE!`);
+                    } else {
+                        healthBonusMultiplier = Math.max(1.4, 1.2 + (overdrive - 1) * 0.25);
+                        announce("GUARDIANS ADAPTING RAPIDLY!");
+                    }
+                    announce(`💥 COLLAR CRUSHES +${collarStacksToAdd} | NEXT GUARDIAN x${overdrive.toFixed(1)} 💥`);
                 } else if (fightDuration <= 5) {
                     // Fast boss kill
                     collarStacksToAdd = Math.max(8, Math.floor(12 - (fightDuration * 1.5)));
@@ -14339,6 +14399,8 @@
                     enemyHealthBonus: 1.0,
                     bossHealthBonus: 1.0,
                     enemyDensityBonus: 0.4,
+                    lastBossRapidKillMultiplier: 1,
+                    lastEnemyOverdriveAnnounce: 0,
                     powerupCooldown: 0,
                     xpMultiplier: 1.0,
                     collarStacks: 0,
