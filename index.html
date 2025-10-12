@@ -8146,6 +8146,74 @@
                 enemy.x = Math.max(enemy.r + 5, Math.min(W - enemy.r - 5, enemy.x));
             }
 
+            // ═══════════════════════════════════════════════════════════════════════
+            // HUNTER GANG SYSTEM - Coordinated Color Schemes
+            // ═══════════════════════════════════════════════════════════════════════
+            
+            const HUNTER_GANGS = Object.freeze({
+                CRIMSON: {
+                    name: 'Crimson Vipers',
+                    bodyColor: '#cc3344',
+                    bodyStroke: '#7a1b24',
+                    headColor: '#e47777',
+                    headbandColor: '#8B0000',
+                    eyeColor: '#250b0b'
+                },
+                PURPLE: {
+                    name: 'Purple Serpents',
+                    bodyColor: '#7B3FB2',
+                    bodyStroke: '#4B0082',
+                    headColor: '#B388EB',
+                    headbandColor: '#6A0DAD',
+                    eyeColor: '#1a0a2e'
+                },
+                EMERALD: {
+                    name: 'Emerald Fangs',
+                    bodyColor: '#2d8a4e',
+                    bodyStroke: '#1a5c34',
+                    headColor: '#4dbd74',
+                    headbandColor: '#0F7C3E',
+                    eyeColor: '#0a2817'
+                },
+                AZURE: {
+                    name: 'Azure Strikers',
+                    bodyColor: '#2874A6',
+                    bodyStroke: '#1B4F72',
+                    headColor: '#5DADE2',
+                    headbandColor: '#1565C0',
+                    eyeColor: '#0a1929'
+                },
+                AMBER: {
+                    name: 'Amber Predators',
+                    bodyColor: '#D68910',
+                    bodyStroke: '#935116',
+                    headColor: '#F39C12',
+                    headbandColor: '#CA6F1E',
+                    eyeColor: '#2e1a0f'
+                },
+                OBSIDIAN: {
+                    name: 'Obsidian Reapers',
+                    bodyColor: '#2C3E50',
+                    bodyStroke: '#17202A',
+                    headColor: '#566573',
+                    headbandColor: '#1C2833',
+                    eyeColor: '#0B0C0D'
+                }
+            });
+
+            const HUNTER_GANG_LIST = ['CRIMSON', 'PURPLE', 'EMERALD', 'AZURE', 'AMBER', 'OBSIDIAN'];
+
+            // Assign gang to hunter
+            function assignHunterGang(enemy) {
+                if (enemy.type !== 'hunter') return;
+                
+                // Pick random gang if not already assigned
+                if (!enemy.gang) {
+                    const gangKey = HUNTER_GANG_LIST[Math.floor(Math.random() * HUNTER_GANG_LIST.length)];
+                    enemy.gang = HUNTER_GANGS[gangKey];
+                }
+            }
+
             // Assign random movement behavior based on enemy type and sector theme
             function assignMovementBehavior(enemy, sectorTheme) {
                 if (enemy.type === 'phantom') {
@@ -9647,8 +9715,34 @@
                 c.hp *= collarBonus;
 
                 // console.log(`🔍 Enemy Health Debug | Type: ${type} | Base: ${cfgs[type].hp} | Wave: ${wave} | WaveMult: ${waveMultiplier.toFixed(2)} | EnemyBonus: ${store.world.enemyHealthBonus.toFixed(2)} | CollarBonus: ${collarBonus.toFixed(2)} | Final HP: ${c.hp.toFixed(1)}`);
-                const spawnX = props.x !== undefined ? props.x : 20 + Math.random() * (W - 40);
-                const spawnY = props.y !== undefined ? props.y : -50 - Math.random() * 250;
+                
+                // ORGANIC SPAWN POSITIONING: Add more natural clustering and variance
+                let spawnX, spawnY;
+                if (props.x !== undefined) {
+                    spawnX = props.x;
+                } else {
+                    // Clustered spawn zones instead of uniform distribution
+                    const useClusteredSpawn = Math.random() < 0.7; // 70% chance of clustering
+                    if (useClusteredSpawn) {
+                        // Pick a random cluster center (left, center, or right third)
+                        const clusterZone = Math.floor(Math.random() * 3);
+                        const clusterCenterX = (clusterZone * W / 3) + (W / 6);
+                        const clusterSpread = W / 4;
+                        spawnX = clusterCenterX + (Math.random() - 0.5) * clusterSpread;
+                    } else {
+                        // Full-width spawn with edge bias
+                        spawnX = 20 + Math.random() * (W - 40);
+                    }
+                    spawnX = Math.max(20, Math.min(W - 20, spawnX));
+                }
+                
+                if (props.y !== undefined) {
+                    spawnY = props.y;
+                } else {
+                    // More varied vertical spawn with clustering
+                    const depthVariance = Math.random() * Math.random(); // Bias toward closer spawns
+                    spawnY = -50 - depthVariance * 300;
+                }
                 const e = {
                     ...c,
                     type,
@@ -9879,6 +9973,18 @@
                 let spacing = Math.max(40, 140 - clusterSize * 10);
                 let formationStyle = 'line'; // default: horizontal line
                 
+                // HUNTER GANG COORDINATION: Pick a gang for this cluster
+                const hunterCount = event.enemies.filter(spec => spec.type === 'hunter').length;
+                const hunterGangForCluster = hunterCount > 0 
+                    ? HUNTER_GANGS[HUNTER_GANG_LIST[Math.floor(Math.random() * HUNTER_GANG_LIST.length)]]
+                    : null;
+                
+                // If spawning hunters, use tighter formation
+                if (hunterCount > 0) {
+                    spacing = Math.max(30, 80 - clusterSize * 8); // Tighter spacing for gangs
+                    formationStyle = 'cluster';
+                }
+                
                 if (waveProfile && waveProfile.theme) {
                     switch (waveProfile.theme) {
                         case 'SWARM_HELL':
@@ -9905,30 +10011,59 @@
                 }
                 
                 let spawnedThisCluster = 0;
+                
+                // ORGANIC SPAWN PATTERNS: Use circular/natural clustering instead of grid
+                const useCircularPattern = Math.random() < 0.6; // 60% chance of circular pattern
+                const clusterRadius = hunterCount > 0 ? 40 : 70; // Tighter for gangs
+                const angleOffset = Math.random() * Math.PI * 2; // Random rotation
 
                 event.enemies.forEach((spec, idx) => {
                     let lateralOffset, spawnY;
                     
-                    // Apply formation-specific positioning
-                    switch (formationStyle) {
-                        case 'cluster':
-                            // Tight cluster with more randomness
-                            lateralOffset = (idx - (clusterSize - 1) / 2) * spacing + (Math.random() - 0.5) * 60;
-                            spawnY = -140 - Math.random() * 80;
-                            break;
-                        case 'spread':
-                            // Wide spread, minimal randomness
-                            lateralOffset = (idx - (clusterSize - 1) / 2) * spacing + (Math.random() - 0.5) * 20;
-                            spawnY = -180 - Math.random() * 100;
-                            break;
-                        case 'stagger':
-                            // Alternating heights for dodge patterns
-                            lateralOffset = (idx - (clusterSize - 1) / 2) * spacing + (Math.random() - 0.5) * 35;
-                            spawnY = -140 - (idx % 2 === 0 ? 0 : 80) - Math.random() * 60;
-                            break;
-                        default: // 'line'
-                            lateralOffset = (idx - (clusterSize - 1) / 2) * spacing + (Math.random() - 0.5) * 35;
-                            spawnY = -160 - Math.random() * 120;
+                    if (useCircularPattern && clusterSize > 2) {
+                        // CIRCULAR/ORGANIC PATTERN: Distribute around a circle with variance
+                        const angle = (idx / clusterSize) * Math.PI * 2 + angleOffset;
+                        const radiusVariance = 0.5 + Math.random() * 0.7; // 50%-120% of radius
+                        const actualRadius = clusterRadius * radiusVariance;
+                        
+                        lateralOffset = Math.cos(angle) * actualRadius;
+                        const depthOffset = Math.sin(angle) * actualRadius * 0.5; // Less vertical spread
+                        spawnY = -140 - Math.random() * 60 - depthOffset;
+                        
+                        // Add some noise to break perfect circles
+                        lateralOffset += (Math.random() - 0.5) * 25;
+                        spawnY += (Math.random() - 0.5) * 30;
+                    } else {
+                        // IRREGULAR LINE/CLUSTER: Varied spacing with natural randomness
+                        const baseOffset = (idx - (clusterSize - 1) / 2) * spacing;
+                        
+                        switch (formationStyle) {
+                            case 'cluster':
+                                // Tight cluster with organic variation
+                                if (hunterCount > 0) {
+                                    lateralOffset = baseOffset + (Math.random() - 0.5) * 45;
+                                    spawnY = -140 - Math.random() * 50;
+                                } else {
+                                    lateralOffset = baseOffset + (Math.random() - 0.5) * 80;
+                                    spawnY = -140 - Math.random() * 100;
+                                }
+                                break;
+                            case 'spread':
+                                // Wide spread with natural variance
+                                lateralOffset = baseOffset * (0.8 + Math.random() * 0.4) + (Math.random() - 0.5) * 40;
+                                spawnY = -180 - Math.random() * 120;
+                                break;
+                            case 'stagger':
+                                // Organic stagger with depth variation
+                                lateralOffset = baseOffset + (Math.random() - 0.5) * 60;
+                                spawnY = -140 - (Math.random() * 100) - (idx % 2 === 0 ? 0 : 60);
+                                break;
+                            default: // 'line'
+                                // Natural line with varying gaps
+                                const gapVariance = 0.7 + Math.random() * 0.6; // 70%-130% spacing
+                                lateralOffset = baseOffset * gapVariance + (Math.random() - 0.5) * 50;
+                                spawnY = -160 - Math.random() * 140;
+                        }
                     }
                     
                     const spawnX = Math.max(40, Math.min(W - 40, centerX + lateralOffset));
@@ -9941,6 +10076,11 @@
                     }
 
                     applySpawnSpecToEnemy(enemy, spec);
+                    
+                    // Assign hunter gang (same gang for all hunters in this cluster)
+                    if (enemy.type === 'hunter' && hunterGangForCluster) {
+                        enemy.gang = hunterGangForCluster;
+                    }
                     
                     // Assign movement behavior based on sector theme
                     const currentTheme = waveProfile?.theme || 'MIXED_BASICS';
@@ -10112,11 +10252,41 @@
             }
 
             function computeThreatIncomeForWave(wave) {
-                return DYNAMIC_DIRECTOR_CONFIG.baseIncome + Math.max(0, wave - 1) * DYNAMIC_DIRECTOR_CONFIG.incomePerWave;
+                // EXTREME early game reduction: Start at 25% for total beginners
+                let earlyGameMultiplier = 1.0;
+                if (wave <= 3) {
+                    // Waves 1-3: Start at 25%, scale to 35% (10 enemies on screen max)
+                    earlyGameMultiplier = 0.25 + (wave - 1) * 0.05;
+                } else if (wave <= 7) {
+                    // Waves 4-7: Scale from 35% to 60%
+                    earlyGameMultiplier = 0.35 + (wave - 3) * 0.0625;
+                } else if (wave <= 12) {
+                    // Waves 8-12: Scale from 60% to 85%
+                    earlyGameMultiplier = 0.6 + (wave - 7) * 0.05;
+                } else if (wave <= 15) {
+                    // Waves 13-15: Scale from 85% to 100%
+                    earlyGameMultiplier = 0.85 + (wave - 12) * 0.05;
+                }
+                
+                const baseValue = DYNAMIC_DIRECTOR_CONFIG.baseIncome + Math.max(0, wave - 1) * DYNAMIC_DIRECTOR_CONFIG.incomePerWave;
+                return baseValue * earlyGameMultiplier;
             }
 
             function computeBudgetCapForWave(wave) {
-                return DYNAMIC_DIRECTOR_CONFIG.baseBudgetCap + Math.max(0, wave - 1) * DYNAMIC_DIRECTOR_CONFIG.budgetCapPerWave;
+                // Match the income scaling for budget cap
+                let earlyGameMultiplier = 1.0;
+                if (wave <= 3) {
+                    earlyGameMultiplier = 0.25 + (wave - 1) * 0.05;
+                } else if (wave <= 7) {
+                    earlyGameMultiplier = 0.35 + (wave - 3) * 0.0625;
+                } else if (wave <= 12) {
+                    earlyGameMultiplier = 0.6 + (wave - 7) * 0.05;
+                } else if (wave <= 15) {
+                    earlyGameMultiplier = 0.85 + (wave - 12) * 0.05;
+                }
+                
+                const baseValue = DYNAMIC_DIRECTOR_CONFIG.baseBudgetCap + Math.max(0, wave - 1) * DYNAMIC_DIRECTOR_CONFIG.budgetCapPerWave;
+                return baseValue * earlyGameMultiplier;
             }
 
             function computeThreatScale(wave) {
@@ -10170,6 +10340,11 @@
                 if (!enemy) return false;
 
                 applySpawnSpecToEnemy(enemy, spec || {});
+                
+                // Assign gang to hunters
+                if (enemy.type === 'hunter') {
+                    assignHunterGang(enemy);
+                }
 
                 const introOptions = {
                     duration: spec?.spawnDuration,
@@ -10325,13 +10500,36 @@
                         const entries = Object.keys(director.profile.weights);
                         if (entries.length) selectedType = entries[Math.floor(Math.random() * entries.length)];
                     }
-                    if (spawnDirectorEnemy(selectedType, director, {})) {
-                        const intensity = Math.min(1, director.threatBudget / Math.max(1, director.budgetCap));
-                        const cooldownRange = DYNAMIC_DIRECTOR_CONFIG.spawnCooldownMax - DYNAMIC_DIRECTOR_CONFIG.spawnCooldownMin;
-                        director.spawnCooldown = DYNAMIC_DIRECTOR_CONFIG.spawnCooldownMax - cooldownRange * Math.min(1, intensity + progress * 0.4);
-                    } else {
-                        director.spawnCooldown = 0.25;
+                    
+                    // Spawn hunters in gangs of 4-8
+                    if (selectedType === 'hunter') {
+                        const gangSize = Math.floor(4 + Math.random() * 5); // 4-8 hunters
+                        const hunterCost = ENEMY_THREAT_COST['hunter'] ?? DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat;
+                        const totalCost = hunterCost * gangSize;
+                        
+                        if (director.threatBudget >= totalCost && store.enemies.length + gangSize <= Math.max(10, store.world.enemyCap || 43)) {
+                            // Pick a gang for this cluster
+                            const gangKey = HUNTER_GANG_LIST[Math.floor(Math.random() * HUNTER_GANG_LIST.length)];
+                            const gang = HUNTER_GANGS[gangKey];
+                            
+                            for (let i = 0; i < gangSize; i++) {
+                                if (spawnDirectorEnemy(selectedType, director, {})) {
+                                    // Assign the same gang to each hunter
+                                    const lastEnemy = store.enemies[store.enemies.length - 1];
+                                    if (lastEnemy && lastEnemy.type === 'hunter') {
+                                        lastEnemy.gang = gang;
+                                    }
+                                }
+                            }
+                        }
+                    } else if (spawnDirectorEnemy(selectedType, director, {})) {
+                        // Single enemy spawned successfully
                     }
+                    
+                    // Update spawn cooldown based on intensity
+                    const intensity = Math.min(1, director.threatBudget / Math.max(1, director.budgetCap));
+                    const cooldownRange = DYNAMIC_DIRECTOR_CONFIG.spawnCooldownMax - DYNAMIC_DIRECTOR_CONFIG.spawnCooldownMin;
+                    director.spawnCooldown = DYNAMIC_DIRECTOR_CONFIG.spawnCooldownMax - cooldownRange * Math.min(1, intensity + progress * 0.4);
                 }
 
                 if (director.phaseTimer <= 0 && (!store.boss || store.boss.dead)) {
@@ -24943,6 +25141,14 @@
                         ctx.shadowBlur = 0;
                         ctx.setLineDash([]);
 
+                        // Get gang colors (default to Crimson if no gang assigned)
+                        const gang = e.gang || HUNTER_GANGS.CRIMSON;
+                        const bodyColor = gang.bodyColor;
+                        const bodyStroke = gang.bodyStroke;
+                        const headColor = gang.headColor;
+                        const headbandColor = gang.headbandColor;
+                        const eyeColor = gang.eyeColor;
+
                         const top = [];
                         const bottom = [];
 
@@ -24955,8 +25161,9 @@
                             bottom.push({ x: x - width, y });
                         }
 
-                        ctx.fillStyle = '#cc3344';
-                        ctx.strokeStyle = '#7a1b24';
+                        // Draw body with gang colors
+                        ctx.fillStyle = bodyColor;
+                        ctx.strokeStyle = bodyStroke;
                         ctx.lineWidth = 2;
                         ctx.beginPath();
                         ctx.moveTo(top[0].x, top[0].y);
@@ -24969,14 +25176,36 @@
                         const headX = Math.sin(c * 4) * amplitude;
                         const headY = -0.5 * length;
 
-                        ctx.fillStyle = '#e47777';
-                        ctx.strokeStyle = '#7a1b24';
+                        // Draw head
+                        ctx.fillStyle = headColor;
+                        ctx.strokeStyle = bodyStroke;
                         ctx.beginPath();
                         ctx.arc(headX, headY, a * 0.35, 0, Math.PI * 2);
                         ctx.fill();
                         ctx.stroke();
 
-                        ctx.fillStyle = '#250b0b';
+                        // Draw headband
+                        ctx.fillStyle = headbandColor;
+                        ctx.strokeStyle = bodyStroke;
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        // Headband wraps around top of head
+                        ctx.ellipse(headX, headY - a * 0.15, a * 0.36, a * 0.12, 0, Math.PI, 0);
+                        ctx.fill();
+                        ctx.stroke();
+                        
+                        // Headband knot/tail on side
+                        ctx.fillStyle = headbandColor;
+                        ctx.beginPath();
+                        ctx.moveTo(headX + a * 0.32, headY - a * 0.15);
+                        ctx.lineTo(headX + a * 0.52, headY - a * 0.2);
+                        ctx.lineTo(headX + a * 0.48, headY - a * 0.1);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.stroke();
+
+                        // Draw eyes
+                        ctx.fillStyle = eyeColor;
                         const eyeOffsetX = a * 0.12;
                         const eyeOffsetY = a * 0.05;
                         const eyeRadius = a * 0.08;
@@ -24985,7 +25214,8 @@
                         ctx.arc(headX + eyeOffsetX, headY - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
                         ctx.fill();
 
-                        ctx.strokeStyle = '#7a1b24';
+                        // Draw mouth
+                        ctx.strokeStyle = bodyStroke;
                         ctx.lineWidth = 1.5;
                         ctx.beginPath();
                         ctx.moveTo(headX, headY + a * 0.1);
