@@ -5059,6 +5059,7 @@
                 temporalEchoes: [],
                 timeShards: [],
                 geminiSlowFields: [],
+                hunterLightningChains: [], // Lightning chains between Azure Strikers gang members
                 championPresetCache: null,
                 lastChampionPresetCode: null,
                 temporalBeam: null,
@@ -6227,6 +6228,10 @@
                     dmg = bossDamageResult.amount;
                 } else if (!skipDefaultDamage) {
                     e.hp -= dmg;
+                    // Mark hunter as just hit for gang abilities (Crimson Vipers lunge)
+                    if (e.type === 'hunter' && e.gang && e.gang.ability === 'lunge') {
+                        e.wasJustHit = true;
+                    }
                 }
 
                 if (dmg > 0) {
@@ -6754,22 +6759,16 @@
                     category: 'health',
                     effect: (level) => {
                         const p = store.player;
-                        // Scale HP upgrades with current wave for late game viability
-                        let hpIncrease = 10;
-                        if (store.world.wave > 20) {
-                            // After wave 20, HP upgrades scale with wave
-                            hpIncrease = 10 + (store.world.wave - 20) * 2;
-                        }
+                        // Give 10% of current max HP
+                        const hpIncrease = Math.round(p.hpMax * 0.10);
                         p.hpMax += hpIncrease;
                         p.hp += hpIncrease;
-                        // console.log(`HP upgrade: +${hpIncrease} HP (wave ${store.world.wave})`);
+                        // console.log(`HP upgrade: +${hpIncrease} HP (10% of ${p.hpMax - hpIncrease})`);
                     },
                     desc: level => {
-                        let hpIncrease = 10;
-                        if (store.world.wave > 20) {
-                            hpIncrease = 10 + (store.world.wave - 20) * 2;
-                        }
-                        return `+${hpIncrease} Max HP (Lvl ${level + 1})`;
+                        const p = store.player;
+                        const hpIncrease = Math.round(p.hpMax * 0.10);
+                        return `+${hpIncrease} Max HP (+10%) (Lvl ${level + 1})`;
                     }
                 },
                 'nano_save': { name: "NANO CHARGE", icon: '💾', cost: 25, isPremium: true, max: 5, category: 'utility', apply: () => { if (store.player.nanoSaves < 5) { store.player.nanoSaves++; return true; } return false; }, desc: () => `Blocks death, sets HP to 10, +15 max HP, opens shop. Charges: ${store.player.nanoSaves}/5` },
@@ -8173,7 +8172,9 @@
                     bodyStroke: '#7a1b24',
                     headColor: '#e47777',
                     headbandColor: '#8B0000',
-                    eyeColor: '#250b0b'
+                    eyeColor: '#250b0b',
+                    ability: 'lunge', // Aggressive lunge attack when damaged
+                    key: 'CRIMSON'
                 },
                 PURPLE: {
                     name: 'Purple Serpents',
@@ -8181,7 +8182,9 @@
                     bodyStroke: '#4B0082',
                     headColor: '#B388EB',
                     headbandColor: '#6A0DAD',
-                    eyeColor: '#1a0a2e'
+                    eyeColor: '#1a0a2e',
+                    ability: 'formation', // Fly in V-formation
+                    key: 'PURPLE'
                 },
                 EMERALD: {
                     name: 'Emerald Fangs',
@@ -8189,7 +8192,9 @@
                     bodyStroke: '#1a5c34',
                     headColor: '#4dbd74',
                     headbandColor: '#0F7C3E',
-                    eyeColor: '#0a2817'
+                    eyeColor: '#0a2817',
+                    ability: 'flee', // Flee to corners when threatened
+                    key: 'EMERALD'
                 },
                 AZURE: {
                     name: 'Azure Strikers',
@@ -8197,7 +8202,9 @@
                     bodyStroke: '#1B4F72',
                     headColor: '#5DADE2',
                     headbandColor: '#1565C0',
-                    eyeColor: '#0a1929'
+                    eyeColor: '#0a1929',
+                    ability: 'lightning', // Lightning chain between gang members
+                    key: 'AZURE'
                 },
                 AMBER: {
                     name: 'Amber Predators',
@@ -8205,7 +8212,9 @@
                     bodyStroke: '#935116',
                     headColor: '#F39C12',
                     headbandColor: '#CA6F1E',
-                    eyeColor: '#2e1a0f'
+                    eyeColor: '#2e1a0f',
+                    ability: 'swarm', // Tight swarm formation
+                    key: 'AMBER'
                 },
                 OBSIDIAN: {
                     name: 'Obsidian Reapers',
@@ -8213,11 +8222,16 @@
                     bodyStroke: '#17202A',
                     headColor: '#566573',
                     headbandColor: '#1C2833',
-                    eyeColor: '#0B0C0D'
+                    eyeColor: '#0B0C0D',
+                    ability: 'stealth', // Phase in and out
+                    key: 'OBSIDIAN'
                 }
             });
 
             const HUNTER_GANG_LIST = ['CRIMSON', 'PURPLE', 'EMERALD', 'AZURE', 'AMBER', 'OBSIDIAN'];
+
+            // Track gang members globally
+            const hunterGangMembers = new Map(); // gangKey -> Set of enemy IDs
 
             // Assign gang to hunter
             function assignHunterGang(enemy) {
@@ -8227,6 +8241,282 @@
                 if (!enemy.gang) {
                     const gangKey = HUNTER_GANG_LIST[Math.floor(Math.random() * HUNTER_GANG_LIST.length)];
                     enemy.gang = HUNTER_GANGS[gangKey];
+                }
+                
+                // Track this hunter in their gang
+                if (enemy.gang && enemy.gang.key) {
+                    if (!hunterGangMembers.has(enemy.gang.key)) {
+                        hunterGangMembers.set(enemy.gang.key, new Set());
+                    }
+                    hunterGangMembers.get(enemy.gang.key).add(enemy.id || enemy);
+                }
+                
+                // Initialize ability-specific properties
+                if (enemy.gang && enemy.gang.ability) {
+                    switch (enemy.gang.ability) {
+                        case 'lunge':
+                            enemy.lungeCooldown = 0;
+                            enemy.isLunging = false;
+                            enemy.lungeTargetX = 0;
+                            enemy.lungeTargetY = 0;
+                            break;
+                        case 'flee':
+                            enemy.isFleeing = false;
+                            enemy.fleeTargetX = 0;
+                            enemy.fleeTargetY = 0;
+                            break;
+                        case 'formation':
+                            enemy.formationIndex = 0;
+                            enemy.formationOffset = { x: 0, y: 0 };
+                            break;
+                        case 'lightning':
+                            enemy.lightningTimer = 0;
+                            break;
+                        case 'stealth':
+                            enemy.stealthTimer = 0;
+                            enemy.isStealthed = false;
+                            break;
+                    }
+                }
+            }
+            
+            // Clean up dead gang members
+            function cleanupDeadGangMembers() {
+                const aliveEnemyIds = new Set(store.enemies.map(e => e.id || e));
+                
+                for (const [gangKey, members] of hunterGangMembers.entries()) {
+                    const deadMembers = [];
+                    for (const memberId of members) {
+                        if (!aliveEnemyIds.has(memberId)) {
+                            deadMembers.push(memberId);
+                        }
+                    }
+                    deadMembers.forEach(id => members.delete(id));
+                    
+                    if (members.size === 0) {
+                        hunterGangMembers.delete(gangKey);
+                    }
+                }
+            }
+            
+            // Get all alive gang members
+            function getGangMembers(gangKey) {
+                const members = hunterGangMembers.get(gangKey);
+                if (!members) return [];
+                
+                return store.enemies.filter(e => 
+                    e.type === 'hunter' && 
+                    e.gang && 
+                    e.gang.key === gangKey && 
+                    !e.dead && 
+                    e.hp > 0 &&
+                    members.has(e.id || e)
+                );
+            }
+            
+            // Update hunter gang-specific abilities
+            function updateHunterGangAbility(hunter, dt, speedMultiplier) {
+                if (!hunter.gang || !hunter.gang.ability) return;
+                
+                switch (hunter.gang.ability) {
+                    case 'lunge':
+                        updateCrimsonLunge(hunter, dt, speedMultiplier);
+                        break;
+                    case 'formation':
+                        updatePurpleFormation(hunter, dt, speedMultiplier);
+                        break;
+                    case 'flee':
+                        updateEmeraldFlee(hunter, dt, speedMultiplier);
+                        break;
+                    case 'lightning':
+                        updateAzureLightning(hunter, dt);
+                        break;
+                    case 'swarm':
+                        updateAmberSwarm(hunter, dt, speedMultiplier);
+                        break;
+                    case 'stealth':
+                        updateObsidianStealth(hunter, dt);
+                        break;
+                }
+            }
+            
+            // CRIMSON VIPERS: Lunge attack when hit
+            function updateCrimsonLunge(hunter, dt, speedMultiplier) {
+                hunter.lungeCooldown = Math.max(0, (hunter.lungeCooldown || 0) - dt);
+                
+                // Trigger lunge when damaged
+                if (hunter.wasJustHit && hunter.lungeCooldown <= 0) {
+                    hunter.isLunging = true;
+                    hunter.lungeTimer = 0.4; // Fast lunge duration
+                    hunter.lungeTargetX = store.player.x;
+                    hunter.lungeTargetY = store.player.y;
+                    hunter.lungeStartX = hunter.x;
+                    hunter.lungeStartY = hunter.y;
+                    hunter.lungeCooldown = 3.0;
+                    hunter.wasJustHit = false;
+                }
+                
+                if (hunter.isLunging) {
+                    hunter.lungeTimer = Math.max(0, (hunter.lungeTimer || 0) - dt);
+                    const progress = 1 - (hunter.lungeTimer / 0.4);
+                    const easeProgress = Math.pow(progress, 0.5); // Ease out
+                    
+                    hunter.x = hunter.lungeStartX + (hunter.lungeTargetX - hunter.lungeStartX) * easeProgress;
+                    hunter.y = hunter.lungeStartY + (hunter.lungeTargetY - hunter.lungeStartY) * easeProgress;
+                    
+                    if (hunter.lungeTimer <= 0) {
+                        hunter.isLunging = false;
+                    }
+                }
+            }
+            
+            // PURPLE SERPENTS: V-formation flight
+            function updatePurpleFormation(hunter, dt, speedMultiplier) {
+                const gangMembers = getGangMembers('PURPLE');
+                if (gangMembers.length === 0) return;
+                
+                // Sort by spawn order to determine formation positions
+                gangMembers.sort((a, b) => (a.spawnTime || 0) - (b.spawnTime || 0));
+                const hunterIndex = gangMembers.indexOf(hunter);
+                if (hunterIndex === -1) return;
+                
+                hunter.formationLocked = true;
+                
+                // Leader flies straight down the middle
+                if (hunterIndex === 0) {
+                    hunter.formationTargetX = W / 2;
+                } else {
+                    // Others form V behind leader
+                    const side = hunterIndex % 2 === 1 ? 1 : -1;
+                    const row = Math.floor((hunterIndex + 1) / 2);
+                    const spacing = 50;
+                    hunter.formationTargetX = W / 2 + side * row * spacing;
+                }
+                
+                // Move toward formation position
+                const dx = hunter.formationTargetX - hunter.x;
+                if (Math.abs(dx) > 5) {
+                    hunter.x += Math.sign(dx) * hunter.v * 0.8 * speedMultiplier * dt;
+                }
+                hunter.y += hunter.v * speedMultiplier * dt;
+            }
+            
+            // EMERALD FANGS: Flee to corners when low HP
+            function updateEmeraldFlee(hunter, dt, speedMultiplier) {
+                const hpRatio = hunter.hp / hunter.hpMax;
+                
+                if (hpRatio < 0.5 && !hunter.isFleeing) {
+                    hunter.isFleeing = true;
+                    // Pick random corner
+                    const corners = [
+                        { x: 50, y: 50 },
+                        { x: W - 50, y: 50 },
+                        { x: 50, y: H - 50 },
+                        { x: W - 50, y: H - 50 }
+                    ];
+                    const corner = corners[Math.floor(Math.random() * corners.length)];
+                    hunter.fleeTargetX = corner.x;
+                    hunter.fleeTargetY = corner.y;
+                }
+                
+                if (hunter.isFleeing) {
+                    const dx = hunter.fleeTargetX - hunter.x;
+                    const dy = hunter.fleeTargetY - hunter.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist > 20) {
+                        const fleeSpeed = hunter.v * 1.5; // Flee faster!
+                        hunter.x += (dx / dist) * fleeSpeed * speedMultiplier * dt;
+                        hunter.y += (dy / dist) * fleeSpeed * speedMultiplier * dt;
+                    }
+                }
+            }
+            
+            // AZURE STRIKERS: Lightning chains between members
+            function updateAzureLightning(hunter, dt) {
+                hunter.lightningTimer = (hunter.lightningTimer || 0) + dt;
+                
+                if (hunter.lightningTimer >= 0.5) {
+                    hunter.lightningTimer = 0;
+                    
+                    const gangMembers = getGangMembers('AZURE');
+                    if (gangMembers.length < 2) return;
+                    
+                    // Create lightning chains between nearby gang members
+                    for (let i = 0; i < gangMembers.length; i++) {
+                        for (let j = i + 1; j < gangMembers.length; j++) {
+                            const a = gangMembers[i];
+                            const b = gangMembers[j];
+                            const dx = b.x - a.x;
+                            const dy = b.y - a.y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            
+                            if (dist < 200) { // Chain within 200 units
+                                store.hunterLightningChains.push({
+                                    x1: a.x,
+                                    y1: a.y,
+                                    x2: b.x,
+                                    y2: b.y,
+                                    life: 0.3,
+                                    damage: 15,
+                                    gang: 'AZURE'
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // AMBER PREDATORS: Tight swarm formation
+            function updateAmberSwarm(hunter, dt, speedMultiplier) {
+                const gangMembers = getGangMembers('AMBER');
+                if (gangMembers.length === 0) return;
+                
+                // Calculate swarm center
+                let centerX = 0, centerY = 0;
+                for (const member of gangMembers) {
+                    centerX += member.x;
+                    centerY += member.y;
+                }
+                centerX /= gangMembers.length;
+                centerY /= gangMembers.length;
+                
+                // Move toward player while maintaining swarm cohesion
+                const toPlayerX = store.player.x - centerX;
+                const toPlayerY = store.player.y - centerY;
+                const toPlayerDist = Math.sqrt(toPlayerX * toPlayerX + toPlayerY * toPlayerY);
+                
+                if (toPlayerDist > 1) {
+                    const targetX = centerX + (toPlayerX / toPlayerDist) * 100;
+                    const targetY = centerY + (toPlayerY / toPlayerDist) * 100;
+                    
+                    // Each member moves toward their position around the swarm center
+                    const dx = targetX - hunter.x;
+                    const dy = targetY - hunter.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist > 30) {
+                        hunter.x += (dx / dist) * hunter.v * 0.7 * speedMultiplier * dt;
+                        hunter.y += (dy / dist) * hunter.v * 0.7 * speedMultiplier * dt;
+                    }
+                } else {
+                    hunter.y += hunter.v * speedMultiplier * dt;
+                }
+            }
+            
+            // OBSIDIAN REAPERS: Phase in and out
+            function updateObsidianStealth(hunter, dt) {
+                hunter.stealthTimer = (hunter.stealthTimer || 0) + dt;
+                
+                const cycle = hunter.stealthTimer % 4; // 4 second cycle
+                if (cycle < 2) {
+                    // Visible phase
+                    hunter.isStealthed = false;
+                    hunter.stealthAlpha = 1;
+                } else {
+                    // Stealth phase
+                    hunter.isStealthed = true;
+                    hunter.stealthAlpha = 0.3;
                 }
             }
 
@@ -11993,6 +12283,54 @@
                     if (bolt.life <= 0) { bolt.dead = true; }
                 });
             }
+            
+            function stepHunterLightningChains(dt) {
+                // Update lightning chains between Azure Strikers
+                store.hunterLightningChains.forEach(chain => {
+                    chain.life -= dt;
+                    if (chain.life <= 0) {
+                        chain.dead = true;
+                        return;
+                    }
+                    
+                    // Check if player collides with the lightning chain
+                    const p = store.player;
+                    if (p.isInvincible) return;
+                    
+                    // Calculate closest point on line segment to player
+                    const dx = chain.x2 - chain.x1;
+                    const dy = chain.y2 - chain.y1;
+                    const lengthSq = dx * dx + dy * dy;
+                    
+                    if (lengthSq < 1) return; // Degenerate chain
+                    
+                    const t = Math.max(0, Math.min(1, 
+                        ((p.x - chain.x1) * dx + (p.y - chain.y1) * dy) / lengthSq
+                    ));
+                    
+                    const closestX = chain.x1 + t * dx;
+                    const closestY = chain.y1 + t * dy;
+                    
+                    const distX = p.x - closestX;
+                    const distY = p.y - closestY;
+                    const distSq = distX * distX + distY * distY;
+                    
+                    const hitRadius = p.r + 8; // Lightning chain thickness
+                    if (distSq < hitRadius * hitRadius) {
+                        // Player hit by lightning!
+                        if (!chain.hasHitPlayer) {
+                            hurtPlayer(chain.damage);
+                            chain.hasHitPlayer = true; // Only hit once per chain
+                            
+                            // Visual feedback
+                            store.activeEffects.push(createEffect('stormDischarge', p.x, p.y, 20));
+                        }
+                    }
+                });
+                
+                // Clean up dead chains
+                store.hunterLightningChains = store.hunterLightningChains.filter(c => !c.dead);
+            }
 
             function stepFlamePulses(dt) {
                 store.flamePulses.forEach(pulse => {
@@ -12410,8 +12748,10 @@
                 updateTemporalEchoes(dt);
                 updateTimeShards(dt);
                 stepLightning(dt);
+                stepHunterLightningChains(dt);
                 stepEmpNovas(dt);
                 stepFlamePulses(dt);
+                cleanupDeadGangMembers();
                 updateDynamicWaveDirector(dt);
                 processWaveSpawnQueue(dt);
                 processVulnerabilityEvents(dt);
@@ -12935,17 +13275,21 @@
                             }
                             e.y += e.v * speedMultiplier * dt;
                         } else if (e.type === 'hunter') {
-                            // PURSUIT PROTOCOL: Aggressive tracking
-                            const dx = store.player.x - e.x;
-                            const dy = store.player.y - e.y;
-                            const dist = Math.sqrt(dx * dx + dy * dy);
-                            if (dist > 1) {
-                                // Hunters actively pursue with full 2D movement
-                                const pursueFactor = 0.6; // 60% toward player, 40% downward
-                                e.x += (dx / dist) * e.v * pursueFactor * speedMultiplier * dt;
-                                e.y += ((dy / dist) * e.v * pursueFactor + e.v * (1 - pursueFactor)) * speedMultiplier * dt;
-                            } else {
-                                e.y += e.v * speedMultiplier * dt;
+                            // PURSUIT PROTOCOL: Aggressive tracking with gang-specific abilities
+                            updateHunterGangAbility(e, dt, speedMultiplier);
+                            
+                            if (!e.isLunging && !e.isFleeing && !e.formationLocked) {
+                                const dx = store.player.x - e.x;
+                                const dy = store.player.y - e.y;
+                                const dist = Math.sqrt(dx * dx + dy * dy);
+                                if (dist > 1) {
+                                    // Hunters actively pursue with full 2D movement
+                                    const pursueFactor = 0.6; // 60% toward player, 40% downward
+                                    e.x += (dx / dist) * e.v * pursueFactor * speedMultiplier * dt;
+                                    e.y += ((dy / dist) * e.v * pursueFactor + e.v * (1 - pursueFactor)) * speedMultiplier * dt;
+                                } else {
+                                    e.y += e.v * speedMultiplier * dt;
+                                }
                             }
                         } else if (e.type === 'angler') {
                             // TANK PROTOCOL: Slow, steady, horizontal tracking only
@@ -15494,6 +15838,7 @@
                 drawGoldenOrbs();
                 store.missiles.forEach(m => drawMissile(m));
                 store.lightningBolts.forEach(l => drawLightningBolt(l));
+                store.hunterLightningChains.forEach(c => drawHunterLightningChain(c));
                 store.empNovas.forEach(n => drawEmpNova(n));
                 store.flamePulses.forEach(p => drawFlamePulse(p));
                 drawStarProjectiles();
@@ -25119,6 +25464,12 @@
                 ctx.translate(drawX, drawY);
                 const spawnAlpha = e.spawnOpacity !== undefined ? Math.max(0.2, Math.min(1, e.spawnOpacity)) : 1;
                 ctx.globalAlpha *= spawnAlpha;
+                
+                // Apply stealth alpha for Obsidian Reapers gang
+                if (e.type === 'hunter' && e.isStealthed && e.stealthAlpha !== undefined) {
+                    ctx.globalAlpha *= e.stealthAlpha;
+                }
+                
                 if (e.spawnPhase === 'teleport') {
                     ctx.save();
                     ctx.globalCompositeOperation = 'lighter';
@@ -32766,6 +33117,66 @@
                 ctx.shadowBlur = 10 * t;
                 ctx.stroke();
 
+                ctx.restore();
+            }
+            
+            function drawHunterLightningChain(chain) {
+                const { x1, y1, x2, y2, life, gang } = chain;
+                const maxLife = 0.3;
+                const t = life / maxLife;
+                if (t <= 0) return;
+                
+                ctx.save();
+                
+                // Create jagged lightning effect
+                const segments = 8;
+                const dx = (x2 - x1) / segments;
+                const dy = (y2 - y1) / segments;
+                const perpX = -dy;
+                const perpY = dx;
+                const perpLen = Math.sqrt(perpX * perpX + perpY * perpY);
+                const perpNormX = perpLen > 0 ? perpX / perpLen : 0;
+                const perpNormY = perpLen > 0 ? perpY / perpLen : 0;
+                
+                const points = [{ x: x1, y: y1 }];
+                for (let i = 1; i < segments; i++) {
+                    const baseX = x1 + dx * i;
+                    const baseY = y1 + dy * i;
+                    const jitter = (Math.random() - 0.5) * 20;
+                    points.push({
+                        x: baseX + perpNormX * jitter,
+                        y: baseY + perpNormY * jitter
+                    });
+                }
+                points.push({ x: x2, y: y2 });
+                
+                // Draw glow
+                ctx.shadowColor = '#5DADE2';
+                ctx.shadowBlur = 15 * t;
+                ctx.lineWidth = 6 * t;
+                ctx.strokeStyle = `rgba(93, 173, 226, ${0.6 * t})`;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                
+                ctx.beginPath();
+                ctx.moveTo(points[0].x, points[0].y);
+                for (let i = 1; i < points.length; i++) {
+                    ctx.lineTo(points[i].x, points[i].y);
+                }
+                ctx.stroke();
+                
+                // Draw bright core
+                ctx.shadowBlur = 8 * t;
+                ctx.lineWidth = 2.5 * t;
+                ctx.strokeStyle = `rgba(180, 220, 255, ${0.95 * t})`;
+                ctx.stroke();
+                
+                // Draw white hot center
+                ctx.shadowBlur = 4 * t;
+                ctx.lineWidth = 1 * t;
+                ctx.strokeStyle = `rgba(255, 255, 255, ${t})`;
+                ctx.stroke();
+                
                 ctx.restore();
             }
 
