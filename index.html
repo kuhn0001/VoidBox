@@ -23879,6 +23879,38 @@
                 return color;
             }
 
+            function drawEntityShadow(x, y, radiusX, radiusY, options = {}) {
+                if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+                if (!Number.isFinite(radiusX) || radiusX <= 0) return;
+                if (!Number.isFinite(radiusY) || radiusY <= 0) return;
+
+                const {
+                    alpha = 0.3,
+                    yOffset = 0,
+                    color = '0,0,0',
+                    rotation = 0
+                } = options;
+
+                const clampedAlpha = Math.max(0, Math.min(1, alpha));
+                if (clampedAlpha <= 0) return;
+
+                ctx.save();
+                ctx.translate(x, y + yOffset);
+                if (rotation) {
+                    ctx.rotate(rotation);
+                }
+                const scaleY = radiusY / radiusX;
+                ctx.scale(1, scaleY);
+                const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radiusX);
+                gradient.addColorStop(0, `rgba(${color}, ${clampedAlpha})`);
+                gradient.addColorStop(1, `rgba(${color}, 0)`);
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(0, 0, radiusX, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
             // Skull Ship Drawing Functions
 
             /**
@@ -24217,6 +24249,17 @@
                 if (t.behavior === 'gemini') {
                     drawGeminiBoss(t);
                     return;
+                }
+
+                if (Number.isFinite(t.x) && Number.isFinite(t.y)) {
+                    const bossRadius = Number.isFinite(t.r) ? t.r : 60;
+                    const radiusX = Math.max(30, bossRadius * 1.6);
+                    const radiusY = Math.max(14, bossRadius * 0.65);
+                    const alpha = Math.max(0.25, Math.min(0.55, 0.25 + bossRadius * 0.0025));
+                    drawEntityShadow(t.x, t.y, radiusX, radiusY, {
+                        alpha,
+                        yOffset: Math.max(18, bossRadius * 0.9)
+                    });
                 }
 
                 ctx.save();
@@ -25050,6 +25093,8 @@
                         break;
                 }
 
+                drawEntityShadow(t, e, 22, 8, { alpha: 0.35, yOffset: 18 });
+
                 ctx.save();
                 ctx.translate(t, e);
                 if (player.isInvincible || player.hasShieldBubble) {
@@ -25539,6 +25584,24 @@
                     drawX += Math.sin(time) * intensity;
                     drawY += Math.cos(time * 1.6) * intensity * 0.7;
                 }
+
+                let flattenScaleY = 1;
+                if (e.flattenScale !== undefined) {
+                    if (typeof e.flattenScale === 'number') {
+                        flattenScaleY = e.flattenScale;
+                    } else if (e.flattenScale && Number.isFinite(e.flattenScale.y)) {
+                        flattenScaleY = e.flattenScale.y;
+                    }
+                }
+
+                const shadowRadiusX = Math.max(12, a * 1.25);
+                const shadowRadiusY = Math.max(6, a * 0.5 * flattenScaleY);
+                const shadowAlpha = Math.max(0.18, Math.min(0.4, 0.18 + a * 0.004));
+                drawEntityShadow(drawX, drawY, shadowRadiusX, shadowRadiusY, {
+                    alpha: shadowAlpha,
+                    yOffset: Math.max(6, a * (0.85 * flattenScaleY + 0.35))
+                });
+
                 ctx.translate(drawX, drawY);
                 const spawnAlpha = e.spawnOpacity !== undefined ? Math.max(0.2, Math.min(1, e.spawnOpacity)) : 1;
                 ctx.globalAlpha *= spawnAlpha;
@@ -26854,6 +26917,13 @@
 
                         function drawGeminiSol(state, now) {
                             const sol = state.sol;
+                            if (Number.isFinite(sol.x) && Number.isFinite(sol.y)) {
+                                const radius = Number.isFinite(sol.radius) ? sol.radius : 40;
+                                drawEntityShadow(sol.x, sol.y, Math.max(26, radius * 1.5), Math.max(10, radius * 0.6), {
+                                    alpha: sol.hp > 0 ? 0.28 : 0.18,
+                                    yOffset: Math.max(12, radius * 0.9)
+                                });
+                            }
                             ctx.save();
                             ctx.translate(sol.x, sol.y);
                             const alive = sol.hp > 0;
@@ -26941,6 +27011,13 @@
 
                         function drawGeminiLuna(state, now) {
                             const luna = state.luna;
+                            if (Number.isFinite(luna.x) && Number.isFinite(luna.y)) {
+                                const radius = Number.isFinite(luna.radius) ? luna.radius : 40;
+                                drawEntityShadow(luna.x, luna.y, Math.max(26, radius * 1.45), Math.max(10, radius * 0.58), {
+                                    alpha: luna.hp > 0 ? 0.26 : 0.18,
+                                    yOffset: Math.max(12, radius * 0.9)
+                                });
+                            }
                             ctx.save();
                             ctx.translate(luna.x, luna.y);
                             const alive = luna.hp > 0;
@@ -32261,6 +32338,11 @@
             }
 
             function drawShadowHound(h) {
+                const bodyWidth = 18;
+                drawEntityShadow(h.x, h.y, bodyWidth * 1.05, Math.max(6, bodyWidth * 0.45), {
+                    alpha: 0.26,
+                    yOffset: bodyWidth * 0.8
+                });
                 ctx.save();
                 ctx.translate(h.x, h.y);
                 const time = performance.now() / 1000;
@@ -32269,7 +32351,6 @@
 
                 ctx.globalAlpha = 0.55 + 0.35 * lifeRatio;
 
-                const bodyWidth = 18;
                 const bodyHeight = 12;
 
                 const gradient = ctx.createRadialGradient(0, 0, bodyHeight * 0.4, 0, 0, bodyWidth);
@@ -32336,6 +32417,11 @@
                 const swirl = now * 5.2 + (minion.swirlPhase || 0);
                 const fireCooldown = Math.max(0.12, minion.fireCooldown || 0.6);
                 const fireRatio = Math.max(0, Math.min(1, (minion.fireTimer || 0) / fireCooldown));
+
+                drawEntityShadow(minion.x, minion.y, Math.max(10, baseRadius * 1.5), Math.max(4, baseRadius * 0.6), {
+                    alpha: 0.24 + 0.02 * level,
+                    yOffset: Math.max(8, baseRadius * 0.9)
+                });
 
                 const upgrades = getChampionUpgradeState();
                 const abilityModule = minion.abilityModule || owner?.attackModule || (upgrades ? upgrades.attackModule : 'default') || 'default';
@@ -32490,6 +32576,11 @@
                 
                 // Check if star power is active
                 const isStarPowerActive = champion.isInvincible && champion.starPowerEndTime > performance.now();
+
+                drawEntityShadow(champion.x, champion.y, Math.max(24, baseRadius * 1.7), Math.max(10, baseRadius * 0.65), {
+                    alpha: 0.3 + Math.min(0.15, level * 0.02),
+                    yOffset: Math.max(14, baseRadius * 1.1)
+                });
 
                 ctx.save();
                 ctx.translate(champion.x, champion.y);
@@ -32849,9 +32940,13 @@
 
             function drawIceman(iceman) {
                 const { x, y, isMini } = iceman;
+                const scale = isMini ? 0.4 : 1.0;
+                drawEntityShadow(x, y, Math.max(12, 20 * scale), Math.max(5, 8 * scale), {
+                    alpha: 0.28,
+                    yOffset: Math.max(10, 18 * scale)
+                });
                 ctx.save();
                 ctx.translate(x, y);
-                const scale = isMini ? 0.4 : 1.0; // Mini iceman is 40% the size (smaller for boss token)
                 ctx.scale(scale, scale);
                 ctx.globalAlpha = 0.6 + 0.2 * Math.sin(performance.now() / 200);
 
@@ -33024,6 +33119,7 @@
                 if (!store.escortDrones || store.escortDrones.length === 0) return;
 
                 for (const drone of store.escortDrones) {
+                    drawEntityShadow(drone.x, drone.y, 10, 4, { alpha: 0.24, yOffset: 8 });
                     ctx.save();
                     ctx.translate(drone.x, drone.y);
                     
@@ -33060,11 +33156,15 @@
 
             function drawBeefClone(beefClone) {
                 const { x, y, mode } = beefClone;
+                const visualScale = beefClone.visualScale || 1;
+                drawEntityShadow(x, y, Math.max(16, 24 * visualScale), Math.max(7, 10 * visualScale), {
+                    alpha: 0.28,
+                    yOffset: Math.max(12, 22 * visualScale)
+                });
                 ctx.save();
                 ctx.translate(x, y);
 
                 const facing = beefClone.direction || 1;
-                const visualScale = beefClone.visualScale || 1;
                 if (facing < 0) {
                     ctx.scale(-visualScale, visualScale);
                 } else {
