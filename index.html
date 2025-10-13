@@ -13329,6 +13329,7 @@
                         e.cubeBurglarBuffTimer = Math.max(0, e.cubeBurglarBuffTimer - dt);
                         const sourceActive = activeCubeBurglar && activeCubeBurglar.id === e.cubeBurglarBuffSource;
                         if (e.cubeBurglarBuffTimer <= 0 || !sourceActive) {
+                            // Restore base damage multiplier
                             if (e._cubeBurglarBaseDamageMult !== undefined) {
                                 e.damageMult = e._cubeBurglarBaseDamageMult;
                                 delete e._cubeBurglarBaseDamageMult;
@@ -13336,6 +13337,15 @@
                             if (e.baseContactDamage !== undefined) {
                                 e.contactDamage = e.baseContactDamage * (e.damageMult || 1);
                             }
+                            
+                            // Restore base HP max and scale down current HP proportionally
+                            if (e._cubeBurglarBaseHpMax !== undefined) {
+                                const currentHpRatio = e.hp / Math.max(1, e.hpMax);
+                                e.hpMax = e._cubeBurglarBaseHpMax;
+                                e.hp = Math.min(e.hp, Math.floor(e.hpMax * currentHpRatio));
+                                delete e._cubeBurglarBaseHpMax;
+                            }
+                            
                             delete e.cubeBurglarBuffTimer;
                             delete e.cubeBurglarBuffSource;
                             delete e.cubeBurglarBuffStats;
@@ -15507,6 +15517,11 @@
                 const auraDuration = enemy.auraDuration || CUBE_BURGLAR_CONFIG.auraDuration;
                 const auraMult = enemy.auraDamageMult || enemy.baseAuraDamageMult;
                 const empowerment = enemy.cubeBurglarEmpowerments || recalcCubeBurglarEmpowerments(enemy);
+                
+                // Calculate HP multiplier based on empowerment (moderate scaling to avoid bullet sponges)
+                const damageBoost = empowerment?.damageMult || 1;
+                const hpMultiplier = 1 + (damageBoost - 1) * 0.4; // 40% of damage boost applied to HP
+                
                 for (let i = 0; i < store.enemies.length; i++) {
                     const target = store.enemies[i];
                     if (!target || target.dead || target === enemy || target.type === 'cube_burglar') continue;
@@ -15514,10 +15529,23 @@
                     const dy = target.y - enemy.y;
                     const distSq = dx * dx + dy * dy;
                     if (distSq > auraRangeSq) continue;
+                    
+                    // Track base damage multiplier
                     if (target._cubeBurglarBaseDamageMult === undefined) {
                         target._cubeBurglarBaseDamageMult = target.damageMult || 1;
                     }
-                    const damageBoost = empowerment?.damageMult || 1;
+                    
+                    // Track base HP max when first entering aura
+                    if (target._cubeBurglarBaseHpMax === undefined) {
+                        target._cubeBurglarBaseHpMax = target.hpMax;
+                        // Scale up HP when entering aura
+                        const oldHpMax = target.hpMax;
+                        target.hpMax = Math.floor(target._cubeBurglarBaseHpMax * hpMultiplier);
+                        // Scale current HP proportionally
+                        const hpRatio = target.hp / oldHpMax;
+                        target.hp = Math.floor(target.hpMax * hpRatio);
+                    }
+                    
                     target.damageMult = (target._cubeBurglarBaseDamageMult || 1) * auraMult * damageBoost;
                     if (target.baseContactDamage !== undefined) {
                         target.contactDamage = target.baseContactDamage * (target.damageMult || 1);
@@ -26179,6 +26207,45 @@
                     ctx.stroke();
                     ctx.restore();
                 }
+                
+                // Cube Burglar empowerment visual effect
+                if (e.cubeBurglarAuraGlow && e.cubeBurglarAuraGlow > 0 && e.type !== 'cube_burglar') {
+                    ctx.save();
+                    ctx.globalCompositeOperation = 'lighter';
+                    const glowTime = performance.now() / 1000;
+                    const glowPulse = 0.6 + 0.4 * Math.sin(glowTime * 3.5 + (e.id || 0) * 0.1);
+                    const glowIntensity = e.cubeBurglarAuraGlow * glowPulse;
+                    
+                    // Outer glow ring
+                    ctx.globalAlpha = 0.3 * glowIntensity;
+                    ctx.strokeStyle = '#ff6ad5';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, a * 1.5, 0, Math.PI * 2);
+                    ctx.stroke();
+                    
+                    // Inner glow ring
+                    ctx.globalAlpha = 0.5 * glowIntensity;
+                    ctx.strokeStyle = '#ff9de5';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, a * 1.2, 0, Math.PI * 2);
+                    ctx.stroke();
+                    
+                    // Filled aura
+                    const auraGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, a * 1.4);
+                    auraGradient.addColorStop(0, 'rgba(255, 106, 213, 0.25)');
+                    auraGradient.addColorStop(0.5, 'rgba(255, 106, 213, 0.12)');
+                    auraGradient.addColorStop(1, 'rgba(255, 106, 213, 0)');
+                    ctx.globalAlpha = 0.6 * glowIntensity;
+                    ctx.fillStyle = auraGradient;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, a * 1.4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.restore();
+                }
+                
                 // Apply flattening effect if enemy has flattenScale property
                 if (e.flattenScale !== undefined) {
                     if (typeof e.flattenScale === 'number') {
