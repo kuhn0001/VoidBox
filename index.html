@@ -3894,8 +3894,15 @@
                 ctx.setTransform(cvs.width / W, 0, 0, cvs.height / H, 0, 0);
             }).observe(stage);
             const mouse = { x: W / 2, y: H * 0.8 };
+            const CHAMPION_SYSTEM_ENABLED = false;
 
-            const trackedPanelIds = ['shopPanel', 'mechForgeMenuPanel', 'championDressingRoom', 'characterSheetPanel', 'subclassPanel'];
+            const trackedPanelIds = [
+                'shopPanel',
+                'mechForgeMenuPanel',
+                ...(CHAMPION_SYSTEM_ENABLED ? ['championDressingRoom'] : []),
+                'characterSheetPanel',
+                'subclassPanel'
+            ];
             const panelStack = [];
             let currentPanelId = null;
 
@@ -4967,6 +4974,16 @@
                 }
             });
 
+            // Enemy density tuning constants - must be defined before store initialization
+            const BASE_ENEMY_DENSITY_BONUS = 1.0;
+            const MIN_ENEMY_DENSITY_BONUS = 0.6;
+            const MAX_ENEMY_DENSITY_BONUS = 20;
+
+            function normalizeEnemyDensityBonus(value) {
+                const safe = ensureFiniteNumber(value, BASE_ENEMY_DENSITY_BONUS);
+                return Math.min(MAX_ENEMY_DENSITY_BONUS, Math.max(MIN_ENEMY_DENSITY_BONUS, safe));
+            }
+
             const store = {
                 frame: 0, last: performance.now(), isGameOver: false, isPaused: false,
                 isDamageOff: false,
@@ -4990,7 +5007,7 @@
                     waveTransitionTimer: null,
                     enemyHealthBonus: 1.0,
                     bossHealthBonus: 1.0,
-                    enemyDensityBonus: 0.4,
+                    enemyDensityBonus: BASE_ENEMY_DENSITY_BONUS,
                     lastBossRapidKillMultiplier: 1,
                     lastEnemyOverdriveAnnounce: 0,
                     powerupCooldown: 0,
@@ -5462,6 +5479,7 @@
             }
 
             function applyChampionOnHitEffects(bullet, enemy, context) {
+                if (!CHAMPION_SYSTEM_ENABLED) return;
                 if (!bullet || !enemy || enemy.dead || enemy.hp <= 0) return;
                 if (!bullet.isChampionShot) return;
 
@@ -7575,13 +7593,16 @@
             // --- GAME MECHANICS ---
             function spawnPowerup(x, y) {
                 if (store.world.powerupCooldown > 0) return;
-                const p = store.player;
-                const baseChance = 0.075;
+                const p = store.player || {};
+                const baseChance = 0.04;
                 const wave = store.world.wave;
                 const waveReductionFactor = 0.0025;
-                let finalChance = Math.max(0.025, baseChance - (wave - 1) * waveReductionFactor);
+                let finalChance = Math.max(0.015, baseChance - (wave - 1) * waveReductionFactor);
                 let types = Object.keys(POWERUP_TYPES).filter(key => key !== 'void_core' && !POWERUP_TYPES[key].isSpecial);
+                if (!types.length) types = ['shield', 'repair', 'missile'];
+
                 let bonusType = null;
+                let bonusDropChance = 0;
 
                 // Check for nearby Cube Burglars - boost drop rate significantly
                 const cubeBurglar = store.enemies.find(e => e.type === 'cube_burglar' && !e.dead);
@@ -7591,36 +7612,49 @@
                     const distSq = dx * dx + dy * dy;
                     const burglarAuraRange = 300;
                     if (distSq <= burglarAuraRange * burglarAuraRange) {
-                        // 3x drop rate for enemies near Cube Burglar
-                        finalChance *= 3.0;
+                        // Still reward burglar hunts, but with a gentler multiplier
+                        finalChance *= 2.2;
                     }
                 }
+
                 if (p.pilotGenome === 'beef') {
-                    // Enhanced drop rates for beef - additional powerups, not replacing existing ones
-                    if (Math.random() < 0.4) bonusType = 'shield'; // Increased from 0.25 to 0.4
-                    else if (Math.random() < 0.3) bonusType = 'repair'; // Increased from 0.15 to 0.3
-                    // Also boost the base chance for beef pilots
-                    finalChance *= 1.3; // 30% higher overall powerup drop rate
+                    const roll = Math.random();
+                    if (roll < 0.45) {
+                        bonusType = 'shield';
+                        bonusDropChance = 0.55;
+                    } else if (roll < 0.8) {
+                        bonusType = 'repair';
+                        bonusDropChance = 0.5;
+                    }
+                } else if (p.pilotGenome === 'rocketman') {
+                    bonusType = 'missile';
+                    const missileTimer = p.powerupTimers?.missile;
+                    bonusDropChance = !missileTimer || missileTimer.remaining <= 3 ? 0.85 : 0.6;
                 }
-                if (p.pilotGenome === 'rocketman') {
-                    // Significantly boost missile powerup rates for rocketman
-                    if (Math.random() < 0.5) bonusType = 'missile'; // 50% chance for missile powerups
-                    finalChance *= 2.0; // Double overall powerup drop rate
-                    // Extra chance if rocketman doesn't currently have missiles active
-                    if (!p.powerupTimers.missile || p.powerupTimers.missile.remaining <= 3) {
-                        if (Math.random() < 0.3) bonusType = 'missile'; // Extra 30% chance when missiles are low/inactive
+
+                const roll = Math.random();
+                let shouldDrop = roll <= finalChance;
+                if (!shouldDrop && bonusType) {
+                    if (Math.random() < bonusDropChance) {
+                        shouldDrop = true;
                     }
                 }
-                const roll = Math.random();
-                if (roll > finalChance && !bonusType) return;
+                if (!shouldDrop) return;
+
                 let typeKey;
-                if (bonusType && (roll <= finalChance || Math.random() < 0.5)) {
-                    typeKey = bonusType;
+                if (bonusType) {
+                    const preferBonus = roll <= finalChance ? Math.random() < 0.6 : true;
+                    if (preferBonus) {
+                        typeKey = bonusType;
+                    } else {
+                        typeKey = types[Math.floor(Math.random() * types.length)];
+                    }
                 } else {
                     typeKey = types[Math.floor(Math.random() * types.length)];
                 }
+
                 store.powerups.push({ x, y, r: 12, type: typeKey });
-                store.world.powerupCooldown = 5;
+                store.world.powerupCooldown = 6;
             }
 
             function spawnVoidCoreDrop(x, y) {
@@ -7901,20 +7935,12 @@
 
                 reward.apply();
 
-                // Use announce() instead of popup to avoid spamming the player
-                // Only show popup for the first champion upgrade, then use announcements
                 const championUpgradeCount = (state.primaryPicked || 0) + (state.defensePicked || 0) + (state.utilityPicked || 0);
-                if (!skipPopup && championUpgradeCount <= 1) {
-                    showUpgradePopup({
-                        name: reward.name,
-                        icon: reward.icon || '🧬',
-                        desc: reward.desc || 'Guardian systems enhanced.',
-                        tier: 'champion'
-                    });
-                } else {
-                    // Use green announcement strip instead of popup
-                    announce(`${reward.icon || '🧬'} ${reward.name} - ${reward.desc || 'Guardian systems enhanced.'}`);
-                }
+                const upgradeDesc = reward.desc || 'Guardian systems enhanced.';
+                const leadIn = (!skipPopup && championUpgradeCount === 0)
+                    ? 'PRIME GUARDIAN UPGRADE'
+                    : 'Guardian systems upgraded';
+                announce(`${reward.icon || '🧬'} ${leadIn}: ${reward.name} — ${upgradeDesc}`);
 
                 return true;
             }
@@ -8181,6 +8207,7 @@
 
                 const selectedKey = eligibleUpgrades[Math.floor(Math.random() * eligibleUpgrades.length)];
                 const upgrade = SHOP_UPGRADES[selectedKey];
+                const miniAbilityKeys = ['gravity_well', 'lazarus_beam', 'ghost_hounds', 'launcher', 'grenade'];
 
                 let result;
                 if (selectedKey === 'iceman' && tier === 'bossTier') {
@@ -8200,7 +8227,7 @@
 
                     if (result.success && tier === 'bossTier') {
                         if (!store.player.miniAbilities) store.player.miniAbilities = new Set();
-                        if (['gravity_well', 'lazarus_beam', 'ghost_hounds', 'launcher', 'grenade'].includes(selectedKey)) {
+                        if (miniAbilityKeys.includes(selectedKey)) {
                             store.player.miniAbilities.add(selectedKey);
                         }
                     }
@@ -8210,13 +8237,18 @@
                     const level = (store.player?.upgradeLevels && store.player.upgradeLevels[selectedKey]) || 0;
                     const name = typeof upgrade.getName === 'function' ? upgrade.getName(null, level - 1) : upgrade.name;
                     const desc = typeof upgrade.desc === 'function' ? upgrade.desc(level - 1) : upgrade.desc;
+                    const isMiniUnlock = tier === 'bossTier' && miniAbilityKeys.includes(selectedKey);
 
-                    showUpgradePopup({
-                        name: name,
-                        icon: upgrade.icon || '⚡',
-                        desc: desc,
-                        tier: tier
-                    });
+                    if (isMiniUnlock) {
+                        announce(`${upgrade.icon || '⚡'} MINI-PROTOCOL ONLINE: ${name} — ${desc}`);
+                    } else {
+                        showUpgradePopup({
+                            name: name,
+                            icon: upgrade.icon || '⚡',
+                            desc: desc,
+                            tier: tier
+                        });
+                    }
                 } else {
                     const goldAmount = tier === 'bossTier' ? 150 : 75;
                     addWorldGold(goldAmount);
@@ -9016,6 +9048,7 @@
                     if (store.world.voidReaperCooldown && store.world.voidReaperCooldown > 0) {
                         store.world.voidReaperCooldown = Math.max(0, store.world.voidReaperCooldown - 1);
                     }
+                    store.world.enemyDensityBonus = normalizeEnemyDensityBonus(store.world.enemyDensityBonus);
                 }
                 const isBossWave = store.world.wave % 5 === 0;
                 const isPreBossWave = !isBossWave && store.world.wave % 5 === 4;
@@ -9420,13 +9453,19 @@
                 }
 
                 function createSpawnSpec(type, threatScale, lateGameScaling) {
+                    const threatTablesReady = typeof ENEMY_THREAT_COST !== 'undefined' && ENEMY_THREAT_COST;
+                    const baseThreat = threatTablesReady && Number.isFinite(ENEMY_THREAT_COST[type])
+                        ? ENEMY_THREAT_COST[type]
+                        : 10;
                     return {
                         type,
                         props: { hpScale: threatScale, damageMult: threatScale },
                         lateGameScaling,
                         spawnDuration: spawnDurationByType[type],
                         spawnDropDistance: dropDistanceByType[type],
-                        effectColor: teleportAuraByType[type] || teleportAuraByType.drone
+                        effectColor: teleportAuraByType[type] || teleportAuraByType.drone,
+                        threatCost: baseThreat,
+                        difficultyScore: baseThreat
                     };
                 }
 
@@ -9466,7 +9505,34 @@
                         specs.push(createSpawnSpec(type, threatScale, lateGameScaling));
                     }
 
-                    shuffleInPlace(specs);
+                    const progressionNoise = Math.max(0.08, Math.min(0.25, 0.12 + wave * 0.004));
+                    specs.forEach(spec => {
+                        const baseThreat = Number.isFinite(spec.threatCost) ? spec.threatCost : 10;
+                        const noise = baseThreat * progressionNoise * (Math.random() - 0.5);
+                        spec.difficultyScore = baseThreat + noise;
+                    });
+
+                    specs.sort((a, b) => (a.difficultyScore ?? 0) - (b.difficultyScore ?? 0));
+
+                    const total = specs.length;
+                    if (total > 0) {
+                        const progressionStrength = Math.min(0.6, 0.18 + wave * 0.012);
+                        const startModifier = Math.max(0.75, 1 - progressionStrength * 0.45);
+                        const endModifier = 1 + progressionStrength;
+                        specs.forEach((spec, idx) => {
+                            const progress = total > 1 ? idx / (total - 1) : 1;
+                            const hpRamp = startModifier + (endModifier - startModifier) * progress;
+                            const dmgRamp = startModifier + (endModifier - startModifier) * Math.pow(progress, 0.85);
+                            const lateRamp = 1 + progressionStrength * 0.6 * progress;
+                            if (!spec.props) spec.props = {};
+                            spec.props.hpScale = Math.max(0.55, (spec.props.hpScale ?? threatScale) * hpRamp);
+                            spec.props.damageMult = Math.max(0.55, (spec.props.damageMult ?? threatScale) * dmgRamp);
+                            spec.lateGameScaling = Math.max(0.4, (spec.lateGameScaling ?? lateGameScaling) * lateRamp);
+                            spec.progressIndex = idx;
+                            spec.progressRatio = progress;
+                        });
+                    }
+
                     return specs;
                 }
 
@@ -10176,7 +10242,77 @@
                     });
 
                     if (directorInstance) {
-                        directorInstance.mode = 'phase';
+                        directorInstance.mode = 'idle';
+                        directorInstance.threatBudget = 0;
+                        directorInstance.phaseTimer = 0;
+                        directorInstance.phaseDuration = 0;
+                        directorInstance.spawnCooldown = Infinity;
+                    }
+
+                    let spawnSpecs = [];
+                    if (typeof buildWaveSpawnSpecs === 'function') {
+                        spawnSpecs = buildWaveSpawnSpecs(store.world.wave, spawnCount, threatScale, lateGameScaling) || [];
+                    }
+
+                    let totalPlannedSpawns = spawnSpecs.length;
+                    if (totalPlannedSpawns === 0 && spawnCount > 0) {
+                        totalPlannedSpawns = Math.max(1, spawnCount);
+                    }
+                    store.pendingSpawnCount = totalPlannedSpawns;
+                    store.world.lastPlannedSpawnCount = totalPlannedSpawns;
+                    store.world.lastSpawnQueueLength = spawnSpecs.length;
+                    store.world.lastSpawnOverflow = 0;
+                    store.world.lastSpawnTempo = 0;
+                    store.world.waveStartTime = performance.now();
+
+                    if (spawnSpecs.length) {
+                        const theme = currentWaveProfile?.theme || 'MIXED_BASICS';
+                        let clusterCount = Math.max(1, Math.round(spawnSpecs.length / 6));
+                        let baseDelay = 0.28; // Reduced from 0.55 for faster pace
+                        switch (theme) {
+                            case 'SWARM_HELL':
+                                clusterCount = Math.min(spawnSpecs.length, clusterCount + 2); // More clusters
+                                baseDelay = 0.18; // Much faster
+                                break;
+                            case 'TANK_RUSH':
+                            case 'ELITE_ASSAULT':
+                                clusterCount = Math.max(1, clusterCount - 1);
+                                baseDelay = 0.35; // Still deliberate but faster
+                                break;
+                            case 'PRECISION_TEST':
+                                baseDelay = 0.32;
+                                break;
+                            case 'DODGE_HELL':
+                                baseDelay = 0.25;
+                                break;
+                            case 'ULTIMATE_CHAOS':
+                                clusterCount = Math.min(spawnSpecs.length, clusterCount + 2); // Even more chaos
+                                baseDelay = 0.22;
+                                break;
+                        }
+                        clusterCount = Math.min(clusterCount, Math.max(1, spawnSpecs.length));
+                        const jitter = Math.max(0.08, baseDelay * 0.35); // Tighter jitter for more predictable pacing
+                        scheduleWaveSpawnClusters(spawnSpecs, {
+                            clusterCount,
+                            baseDelay,
+                            jitter
+                        });
+                    } else if (!store.enemies.length) {
+                        const fallbackEnemy = spawnEnemy('drone', { x: W / 2, y: -140 });
+                        if (fallbackEnemy) {
+                            activateSpawnIntro(fallbackEnemy, {
+                                duration: 0.6,
+                                dropDistance: 110,
+                                effectColor: '#7fd5ff',
+                                clusterIndex: 0,
+                                clusterSize: 1,
+                                topClampBuffer: 0.75
+                            });
+                            store.enemies.push(fallbackEnemy);
+                            store.pendingSpawnCount = 1;
+                            store.world.lastPlannedSpawnCount = 1;
+                            store.world.lastSpawnQueueLength = 1;
+                        }
                     }
                 }
             }
@@ -10492,29 +10628,85 @@
             }
 
             function scheduleWaveSpawnClusters(spawnSpecs, options = {}) {
-                const clustersRequested = options.clusterCount ?? 3;
-                const clusterCount = Math.max(1, Math.min(clustersRequested, spawnSpecs.length || 1));
-                const clusters = Array.from({ length: clusterCount }, () => []);
+                if (!Array.isArray(spawnSpecs) || spawnSpecs.length === 0) return;
 
-                spawnSpecs.forEach((spec, index) => {
-                    clusters[index % clusterCount].push(spec);
+                const sortedSpecs = spawnSpecs.slice().sort((a, b) => {
+                    if (a.progressIndex !== undefined && b.progressIndex !== undefined) {
+                        return a.progressIndex - b.progressIndex;
+                    }
+                    return (a.difficultyScore ?? 0) - (b.difficultyScore ?? 0);
                 });
 
-                const baseDelay = options.baseDelay ?? 0.35; // seconds between clusters
-                const jitterAmplitude = options.jitter ?? baseDelay * 0.35;
+                const clustersRequested = options.clusterCount ?? 4; // Increased from 3 for more frequent spawns
+                const clusterCount = Math.max(1, Math.min(clustersRequested, sortedSpecs.length));
+                const totalSpecs = sortedSpecs.length;
+                const progressionStrength = Math.min(1.05, 0.35 + totalSpecs * 0.02);
+                const weights = Array.from({ length: clusterCount }, (_, idx) => 1 + idx * progressionStrength);
+                const weightSum = weights.reduce((sum, w) => sum + w, 0);
+
+                const clusters = [];
+                let cursor = 0;
+                let remaining = totalSpecs;
+                let lastSize = 0;
+
+                for (let idx = 0; idx < clusterCount; idx++) {
+                    const clustersLeft = clusterCount - idx;
+                    const remainingAfter = clustersLeft - 1;
+                    let target = idx === clusterCount - 1
+                        ? remaining
+                        : Math.max(1, Math.round((weights[idx] / weightSum) * totalSpecs));
+
+                    const minReserve = Math.max(0, remainingAfter);
+                    if (target > remaining - minReserve) {
+                        target = Math.max(1, remaining - minReserve);
+                    }
+
+                    if (target < lastSize) {
+                        target = Math.max(lastSize, Math.min(remaining - minReserve, target + (lastSize - target)));
+                    }
+
+                    if (target <= 0) target = Math.max(1, remaining);
+                    if (clustersLeft > 1 && target > remaining - (clustersLeft - 1)) {
+                        target = remaining - (clustersLeft - 1);
+                    }
+
+                    const end = Math.min(totalSpecs, cursor + target);
+                    const slice = sortedSpecs.slice(cursor, end);
+
+                    if (!slice.length && remaining > 0) {
+                        slice.push(sortedSpecs[cursor]);
+                        cursor += 1;
+                    } else {
+                        cursor = end;
+                    }
+
+                    remaining = Math.max(0, totalSpecs - cursor);
+                    lastSize = slice.length || lastSize;
+                    clusters.push(slice);
+                }
+
+                if (cursor < totalSpecs && clusters.length) {
+                    clusters[clusters.length - 1].push(...sortedSpecs.slice(cursor));
+                }
+
+                const baseDelay = options.baseDelay ?? 0.25; // Reduced from 0.35 for faster spawning
+                const jitterAmplitude = options.jitter ?? baseDelay * 0.3; // Tighter jitter
                 const queue = store.waveSpawnQueue;
 
                 clusters.forEach((cluster, idx) => {
-                    if (!cluster.length) return;
+                    if (!cluster || !cluster.length) return;
                     const stagger = idx === 0 ? 0 : (Math.random() - 0.5) * jitterAmplitude;
                     const timer = Math.max(0, idx * baseDelay + stagger);
+                    const difficultyProgress = clusterCount > 1 ? idx / (clusterCount - 1) : 0;
                     queue.push({
                         timer,
                         enemies: cluster,
                         clusterIndex: idx,
                         clusterSize: cluster.length,
                         totalClusters: clusterCount,
-                        baseDelay
+                        baseDelay,
+                        difficultyProgress,
+                        progressionStrength
                     });
                 });
             }
@@ -10534,10 +10726,15 @@
             function spawnClusterEnemies(event) {
                 const clusterSize = event.enemies.length;
                 const centerX = Math.max(80, Math.min(W - 80, 80 + Math.random() * (W - 160)));
+                const difficultyProgress = typeof clamp === 'function'
+                    ? clamp(event.difficultyProgress ?? ((event.clusterIndex + 1) / Math.max(1, event.totalClusters)), 0, 1)
+                    : Math.max(0, Math.min(1, event.difficultyProgress ?? ((event.clusterIndex + 1) / Math.max(1, event.totalClusters))));
+                const intensityMultiplier = 1 + difficultyProgress * 0.5;
                 
                 // THEMED SPAWN FORMATIONS based on current wave profile
                 const waveProfile = getSpawnProfileForWave(store.world.wave);
                 let spacing = Math.max(40, 140 - clusterSize * 10);
+                spacing *= Math.max(0.45, 1 - difficultyProgress * 0.35);
                 let formationStyle = 'line'; // default: horizontal line
                 
                 // HUNTER GANG COORDINATION: Pick a gang for this cluster
@@ -10580,8 +10777,10 @@
                 let spawnedThisCluster = 0;
                 
                 // ORGANIC SPAWN PATTERNS: Use circular/natural clustering instead of grid
-                const useCircularPattern = Math.random() < 0.6; // 60% chance of circular pattern
-                const clusterRadius = hunterCount > 0 ? 40 : 70; // Tighter for gangs
+                const circularBias = 0.45 + difficultyProgress * 0.4;
+                const useCircularPattern = Math.random() < circularBias; // Later clusters favor circular strikes
+                const baseClusterRadius = hunterCount > 0 ? 40 : 70;
+                const clusterRadius = Math.max(30, baseClusterRadius * Math.max(0.55, 1 - difficultyProgress * 0.4)); // Higher difficulty = tighter focus fire
                 const angleOffset = Math.random() * Math.PI * 2; // Random rotation
 
                 event.enemies.forEach((spec, idx) => {
@@ -10595,7 +10794,9 @@
                         
                         lateralOffset = Math.cos(angle) * actualRadius;
                         const depthOffset = Math.sin(angle) * actualRadius * 0.5; // Less vertical spread
-                        spawnY = -140 - Math.random() * 60 - depthOffset;
+                        const depthBase = -140 - Math.random() * 60 - depthOffset;
+                        const aggressionFactor = Math.max(0.45, 1 - difficultyProgress * 0.4);
+                        spawnY = depthBase * aggressionFactor;
                         
                         // Add some noise to break perfect circles
                         lateralOffset += (Math.random() - 0.5) * 25;
@@ -10609,27 +10810,32 @@
                                 // Tight cluster with organic variation
                                 if (hunterCount > 0) {
                                     lateralOffset = baseOffset + (Math.random() - 0.5) * 45;
-                                    spawnY = -140 - Math.random() * 50;
+                                    const depthBase = -140 - Math.random() * 50;
+                                    spawnY = depthBase * Math.max(0.5, 1 - difficultyProgress * 0.35);
                                 } else {
                                     lateralOffset = baseOffset + (Math.random() - 0.5) * 80;
-                                    spawnY = -140 - Math.random() * 100;
+                                    const depthBase = -140 - Math.random() * 100;
+                                    spawnY = depthBase * Math.max(0.5, 1 - difficultyProgress * 0.35);
                                 }
                                 break;
                             case 'spread':
                                 // Wide spread with natural variance
                                 lateralOffset = baseOffset * (0.8 + Math.random() * 0.4) + (Math.random() - 0.5) * 40;
-                                spawnY = -180 - Math.random() * 120;
+                                const depthBaseSpread = -180 - Math.random() * 120;
+                                spawnY = depthBaseSpread * Math.max(0.55, 1 - difficultyProgress * 0.25);
                                 break;
                             case 'stagger':
                                 // Organic stagger with depth variation
                                 lateralOffset = baseOffset + (Math.random() - 0.5) * 60;
-                                spawnY = -140 - (Math.random() * 100) - (idx % 2 === 0 ? 0 : 60);
+                                const staggerDepth = -140 - (Math.random() * 100) - (idx % 2 === 0 ? 0 : 60);
+                                spawnY = staggerDepth * Math.max(0.52, 1 - difficultyProgress * 0.3);
                                 break;
                             default: // 'line'
                                 // Natural line with varying gaps
                                 const gapVariance = 0.7 + Math.random() * 0.6; // 70%-130% spacing
                                 lateralOffset = baseOffset * gapVariance + (Math.random() - 0.5) * 50;
-                                spawnY = -160 - Math.random() * 140;
+                                const depthBaseLine = -160 - Math.random() * 140;
+                                spawnY = depthBaseLine * Math.max(0.5, 1 - difficultyProgress * 0.35);
                         }
                     }
                     
@@ -10643,6 +10849,21 @@
                     }
 
                     applySpawnSpecToEnemy(enemy, spec);
+
+                    const aggressionBonus = intensityMultiplier;
+                    if (Number.isFinite(enemy.v) && enemy.v > 0) {
+                        enemy.v *= aggressionBonus;
+                    }
+                    if (Number.isFinite(enemy.vx) && enemy.vx !== 0) {
+                        enemy.vx *= aggressionBonus;
+                    }
+                    if (Number.isFinite(enemy.fireCooldown) && enemy.fireCooldown > 0 && enemy.fireCooldown < Infinity) {
+                        enemy.fireCooldown = Math.max(0.18, enemy.fireCooldown / Math.max(1, 0.9 + difficultyProgress * 0.6));
+                    }
+                    if (Number.isFinite(enemy.fireRateChance) && enemy.fireRateChance > 0) {
+                        enemy.fireRateChance = Math.min(0.98, enemy.fireRateChance * (1 + difficultyProgress * 0.5));
+                    }
+                    enemy.clusterDifficulty = difficultyProgress;
                     
                     // Assign hunter gang (same gang for all hunters in this cluster)
                     if (enemy.type === 'hunter' && hunterGangForCluster) {
@@ -10658,7 +10879,7 @@
                         dropDistance: spec.spawnDropDistance,
                         clusterIndex: event.clusterIndex,
                         effectColor: spec.effectColor,
-                        topClampBuffer: 0.75,
+                        topClampBuffer: Math.max(0.35, 0.75 - difficultyProgress * 0.3),
                         clusterSize
                     });
 
@@ -10836,7 +11057,7 @@
                 }
                 
                 const baseValue = DYNAMIC_DIRECTOR_CONFIG.baseIncome + Math.max(0, wave - 1) * DYNAMIC_DIRECTOR_CONFIG.incomePerWave;
-                const densityBonus = store?.world?.enemyDensityBonus ?? 1.0;
+                const densityBonus = store?.world?.enemyDensityBonus ?? BASE_ENEMY_DENSITY_BONUS;
                 return baseValue * earlyGameMultiplier * densityBonus;
             }
 
@@ -10854,7 +11075,7 @@
                 }
                 
                 const baseValue = DYNAMIC_DIRECTOR_CONFIG.baseBudgetCap + Math.max(0, wave - 1) * DYNAMIC_DIRECTOR_CONFIG.budgetCapPerWave;
-                const densityBonus = store?.world?.enemyDensityBonus ?? 1.0;
+                const densityBonus = store?.world?.enemyDensityBonus ?? BASE_ENEMY_DENSITY_BONUS;
                 return baseValue * earlyGameMultiplier * densityBonus;
             }
 
@@ -11124,7 +11345,7 @@
                         setCollarStacks(0);
                         store.world.collarTargetStacks = 0;
                         store.world.enemyHealthBonus = 1;
-                        store.world.enemyDensityBonus = 0.4;
+                        store.world.enemyDensityBonus = BASE_ENEMY_DENSITY_BONUS;
                         store.world.lastEnemyOverdriveAnnounce = 0;
                         store.world.consecutiveFastKills = 0;
                         store.world.fastKillBonus = 0;
@@ -11132,17 +11353,23 @@
                         announce('🐢 WAVE STALEMATE - COLLAR RESET');
                     } else if (waveClearTime < 2) {
                         collarStacksToAdd = 9;
-                        if (store.world.bosses >= 1) store.world.enemyDensityBonus *= 1.15;
+                        if (store.world.bosses >= 1) {
+                            store.world.enemyDensityBonus = normalizeEnemyDensityBonus(store.world.enemyDensityBonus * 1.15);
+                        }
                         store.world.xpMultiplier *= 1.1;
                         announce("💥 ULTRA-INSTANT CLEAR! COLLAR CRUSHES +9 💥");
                     } else if (waveClearTime < 4) {
                         collarStacksToAdd = 6;
-                        if (store.world.bosses >= 1) store.world.enemyDensityBonus *= 1.1;
+                        if (store.world.bosses >= 1) {
+                            store.world.enemyDensityBonus = normalizeEnemyDensityBonus(store.world.enemyDensityBonus * 1.10);
+                        }
                         store.world.xpMultiplier *= 1.07;
                         announce("⚡ INSTANT WAVE CLEAR! COLLAR TIGHTENS +6 ⚡");
                     } else if (waveClearTime < 8) {
                         collarStacksToAdd = 3;
-                        if (store.world.bosses >= 1) store.world.enemyDensityBonus *= 1.05;
+                        if (store.world.bosses >= 1) {
+                            store.world.enemyDensityBonus = normalizeEnemyDensityBonus(store.world.enemyDensityBonus * 1.05);
+                        }
                         store.world.xpMultiplier *= 1.03;
                         announce("⚡ FAST WAVE CLEAR! COLLAR TIGHTENS +3 ⚡");
                     } else if (waveClearTime <= 10) {
@@ -12998,8 +13225,10 @@
                 }
 
                 stepPowerups(dt);
-                stepPlayerChampion(dt);
-                stepChampionMinions(dt);
+                if (CHAMPION_SYSTEM_ENABLED) {
+                    stepPlayerChampion(dt);
+                    stepChampionMinions(dt);
+                }
                 stepEmpCharges(dt);
                 stepKnockbackShieldCharges(dt);
                 stepHounds(dt);
@@ -14285,9 +14514,9 @@
                 const rawMultiplier = Math.min(12, Math.max(1.2, 6 / (Math.max(0.18, killTime) * 1.25)));
                 const appliedMultiplier = 1 + (rawMultiplier - 1) * 0.45; // Apply damping so scaling is gentler
                 const healthBaseline = ensureFiniteNumber(world.enemyHealthBonus, 1);
-                const densityBaseline = ensureFiniteNumber(world.enemyDensityBonus, 0.4);
+                const densityBaseline = normalizeEnemyDensityBonus(world.enemyDensityBonus);
                 world.enemyHealthBonus = Math.min(60, healthBaseline * appliedMultiplier);
-                world.enemyDensityBonus = Math.min(20, Math.max(0.35, densityBaseline * (1 + (appliedMultiplier - 1) * 0.28)));
+                world.enemyDensityBonus = normalizeEnemyDensityBonus(densityBaseline * (1 + (appliedMultiplier - 1) * 0.28));
                 world.lastThreatScale = Math.max(world.lastThreatScale || 1, world.enemyHealthBonus);
 
                 if (now - world.lastEnemyOverdriveAnnounce > 1800) {
@@ -14395,10 +14624,10 @@
                     if (world) {
                         const bossBaseline = ensureFiniteNumber(world.bossHealthBonus, 1);
                         const enemyBaseline = ensureFiniteNumber(world.enemyHealthBonus, 1);
-                        const densityBaseline = ensureFiniteNumber(world.enemyDensityBonus, 0.4);
+                        const densityBaseline = normalizeEnemyDensityBonus(world.enemyDensityBonus);
                         world.bossHealthBonus = Math.min(30, bossBaseline * overdrive);
                         world.enemyHealthBonus = Math.min(40, enemyBaseline * (1 + (overdrive - 1) * 0.45));
-                        world.enemyDensityBonus = Math.min(15, Math.max(0.35, densityBaseline * (1 + (overdrive - 1) * 0.22)));
+                        world.enemyDensityBonus = normalizeEnemyDensityBonus(densityBaseline * (1 + (overdrive - 1) * 0.22));
                     }
                     if (world && world.wave >= 15) {
                         world.consecutiveFastKills++;
@@ -14445,7 +14674,7 @@
                         store.world.bossHealthBonus = 1;
                         store.world.lastBossRapidKillMultiplier = 1;
                         store.world.enemyHealthBonus = Math.max(1, store.world.enemyHealthBonus * 0.85);
-                        store.world.enemyDensityBonus = Math.max(0.4, store.world.enemyDensityBonus * 0.85);
+                        store.world.enemyDensityBonus = normalizeEnemyDensityBonus(store.world.enemyDensityBonus * 0.85);
                         store.world.lastEnemyOverdriveAnnounce = 0;
                         announce("🐢 BOSS STALEMATE - COLLAR RESET");
                     } else {
@@ -14487,11 +14716,11 @@
                 if (announcedAdaptation && store.world.bosses >= 1) {
                     // Only apply density bonuses, not permanent health increases
                     if (healthBonusMultiplier > 1.3) {
-                        store.world.enemyDensityBonus *= 1.15;
+                        store.world.enemyDensityBonus = normalizeEnemyDensityBonus(store.world.enemyDensityBonus * 1.15);
                     } else if (healthBonusMultiplier > 1.1) {
-                        store.world.enemyDensityBonus *= 1.10;
+                        store.world.enemyDensityBonus = normalizeEnemyDensityBonus(store.world.enemyDensityBonus * 1.10);
                     } else if (healthBonusMultiplier > 1.0) {
-                        store.world.enemyDensityBonus *= 1.05;
+                        store.world.enemyDensityBonus = normalizeEnemyDensityBonus(store.world.enemyDensityBonus * 1.05);
                     }
                     setTimeout(() => announce("GUARDIAN DEFEATED!"), 1000);
                 }
@@ -14662,7 +14891,7 @@
                     lastBossAwardToken: null,
                     enemyHealthBonus: 1.0,
                     bossHealthBonus: 1.0,
-                    enemyDensityBonus: 0.4,
+                    enemyDensityBonus: BASE_ENEMY_DENSITY_BONUS,
                     lastBossRapidKillMultiplier: 1,
                     lastEnemyOverdriveAnnounce: 0,
                     powerupCooldown: 0,
@@ -16506,37 +16735,39 @@
                 if (store.shadowHounds) store.shadowHounds.forEach(h => drawShadowHound(h));
                 if (store.voidRifts) store.voidRifts.forEach(rift => drawVoidRift(rift));
                 store.hounds.forEach(h => drawHound(h));
-                const champion = store.playerChampion;
-                if (champion && !champion.dead) {
-                    const minions = store.championMinions || [];
-                    if (minions.length) {
-                        ctx.save();
-                        minions.forEach(minion => {
-                            if (!minion || minion.dead) return;
-                            const abilityModule = minion.abilityModule || champion.attackModule || getChampionUpgradeState().attackModule || 'default';
-                            const abilityTheme = minion.abilityTheme || getChampionMinionAbilityTheme(abilityModule);
-                            const trailColor = abilityTheme?.trail || '#b4c3ff';
-                            const ringColor = abilityTheme?.ring || trailColor;
-                            const gradient = ctx.createLinearGradient(champion.x, champion.y, minion.x, minion.y);
-                            gradient.addColorStop(0, withAlpha(trailColor, 0.55));
-                            gradient.addColorStop(1, withAlpha(ringColor, 0.18));
-                            ctx.strokeStyle = gradient;
-                            ctx.lineWidth = 1.4;
-                            ctx.globalAlpha = 0.4 + Math.min(0.35, (champion.level || 1) * 0.05);
-                            ctx.beginPath();
-                            ctx.moveTo(champion.x, champion.y);
-                            ctx.lineTo(minion.x, minion.y);
-                            ctx.stroke();
-                        });
-                        ctx.restore();
+                if (CHAMPION_SYSTEM_ENABLED) {
+                    const champion = store.playerChampion;
+                    if (champion && !champion.dead) {
+                        const minions = store.championMinions || [];
+                        if (minions.length) {
+                            ctx.save();
+                            minions.forEach(minion => {
+                                if (!minion || minion.dead) return;
+                                const abilityModule = minion.abilityModule || champion.attackModule || getChampionUpgradeState().attackModule || 'default';
+                                const abilityTheme = minion.abilityTheme || getChampionMinionAbilityTheme(abilityModule);
+                                const trailColor = abilityTheme?.trail || '#b4c3ff';
+                                const ringColor = abilityTheme?.ring || trailColor;
+                                const gradient = ctx.createLinearGradient(champion.x, champion.y, minion.x, minion.y);
+                                gradient.addColorStop(0, withAlpha(trailColor, 0.55));
+                                gradient.addColorStop(1, withAlpha(ringColor, 0.18));
+                                ctx.strokeStyle = gradient;
+                                ctx.lineWidth = 1.4;
+                                ctx.globalAlpha = 0.4 + Math.min(0.35, (champion.level || 1) * 0.05);
+                                ctx.beginPath();
+                                ctx.moveTo(champion.x, champion.y);
+                                ctx.lineTo(minion.x, minion.y);
+                                ctx.stroke();
+                            });
+                            ctx.restore();
 
-                        minions.forEach(minion => {
-                            if (!minion || minion.dead) return;
-                            drawChampionMinion(minion, champion);
-                        });
+                            minions.forEach(minion => {
+                                if (!minion || minion.dead) return;
+                                drawChampionMinion(minion, champion);
+                            });
+                        }
+
+                        drawPlayerChampion(champion);
                     }
-
-                    drawPlayerChampion(champion);
                 }
 
                 // Draw EMP charges
@@ -20091,6 +20322,7 @@
             }
 
             function applyChampionVulnerabilityScaling(baseDamage, enemy, profile) {
+                if (!CHAMPION_SYSTEM_ENABLED) return baseDamage;
                 if (!profile || baseDamage <= 0) return baseDamage;
                 const tags = classifyEnemyForChampionVulnerabilities(enemy);
                 const map = profile.tags || profile;
@@ -20484,6 +20716,7 @@
             }
 
             function applyChampionPresetToPlayer(preset, { player = store.player, applyChampion = true } = {}) {
+                if (!CHAMPION_SYSTEM_ENABLED) return false;
                 if (!preset || !player) return false;
 
                 const upgrades = ensureChampionUpgradeState(player);
@@ -20650,6 +20883,9 @@
             }
 
             function notifyChampionLoadoutChanged({ refreshMinions = true } = {}) {
+                if (!CHAMPION_SYSTEM_ENABLED) {
+                    return;
+                }
                 if (store.playerChampion && !store.playerChampion.dead) {
                     applyChampionUpgradeLoadout(store.playerChampion, { refreshMinions });
                 }
@@ -20659,6 +20895,12 @@
             function updateChampionQuickStatus() {
                 const container = typeof document !== 'undefined' ? q('championQuickStatus') : null;
                 if (!container) return;
+
+                if (!CHAMPION_SYSTEM_ENABLED) {
+                    container.classList.add('locked');
+                    container.innerHTML = '<div><strong>Champion:</strong> Systems offline.</div>';
+                    return;
+                }
 
                 if (!store.player?.championUnlocked) {
                     container.classList.add('locked');
@@ -20794,6 +21036,7 @@
             }
 
             function applyChampionUpgradeLoadout(champion, { refreshMinions = true } = {}) {
+                if (!CHAMPION_SYSTEM_ENABLED) return;
                 if (!champion) return;
                 const state = getChampionUpgradeState();
                 const cadence = CHAMPION_CADENCE_LEVELS[state.cadenceLevel] || CHAMPION_CADENCE_LEVELS[0];
@@ -20847,6 +21090,7 @@
             }
 
             function spawnChampionMinion(owner) {
+                if (!CHAMPION_SYSTEM_ENABLED) return null;
                 ensureChampionCollections();
                 if (!owner) return null;
                 const level = owner.level || 1;
@@ -20902,6 +21146,7 @@
             }
 
             function grantChampionCompanion() {
+                if (!CHAMPION_SYSTEM_ENABLED) return null;
                 ensureChampionCollections();
                 ensureChampionUpgradeState();
                 const now = performance.now();
@@ -24669,6 +24914,265 @@
 
             }
 
+            function drawGeminiBoss(boss) {
+                const state = ensureGeminiState(boss);
+                if (!state) return;
+
+                const { sol, luna } = state;
+                const totalHpMax = Math.max(1, (sol.hpMax || 0) + (luna.hpMax || 0));
+                const solShare = clamp((sol.hpMax || 0) / totalHpMax, 0, 1);
+                const lunaShare = clamp((luna.hpMax || 0) / totalHpMax, 0, 1);
+                const solRatio = sol.hpMax > 0 ? clamp(sol.hp / sol.hpMax, 0, 1) : 0;
+                const lunaRatio = luna.hpMax > 0 ? clamp(luna.hp / luna.hpMax, 0, 1) : 0;
+                const now = performance.now() / 1000;
+
+                ctx.save();
+                ctx.translate(boss.x, boss.y);
+                const barWidth = 200;
+                const barHeight = 12;
+                ctx.fillStyle = 'rgba(12, 10, 18, 0.74)';
+                ctx.fillRect(-barWidth / 2, -boss.r - 32, barWidth, barHeight);
+                const solWidth = barWidth * solShare;
+                const lunaWidth = barWidth - solWidth;
+                ctx.fillStyle = 'rgba(255, 180, 100, 0.9)';
+                ctx.fillRect(-barWidth / 2, -boss.r - 32, solWidth * solRatio, barHeight);
+                ctx.fillStyle = 'rgba(120, 210, 255, 0.85)';
+                ctx.fillRect(-barWidth / 2 + solWidth, -boss.r - 32, lunaWidth * lunaRatio, barHeight);
+                ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(-barWidth / 2, -boss.r - 32, barWidth, barHeight);
+                if (solWidth > 0 && solWidth < barWidth) {
+                    ctx.beginPath();
+                    ctx.moveTo(-barWidth / 2 + solWidth, -boss.r - 32);
+                    ctx.lineTo(-barWidth / 2 + solWidth, -boss.r - 20);
+                    ctx.stroke();
+                }
+                ctx.font = '11px Orbitron, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillStyle = '#ffe8c9';
+                ctx.fillText('SOL', -barWidth / 2 + solWidth * 0.5, -boss.r - 38);
+                ctx.fillStyle = '#cdefff';
+                ctx.fillText('LUNA', -barWidth / 2 + solWidth + lunaWidth * 0.5, -boss.r - 38);
+                ctx.restore();
+
+                drawGeminiSol(state, now);
+                drawGeminiLuna(state, now);
+                drawGeminiHealthBars(state);
+            }
+
+            function drawGeminiSol(state, now) {
+                const sol = state.sol;
+                if (Number.isFinite(sol.x) && Number.isFinite(sol.y)) {
+                    const radius = Number.isFinite(sol.radius) ? sol.radius : 40;
+                    drawEntityShadow(sol.x, sol.y, Math.max(26, radius * 1.5), Math.max(10, radius * 0.6), {
+                        alpha: sol.hp > 0 ? 0.28 : 0.18,
+                        yOffset: Math.max(12, radius * 0.9)
+                    });
+                }
+                ctx.save();
+                ctx.translate(sol.x, sol.y);
+                const alive = sol.hp > 0;
+                const baseAlpha = alive ? 1 : 0.35;
+                ctx.globalAlpha = baseAlpha;
+
+                const auraPulse = 1 + 0.06 * Math.sin(now * 3.4 + sol.x * 0.012);
+                const auraRadius = sol.radius * 1.85 * auraPulse;
+                const aura = ctx.createRadialGradient(0, 0, sol.radius * 0.4, 0, 0, auraRadius);
+                aura.addColorStop(0, sol.enraged ? 'rgba(255, 160, 60, 0.9)' : 'rgba(255, 190, 120, 0.75)');
+                aura.addColorStop(1, 'rgba(255, 120, 40, 0)');
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.fillStyle = aura;
+                ctx.beginPath();
+                ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                ctx.save();
+                ctx.rotate(now * (sol.enraged ? 1.2 : 0.7));
+                const spikes = sol.enraged ? 14 : 10;
+                ctx.strokeStyle = sol.enraged ? 'rgba(255, 130, 40, 0.85)' : 'rgba(255, 200, 140, 0.8)';
+                ctx.lineWidth = 3;
+                for (let i = 0; i < spikes; i++) {
+                    const angle = (i / spikes) * Math.PI * 2;
+                    const inner = sol.radius * 0.75;
+                    const outer = sol.radius * (1.6 + 0.12 * Math.sin(now * 4 + i));
+                    ctx.beginPath();
+                    ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+                    ctx.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
+                    ctx.stroke();
+                }
+                ctx.restore();
+
+                const bodyGradient = ctx.createRadialGradient(0, 0, sol.radius * 0.2, 0, 0, sol.radius * 1.08);
+                bodyGradient.addColorStop(0, '#fff8dd');
+                bodyGradient.addColorStop(0.5, sol.enraged ? '#ffb54d' : '#ffdba2');
+                bodyGradient.addColorStop(1, sol.enraged ? '#ff8430' : '#ffb86a');
+                ctx.fillStyle = bodyGradient;
+                ctx.beginPath();
+                ctx.arc(0, 0, sol.radius * 1.05, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#7a2d00';
+                ctx.beginPath();
+                ctx.arc(-sol.radius * 0.38, -sol.radius * 0.18, sol.enraged ? 6 : 5, 0, Math.PI * 2);
+                ctx.arc(sol.radius * 0.38, -sol.radius * 0.18, sol.enraged ? 6 : 5, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = sol.enraged ? '#ffe9c7' : '#fff3d6';
+                ctx.beginPath();
+                ctx.arc(0, sol.radius * 0.32, sol.radius * 0.42, 0.1, Math.PI - 0.1);
+                ctx.fill();
+
+                if (sol.shieldActive && sol.shieldHp > 0) {
+                    const shieldMax = sol.hpMax * (state.luna && state.luna.enraged ? 0.12 : 0.08);
+                    const shieldRatio = shieldMax > 0 ? clamp(sol.shieldHp / shieldMax, 0, 1) : 0;
+                    const shieldRadius = sol.radius * (1.55 + 0.1 * Math.sin(now * 5.6));
+                    ctx.strokeStyle = `rgba(120, 220, 255, ${0.35 + 0.3 * shieldRatio})`;
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.strokeStyle = `rgba(90, 170, 255, ${0.4 + 0.3 * Math.sin(now * 8)})`;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, shieldRadius + 6, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+
+                if (!alive) {
+                    ctx.globalAlpha = 0.6;
+                    ctx.strokeStyle = 'rgba(255, 220, 180, 0.6)';
+                    ctx.lineWidth = 1.5;
+                    ctx.setLineDash([6, 6]);
+                    ctx.beginPath();
+                    ctx.arc(0, 0, sol.radius * 1.2, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
+                ctx.restore();
+            }
+
+            function drawGeminiLuna(state, now) {
+                const luna = state.luna;
+                if (Number.isFinite(luna.x) && Number.isFinite(luna.y)) {
+                    const radius = Number.isFinite(luna.radius) ? luna.radius : 40;
+                    drawEntityShadow(luna.x, luna.y, Math.max(26, radius * 1.45), Math.max(10, radius * 0.58), {
+                        alpha: luna.hp > 0 ? 0.26 : 0.18,
+                        yOffset: Math.max(12, radius * 0.9)
+                    });
+                }
+                ctx.save();
+                ctx.translate(luna.x, luna.y);
+                const alive = luna.hp > 0;
+                ctx.globalAlpha = alive ? 1 : 0.35;
+
+                const auraPulse = 1 + 0.07 * Math.sin(now * 3.8 + luna.y * 0.015);
+                const auraRadius = luna.radius * 1.9 * auraPulse;
+                const aura = ctx.createRadialGradient(0, 0, luna.radius * 0.3, 0, 0, auraRadius);
+                aura.addColorStop(0, luna.enraged ? 'rgba(140, 230, 255, 0.9)' : 'rgba(160, 245, 255, 0.75)');
+                aura.addColorStop(1, 'rgba(80, 170, 255, 0)');
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.fillStyle = aura;
+                ctx.beginPath();
+                ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                const outerR = luna.radius * 1.1;
+                const innerOffset = luna.radius * 0.5;
+                ctx.fillStyle = luna.enraged ? '#73d9ff' : '#8fe6ff';
+                ctx.beginPath();
+                ctx.arc(0, 0, outerR, Math.PI * 0.2, Math.PI * 1.8);
+                ctx.arc(innerOffset, 0, outerR * 0.85, Math.PI * 1.8, Math.PI * 0.2, true);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = luna.enraged ? 'rgba(120, 220, 255, 0.85)' : 'rgba(150, 235, 255, 0.7)';
+                ctx.lineWidth = 2.4;
+                ctx.stroke();
+
+                ctx.save();
+                ctx.rotate(Math.sin(now * 1.2) * 0.1);
+                ctx.strokeStyle = 'rgba(180, 240, 255, 0.4)';
+                ctx.lineWidth = 2;
+                for (let i = 0; i < 3; i++) {
+                    const sweep = Math.PI * (0.45 + i * 0.22);
+                    const radius = outerR * (0.9 + i * 0.18);
+                    ctx.globalAlpha = 0.5 - i * 0.12;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, radius, -sweep / 2, sweep / 2);
+                    ctx.stroke();
+                }
+                ctx.restore();
+
+                ctx.fillStyle = '#0f2a40';
+                ctx.beginPath();
+                ctx.arc(-luna.radius * 0.25, -luna.radius * 0.1, luna.enraged ? 5 : 4, 0, Math.PI * 2);
+                ctx.arc(luna.radius * 0.05, -luna.radius * 0.25, luna.enraged ? 4 : 3.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                const sparkleCount = luna.enraged ? 14 : 9;
+                ctx.strokeStyle = 'rgba(200, 250, 255, 0.6)';
+                ctx.lineWidth = 1.1;
+                for (let i = 0; i < sparkleCount; i++) {
+                    const angle = now * (1.8 + i * 0.15) + i;
+                    const radius = outerR * (0.85 + 0.15 * Math.sin(now * 2 + i));
+                    const x = Math.cos(angle) * radius;
+                    const y = Math.sin(angle) * radius;
+                    ctx.beginPath();
+                    ctx.moveTo(x - 4, y);
+                    ctx.lineTo(x + 4, y);
+                    ctx.moveTo(x, y - 4);
+                    ctx.lineTo(x, y + 4);
+                    ctx.stroke();
+                }
+
+                if (!alive) {
+                    ctx.globalAlpha = 0.6;
+                    ctx.strokeStyle = 'rgba(120, 200, 255, 0.55)';
+                    ctx.setLineDash([5, 5]);
+                    ctx.beginPath();
+                    ctx.arc(0, 0, outerR * 1.2, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
+                ctx.restore();
+            }
+
+            function drawGeminiHealthBars(state) {
+                drawGeminiIndividualBar(state.sol, '#ff9f3b');
+                drawGeminiIndividualBar(state.luna, '#66d0ff');
+            }
+
+            function drawGeminiIndividualBar(dancer, color) {
+                const ratio = dancer.hpMax > 0 ? clamp(dancer.hp / dancer.hpMax, 0, 1) : 0;
+                const width = 140;
+                const x = dancer.x;
+                const y = dancer.y + dancer.radius + 14;
+                ctx.save();
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.68)';
+                ctx.fillRect(x - width / 2, y, width, 8);
+                ctx.fillStyle = color;
+                ctx.fillRect(x - width / 2, y, width * ratio, 8);
+                ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(x - width / 2, y, width, 8);
+                ctx.font = '12px Orbitron, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillStyle = '#fdfdfd';
+                let label = dancer.label || '';
+                if (dancer.hp <= 0) {
+                    label += ' — DOWN';
+                } else if (dancer.enraged) {
+                    label += ' ★';
+                }
+                ctx.fillText(label, x, y + 18);
+                ctx.restore();
+            }
+
             function drawKnockbackShieldCharges() {
                 // Render orbiting knockback shield charges and their cooldown effects around the player.
                 if (!store.knockbackCharges || store.knockbackCharges.length === 0) {
@@ -27484,267 +27988,6 @@
                                 ctx.lineTo(sx, sy);
                                 ctx.stroke();
                             });
-
-
-                        function drawGeminiBoss(boss) {
-                            if (!window.drawGeminiBoss) window.drawGeminiBoss = drawGeminiBoss;
-                            const state = ensureGeminiState(boss);
-                            if (!state) return;
-                            const sol = state.sol;
-                            const luna = state.luna;
-                            const totalHpMax = Math.max(1, (sol.hpMax || 0) + (luna.hpMax || 0));
-                            const solShare = clamp((sol.hpMax || 0) / totalHpMax, 0, 1);
-                            const lunaShare = clamp((luna.hpMax || 0) / totalHpMax, 0, 1);
-                            const solRatio = sol.hpMax > 0 ? clamp(sol.hp / sol.hpMax, 0, 1) : 0;
-                            const lunaRatio = luna.hpMax > 0 ? clamp(luna.hp / luna.hpMax, 0, 1) : 0;
-                            const now = performance.now() / 1000;
-
-                            ctx.save();
-                            ctx.translate(boss.x, boss.y);
-                            const barWidth = 200;
-                            const barHeight = 12;
-                            ctx.fillStyle = 'rgba(12, 10, 18, 0.74)';
-                            ctx.fillRect(-barWidth / 2, -boss.r - 32, barWidth, barHeight);
-                            const solWidth = barWidth * solShare;
-                            const lunaWidth = barWidth - solWidth;
-                            ctx.fillStyle = 'rgba(255, 180, 100, 0.9)';
-                            ctx.fillRect(-barWidth / 2, -boss.r - 32, solWidth * solRatio, barHeight);
-                            ctx.fillStyle = 'rgba(120, 210, 255, 0.85)';
-                            ctx.fillRect(-barWidth / 2 + solWidth, -boss.r - 32, lunaWidth * lunaRatio, barHeight);
-                            ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-                            ctx.lineWidth = 1;
-                            ctx.strokeRect(-barWidth / 2, -boss.r - 32, barWidth, barHeight);
-                            if (solWidth > 0 && solWidth < barWidth) {
-                                ctx.beginPath();
-                                ctx.moveTo(-barWidth / 2 + solWidth, -boss.r - 32);
-                                ctx.lineTo(-barWidth / 2 + solWidth, -boss.r - 20);
-                                ctx.stroke();
-                            }
-                            ctx.font = '11px Orbitron, sans-serif';
-                            ctx.textAlign = 'center';
-                            ctx.fillStyle = '#ffe8c9';
-                            ctx.fillText('SOL', -barWidth / 2 + solWidth * 0.5, -boss.r - 38);
-                            ctx.fillStyle = '#cdefff';
-                            ctx.fillText('LUNA', -barWidth / 2 + solWidth + lunaWidth * 0.5, -boss.r - 38);
-                            ctx.restore();
-
-                            drawGeminiSol(state, now);
-                            drawGeminiLuna(state, now);
-                            drawGeminiHealthBars(state);
-                        }
-
-                        function drawGeminiSol(state, now) {
-                            const sol = state.sol;
-                            if (Number.isFinite(sol.x) && Number.isFinite(sol.y)) {
-                                const radius = Number.isFinite(sol.radius) ? sol.radius : 40;
-                                drawEntityShadow(sol.x, sol.y, Math.max(26, radius * 1.5), Math.max(10, radius * 0.6), {
-                                    alpha: sol.hp > 0 ? 0.28 : 0.18,
-                                    yOffset: Math.max(12, radius * 0.9)
-                                });
-                            }
-                            ctx.save();
-                            ctx.translate(sol.x, sol.y);
-                            const alive = sol.hp > 0;
-                            const baseAlpha = alive ? 1 : 0.35;
-                            ctx.globalAlpha = baseAlpha;
-
-                            const auraPulse = 1 + 0.06 * Math.sin(now * 3.4 + sol.x * 0.012);
-                            const auraRadius = sol.radius * 1.85 * auraPulse;
-                            const aura = ctx.createRadialGradient(0, 0, sol.radius * 0.4, 0, 0, auraRadius);
-                            aura.addColorStop(0, sol.enraged ? 'rgba(255, 160, 60, 0.9)' : 'rgba(255, 190, 120, 0.75)');
-                            aura.addColorStop(1, 'rgba(255, 120, 40, 0)');
-                            ctx.save();
-                            ctx.globalCompositeOperation = 'lighter';
-                            ctx.fillStyle = aura;
-                            ctx.beginPath();
-                            ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
-                            ctx.fill();
-                            ctx.restore();
-
-                            ctx.save();
-                            ctx.rotate(now * (sol.enraged ? 1.2 : 0.7));
-                            const spikes = sol.enraged ? 14 : 10;
-                            ctx.strokeStyle = sol.enraged ? 'rgba(255, 130, 40, 0.85)' : 'rgba(255, 200, 140, 0.8)';
-                            ctx.lineWidth = 3;
-                            for (let i = 0; i < spikes; i++) {
-                                const angle = (i / spikes) * Math.PI * 2;
-                                const inner = sol.radius * 0.75;
-                                const outer = sol.radius * (1.6 + 0.12 * Math.sin(now * 4 + i));
-                                ctx.beginPath();
-                                ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
-                                ctx.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
-                                ctx.stroke();
-                            }
-                            ctx.restore();
-
-                            const bodyGradient = ctx.createRadialGradient(0, 0, sol.radius * 0.2, 0, 0, sol.radius * 1.08);
-                            bodyGradient.addColorStop(0, '#fff8dd');
-                            bodyGradient.addColorStop(0.5, sol.enraged ? '#ffb54d' : '#ffdba2');
-                            bodyGradient.addColorStop(1, sol.enraged ? '#ff8430' : '#ffb86a');
-                            ctx.fillStyle = bodyGradient;
-                            ctx.beginPath();
-                            ctx.arc(0, 0, sol.radius * 1.05, 0, Math.PI * 2);
-                            ctx.fill();
-
-                            ctx.fillStyle = '#7a2d00';
-                            ctx.beginPath();
-                            ctx.arc(-sol.radius * 0.38, -sol.radius * 0.18, sol.enraged ? 6 : 5, 0, Math.PI * 2);
-                            ctx.arc(sol.radius * 0.38, -sol.radius * 0.18, sol.enraged ? 6 : 5, 0, Math.PI * 2);
-                            ctx.fill();
-
-                            ctx.fillStyle = sol.enraged ? '#ffe9c7' : '#fff3d6';
-                            ctx.beginPath();
-                            ctx.arc(0, sol.radius * 0.32, sol.radius * 0.42, 0.1, Math.PI - 0.1);
-                            ctx.fill();
-
-                            if (sol.shieldActive && sol.shieldHp > 0) {
-                                const shieldMax = sol.hpMax * (state.luna && state.luna.enraged ? 0.12 : 0.08);
-                                const shieldRatio = shieldMax > 0 ? clamp(sol.shieldHp / shieldMax, 0, 1) : 0;
-                                const shieldRadius = sol.radius * (1.55 + 0.1 * Math.sin(now * 5.6));
-                                ctx.strokeStyle = `rgba(120, 220, 255, ${0.35 + 0.3 * shieldRatio})`;
-                                ctx.lineWidth = 4;
-                                ctx.beginPath();
-                                ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
-                                ctx.stroke();
-                                ctx.strokeStyle = `rgba(90, 170, 255, ${0.4 + 0.3 * Math.sin(now * 8)})`;
-                                ctx.lineWidth = 2;
-                                ctx.beginPath();
-                                ctx.arc(0, 0, shieldRadius + 6, 0, Math.PI * 2);
-                                ctx.stroke();
-                            }
-
-                            if (!alive) {
-                                ctx.globalAlpha = 0.6;
-                                ctx.strokeStyle = 'rgba(255, 220, 180, 0.6)';
-                                ctx.lineWidth = 1.5;
-                                ctx.setLineDash([6, 6]);
-                                ctx.beginPath();
-                                ctx.arc(0, 0, sol.radius * 1.2, 0, Math.PI * 2);
-                                ctx.stroke();
-                                ctx.setLineDash([]);
-                            }
-
-                            ctx.restore();
-                        }
-
-                        function drawGeminiLuna(state, now) {
-                            const luna = state.luna;
-                            if (Number.isFinite(luna.x) && Number.isFinite(luna.y)) {
-                                const radius = Number.isFinite(luna.radius) ? luna.radius : 40;
-                                drawEntityShadow(luna.x, luna.y, Math.max(26, radius * 1.45), Math.max(10, radius * 0.58), {
-                                    alpha: luna.hp > 0 ? 0.26 : 0.18,
-                                    yOffset: Math.max(12, radius * 0.9)
-                                });
-                            }
-                            ctx.save();
-                            ctx.translate(luna.x, luna.y);
-                            const alive = luna.hp > 0;
-                            ctx.globalAlpha = alive ? 1 : 0.35;
-
-                            const auraPulse = 1 + 0.07 * Math.sin(now * 3.8 + luna.y * 0.015);
-                            const auraRadius = luna.radius * 1.9 * auraPulse;
-                            const aura = ctx.createRadialGradient(0, 0, luna.radius * 0.3, 0, 0, auraRadius);
-                            aura.addColorStop(0, luna.enraged ? 'rgba(140, 230, 255, 0.9)' : 'rgba(160, 245, 255, 0.75)');
-                            aura.addColorStop(1, 'rgba(80, 170, 255, 0)');
-                            ctx.save();
-                            ctx.globalCompositeOperation = 'lighter';
-                            ctx.fillStyle = aura;
-                            ctx.beginPath();
-                            ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
-                            ctx.fill();
-                            ctx.restore();
-
-                            const outerR = luna.radius * 1.1;
-                            const innerOffset = luna.radius * 0.5;
-                            ctx.fillStyle = luna.enraged ? '#73d9ff' : '#8fe6ff';
-                            ctx.beginPath();
-                            ctx.arc(0, 0, outerR, Math.PI * 0.2, Math.PI * 1.8);
-                            ctx.arc(innerOffset, 0, outerR * 0.85, Math.PI * 1.8, Math.PI * 0.2, true);
-                            ctx.closePath();
-                            ctx.fill();
-                            ctx.strokeStyle = luna.enraged ? 'rgba(120, 220, 255, 0.85)' : 'rgba(150, 235, 255, 0.7)';
-                            ctx.lineWidth = 2.4;
-                            ctx.stroke();
-
-                            ctx.save();
-                            ctx.rotate(Math.sin(now * 1.2) * 0.1);
-                            ctx.strokeStyle = 'rgba(180, 240, 255, 0.4)';
-                            ctx.lineWidth = 2;
-                            for (let i = 0; i < 3; i++) {
-                                const sweep = Math.PI * (0.45 + i * 0.22);
-                                const radius = outerR * (0.9 + i * 0.18);
-                                ctx.globalAlpha = 0.5 - i * 0.12;
-                                ctx.beginPath();
-                                ctx.arc(0, 0, radius, -sweep / 2, sweep / 2);
-                                ctx.stroke();
-                            }
-                            ctx.restore();
-
-                            ctx.fillStyle = '#0f2a40';
-                            ctx.beginPath();
-                            ctx.arc(-luna.radius * 0.25, -luna.radius * 0.1, luna.enraged ? 5 : 4, 0, Math.PI * 2);
-                            ctx.arc(luna.radius * 0.05, -luna.radius * 0.25, luna.enraged ? 4 : 3.5, 0, Math.PI * 2);
-                            ctx.fill();
-
-                            const sparkleCount = luna.enraged ? 14 : 9;
-                            ctx.strokeStyle = 'rgba(200, 250, 255, 0.6)';
-                            ctx.lineWidth = 1.1;
-                            for (let i = 0; i < sparkleCount; i++) {
-                                const angle = now * (1.8 + i * 0.15) + i;
-                                const radius = outerR * (0.85 + 0.15 * Math.sin(now * 2 + i));
-                                const x = Math.cos(angle) * radius;
-                                const y = Math.sin(angle) * radius;
-                                ctx.beginPath();
-                                ctx.moveTo(x - 4, y);
-                                ctx.lineTo(x + 4, y);
-                                ctx.moveTo(x, y - 4);
-                                ctx.lineTo(x, y + 4);
-                                ctx.stroke();
-                            }
-
-                            if (!alive) {
-                                ctx.globalAlpha = 0.6;
-                                ctx.strokeStyle = 'rgba(120, 200, 255, 0.55)';
-                                ctx.setLineDash([5, 5]);
-                                ctx.beginPath();
-                                ctx.arc(0, 0, outerR * 1.2, 0, Math.PI * 2);
-                                ctx.stroke();
-                                ctx.setLineDash([]);
-                            }
-
-                            ctx.restore();
-                        }
-
-                        function drawGeminiHealthBars(state) {
-                            drawGeminiIndividualBar(state.sol, '#ff9f3b');
-                            drawGeminiIndividualBar(state.luna, '#66d0ff');
-                        }
-
-                        function drawGeminiIndividualBar(dancer, color) {
-                            const ratio = dancer.hpMax > 0 ? clamp(dancer.hp / dancer.hpMax, 0, 1) : 0;
-                            const width = 140;
-                            const x = dancer.x;
-                            const y = dancer.y + dancer.radius + 14;
-                            ctx.save();
-                            ctx.fillStyle = 'rgba(0, 0, 0, 0.68)';
-                            ctx.fillRect(x - width / 2, y, width, 8);
-                            ctx.fillStyle = color;
-                            ctx.fillRect(x - width / 2, y, width * ratio, 8);
-                            ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-                            ctx.lineWidth = 1;
-                            ctx.strokeRect(x - width / 2, y, width, 8);
-                            ctx.font = '12px Orbitron, sans-serif';
-                            ctx.textAlign = 'center';
-                            ctx.fillStyle = '#fdfdfd';
-                            let label = dancer.label || '';
-                            if (dancer.hp <= 0) {
-                                label += ' — DOWN';
-                            } else if (dancer.enraged) {
-                                label += ' ★';
-                            }
-                            ctx.fillText(label, x, y + 18);
-                            ctx.restore();
-                        }
                             ctx.restore();
                         };
                         break;
@@ -29709,25 +29952,40 @@
                         skillTreeBtn.querySelector('.forge-menu-desc').textContent = 'Review specialization progress';
                     }
                 }
+                if (CHAMPION_SYSTEM_ENABLED) {
+                    updateChampionQuickStatus();
 
-                updateChampionQuickStatus();
+                    const player = store.player;
+                    const isChampionUnlocked = player && player.championUnlocked;
 
-                const player = store.player;
-                const isChampionUnlocked = player && player.championUnlocked;
+                    const labMenuBtn = q('openPrimordialLabFromMenu');
+                    if (labMenuBtn) {
+                        labMenuBtn.disabled = !isChampionUnlocked;
+                        labMenuBtn.setAttribute('aria-disabled', isChampionUnlocked ? 'false' : 'true');
+                    }
 
-                const labMenuBtn = q('openPrimordialLabFromMenu');
-                if (labMenuBtn) {
-                    labMenuBtn.disabled = !isChampionUnlocked;
-                    labMenuBtn.setAttribute('aria-disabled', isChampionUnlocked ? 'false' : 'true');
-                }
-
-                // Show/hide champion preview button based on champion unlock status
-                const championPreviewBtn = q('openChampionDressingRoom');
-                if (championPreviewBtn) {
-                    if (isChampionUnlocked) {
-                        championPreviewBtn.classList.remove('hide');
-                    } else {
+                    const championPreviewBtn = q('openChampionDressingRoom');
+                    if (championPreviewBtn) {
+                        if (isChampionUnlocked) {
+                            championPreviewBtn.classList.remove('hide');
+                        } else {
+                            championPreviewBtn.classList.add('hide');
+                        }
+                    }
+                } else {
+                    const championPreviewBtn = q('openChampionDressingRoom');
+                    if (championPreviewBtn) {
                         championPreviewBtn.classList.add('hide');
+                    }
+                    const labMenuBtn = q('openPrimordialLabFromMenu');
+                    if (labMenuBtn) {
+                        labMenuBtn.disabled = true;
+                        labMenuBtn.setAttribute('aria-disabled', 'true');
+                    }
+                    const quickStatus = q('championQuickStatus');
+                    if (quickStatus) {
+                        quickStatus.classList.add('locked');
+                        quickStatus.textContent = 'Champion systems offline.';
                     }
                 }
 
@@ -37874,203 +38132,228 @@
             });
 
             // Primordial Soldier Laboratory event listeners
-            q("openChampionDressingRoom").addEventListener("click", () => {
-                q("shopPanel").classList.add("hide");
-                showPrimordialSoldierLaboratory();
-            });
-            q("closeDressingRoom").addEventListener("click", () => {
-                const panel = q("championDressingRoom");
-                panel.classList.add("hide");
-                exitPanel('championDressingRoom');
-                resumeGame();
-            });
-            q("closeDressingRoomBtn").addEventListener("click", () => {
-                const panel = q("championDressingRoom");
-                panel.classList.add("hide");
-                exitPanel('championDressingRoom');
-                resumeGame();
-            });
-            q("openShopFromDressingRoom").addEventListener("click", () => {
-                q("championDressingRoom").classList.add("hide");
-                showShop();
-            });
-
-            // Track current preview animation type
             let currentPreviewAnimationType = 'idle';
-            const attackModuleSelect = q('attackModuleSelect');
-            if (attackModuleSelect) {
-                attackModuleSelect.addEventListener('change', () => {
-                    const state = getChampionUpgradeState();
-                    state.attackModule = attackModuleSelect.value;
-                    notifyChampionLoadoutChanged();
-                    updateChampionPreview('idle');
-                    updateChampionStats();
-                    updateChampionBuilderDetails();
-                });
-            }
 
-            const cadenceSelect = q('cadenceSelect');
-            if (cadenceSelect) {
-                cadenceSelect.addEventListener('change', () => {
-                    const state = getChampionUpgradeState();
-                    state.cadenceLevel = parseInt(cadenceSelect.value);
-                    notifyChampionLoadoutChanged();
-                    updateChampionPreview('attack');
-                    updateChampionStats();
-                    updateChampionBuilderDetails();
-                });
-            }
+            if (CHAMPION_SYSTEM_ENABLED) {
+                const openChampionBtn = q('openChampionDressingRoom');
+                if (openChampionBtn) {
+                    openChampionBtn.addEventListener('click', () => {
+                        q('shopPanel').classList.add('hide');
+                        showPrimordialSoldierLaboratory();
+                    });
+                }
 
-            const protocolSelect = q('protocolSelect');
-            if (protocolSelect) {
-                protocolSelect.addEventListener('change', () => {
-                    const state = getChampionUpgradeState();
-                    state.minionProtocols = parseInt(protocolSelect.value);
-                    notifyChampionLoadoutChanged();
-                    updateChampionPreview('special');
-                    updateChampionStats();
-                    updateChampionBuilderDetails();
-                });
-            }
+                const closeDressingRoom = q('closeDressingRoom');
+                if (closeDressingRoom) {
+                    closeDressingRoom.addEventListener('click', () => {
+                        const panel = q('championDressingRoom');
+                        panel.classList.add('hide');
+                        exitPanel('championDressingRoom');
+                        resumeGame();
+                    });
+                }
 
-            const skinSelect = q('skinSelect');
-            if (skinSelect) {
-                skinSelect.addEventListener('change', () => {
-                    const state = getChampionUpgradeState();
-                    state.skin = skinSelect.value;
-                    notifyChampionLoadoutChanged();
-                    updateChampionPreview();
-                    updateChampionStats();
-                    updateChampionBuilderDetails();
-                });
-            }
+                const closeDressingRoomBtn = q('closeDressingRoomBtn');
+                if (closeDressingRoomBtn) {
+                    closeDressingRoomBtn.addEventListener('click', () => {
+                        const panel = q('championDressingRoom');
+                        panel.classList.add('hide');
+                        exitPanel('championDressingRoom');
+                        resumeGame();
+                    });
+                }
 
-            const applyConfigurationBtn = q('applyConfigurationBtn');
-            if (applyConfigurationBtn) {
-                applyConfigurationBtn.addEventListener('click', () => {
-                    // Configuration is already applied via change events, just refresh
-                    updateChampionPreview();
-                    updateChampionStats();
-                    updateChampionBuilderDetails();
-                    announce('Champion configuration applied!');
-                });
-            }
+                const openShopFromDressingRoom = q('openShopFromDressingRoom');
+                if (openShopFromDressingRoom) {
+                    openShopFromDressingRoom.addEventListener('click', () => {
+                        q('championDressingRoom').classList.add('hide');
+                        showShop();
+                    });
+                }
 
-            const resetConfigurationBtn = q('resetConfigurationBtn');
-            if (resetConfigurationBtn) {
-                resetConfigurationBtn.addEventListener('click', () => {
-                    populateChampionBuilder();
-                    updateChampionPreview();
-                    updateChampionStats();
-                    updateChampionBuilderDetails();
-                    announce('Configuration reset to current settings.');
-                });
-            }
+                const attackModuleSelect = q('attackModuleSelect');
+                if (attackModuleSelect) {
+                    attackModuleSelect.addEventListener('change', () => {
+                        const state = getChampionUpgradeState();
+                        state.attackModule = attackModuleSelect.value;
+                        notifyChampionLoadoutChanged();
+                        updateChampionPreview('idle');
+                        updateChampionStats();
+                        updateChampionBuilderDetails();
+                    });
+                }
 
-            const generateChampionPresetBtn = q('generateChampionPresetBtn');
-            if (generateChampionPresetBtn) {
-                generateChampionPresetBtn.addEventListener('click', () => {
-                    const preset = captureChampionPreset();
-                    if (!preset) {
-                        setChampionPresetStatus('Champion data unavailable.', 'error');
-                        return;
-                    }
-                    const code = encodeChampionPresetCode(preset);
-                    if (!code) {
-                        setChampionPresetStatus('Failed to generate champion code.', 'error');
-                        return;
-                    }
-                    store.lastChampionPresetCode = code;
-                    const output = q('championPresetCodeOutput');
-                    if (output) {
-                        output.value = code;
-                        try {
-                            output.focus();
-                            output.select();
-                        } catch (err) { }
-                    }
-                    const canClipboard = typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function';
-                    if (canClipboard) {
-                        navigator.clipboard.writeText(code).then(() => {
-                            setChampionPresetStatus('Champion code generated and copied to clipboard.', 'success');
-                        }).catch(() => {
+                const cadenceSelect = q('cadenceSelect');
+                if (cadenceSelect) {
+                    cadenceSelect.addEventListener('change', () => {
+                        const state = getChampionUpgradeState();
+                        state.cadenceLevel = parseInt(cadenceSelect.value);
+                        notifyChampionLoadoutChanged();
+                        updateChampionPreview('attack');
+                        updateChampionStats();
+                        updateChampionBuilderDetails();
+                    });
+                }
+
+                const protocolSelect = q('protocolSelect');
+                if (protocolSelect) {
+                    protocolSelect.addEventListener('change', () => {
+                        const state = getChampionUpgradeState();
+                        state.minionProtocols = parseInt(protocolSelect.value);
+                        notifyChampionLoadoutChanged();
+                        updateChampionPreview('special');
+                        updateChampionStats();
+                        updateChampionBuilderDetails();
+                    });
+                }
+
+                const skinSelect = q('skinSelect');
+                if (skinSelect) {
+                    skinSelect.addEventListener('change', () => {
+                        const state = getChampionUpgradeState();
+                        state.skin = skinSelect.value;
+                        notifyChampionLoadoutChanged();
+                        updateChampionPreview();
+                        updateChampionStats();
+                        updateChampionBuilderDetails();
+                    });
+                }
+
+                const applyConfigurationBtn = q('applyConfigurationBtn');
+                if (applyConfigurationBtn) {
+                    applyConfigurationBtn.addEventListener('click', () => {
+                        updateChampionPreview();
+                        updateChampionStats();
+                        updateChampionBuilderDetails();
+                        announce('Champion configuration applied!');
+                    });
+                }
+
+                const resetConfigurationBtn = q('resetConfigurationBtn');
+                if (resetConfigurationBtn) {
+                    resetConfigurationBtn.addEventListener('click', () => {
+                        populateChampionBuilder();
+                        updateChampionPreview();
+                        updateChampionStats();
+                        updateChampionBuilderDetails();
+                        announce('Configuration reset to current settings.');
+                    });
+                }
+
+                const generateChampionPresetBtn = q('generateChampionPresetBtn');
+                if (generateChampionPresetBtn) {
+                    generateChampionPresetBtn.addEventListener('click', () => {
+                        const preset = captureChampionPreset();
+                        if (!preset) {
+                            setChampionPresetStatus('Champion data unavailable.', 'error');
+                            return;
+                        }
+                        const code = encodeChampionPresetCode(preset);
+                        if (!code) {
+                            setChampionPresetStatus('Failed to generate champion code.', 'error');
+                            return;
+                        }
+                        store.lastChampionPresetCode = code;
+                        const output = q('championPresetCodeOutput');
+                        if (output) {
+                            output.value = code;
+                            try {
+                                output.focus();
+                                output.select();
+                            } catch (err) { }
+                        }
+                        const canClipboard = typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function';
+                        if (canClipboard) {
+                            navigator.clipboard.writeText(code).then(() => {
+                                setChampionPresetStatus('Champion code generated and copied to clipboard.', 'success');
+                            }).catch(() => {
+                                setChampionPresetStatus('Champion code generated. Copy it manually if needed.', 'success');
+                            });
+                        } else {
                             setChampionPresetStatus('Champion code generated. Copy it manually if needed.', 'success');
-                        });
-                    } else {
-                        setChampionPresetStatus('Champion code generated. Copy it manually if needed.', 'success');
-                    }
-                });
-            }
+                        }
+                    });
+                }
 
-            const copyChampionPresetBtn = q('copyChampionPresetBtn');
-            if (copyChampionPresetBtn) {
-                copyChampionPresetBtn.addEventListener('click', () => {
-                    const output = q('championPresetCodeOutput');
-                    const code = (output && output.value ? output.value.trim() : '') || store.lastChampionPresetCode || '';
-                    if (!code) {
-                        setChampionPresetStatus('Generate a champion code first.', 'error');
-                        return;
-                    }
-                    const canClipboard = typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function';
-                    if (canClipboard) {
-                        navigator.clipboard.writeText(code).then(() => {
-                            setChampionPresetStatus('Champion code copied to clipboard.', 'success');
-                        }).catch(() => {
+                const copyChampionPresetBtn = q('copyChampionPresetBtn');
+                if (copyChampionPresetBtn) {
+                    copyChampionPresetBtn.addEventListener('click', () => {
+                        const output = q('championPresetCodeOutput');
+                        const code = (output && output.value ? output.value.trim() : '') || store.lastChampionPresetCode || '';
+                        if (!code) {
+                            setChampionPresetStatus('Generate a champion code first.', 'error');
+                            return;
+                        }
+                        const canClipboard = typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function';
+                        if (canClipboard) {
+                            navigator.clipboard.writeText(code).then(() => {
+                                setChampionPresetStatus('Champion code copied to clipboard.', 'success');
+                            }).catch(() => {
+                                try {
+                                    if (output) {
+                                        output.focus();
+                                        output.select();
+                                    }
+                                    if (typeof document !== 'undefined' && document.execCommand) {
+                                        document.execCommand('copy');
+                                        setChampionPresetStatus('Champion code copied to clipboard.', 'success');
+                                    } else {
+                                        setChampionPresetStatus('Champion code ready—copy manually if needed.', 'success');
+                                    }
+                                } catch (err) {
+                                    setChampionPresetStatus('Unable to access clipboard. Select and copy the code manually.', 'error');
+                                }
+                            });
+                        } else {
                             try {
                                 if (output) {
                                     output.focus();
                                     output.select();
                                 }
-                                if (typeof document !== 'undefined' && document.execCommand) {
-                                    document.execCommand('copy');
-                                    setChampionPresetStatus('Champion code copied to clipboard.', 'success');
-                                } else {
-                                    setChampionPresetStatus('Champion code ready—copy manually if needed.', 'success');
-                                }
-                            } catch (err) {
-                                setChampionPresetStatus('Unable to access clipboard. Select and copy the code manually.', 'error');
-                            }
-                        });
-                    } else {
-                        try {
-                            if (output) {
-                                output.focus();
-                                output.select();
-                            }
-                        } catch (err) { }
-                        setChampionPresetStatus('Clipboard unavailable. Select and copy the code manually.', 'error');
-                    }
-                });
-            }
-
-            const championPresetCodeInput = q('championPresetCodeInput');
-            const applyChampionPresetBtn = q('applyChampionPresetBtn');
-            if (applyChampionPresetBtn) {
-                applyChampionPresetBtn.addEventListener('click', () => {
-                    const code = championPresetCodeInput && championPresetCodeInput.value ? championPresetCodeInput.value.trim() : '';
-                    if (!code) {
-                        setChampionPresetStatus('Enter a champion code to load.', 'error');
-                        return;
-                    }
-                    const result = loadChampionPresetCode(code, { player: store.player, applyChampion: true });
-                    if (!result.success) {
-                        setChampionPresetStatus(result.message || 'Failed to apply champion code.', 'error');
-                        return;
-                    }
-                    setChampionPresetStatus('Champion configuration restored from code.', 'success');
-                    refreshPrimordialSoldierLaboratory();
-                });
-            }
-
-            if (championPresetCodeInput) {
-                championPresetCodeInput.addEventListener('keydown', (event) => {
-                    if (event.key === 'Enter') {
-                        event.preventDefault();
-                        if (applyChampionPresetBtn) {
-                            applyChampionPresetBtn.click();
+                            } catch (err) { }
+                            setChampionPresetStatus('Clipboard unavailable. Select and copy the code manually.', 'error');
                         }
-                    }
-                });
+                    });
+                }
+
+                const championPresetCodeInput = q('championPresetCodeInput');
+                const applyChampionPresetBtn = q('applyChampionPresetBtn');
+                if (applyChampionPresetBtn) {
+                    applyChampionPresetBtn.addEventListener('click', () => {
+                        const code = championPresetCodeInput && championPresetCodeInput.value ? championPresetCodeInput.value.trim() : '';
+                        if (!code) {
+                            setChampionPresetStatus('Enter a champion code to load.', 'error');
+                            return;
+                        }
+                        const result = loadChampionPresetCode(code, { player: store.player, applyChampion: true });
+                        if (!result.success) {
+                            setChampionPresetStatus(result.message || 'Failed to apply champion code.', 'error');
+                            return;
+                        }
+                        setChampionPresetStatus('Champion configuration restored from code.', 'success');
+                        refreshPrimordialSoldierLaboratory();
+                    });
+                }
+
+                if (championPresetCodeInput) {
+                    championPresetCodeInput.addEventListener('keydown', (event) => {
+                        if (event.key === 'Enter') {
+                            event.preventDefault();
+                            if (applyChampionPresetBtn) {
+                                applyChampionPresetBtn.click();
+                            }
+                        }
+                    });
+                }
+            } else {
+                const openChampionBtn = q('openChampionDressingRoom');
+                if (openChampionBtn) {
+                    openChampionBtn.classList.add('hide');
+                }
+                const championPanel = q('championDressingRoom');
+                if (championPanel) {
+                    championPanel.classList.add('hide');
+                }
             }
 
             q("menuBtn").addEventListener("click", () => {
