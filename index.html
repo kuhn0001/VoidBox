@@ -4399,7 +4399,8 @@
                 hasShieldBubble: false, powerupTimers: {},
                 swirlShots: false, attackSpeedStacks: 0,
                 hasRicochet: false,
-                upgradeLevels: { dmg: 0, speed: 0, hp: 0, max_shield: 0, crit_chance: 0, ghost_hounds: 0, launcher: 0, lazarus_beam: 0, gravity_well: 0, star_cannon: 0, fragment_blast: 0 },
+                ricochetLevel: 0,
+                upgradeLevels: { dmg: 0, speed: 0, hp: 0, max_shield: 0, crit_chance: 0, ghost_hounds: 0, launcher: 0, lazarus_beam: 0, gravity_well: 0, star_cannon: 0, fragment_blast: 0, ricochet: 0 },
                 grenades: 0, knockbackShields: 0, hasVoidBeam: false, voidBeamCooldown: 0,
                 hasLazarusBeam: false, lazarusBeamCooldown: 0,
                 hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 1, vampirismLevel: 0, flamethrowerLevel: 0,
@@ -5238,9 +5239,26 @@
                 bullet.ricochetDist = typeof props.ricochetDist === 'number' ? props.ricochetDist : 0;
                 bullet.maxRicochetDist = typeof props.maxRicochetDist === 'number' ? props.maxRicochetDist : 0;
                 bullet.originalDmg = typeof props.originalDmg === 'number' ? props.originalDmg : undefined;
+                const player = store.player;
+                const ricochetLevel = player ? (player.ricochetLevel || (player.hasRicochet ? 1 : 0)) : 0;
+                if (props.canRicochet !== undefined) {
+                    bullet.canRicochet = !!props.canRicochet;
+                } else if (ricochetLevel >= 2) {
+                    bullet.canRicochet = true;
+                } else if (ricochetLevel >= 1) {
+                    bullet.canRicochet = Math.random() < 0.5;
+                } else {
+                    bullet.canRicochet = false;
+                }
                 bullet.dead = false;
                 if (bullet.isFlame && !Array.isArray(bullet.particles)) {
                     bullet.particles = [];
+                }
+                if (bullet.canRicochet && !bullet.isFragment && !bullet.isFlame && !bullet.isLavaChunk && !bullet.isLevelUpPulse) {
+                    const baseRadius = Number.isFinite(bullet.r) ? bullet.r : 4;
+                    if (baseRadius > 3.2) {
+                        bullet.r = 3.2;
+                    }
                 }
                 store.bullets.push(bullet);
                 return bullet;
@@ -6393,7 +6411,9 @@
                 }
 
                 // Ricochet handling - bounce off boundaries
-                if (store.player && store.player.hasRicochet && !b.hasRicocheted && !b.isFragment && !b.isFlame && !b.isLavaChunk && !b.isLevelUpPulse && !b.dead) {
+                const ricochetLevel = store.player ? (store.player.ricochetLevel || (store.player.hasRicochet ? 1 : 0)) : 0;
+                const canRicochet = b.canRicochet !== undefined ? b.canRicochet : ricochetLevel >= 2;
+                if (ricochetLevel > 0 && canRicochet && !b.hasRicocheted && !b.isFragment && !b.isFlame && !b.isLavaChunk && !b.isLevelUpPulse && !b.dead) {
                     let bounced = false;
                     const margin = 5;
                     const travelDistance = 200; // Distance bullet can travel after bounce
@@ -7029,21 +7049,34 @@
                 'ricochet': {
                     name: "RICOCHET ROUNDS",
                     icon: '🔄',
-                    cost: 85,
+                    baseCost: 120,
+                    scale: 4,
+                    maxLevel: 2,
                     isPremium: true,
                     isUnlock: true,
                     category: 'attack',
-                    apply: () => {
-                        if (!store.player.hasRicochet) {
-                            store.player.hasRicochet = true;
-                            announce('🔄 Ricochet rounds armed!');
-                            return true;
+                    effect: (level) => {
+                        const p = store.player;
+                        if (!p) return;
+                        if (level === 0) {
+                            p.hasRicochet = true;
+                            p.ricochetLevel = Math.max(p.ricochetLevel || 0, 1);
+                            announce('🔄 Ricochet rounds armed! Half of your shots can rebound.');
+                        } else if (level === 1) {
+                            p.hasRicochet = true;
+                            p.ricochetLevel = 2;
+                            announce('🔄 Ricochet rounds fully calibrated! Every shot can rebound.');
                         }
-                        return false;
                     },
-                    desc: () => store.player.hasRicochet 
-                        ? `Bullets bounce off screen edges at reduced damage (30%) and speed.` 
-                        : `Bullets bounce off screen edges, dealing 30% damage after ricochet.`
+                    desc: level => {
+                        if (level === 0) {
+                            return '50% of your shots shrink slightly and can rebound off screen edges at 30% damage.';
+                        }
+                        if (level === 1) {
+                            return 'Upgrade: calibrate for full ricochet on every shot (smaller rounds, 30% damage after bounce).';
+                        }
+                        return 'Max level reached.';
+                    }
                 },
                 'max_shield': {
                     name: "MAX SHIELD",
@@ -8844,8 +8877,9 @@
             // Award XP with diminishing returns applied
             function awardXp(amount) {
                 if (!amount || amount <= 0) return 0;
-                
-                const finalXp = calculateXpDiminishingReturns(amount);
+
+                const scaledAmount = amount > 0 ? amount * XP_REWARD_MULTIPLIER : amount;
+                const finalXp = calculateXpDiminishingReturns(scaledAmount);
                 store.world.xp += finalXp;
                 store.world.waveXpEarned = (store.world.waveXpEarned || 0) + finalXp;
                 
@@ -28741,6 +28775,9 @@
                 store.activeEffects.push(createEffect("grenadeExplosion", mine.x, mine.y, 55));
             }
 
+            const GOLD_REWARD_MULTIPLIER = 0.75;
+            const XP_REWARD_MULTIPLIER = 0.75;
+
             function sanitizeGoldValue(value) {
                 if (!Number.isFinite(value)) return 0;
                 return Math.max(0, Math.round(value));
@@ -28762,7 +28799,8 @@
                 const world = store.world || (store.world = {});
                 const current = sanitizeGoldValue(world.gold);
                 const change = Number.isFinite(delta) ? delta : 0;
-                const next = sanitizeGoldValue(current + change);
+                const adjustedChange = change > 0 ? change * GOLD_REWARD_MULTIPLIER : change;
+                const next = sanitizeGoldValue(current + adjustedChange);
                 world.gold = next;
                 return next;
             }
@@ -28967,16 +29005,23 @@
                         return { cost: upgrade.cost, available: availableGold >= upgrade.cost, premium: true };
                     }
                     if (upgrade.isUnlock) {
-                        const alreadyUnlocked =
-                            (key === 'gravity_well' && player.hasVoidBeam) ||
-                            (key === 'lazarus_beam' && player.hasLazarusBeam) ||
-                            (key === 'launcher' && player.hasLauncher) ||
-                            (key === 'luck_boost' && player.luckBoost > 0) ||
-                            (key === 'magnet_pull' && player.magnetRadius > 0) ||
-                            (key === 'rear_guard' && player.hasRearGuard) ||
-                            (key === 'ricochet' && player.hasRicochet);
+                        let alreadyUnlocked = false;
+                        if (key === 'ricochet') {
+                            const currentLevel = player.ricochetLevel || 0;
+                            if ((upgrade.maxLevel && currentLevel >= upgrade.maxLevel) || (!upgrade.maxLevel && player.hasRicochet)) {
+                                alreadyUnlocked = true;
+                            }
+                        } else {
+                            alreadyUnlocked =
+                                (key === 'gravity_well' && player.hasVoidBeam) ||
+                                (key === 'lazarus_beam' && player.hasLazarusBeam) ||
+                                (key === 'launcher' && player.hasLauncher) ||
+                                (key === 'luck_boost' && player.luckBoost > 0) ||
+                                (key === 'magnet_pull' && player.magnetRadius > 0) ||
+                                (key === 'rear_guard' && player.hasRearGuard);
+                        }
                         if (alreadyUnlocked) {
-                            const reason = key === 'ricochet' ? 'Ricochet rounds already installed.' : 'Already unlocked.';
+                            const reason = key === 'ricochet' ? 'Ricochet rounds fully upgraded.' : 'Already unlocked.';
                             return { cost: Infinity, available: false, premium: true, reason };
                         }
                     }
