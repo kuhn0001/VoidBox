@@ -6825,8 +6825,59 @@
                 slowFactor: 0.65,
                 slowDuration: 1.8,
                 projectilePurgeRadiusRatio: 0.55,
-                screenFlashColor: 'rgba(40, 40, 55, 0.4)'
+                screenFlashColor: 'rgba(40, 40, 55, 0.4)',
+                contactRadius: 38,
+                contactEnemyRadiusScale: 0.6,
+                nonBeefRadiusMultiplier: 0.45,
+                nonBeefKnockbackMultiplier: 0.4,
+                nonBeefStunMultiplier: 0.35,
+                nonBeefSlowDurationMultiplier: 0.5,
+                nonBeefSlowEffectMultiplier: 0.5,
+                nonBeefScreenFlashColor: 'rgba(40, 40, 55, 0.22)',
+                nonBeefPurgeMultiplier: 0.4
             };
+
+            function playerHasBeefPrivilege() {
+                const p = store?.player;
+                if (!p) return false;
+                if (p.beef === true) return true;
+                if (p.pilotGenome === 'beef') return true;
+                if (p.hasBeefShield || p.hasBeefClone) return true;
+                if (typeof p.beefShieldMax === 'number' && p.beefShieldMax > 0) return true;
+                if (p.skillTree && (p.skillTree.juggernaut_core || p.skillTree.juggernaut_enhanced)) return true;
+                return false;
+            }
+
+            function getKnockbackShieldStats() {
+                const beefMode = playerHasBeefPrivilege();
+                const radiusMultiplier = beefMode ? 1 : (KNOCKBACK_SHIELD_CONFIG.nonBeefRadiusMultiplier ?? 0.45);
+                const radius = Math.max(20, KNOCKBACK_SHIELD_CONFIG.radius * radiusMultiplier);
+                const contactRadius = Math.max(18, KNOCKBACK_SHIELD_CONFIG.contactRadius ?? radius * 0.4);
+                const contactEnemyScale = KNOCKBACK_SHIELD_CONFIG.contactEnemyRadiusScale ?? 0.6;
+                const knockbackStrength = KNOCKBACK_SHIELD_CONFIG.knockbackStrength * (beefMode ? 1 : (KNOCKBACK_SHIELD_CONFIG.nonBeefKnockbackMultiplier ?? 0.4));
+                const knockbackDuration = KNOCKBACK_SHIELD_CONFIG.knockbackDuration;
+                const stunDuration = KNOCKBACK_SHIELD_CONFIG.stunDuration * (beefMode ? 1 : (KNOCKBACK_SHIELD_CONFIG.nonBeefStunMultiplier ?? 0.35));
+                const baseSlowFactor = KNOCKBACK_SHIELD_CONFIG.slowFactor;
+                let slowFactor = baseSlowFactor;
+                if (!beefMode) {
+                    const effectMultiplier = KNOCKBACK_SHIELD_CONFIG.nonBeefSlowEffectMultiplier ?? 0.5;
+                    const difference = 1 - baseSlowFactor;
+                    slowFactor = 1 - difference * effectMultiplier;
+                }
+                const slowDuration = KNOCKBACK_SHIELD_CONFIG.slowDuration * (beefMode ? 1 : (KNOCKBACK_SHIELD_CONFIG.nonBeefSlowDurationMultiplier ?? 0.5));
+
+                return {
+                    beefMode,
+                    radius,
+                    contactRadius,
+                    contactEnemyScale,
+                    knockbackStrength,
+                    knockbackDuration,
+                    stunDuration,
+                    slowFactor,
+                    slowDuration
+                };
+            }
 
 
             const SHOP_UPGRADES = {
@@ -34102,7 +34153,12 @@
 
                 store.knockbackGlobalCooldown = Math.max(0, (store.knockbackGlobalCooldown || 0) - dt);
 
-                const proximityRadiusSq = KNOCKBACK_SHIELD_CONFIG.proximityTriggerRadius ** 2;
+                const stats = getKnockbackShieldStats();
+                const beefMode = stats.beefMode;
+                const proximityRadius = KNOCKBACK_SHIELD_CONFIG.proximityTriggerRadius || 0;
+                const proximityRadiusSq = proximityRadius * proximityRadius;
+                const shieldRadiusSq = stats.radius * stats.radius;
+
                 const targets = store.boss
                     ? [...(store.enemies || []), store.boss]
                     : [...(store.enemies || [])];
@@ -34137,8 +34193,17 @@
                     }
 
                     let validTargets = 0;
-                    const shieldRadius = KNOCKBACK_SHIELD_CONFIG.radius;
-                    const shieldRadiusSq = shieldRadius * shieldRadius;
+                    let contactTrigger = false;
+                    let minTargetsRequired = beefMode ? 2 : 1;
+
+                    if (beefMode && store.boss && !store.boss.dead) {
+                        const dxBoss = store.boss.x - charge.x;
+                        const dyBoss = store.boss.y - charge.y;
+                        const bossDistSq = dxBoss * dxBoss + dyBoss * dyBoss;
+                        if (bossDistSq < proximityRadiusSq) {
+                            minTargetsRequired = 1;
+                        }
+                    }
 
                     for (const enemy of targets) {
                         if (!enemy || enemy.dead) continue;
@@ -34147,19 +34212,27 @@
                         const dy = enemy.y - charge.y;
                         const distSq = dx * dx + dy * dy;
 
-                        if (distSq > proximityRadiusSq) continue;
-                        if (distSq > shieldRadiusSq) continue;
+                        if (beefMode) {
+                            if (distSq > proximityRadiusSq) continue;
+                            if (distSq > shieldRadiusSq) continue;
 
-                        validTargets++;
-                        if (validTargets >= 2) break;
+                            validTargets++;
+                            if (validTargets >= minTargetsRequired) break;
+                        } else {
+                            const enemyRadius = Math.max(12, enemy.r || 0);
+                            const contactThreshold = stats.contactRadius + enemyRadius * stats.contactEnemyScale;
+                            const contactThresholdSq = contactThreshold * contactThreshold;
+                            if (distSq <= contactThresholdSq) {
+                                contactTrigger = true;
+                                break;
+                            }
+                        }
                     }
 
-                    const isBossNearby = store.boss && !store.boss.dead &&
-                        ((store.boss.x - charge.x) ** 2 + (store.boss.y - charge.y) ** 2 < proximityRadiusSq);
-                    const minTargetsRequired = isBossNearby ? 1 : 2;
+                    const shouldTrigger = beefMode ? validTargets >= minTargetsRequired : contactTrigger;
 
-                    if (validTargets >= minTargetsRequired) {
-                        triggerKnockbackShieldBurst(charge.x, charge.y);
+                    if (shouldTrigger) {
+                        triggerKnockbackShieldBurst(charge.x, charge.y, stats);
                         charge.cooldown = KNOCKBACK_SHIELD_CONFIG.chargeCooldown;
                         store.knockbackGlobalCooldown = Math.max(store.knockbackGlobalCooldown || 0, KNOCKBACK_SHIELD_CONFIG.globalCooldown || 0);
                     }
@@ -34168,15 +34241,19 @@
                 if (store.player) store.player.knockbackShields = store.knockbackCharges.length;
             }
 
-            function triggerKnockbackShieldBurst(x, y) {
+            function triggerKnockbackShieldBurst(x, y, precomputedStats) {
                 const p = store.player;
                 if (!p || store.isPaused) return;
 
-                const radius = KNOCKBACK_SHIELD_CONFIG.radius;
+                const stats = precomputedStats || getKnockbackShieldStats();
+                const { beefMode, radius, knockbackStrength, knockbackDuration, stunDuration, slowFactor, slowDuration } = stats;
                 const radiusSq = radius * radius;
 
                 if (typeof screenFlash === 'function') {
-                    screenFlash(1, 120, KNOCKBACK_SHIELD_CONFIG.screenFlashColor || 'rgba(40, 40, 55, 0.35)');
+                    const flashColor = beefMode
+                        ? (KNOCKBACK_SHIELD_CONFIG.screenFlashColor || 'rgba(40, 40, 55, 0.35)')
+                        : (KNOCKBACK_SHIELD_CONFIG.nonBeefScreenFlashColor || KNOCKBACK_SHIELD_CONFIG.screenFlashColor || 'rgba(40, 40, 55, 0.22)');
+                    screenFlash(1, beefMode ? 120 : 90, flashColor);
                 }
 
                 store.activeEffects.push(createEffect('knockbackShockwave', x, y, radius));
@@ -34193,27 +34270,28 @@
                     const angle = Math.atan2(dy, dx);
                     registerEnemyHit(enemy, {
                         angle,
-                        knockbackStrength: KNOCKBACK_SHIELD_CONFIG.knockbackStrength,
-                        knockbackDuration: KNOCKBACK_SHIELD_CONFIG.knockbackDuration,
-                        shakeIntensity: 6,
-                        shakeDuration: 0.24,
-                        slowFactor: KNOCKBACK_SHIELD_CONFIG.slowFactor,
-                        slowDuration: KNOCKBACK_SHIELD_CONFIG.slowDuration,
+                        knockbackStrength,
+                        knockbackDuration,
+                        shakeIntensity: beefMode ? 6 : 3,
+                        shakeDuration: beefMode ? 0.24 : 0.16,
+                        slowFactor,
+                        slowDuration,
                         effect: false
                     });
 
                     if (enemy.knockback) {
                         enemy.knockback.type = 'knockbackShield';
-                        enemy.knockback.duration = Math.max(enemy.knockback.duration || 0, KNOCKBACK_SHIELD_CONFIG.knockbackDuration);
+                        enemy.knockback.duration = Math.max(enemy.knockback.duration || 0, knockbackDuration);
                     }
 
-                    enemy.stunTimer = Math.max(enemy.stunTimer || 0, KNOCKBACK_SHIELD_CONFIG.stunDuration);
-                    enemy.hitSlowFactor = Math.min(enemy.hitSlowFactor || 1, KNOCKBACK_SHIELD_CONFIG.slowFactor);
-                    enemy.hitSlowTimer = Math.max(enemy.hitSlowTimer || 0, KNOCKBACK_SHIELD_CONFIG.slowDuration);
+                    enemy.stunTimer = Math.max(enemy.stunTimer || 0, stunDuration);
+                    enemy.hitSlowFactor = Math.min(enemy.hitSlowFactor || 1, slowFactor);
+                    enemy.hitSlowTimer = Math.max(enemy.hitSlowTimer || 0, slowDuration);
                 });
 
                 if (store.eBullets && store.eBullets.length) {
-                    const purgeRatio = KNOCKBACK_SHIELD_CONFIG.projectilePurgeRadiusRatio || 0;
+                    const purgeRatioBase = KNOCKBACK_SHIELD_CONFIG.projectilePurgeRadiusRatio || 0;
+                    const purgeRatio = purgeRatioBase * (beefMode ? 1 : (KNOCKBACK_SHIELD_CONFIG.nonBeefPurgeMultiplier ?? 0.4));
                     if (purgeRatio > 0) {
                         const purgeRadius = radius * purgeRatio;
                         const purgeRadiusSq = purgeRadius * purgeRadius;
