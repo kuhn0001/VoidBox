@@ -8994,51 +8994,6 @@
                 return window.WAVE_SPAWN_PROFILES[window.WAVE_SPAWN_PROFILES.length - 1];
             }
 
-            // Helper functions for wave transmission system (defined globally for efficiency)
-            function pickTransmission(entries, context) {
-                if (!entries || !entries.length) return null;
-                const idx = Math.floor(Math.random() * entries.length);
-                const choice = entries[idx];
-                if (typeof choice === 'function') {
-                    try {
-                        return choice(context) || null;
-                    } catch (err) {
-                        console.error('Transmission composer failed', err);
-                        return null;
-                    }
-                }
-                if (typeof choice === 'string') {
-                    return choice.replace('{wave}', context.wave);
-                }
-                return null;
-            }
-
-            function composeWaveTransmission(theme, wave) {
-                const context = { wave, theme };
-                const library = window.WAVE_TRANSMISSION_LIBRARY;
-                if (!library) return null;
-                const themed = theme && library[theme];
-                const entries = themed && themed.length ? themed : library.DEFAULT;
-                return pickTransmission(entries, context) || pickTransmission(library.DEFAULT, context);
-            }
-
-            function broadcastTransmission(message, delay = 0) {
-                if (!message) return;
-                if (delay > 0) {
-                    setTimeout(() => announce(message), delay);
-                } else {
-                    announce(message);
-                }
-            }
-
-            // Assign transmission functions to window once
-            window.composeWaveTransmission = composeWaveTransmission;
-            window.broadcastTransmission = broadcastTransmission;
-
-            // Wave system difficulty scaling constants (used by DYNAMIC_DIRECTOR_CONFIG)
-            const PROGRESSION_SPEED_MULTIPLIER = 0.2;  // Controls time-based wave progression speed
-            const ENEMY_DENSITY_MULTIPLIER = 5;        // Controls enemy spawn density/budget scaling
-
             function initWave() {
                 if (store.goldenOrbs) {
                     store.goldenOrbs.length = 0;
@@ -9048,7 +9003,6 @@
                     if (store.world.voidReaperCooldown && store.world.voidReaperCooldown > 0) {
                         store.world.voidReaperCooldown = Math.max(0, store.world.voidReaperCooldown - 1);
                     }
-                    store.world.enemyDensityBonus = normalizeEnemyDensityBonus(store.world.enemyDensityBonus);
                 }
                 const isBossWave = store.world.wave % 5 === 0;
                 const isPreBossWave = !isBossWave && store.world.wave % 5 === 4;
@@ -9150,7 +9104,7 @@
                 // • DODGE: Unpredictable phase-shift (phantom)
                 // • CHARGE: Periodic dash attacks (void_champion)
                 // ═══════════════════════════════════════════════════════════════════════
-
+                
                 // Store profiles globally for access from spawn functions
                 const WAVE_SPAWN_PROFILES = window.WAVE_SPAWN_PROFILES || [
                     // WAVES 40+: ULTIMATE GAUNTLET - All systems tested simultaneously
@@ -9433,6 +9387,50 @@
                     window.WAVE_TRANSMISSION_LIBRARY = WAVE_TRANSMISSION_LIBRARY;
                 }
 
+                function pickTransmission(entries, context) {
+                    if (!entries || !entries.length) return null;
+                    const idx = Math.floor(Math.random() * entries.length);
+                    const choice = entries[idx];
+                    if (typeof choice === 'function') {
+                        try {
+                            return choice(context) || null;
+                        } catch (err) {
+                            console.error('Transmission composer failed', err);
+                            return null;
+                        }
+                    }
+                    if (typeof choice === 'string') {
+                        return choice.replace('{wave}', context.wave);
+                    }
+                    return null;
+                }
+
+                function composeWaveTransmission(theme, wave) {
+                    const context = { wave, theme };
+                    const themed = theme && WAVE_TRANSMISSION_LIBRARY[theme];
+                    const entries = themed && themed.length ? themed : WAVE_TRANSMISSION_LIBRARY.DEFAULT;
+                    return pickTransmission(entries, context) || pickTransmission(WAVE_TRANSMISSION_LIBRARY.DEFAULT, context);
+                }
+
+                function broadcastTransmission(message, delay = 0) {
+                    if (!message) return;
+                    if (delay > 0) {
+                        setTimeout(() => announce(message), delay);
+                    } else {
+                        announce(message);
+                    }
+                }
+
+                function getSpawnProfileForWave(wave) {
+                    for (let i = 0; i < WAVE_SPAWN_PROFILES.length; i++) {
+                        const profile = WAVE_SPAWN_PROFILES[i];
+                        if (wave >= profile.minWave) {
+                            return profile;
+                        }
+                    }
+                    return WAVE_SPAWN_PROFILES[WAVE_SPAWN_PROFILES.length - 1];
+                }
+
                 function pickWeightedType(weights) {
                     const entries = Object.entries(weights || {}).filter(([, weight]) => ensureFiniteNumber(weight, 0) > 0);
                     if (!entries.length) {
@@ -9453,19 +9451,13 @@
                 }
 
                 function createSpawnSpec(type, threatScale, lateGameScaling) {
-                    const threatTablesReady = typeof ENEMY_THREAT_COST !== 'undefined' && ENEMY_THREAT_COST;
-                    const baseThreat = threatTablesReady && Number.isFinite(ENEMY_THREAT_COST[type])
-                        ? ENEMY_THREAT_COST[type]
-                        : 10;
                     return {
                         type,
                         props: { hpScale: threatScale, damageMult: threatScale },
                         lateGameScaling,
                         spawnDuration: spawnDurationByType[type],
                         spawnDropDistance: dropDistanceByType[type],
-                        effectColor: teleportAuraByType[type] || teleportAuraByType.drone,
-                        threatCost: baseThreat,
-                        difficultyScore: baseThreat
+                        effectColor: teleportAuraByType[type] || teleportAuraByType.drone
                     };
                 }
 
@@ -9505,34 +9497,7 @@
                         specs.push(createSpawnSpec(type, threatScale, lateGameScaling));
                     }
 
-                    const progressionNoise = Math.max(0.08, Math.min(0.25, 0.12 + wave * 0.004));
-                    specs.forEach(spec => {
-                        const baseThreat = Number.isFinite(spec.threatCost) ? spec.threatCost : 10;
-                        const noise = baseThreat * progressionNoise * (Math.random() - 0.5);
-                        spec.difficultyScore = baseThreat + noise;
-                    });
-
-                    specs.sort((a, b) => (a.difficultyScore ?? 0) - (b.difficultyScore ?? 0));
-
-                    const total = specs.length;
-                    if (total > 0) {
-                        const progressionStrength = Math.min(0.6, 0.18 + wave * 0.012);
-                        const startModifier = Math.max(0.75, 1 - progressionStrength * 0.45);
-                        const endModifier = 1 + progressionStrength;
-                        specs.forEach((spec, idx) => {
-                            const progress = total > 1 ? idx / (total - 1) : 1;
-                            const hpRamp = startModifier + (endModifier - startModifier) * progress;
-                            const dmgRamp = startModifier + (endModifier - startModifier) * Math.pow(progress, 0.85);
-                            const lateRamp = 1 + progressionStrength * 0.6 * progress;
-                            if (!spec.props) spec.props = {};
-                            spec.props.hpScale = Math.max(0.55, (spec.props.hpScale ?? threatScale) * hpRamp);
-                            spec.props.damageMult = Math.max(0.55, (spec.props.damageMult ?? threatScale) * dmgRamp);
-                            spec.lateGameScaling = Math.max(0.4, (spec.lateGameScaling ?? lateGameScaling) * lateRamp);
-                            spec.progressIndex = idx;
-                            spec.progressRatio = progress;
-                        });
-                    }
-
+                    shuffleInPlace(specs);
                     return specs;
                 }
 
@@ -10019,13 +9984,9 @@
                 }
 
                 if (isBossWave) {
-                    // FIXED: Don't clear enemies on boss waves - let existing enemies persist
-                    // Only clear enemies that have gone out of bounds (below screen)
-                    store.enemies = store.enemies.filter(e => e && !e.dead && e.y < H + 100);
-                    store.waveSpawnQueue = [];
+                    store.enemies = [];
                     store.world.pendingVoidReaper = null;
                     store.world.voidReaperWarningIssued = false;
-                    store.world.lastSpawnCount = 0;
 
                     // FIXED: Balanced boss scaling instead of aggressive exponential growth
                     // Old: 1 + (wave/5 - 1) * 1.5 caused 4x HP by wave 15
@@ -10074,21 +10035,8 @@
                     if (bossLoopCount > 0) {
                         spawnBossLoopChampions(bossLoopCount, bossHpScale);
                     }
-
-                    const bossCarryBudget = store.director ? store.director.carryBudget || 0 : 0;
-                    const bossDirector = initializeDynamicWaveDirector({
-                        wave: store.world.wave,
-                        carryBudget: bossCarryBudget,
-                        overrideThreatScale: bossHpScale,
-                        overrideLateGameScaling: bossHpScale
-                    });
-                    if (bossDirector) {
-                        bossDirector.mode = 'boss';
-                    }
                 } else {
-                    // FIXED: Don't clear enemies on normal waves - let existing enemies persist
-                    // Only clear enemies that have gone out of bounds (below screen)
-                    store.enemies = store.enemies.filter(e => e && !e.dead && e.y < H + 100);
+                    store.enemies = [];
                     store.waveSpawnQueue = [];
                     store.pendingSpawnCount = 0;
 
@@ -10097,18 +10045,16 @@
                     let baseSpawnCount, spawnCount, lateGameScaling = 1;
 
                     if (store.world.wave <= 35) {
-                        // BALANCED: Lower initial spawns, gentler scaling
-                        // Old: 7 + wave * 1.8 (wave 1 = 8.8 enemies, wave 10 = 25 enemies)
-                        // New: 3 + wave * 1.2 (wave 1 = 4.2 enemies, wave 10 = 15 enemies)
-                        baseSpawnCount = Math.floor((3 + Math.floor(store.world.wave * 1.2)) * store.world.enemyDensityBonus);
+                        // Normal scaling: increase spawn count with waves
+                        baseSpawnCount = Math.floor((7 + Math.floor(store.world.wave * 1.8)) * store.world.enemyDensityBonus);
                         spawnCount = baseSpawnCount;
                     } else {
                         // Wave 35+: Cap spawn count, scale enemy stats instead
-                        baseSpawnCount = Math.floor((3 + Math.floor(35 * 1.2)) * store.world.enemyDensityBonus);
+                        baseSpawnCount = Math.floor((7 + Math.floor(35 * 1.8)) * store.world.enemyDensityBonus);
                         spawnCount = Math.max(1, Math.floor(baseSpawnCount * 0.8)); // Slightly fewer enemies for performance
 
                         // Calculate what the spawn count WOULD have been, use that as scaling factor
-                        const theoreticalSpawnCount = Math.floor((3 + Math.floor(store.world.wave * 1.2)) * store.world.enemyDensityBonus);
+                        const theoreticalSpawnCount = Math.floor((7 + Math.floor(store.world.wave * 1.8)) * store.world.enemyDensityBonus);
                         lateGameScaling = theoreticalSpawnCount / baseSpawnCount; // This becomes our health/damage multiplier
                     }
 
@@ -10145,10 +10091,6 @@
 
                     // Store late-game scaling factor globally for damage calculations
                     store.world.lateGameDamageScaling = lateGameScaling;
-
-                    // Initialize XP tracking for this wave (base spawn count = XP budget without collar bonuses)
-                    const avgXpPerEnemy = 5; // Average XP per enemy kill
-                    initializeWaveXpTracking(baseSpawnCount, avgXpPerEnemy);
 
                     // Apply collar bonus to spawn count with defensive guards
                     const collarStacks = sanitizeCollarStacks();
@@ -10203,8 +10145,34 @@
                             damageMult: Math.min(2.1, threatScale * 0.9)
                         });
                     }
-                    const directorCarryBudget = store.director ? store.director.carryBudget || 0 : 0;
+                    const spawnSpecs = buildWaveSpawnSpecs(store.world.wave, spawnCount, threatScale, lateGameScaling);
+
+                    if (spawnSpecs.length === 0) {
+                        spawnSpecs.push({
+                            type: 'drone',
+                            props: { hpScale: threatScale, damageMult: threatScale },
+                            lateGameScaling,
+                            spawnDuration: 0.6,
+                            spawnDropDistance: 120,
+                            effectColor: teleportAuraByType.drone
+                        });
+                        store.world.lastSpawnFallback = true;
+                    }
+
+                    const plannedClusters = Math.max(1, Math.ceil(spawnSpecs.length / 4));
+                    const clusterCount = Math.min(6, plannedClusters);
+                    const spawnTempo = Math.max(0.2, 0.55 - Math.min(store.world.wave, 25) * 0.015);
+
+                    store.pendingSpawnCount = spawnSpecs.length;
+                    store.world.lastSpawnQueueLength = spawnSpecs.length;
+                    store.world.lastSpawnTempo = spawnTempo;
                     store.world.lastSpawnCount = store.enemies.length;
+
+                    scheduleWaveSpawnClusters(spawnSpecs, {
+                        clusterCount,
+                        baseDelay: spawnTempo,
+                        jitter: spawnTempo * 0.6
+                    });
 
                     const cooldownReady = !store.world.voidReaperCooldown || store.world.voidReaperCooldown <= 0;
                     const recentWaveGap = store.world.lastVoidReaperWave ? (store.world.wave - store.world.lastVoidReaperWave) : Infinity;
@@ -10234,86 +10202,10 @@
                         store.world.voidReaperWarningIssued = false;
                     }
 
-                    const directorInstance = initializeDynamicWaveDirector({
-                        wave: store.world.wave,
-                        carryBudget: directorCarryBudget,
-                        overrideThreatScale: threatScale,
-                        overrideLateGameScaling: lateGameScaling
-                    });
-
-                    if (directorInstance) {
-                        directorInstance.mode = 'idle';
-                        directorInstance.threatBudget = 0;
-                        directorInstance.phaseTimer = 0;
-                        directorInstance.phaseDuration = 0;
-                        directorInstance.spawnCooldown = Infinity;
-                    }
-
-                    let spawnSpecs = [];
-                    if (typeof buildWaveSpawnSpecs === 'function') {
-                        spawnSpecs = buildWaveSpawnSpecs(store.world.wave, spawnCount, threatScale, lateGameScaling) || [];
-                    }
-
-                    let totalPlannedSpawns = spawnSpecs.length;
-                    if (totalPlannedSpawns === 0 && spawnCount > 0) {
-                        totalPlannedSpawns = Math.max(1, spawnCount);
-                    }
-                    store.pendingSpawnCount = totalPlannedSpawns;
-                    store.world.lastPlannedSpawnCount = totalPlannedSpawns;
-                    store.world.lastSpawnQueueLength = spawnSpecs.length;
-                    store.world.lastSpawnOverflow = 0;
-                    store.world.lastSpawnTempo = 0;
                     store.world.waveStartTime = performance.now();
-
-                    if (spawnSpecs.length) {
-                        const theme = currentWaveProfile?.theme || 'MIXED_BASICS';
-                        let clusterCount = Math.max(1, Math.round(spawnSpecs.length / 6));
-                        let baseDelay = 0.28; // Reduced from 0.55 for faster pace
-                        switch (theme) {
-                            case 'SWARM_HELL':
-                                clusterCount = Math.min(spawnSpecs.length, clusterCount + 2); // More clusters
-                                baseDelay = 0.18; // Much faster
-                                break;
-                            case 'TANK_RUSH':
-                            case 'ELITE_ASSAULT':
-                                clusterCount = Math.max(1, clusterCount - 1);
-                                baseDelay = 0.35; // Still deliberate but faster
-                                break;
-                            case 'PRECISION_TEST':
-                                baseDelay = 0.32;
-                                break;
-                            case 'DODGE_HELL':
-                                baseDelay = 0.25;
-                                break;
-                            case 'ULTIMATE_CHAOS':
-                                clusterCount = Math.min(spawnSpecs.length, clusterCount + 2); // Even more chaos
-                                baseDelay = 0.22;
-                                break;
-                        }
-                        clusterCount = Math.min(clusterCount, Math.max(1, spawnSpecs.length));
-                        const jitter = Math.max(0.08, baseDelay * 0.35); // Tighter jitter for more predictable pacing
-                        scheduleWaveSpawnClusters(spawnSpecs, {
-                            clusterCount,
-                            baseDelay,
-                            jitter
-                        });
-                    } else if (!store.enemies.length) {
-                        const fallbackEnemy = spawnEnemy('drone', { x: W / 2, y: -140 });
-                        if (fallbackEnemy) {
-                            activateSpawnIntro(fallbackEnemy, {
-                                duration: 0.6,
-                                dropDistance: 110,
-                                effectColor: '#7fd5ff',
-                                clusterIndex: 0,
-                                clusterSize: 1,
-                                topClampBuffer: 0.75
-                            });
-                            store.enemies.push(fallbackEnemy);
-                            store.pendingSpawnCount = 1;
-                            store.world.lastPlannedSpawnCount = 1;
-                            store.world.lastSpawnQueueLength = 1;
-                        }
-                    }
+                    const waveProfile = currentWaveProfile || getSpawnProfileForWave(store.world.wave);
+                    const openingTransmission = composeWaveTransmission(waveProfile?.theme, store.world.wave);
+                    broadcastTransmission(openingTransmission);
                 }
             }
 
@@ -10689,8 +10581,8 @@
                     clusters[clusters.length - 1].push(...sortedSpecs.slice(cursor));
                 }
 
-                const baseDelay = options.baseDelay ?? 0.25; // Reduced from 0.35 for faster spawning
-                const jitterAmplitude = options.jitter ?? baseDelay * 0.3; // Tighter jitter
+                const baseDelay = options.baseDelay ?? (0.25 * WAVE_DURATION_SCALE);
+                const jitterAmplitude = options.jitter ?? Math.max(0.02, baseDelay * 0.3);
                 const queue = store.waveSpawnQueue;
 
                 clusters.forEach((cluster, idx) => {
@@ -10961,445 +10853,6 @@
                 enemy.topClampDelay = Math.max(enemy.topClampDelay || 0, duration + (opts.topClampBuffer ?? 0.5));
                 enemy.fireT = Math.max(enemy.fireT || 0, duration + (opts.fireDelayBuffer ?? 0.25));
                 enemy.y = startY;
-            }
-
-            const ENEMY_THREAT_COST = Object.freeze({
-                drone: 6,
-                avian_hatchling: 8,
-                construct_gold: 9,
-                hunter: 12,
-                phantom: 15,
-                mech: 25,
-                angler: 28,
-                manta: 30,
-                void_champion: 42,
-                void_champion_orb: 8
-            });
-
-            const DYNAMIC_DIRECTOR_CONFIG = Object.freeze({
-                defaultPhaseDuration: 70 * PROGRESSION_SPEED_MULTIPLIER,
-                baseIncome: 12 * ENEMY_DENSITY_MULTIPLIER,
-                incomePerWave: 1.35 * ENEMY_DENSITY_MULTIPLIER,
-                incomeRampBonus: 0.35 * ENEMY_DENSITY_MULTIPLIER,
-                lullFraction: 0.18,
-                lullMinimum: Math.max(0.75, 5 * PROGRESSION_SPEED_MULTIPLIER),
-                baseBudgetCap: 150 * ENEMY_DENSITY_MULTIPLIER,
-                budgetCapPerWave: 7 * ENEMY_DENSITY_MULTIPLIER,
-                carryoverFraction: 0.6,
-                spawnCooldownMin: Math.max(0.05, 0.35 * PROGRESSION_SPEED_MULTIPLIER),
-                spawnCooldownMax: 1.1 * PROGRESSION_SPEED_MULTIPLIER,
-                forcedSpawnGrace: 5 * PROGRESSION_SPEED_MULTIPLIER,
-                specialCooldownFloor: Math.max(0.3, 1.5 * PROGRESSION_SPEED_MULTIPLIER),
-                budgetBoostOnPhaseStart: 20 * ENEMY_DENSITY_MULTIPLIER,
-                minSpawnThreat: 6,
-                bossRecoveryDelay: 6 * PROGRESSION_SPEED_MULTIPLIER,
-                threatScalePerWave: 0.06,
-                lateGameScalingWave: 35,
-                lateGameScalingStep: 0.04,
-                eventBudgetReserve: 10 * ENEMY_DENSITY_MULTIPLIER
-            });
-
-            function getDirectorInstance() {
-                if (!store.director) {
-                    store.director = {
-                        wave: 1,
-                        mode: 'idle',
-                        threatBudget: 0,
-                        threatIncome: 0,
-                        budgetCap: DYNAMIC_DIRECTOR_CONFIG.baseBudgetCap,
-                        spawnCooldown: 0,
-                        forcedQueue: [],
-                        forceWindow: 0,
-                        specialTimers: [],
-                        profile: null,
-                        phaseTimer: 0,
-                        phaseDuration: 0,
-                        lullDuration: 0,
-                        baseIncome: DYNAMIC_DIRECTOR_CONFIG.baseIncome,
-                        threatScale: 1,
-                        lateGameScaling: 1,
-                        bossRecoveryTimer: 0,
-                        minCost: DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat,
-                        carryBudget: 0
-                    };
-                }
-                return store.director;
-            }
-
-            function fetchDirectorProfile(wave) {
-                if (typeof getSpawnProfileForWave === 'function') {
-                    return getSpawnProfileForWave(wave);
-                }
-                return null;
-            }
-
-            function computePhaseDuration(profile, wave) {
-                const base = profile && Number.isFinite(profile.duration) ? profile.duration : DYNAMIC_DIRECTOR_CONFIG.defaultPhaseDuration;
-                const bonus = Math.min(18, Math.max(0, wave - 1) * 0.6) * PROGRESSION_SPEED_MULTIPLIER;
-                return base + bonus;
-            }
-
-            function computeThreatIncomeForWave(wave) {
-                // EXTREME early game reduction: Start at 25% for total beginners
-                let earlyGameMultiplier = 1.0;
-                if (wave <= 3) {
-                    // Waves 1-3: Start at 25%, scale to 35% (10 enemies on screen max)
-                    earlyGameMultiplier = 0.25 + (wave - 1) * 0.05;
-                } else if (wave <= 7) {
-                    // Waves 4-7: Scale from 35% to 60%
-                    earlyGameMultiplier = 0.35 + (wave - 3) * 0.0625;
-                } else if (wave <= 12) {
-                    // Waves 8-12: Scale from 60% to 85%
-                    earlyGameMultiplier = 0.6 + (wave - 7) * 0.05;
-                } else if (wave <= 15) {
-                    // Waves 13-15: Scale from 85% to 100%
-                    earlyGameMultiplier = 0.85 + (wave - 12) * 0.05;
-                }
-                
-                const baseValue = DYNAMIC_DIRECTOR_CONFIG.baseIncome + Math.max(0, wave - 1) * DYNAMIC_DIRECTOR_CONFIG.incomePerWave;
-                const densityBonus = store?.world?.enemyDensityBonus ?? BASE_ENEMY_DENSITY_BONUS;
-                return baseValue * earlyGameMultiplier * densityBonus;
-            }
-
-            function computeBudgetCapForWave(wave) {
-                // Match the income scaling for budget cap
-                let earlyGameMultiplier = 1.0;
-                if (wave <= 3) {
-                    earlyGameMultiplier = 0.25 + (wave - 1) * 0.05;
-                } else if (wave <= 7) {
-                    earlyGameMultiplier = 0.35 + (wave - 3) * 0.0625;
-                } else if (wave <= 12) {
-                    earlyGameMultiplier = 0.6 + (wave - 7) * 0.05;
-                } else if (wave <= 15) {
-                    earlyGameMultiplier = 0.85 + (wave - 12) * 0.05;
-                }
-                
-                const baseValue = DYNAMIC_DIRECTOR_CONFIG.baseBudgetCap + Math.max(0, wave - 1) * DYNAMIC_DIRECTOR_CONFIG.budgetCapPerWave;
-                const densityBonus = store?.world?.enemyDensityBonus ?? BASE_ENEMY_DENSITY_BONUS;
-                return baseValue * earlyGameMultiplier * densityBonus;
-            }
-
-            function computeThreatScale(wave) {
-                return 1 + Math.max(0, wave - 1) * DYNAMIC_DIRECTOR_CONFIG.threatScalePerWave;
-            }
-
-            function computeLateGameScaling(wave) {
-                if (wave <= DYNAMIC_DIRECTOR_CONFIG.lateGameScalingWave) return 1;
-                const extra = wave - DYNAMIC_DIRECTOR_CONFIG.lateGameScalingWave;
-                return 1 + extra * DYNAMIC_DIRECTOR_CONFIG.lateGameScalingStep;
-            }
-
-            function computeCheapestCost(profile) {
-                if (!profile || !profile.weights) return DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat;
-                let cheapest = Infinity;
-                for (const type of Object.keys(profile.weights)) {
-                    const cost = ENEMY_THREAT_COST[type] ?? Infinity;
-                    if (cost < cheapest) cheapest = cost;
-                }
-                if (!Number.isFinite(cheapest) || cheapest === Infinity) {
-                    return DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat;
-                }
-                return Math.max(DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat, cheapest);
-            }
-
-            function spawnDirectorEnemy(type, director, { threatScale, lateGameScaling, priority } = {}) {
-                if (!store || !store.world) return false;
-                const enemyCap = Math.max(10, store.world.enemyCap || 43);
-                if (store.enemies.length >= enemyCap) return false;
-
-                const cost = ENEMY_THREAT_COST[type] ?? DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat;
-                if (director.threatBudget < cost) return false;
-
-                const auraMap = (typeof window !== 'undefined' && window.teleportAuraByType) || {};
-                const createSpecFn = (typeof window !== 'undefined' && window.createSpawnSpec) || null;
-                const resolvedThreatScale = threatScale ?? director.threatScale ?? 1;
-                const resolvedLateScaling = lateGameScaling ?? director.lateGameScaling ?? 1;
-                let spec = null;
-                if (createSpecFn) {
-                    spec = createSpecFn(type, resolvedThreatScale, resolvedLateScaling);
-                } else {
-                    spec = {
-                        type,
-                        props: { hpScale: resolvedThreatScale, damageMult: resolvedThreatScale },
-                        lateGameScaling: resolvedLateScaling,
-                        effectColor: auraMap[type] || auraMap.drone
-                    };
-                }
-
-                const enemy = spawnEnemy(type, spec && spec.props ? spec.props : { hpScale: resolvedThreatScale, damageMult: resolvedThreatScale });
-                if (!enemy) return false;
-
-                applySpawnSpecToEnemy(enemy, spec || {});
-                
-                // Assign gang to hunters
-                if (enemy.type === 'hunter') {
-                    assignHunterGang(enemy);
-                }
-
-                const introOptions = {
-                    duration: spec?.spawnDuration,
-                    dropDistance: spec?.spawnDropDistance,
-                    effectColor: spec?.effectColor,
-                    clusterIndex: priority === 'event' ? -1 : 0,
-                    clusterSize: priority === 'event' ? (spec?.types?.length || 1) : 1
-                };
-                activateSpawnIntro(enemy, introOptions);
-
-                store.enemies.push(enemy);
-                director.threatBudget = Math.max(0, director.threatBudget - cost);
-                store.world.lastSpawnCount = (store.world.lastSpawnCount || 0) + 1;
-                return true;
-            }
-
-            function initializeDynamicWaveDirector({ wave, carryBudget = 0, overrideThreatScale = null, overrideLateGameScaling = null } = {}) {
-                const director = getDirectorInstance();
-                const nextWave = Number.isFinite(wave) && wave > 0 ? wave : (store?.world?.wave || director.wave || 1);
-                const profile = fetchDirectorProfile(nextWave);
-                const carry = Number.isFinite(carryBudget) ? carryBudget : (director.carryBudget || 0);
-
-                director.wave = nextWave;
-                director.profile = profile;
-                director.phaseDuration = computePhaseDuration(profile, nextWave);
-                director.phaseTimer = director.phaseDuration;
-                director.lullDuration = Math.max(DYNAMIC_DIRECTOR_CONFIG.lullMinimum, director.phaseDuration * DYNAMIC_DIRECTOR_CONFIG.lullFraction);
-                director.baseIncome = computeThreatIncomeForWave(nextWave);
-                director.budgetCap = computeBudgetCapForWave(nextWave);
-                director.threatScale = overrideThreatScale ?? computeThreatScale(nextWave);
-                director.lateGameScaling = overrideLateGameScaling ?? computeLateGameScaling(nextWave);
-                director.threatBudget = Math.min(director.budgetCap, Math.max(0, carry) + DYNAMIC_DIRECTOR_CONFIG.budgetBoostOnPhaseStart);
-                director.threatIncome = director.baseIncome;
-                director.spawnCooldown = 0.1;
-                director.forcedQueue = Array.isArray(profile?.forced) ? profile.forced.slice() : [];
-                director.forceWindow = DYNAMIC_DIRECTOR_CONFIG.forcedSpawnGrace;
-                director.specialTimers = Array.isArray(profile?.special)
-                    ? profile.special.map(rule => ({
-                        rule,
-                        timer: Math.max(DYNAMIC_DIRECTOR_CONFIG.specialCooldownFloor, rule.offset ?? 0)
-                    }))
-                    : [];
-                director.minCost = computeCheapestCost(profile);
-                director.mode = nextWave % 5 === 0 ? 'boss' : 'phase';
-                director.bossRecoveryTimer = DYNAMIC_DIRECTOR_CONFIG.bossRecoveryDelay;
-
-                if (store && store.world) {
-                    store.world.wave = nextWave;
-                    store.world.waveStartTime = performance.now();
-                    store.world.lastPlannedSpawnCount = 0;
-                    store.world.lastSpawnTempo = director.spawnCooldown;
-                    store.world.lastSpawnQueueLength = 0;
-                    store.world.lastSpawnOverflow = 0;
-                    store.world.pendingSpawnCount = 0;
-                }
-
-                if (director.mode === 'phase') {
-                    const composer = (typeof window !== 'undefined' && window.composeWaveTransmission) || null;
-                    const broadcaster = (typeof window !== 'undefined' && window.broadcastTransmission) || null;
-                    if (composer && broadcaster && profile && profile.theme) {
-                        const message = composer(profile.theme, nextWave);
-                        if (message) broadcaster(message);
-                    }
-                }
-
-                director.carryBudget = 0;
-
-                return director;
-            }
-
-            function updateDynamicWaveDirector(dt) {
-                if (!store || store.isPaused || dt <= 0) return;
-                const director = store.director;
-                if (!director || !store.world) return;
-
-                if (director.mode === 'idle') {
-                    return;
-                }
-
-                if (director.mode === 'boss') {
-                    const bossAlive = store.boss && !store.boss.dead;
-                    if (bossAlive) {
-                        return;
-                    }
-                    director.bossRecoveryTimer -= dt;
-                    if (director.bossRecoveryTimer <= 0) {
-                        const carry = Math.min(director.budgetCap * DYNAMIC_DIRECTOR_CONFIG.carryoverFraction, director.threatBudget);
-                        completeWaveAndAdvance({ carryBudget: carry });
-                    }
-                    return;
-                }
-
-                director.phaseTimer = Math.max(0, director.phaseTimer - dt);
-                const elapsed = director.phaseDuration - director.phaseTimer;
-                const progress = director.phaseDuration > 0 ? Math.max(0, Math.min(1, elapsed / director.phaseDuration)) : 0;
-
-                const ramp = 1 + progress * DYNAMIC_DIRECTOR_CONFIG.incomeRampBonus;
-                const lullMultiplier = director.phaseTimer < director.lullDuration
-                    ? Math.max(0.2, director.phaseTimer / Math.max(1e-3, director.lullDuration))
-                    : 1;
-                const income = director.baseIncome * ramp * lullMultiplier;
-                director.threatBudget = Math.min(director.budgetCap, director.threatBudget + income * dt);
-                director.threatIncome = income;
-
-                if (director.forcedQueue && director.forcedQueue.length) {
-                    director.forceWindow -= dt;
-                    while (director.forcedQueue.length) {
-                        const type = director.forcedQueue[0];
-                        const cost = ENEMY_THREAT_COST[type] ?? DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat;
-                        if (store.enemies.length >= Math.max(10, store.world.enemyCap || 43)) break;
-                        if (director.threatBudget < cost && director.forceWindow > 0) break;
-                        if (!spawnDirectorEnemy(type, director, { priority: 'forced' })) {
-                            break;
-                        }
-                        director.forcedQueue.shift();
-                    }
-                }
-
-                if (director.specialTimers && director.specialTimers.length) {
-                    for (const timer of director.specialTimers) {
-                        timer.timer -= dt;
-                        if (timer.timer <= 0) {
-                            const types = Array.isArray(timer.rule.types) ? timer.rule.types : [];
-                            if (types.length) {
-                                const totalCost = types.reduce((sum, type) => sum + (ENEMY_THREAT_COST[type] ?? DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat), 0);
-                                const enemyCap = Math.max(10, store.world.enemyCap || 43);
-                                if (store.enemies.length + types.length <= enemyCap && director.threatBudget >= Math.max(DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat, totalCost - DYNAMIC_DIRECTOR_CONFIG.eventBudgetReserve)) {
-                                    let spawnedAll = true;
-                                    for (const type of types) {
-                                        if (!spawnDirectorEnemy(type, director, { priority: 'event' })) {
-                                            spawnedAll = false;
-                                            break;
-                                        }
-                                    }
-                                    if (!spawnedAll) {
-                                        // roll back budget if needed (simplified: re-add unspent cost)
-                                    }
-                                }
-                            }
-                            timer.timer += Math.max(DYNAMIC_DIRECTOR_CONFIG.specialCooldownFloor, timer.rule.interval || DYNAMIC_DIRECTOR_CONFIG.specialCooldownFloor);
-                        }
-                    }
-                }
-
-                director.spawnCooldown -= dt;
-                const cheapestCost = Math.max(DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat, director.minCost || DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat);
-                if (director.spawnCooldown <= 0 && director.threatBudget >= cheapestCost) {
-                    const picker = (typeof window !== 'undefined' && window.pickWeightedType) || null;
-                    let selectedType = 'drone';
-                    if (picker && director.profile?.weights) {
-                        selectedType = picker(director.profile.weights);
-                    } else if (director.profile?.weights) {
-                        const entries = Object.keys(director.profile.weights);
-                        if (entries.length) selectedType = entries[Math.floor(Math.random() * entries.length)];
-                    }
-                    
-                    // Spawn hunters in gangs of 4-8
-                    if (selectedType === 'hunter') {
-                        const gangSize = Math.floor(4 + Math.random() * 5); // 4-8 hunters
-                        const hunterCost = ENEMY_THREAT_COST['hunter'] ?? DYNAMIC_DIRECTOR_CONFIG.minSpawnThreat;
-                        const totalCost = hunterCost * gangSize;
-                        
-                        if (director.threatBudget >= totalCost && store.enemies.length + gangSize <= Math.max(10, store.world.enemyCap || 43)) {
-                            // Pick a gang for this cluster
-                            const gangKey = HUNTER_GANG_LIST[Math.floor(Math.random() * HUNTER_GANG_LIST.length)];
-                            const gang = HUNTER_GANGS[gangKey];
-                            
-                            for (let i = 0; i < gangSize; i++) {
-                                if (spawnDirectorEnemy(selectedType, director, {})) {
-                                    // Assign the same gang to each hunter
-                                    const lastEnemy = store.enemies[store.enemies.length - 1];
-                                    if (lastEnemy && lastEnemy.type === 'hunter') {
-                                        lastEnemy.gang = gang;
-                                    }
-                                }
-                            }
-                        }
-                    } else if (spawnDirectorEnemy(selectedType, director, {})) {
-                        // Single enemy spawned successfully
-                    }
-                    
-                    // Update spawn cooldown based on intensity
-                    const intensity = Math.min(1, director.threatBudget / Math.max(1, director.budgetCap));
-                    const cooldownRange = DYNAMIC_DIRECTOR_CONFIG.spawnCooldownMax - DYNAMIC_DIRECTOR_CONFIG.spawnCooldownMin;
-                    director.spawnCooldown = DYNAMIC_DIRECTOR_CONFIG.spawnCooldownMax - cooldownRange * Math.min(1, intensity + progress * 0.4);
-                }
-
-                if (director.phaseTimer <= 0 && (!store.boss || store.boss.dead)) {
-                    const carry = Math.min(director.budgetCap * DYNAMIC_DIRECTOR_CONFIG.carryoverFraction, director.threatBudget);
-                    completeWaveAndAdvance({ carryBudget: carry });
-                }
-            }
-
-            function completeWaveAndAdvance({ carryBudget = 0 } = {}) {
-                if (!store || !store.world || !store.player) return;
-
-                const now = performance.now();
-                if (store.world.waveStartTime > 0 && store.world.wave > 1) {
-                    const waveClearTime = (now - store.world.waveStartTime) / 1000;
-
-                    let collarStacksToAdd = 0;
-                    sanitizeCollarStacks();
-
-                    const waveOverdriveReset = waveClearTime > 10;
-                    const activeBossName = store.world.boss && !store.world.boss.dead ? store.world.boss.name : null;
-
-                    if (waveOverdriveReset && activeBossName !== 'DEATH ENGINE') {
-                        setCollarStacks(0);
-                        store.world.collarTargetStacks = 0;
-                        store.world.enemyHealthBonus = 1;
-                        store.world.enemyDensityBonus = BASE_ENEMY_DENSITY_BONUS;
-                        store.world.lastEnemyOverdriveAnnounce = 0;
-                        store.world.consecutiveFastKills = 0;
-                        store.world.fastKillBonus = 0;
-                        store.world.xpMultiplier = Math.max(1, store.world.xpMultiplier * 0.92);
-                        announce('🐢 WAVE STALEMATE - COLLAR RESET');
-                    } else if (waveClearTime < 2) {
-                        collarStacksToAdd = 9;
-                        if (store.world.bosses >= 1) {
-                            store.world.enemyDensityBonus = normalizeEnemyDensityBonus(store.world.enemyDensityBonus * 1.15);
-                        }
-                        store.world.xpMultiplier *= 1.1;
-                        announce("💥 ULTRA-INSTANT CLEAR! COLLAR CRUSHES +9 💥");
-                    } else if (waveClearTime < 4) {
-                        collarStacksToAdd = 6;
-                        if (store.world.bosses >= 1) {
-                            store.world.enemyDensityBonus = normalizeEnemyDensityBonus(store.world.enemyDensityBonus * 1.10);
-                        }
-                        store.world.xpMultiplier *= 1.07;
-                        announce("⚡ INSTANT WAVE CLEAR! COLLAR TIGHTENS +6 ⚡");
-                    } else if (waveClearTime < 8) {
-                        collarStacksToAdd = 3;
-                        if (store.world.bosses >= 1) {
-                            store.world.enemyDensityBonus = normalizeEnemyDensityBonus(store.world.enemyDensityBonus * 1.05);
-                        }
-                        store.world.xpMultiplier *= 1.03;
-                        announce("⚡ FAST WAVE CLEAR! COLLAR TIGHTENS +3 ⚡");
-                    } else if (waveClearTime <= 10) {
-                        collarStacksToAdd = 1;
-                        announce("⚡ COLLAR TIGHTENS +1 ⚡");
-                    }
-
-                    collarStacksToAdd = ensureFiniteNumber(collarStacksToAdd, 0);
-                    if (store.world.bosses >= 2) {
-                        if (collarStacksToAdd > 0) {
-                            scheduleCollarIncrease(collarStacksToAdd);
-                        } else {
-                            approachCollarTarget();
-                        }
-                    }
-                }
-
-                store.world.wave++;
-                store.world.waveTransitionTimer = null;
-
-                const hpBonus = 1;
-                store.player.hpMax += hpBonus;
-                store.player.hp += hpBonus;
-
-                if (store.director) {
-                    store.director.carryBudget = Math.max(0, carryBudget);
-                    store.director.mode = 'transition';
-                }
-
-                initWave();
             }
 
             function registerEnemyHit(enemy, impact = {}) {
@@ -13250,7 +12703,6 @@
                 stepEmpNovas(dt);
                 stepFlamePulses(dt);
                 cleanupDeadGangMembers();
-                updateDynamicWaveDirector(dt);
                 processWaveSpawnQueue(dt);
                 processVulnerabilityEvents(dt);
 
@@ -14303,22 +13755,82 @@
                     store.activeEffects.splice(0, store.activeEffects.length - MAX_ACTIVE_EFFECTS);
                 }
 
-                const director = store.director;
-                const directorSupervising = director && director.mode && director.mode !== 'idle';
-                if (directorSupervising) {
-                    // Director is active, let it manage spawns and wave completion
-                } else if (!store.boss && (!store.enemies.length || store.enemies.every(enemy => !enemy || enemy.dead))) {
-                    // No director, no boss, and all enemies are cleared - start next wave
+                const hasNonBurglarEnemies = store.enemies.some(enemy => enemy && !enemy.dead && enemy.type !== 'cube_burglar');
+                if (!store.boss && !hasNonBurglarEnemies) {
+                    // Add some delay before starting next wave to prevent rapid cycling
                     if (!store.world.waveTransitionTimer) {
                         store.world.waveTransitionTimer = performance.now();
                         return;
                     }
+
+                    // Wait at least 0.5 seconds before progressing to next wave
                     if (performance.now() - store.world.waveTransitionTimer < 500) {
                         return;
                     }
-                    store.world.waveTransitionTimer = null;
+
+                    // console.log(`Wave ${store.world.wave} completed, transitioning to wave ${store.world.wave + 1}`);
+
+                    if (store.world.waveStartTime > 0 && store.world.wave > 1) {
+                        const waveClearTime = (performance.now() - store.world.waveStartTime) / 1000;
+
+                        // Guaranteed minimum collar stacks for any reasonable clear
+                        let collarStacksToAdd = 0;
+                        sanitizeCollarStacks();
+
+                        if (waveClearTime < 2) {
+                            // Ultra-instant clear: +9 collar stacks (addresses missing 9 stack issue)
+                            collarStacksToAdd = 9;
+                            store.world.enemyDensityBonus *= 1.15;
+                            store.world.xpMultiplier *= 1.1;
+                            announce("💥 ULTRA-INSTANT CLEAR! COLLAR CRUSHES +9 💥");
+                        } else if (waveClearTime < 4) {
+                            // Instant clear: +6 collar stacks
+                            collarStacksToAdd = 6;
+                            store.world.enemyDensityBonus *= 1.1;
+                            store.world.xpMultiplier *= 1.07;
+                            announce("⚡ INSTANT WAVE CLEAR! COLLAR TIGHTENS +6 ⚡");
+                        } else if (waveClearTime < 8) {
+                            // Fast clear: +3 collar stacks
+                            collarStacksToAdd = 3;
+                            store.world.enemyDensityBonus *= 1.05;
+                            store.world.xpMultiplier *= 1.03;
+                            announce("⚡ FAST WAVE CLEAR! COLLAR TIGHTENS +3 ⚡");
+                        } else if (waveClearTime < 12) {
+                            // Normal clear: +1 collar stack
+                            collarStacksToAdd = 1;
+                            announce("⚡ COLLAR TIGHTENS +1 ⚡");
+                        } else if (waveClearTime > 20) {
+                            // Very slow clear: reset collar stacks (except during Death Engine fight)
+                            const isDeathEngineFight = store.world.boss && store.world.boss.name === 'DEATH ENGINE';
+                            if (!isDeathEngineFight) {
+                                const loosenedStacks = Math.max(0, sanitizeCollarStacks() - 2);
+                                setCollarStacks(loosenedStacks);
+                                announce("🐌 SLOW CLEAR - COLLAR LOOSENS");
+                            } else {
+                                announce("THE DEATH ENGINE'S CURSE MAINTAINS THE COLLAR!");
+                            }
+                        }
+
+                        // Add collar stacks only after 2nd boss is defeated - let first two bosses play normally
+                        collarStacksToAdd = ensureFiniteNumber(collarStacksToAdd, 0);
+                        if (store.world.bosses >= 2) {
+                            if (collarStacksToAdd > 0) {
+                                scheduleCollarIncrease(collarStacksToAdd);
+                            } else {
+                                approachCollarTarget();
+                            }
+                        }
+                    }
+
+                    store.world.wave++;
+                    store.world.waveTransitionTimer = null; // Reset timer
+
+                    const hpBonus = 1;
+                    store.player.hpMax += hpBonus;
+                    store.player.hp += hpBonus;
                     initWave();
                 } else {
+                    // Reset wave transition timer if there are still enemies or boss
                     store.world.waveTransitionTimer = null;
                 }
 
