@@ -5100,6 +5100,7 @@
                 shadowChampionTokenDropped: false,
                 shadowChampionLastPos: null,
                 floatingTexts: [],
+                hitParticles: [],
                 _enemySpatial: {
                     cellSize: 160,
                     buckets: new Map(),
@@ -6305,6 +6306,16 @@
                         crit: didCrit,
                         effect: false
                     });
+
+                    if (e === store.boss || e.type === 'cube_burglar') {
+                        const isBurglar = e.type === 'cube_burglar';
+                        const particleColor = e.hitParticleColor || e.color || b.col || '#ffd966';
+                        spawnHitParticles(hitX, hitY, particleColor, {
+                            count: isBurglar ? 10 : 22,
+                            scale: isBurglar ? 0.55 : 1,
+                            type: 'explosion'
+                        });
+                    }
 
                     if (store.player.pilotGenome === 'beef') {
                         store.player.beefShieldDamageDealt += dmg;
@@ -12688,6 +12699,7 @@
                 stepShadowHounds(dt);
                 stepVoidRifts(dt);
                 updateGibs(dt);
+                updateHitParticles(dt);
                 updateFloatingTexts(dt);
 
                 stepMissiles(dt);
@@ -16278,6 +16290,7 @@
                 }
 
                 store.enemies.forEach(e => drawEnemy(e));
+                drawHitParticles(ctx);
                 drawGibs(ctx); // <-- ADD THIS LINE TO DRAW THE GIBS
                 drawFloatingTexts(ctx);
                 drawTemporalEchoes();
@@ -35455,6 +35468,87 @@
                 };
 
                 closeBtn.addEventListener('click', closeHandler);
+            }
+
+            // --- HIT PARTICLE EFFECT ---
+
+            class ImpactParticle {
+                constructor(x, y, color, type = 'explosion', scale = 1) {
+                    this.x = x;
+                    this.y = y;
+                    this.color = color || '#ffffff';
+                    this.alpha = 1;
+                    this.baseSize = randRange(2, 5) * scale;
+                    this.fadeRate = 1.8; // Matches original per-frame fade (0.03) at 60 FPS
+
+                    if (type === 'splash') {
+                        const angle = randRange(-Math.PI * 0.9, -Math.PI * 0.1);
+                        const speed = randRange(3, 7) * 60 * Math.max(0.35, scale);
+                        this.vx = Math.cos(angle) * speed;
+                        this.vy = Math.sin(angle) * speed;
+                        this.gravity = 12 * Math.max(0.35, scale);
+                    } else {
+                        this.vx = randRange(-2, 2) * 60 * Math.max(0.35, scale);
+                        this.vy = randRange(-2, 2) * 60 * Math.max(0.35, scale);
+                        this.gravity = 0;
+                    }
+                }
+
+                update(dt) {
+                    this.x += this.vx * dt;
+                    this.y += this.vy * dt;
+                    if (this.gravity) {
+                        this.vy += this.gravity * dt;
+                    }
+                    this.alpha = Math.max(0, this.alpha - this.fadeRate * dt);
+                }
+
+                draw(ctx) {
+                    if (this.alpha <= 0) return;
+                    ctx.save();
+                    ctx.globalAlpha = this.alpha;
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    const radius = this.baseSize * (0.6 + this.alpha * 0.4);
+                    ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+            }
+
+            function spawnHitParticles(x, y, color, options = {}) {
+                const { count = 18, type = 'explosion', scale = 1 } = options;
+                if (!store.hitParticles) store.hitParticles = [];
+
+                const MAX_PARTICLES = 400;
+                if (store.hitParticles.length >= MAX_PARTICLES) {
+                    const overflow = store.hitParticles.length - MAX_PARTICLES + count;
+                    if (overflow > 0) {
+                        store.hitParticles.splice(0, overflow);
+                    }
+                }
+
+                for (let i = 0; i < count; i++) {
+                    const jitterX = randRange(-2, 2) * Math.max(0.2, scale);
+                    const jitterY = randRange(-2, 2) * Math.max(0.2, scale);
+                    store.hitParticles.push(new ImpactParticle(x + jitterX, y + jitterY, color, type, scale));
+                }
+            }
+
+            function updateHitParticles(dt) {
+                if (!store.hitParticles || store.hitParticles.length === 0) return;
+                for (let i = store.hitParticles.length - 1; i >= 0; i--) {
+                    const particle = store.hitParticles[i];
+                    particle.update(dt);
+                    if (particle.alpha <= 0) {
+                        store.hitParticles.splice(i, 1);
+                    }
+                }
+            }
+
+            function drawHitParticles(ctx) {
+                if (!store.hitParticles || store.hitParticles.length === 0) return;
+                store.hitParticles.forEach(p => p.draw(ctx));
             }
 
             // --- GIBBING EFFECT ---
