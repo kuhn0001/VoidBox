@@ -10271,18 +10271,18 @@
             function spawnEnemy(type = 'drone', props = {}) {
                 const cfgs = {
                     drone: { r: 10, v: 80, vx: 0, hp: 22, color: '#C0C0C0', xp: 5, score: 50, gold: 2, fireRateChance: 0.004, contactDamage: 6 },
-                    hunter: { r: 20, v: 100, vx: 0, hp: 18, color: '#DC143C', xp: 8, score: 80, gold: 2, fireRateChance: 0.005, contactDamage: 8 },
+                    hunter: { r: 20, v: 100, vx: 0, hp: 18, color: '#DC143C', xp: 8, score: 80, gold: 3, fireRateChance: 0.005, contactDamage: 8 },
                     trap_king_add: { r: 6, v: 90, vx: 0, hp: 9, color: '#ffc83d', damage: 5, xp: 2, score: 10, gold: 1, contactDamage: 5 },
                     phantom: { r: 14, v: 90, vx: 0, hp: 35, color: '#FFFFFF', xp: 10, score: 100, gold: 3, fireRateChance: 0.006, fireCooldown: 1.5, contactDamage: 8 },
-                    mech: { r: 18, v: 40, vx: 0, hp: 73, color: '#FF8500', xp: 15, score: 150, gold: 5, fireRateChance: 0.007, attackPhase: 0, contactDamage: 10 },
+                    mech: { r: 18, v: 40, vx: 0, hp: 73, color: '#FF8500', xp: 15, score: 150, gold: 6, fireRateChance: 0.007, attackPhase: 0, contactDamage: 10 },
                     construct_gold: { r: 10, v: 120, vx: 0, hp: 17, color: '#e03434', xp: 3, score: 30, gold: 1, contactDamage: 7 },
                     avian_hatchling: { r: 8, v: 150, vx: 0, hp: 22, color: '#9370DB', xp: 4, score: 40, gold: 1, contactDamage: 6 },
                     angler: { r: 22, v: 30, vx: 0, hp: 150, color: '#00008b', xp: 18, score: 180, gold: 4, fireRateChance: 0.008, contactDamage: 10 },
                     manta: { r: 26, v: 50, vx: 0, hp: 175, color: '#53B6FF', xp: 22, score: 220, gold: 5, fireRateChance: 0.009, contactDamage: 10 },
-                    shadow_champion: { r: 18, v: 70, vx: 0, hp: 620, color: '#cbd4ff', xp: 60, score: 480, gold: 3, fireRateChance: 1, fireCooldown: 1.45, contactDamage: 14 },
+                    shadow_champion: { r: 18, v: 70, vx: 0, hp: 620, color: '#cbd4ff', xp: 60, score: 480, gold: 25, fireRateChance: 1, fireCooldown: 1.45, contactDamage: 14 },
                     void_champion: { r: 16, v: 48, vx: 0, hp: 190, color: '#5A28D8', xp: 32, score: 325, gold: 2, fireRateChance: 0.75, fireCooldown: 1.65, contactDamage: 10 },
-                    void_champion_orb: { r: 6, v: 0, vx: 0, hp: 22, color: '#FF7DEB', xp: 2, score: 24, gold: 0, fireRateChance: 0.55, fireCooldown: 1.25, contactDamage: 4 },
-                    void_reaper: { r: 20, v: 0, vx: 0, hp: 165, color: '#9f74ff', xp: 55, score: 520, gold: 2, contactDamage: 11 }
+                    void_champion_orb: { r: 6, v: 0, vx: 0, hp: 22, color: '#FF7DEB', xp: 2, score: 24, gold: 1, fireRateChance: 0.55, fireCooldown: 1.25, contactDamage: 4 },
+                    void_reaper: { r: 20, v: 0, vx: 0, hp: 165, color: '#9f74ff', xp: 55, score: 520, gold: 50, contactDamage: 11 }
                 };
                 const baseCfg = cfgs[type];
                 if (!baseCfg) {
@@ -13756,7 +13756,8 @@
                 }
 
                 const hasNonBurglarEnemies = store.enemies.some(enemy => enemy && !enemy.dead && enemy.type !== 'cube_burglar');
-                if (!store.boss && !hasNonBurglarEnemies) {
+                const cubeBurglarAlive = store.world.cubeBurglarActive ? getCubeBurglarActiveEnemy() : null;
+                if (!store.boss && !hasNonBurglarEnemies && !cubeBurglarAlive) {
                     // Add some delay before starting next wave to prevent rapid cycling
                     if (!store.world.waveTransitionTimer) {
                         store.world.waveTransitionTimer = performance.now();
@@ -15220,6 +15221,7 @@
             }
 
             function chooseCubeBurglarTarget(enemy) {
+                const otherEnemiesPresent = store.enemies.some(candidate => candidate && !candidate.dead && candidate.type !== 'cube_burglar');
                 const powerupTarget = findNearestPowerupForCubeBurglar(enemy);
                 if (powerupTarget) {
                     return {
@@ -15230,14 +15232,16 @@
                     };
                 }
 
-                const cluster = findCubeBurglarUnitCluster();
-                if (cluster) {
-                    return {
-                        x: cluster.x,
-                        y: cluster.y,
-                        behavior: 'cluster',
-                        reacquire: 1.1
-                    };
+                if (otherEnemiesPresent) {
+                    const cluster = findCubeBurglarUnitCluster();
+                    if (cluster) {
+                        return {
+                            x: cluster.x,
+                            y: cluster.y,
+                            behavior: 'cluster',
+                            reacquire: 1.1
+                        };
+                    }
                 }
 
                 const patrol = computeCubeBurglarPatrolTarget(enemy);
@@ -15639,6 +15643,55 @@
                     }
                     ctx.restore();
                 });
+
+                const stolen = enemy.stolenPowerups;
+                if (Array.isArray(stolen) && stolen.length) {
+                    const torsoCubes = enemy.cubes.filter(cube => cube && !cube.destroyed && !cube.isDetail && cube.partType === 'torso');
+                    const basis = torsoCubes.length ? torsoCubes : enemy.cubes.filter(cube => cube && !cube.destroyed && !cube.isDetail);
+                    let bellyX = 0;
+                    let bellyY = 0;
+                    if (basis.length) {
+                        for (let i = 0; i < basis.length; i++) {
+                            const screen = basis[i].screen || { x: 0, y: 0 };
+                            bellyX += screen.x;
+                            bellyY += screen.y;
+                        }
+                        bellyX /= basis.length;
+                        bellyY /= basis.length;
+                    }
+                    const displayPowerup = stolen[stolen.length - 1] || null;
+                    const iconDef = displayPowerup && POWERUP_TYPES[displayPowerup.type];
+                    const icon = iconDef && iconDef.icon ? iconDef.icon : '?';
+                    const bubbleRadius = Math.max(8, CUBE_BURGLAR_CONFIG.cubeSize * 2.2);
+                    ctx.save();
+                    ctx.translate(bellyX, bellyY + 2);
+                    const pulse = 0.92 + Math.sin((enemy.time || 0) * 5.2) * 0.08;
+                    ctx.scale(pulse, pulse);
+                    ctx.globalAlpha = 0.9;
+                    const glow = ctx.createRadialGradient(0, 0, bubbleRadius * 0.3, 0, 0, bubbleRadius);
+                    glow.addColorStop(0, 'rgba(255, 220, 150, 0.95)');
+                    glow.addColorStop(1, 'rgba(255, 106, 213, 0.18)');
+                    ctx.fillStyle = glow;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, bubbleRadius, 0, TAU);
+                    ctx.fill();
+                    ctx.lineWidth = 1.2;
+                    ctx.strokeStyle = 'rgba(255, 106, 213, 0.85)';
+                    ctx.stroke();
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = '#1f0b16';
+                    ctx.font = 'bold 11px Orbitron, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(icon, 0, -1);
+                    if (stolen.length > 1) {
+                        ctx.font = 'bold 8px Orbitron, sans-serif';
+                        ctx.fillStyle = '#ffe6ff';
+                        ctx.textBaseline = 'top';
+                        ctx.fillText(`x${stolen.length}`, 0, bubbleRadius + 7);
+                    }
+                    ctx.restore();
+                }
             }
 
             let activeMapThemeState = null;
