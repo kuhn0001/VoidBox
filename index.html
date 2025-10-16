@@ -4453,6 +4453,8 @@
                 clusterSoundCounter: 0,
                 geminiHitSlowTimer: 0,
                 geminiHitSlowStrength: 1,
+                vibeThreadSlowTimer: 0,
+                vibeThreadSlowStrength: 1,
                 // EMP nova effects
                 empDisabled: false, empDisabledTimer: 0,
                 championUnlocked: false,
@@ -4793,18 +4795,105 @@
 
             const initialAutoForgeProfileId = resolveAutoForgeProfileId(storedAutoForgeProfileRaw);
 
-            const BOSS_DEFINITIONS = Object.freeze([
-                { key: 'void_sentinel', name: 'VOID SENTINEL', baseHp: 4000, r: 55, behavior: 'sentinel', color: '#8B4A9C' },
-                { key: 'trap_god', name: 'TRAPEZOID GOD', baseHp: 2200, r: 50, behavior: 'hex', color: '#66aaff' },
-                { key: 'aegis_architect', name: 'AEGIS ARCHITECT', baseHp: 2650, r: 68, behavior: 'aegis_architect', color: '#5dd0ff' },
-                { key: 'hive_sovereign', name: 'HIVE SOVEREIGN', baseHp: 8500, r: 85, behavior: 'broodlord', color: '#2d5016' },
-                { key: 'shadow_mirror', name: 'SHADOW MIRROR', baseHp: 7200, r: 58, behavior: 'shadow_clone', color: '#cbd4ff' },
-                { key: 'death_engine', name: 'DEATH ENGINE', baseHp: 9000, r: 90, behavior: 'construct', color: '#e54d24', phase: 1, isLaughing: false, laughStartTime: 0, visible: true },
-                { key: 'sol_luna', name: 'SOL & LUNA', baseHp: 8800, r: 60, behavior: 'gemini', color: '#ff9f3b' },
-                { key: 'asynchronos', name: 'ASYNCHRONOS', baseHp: 7800, r: 62, behavior: 'asynchronos', color: '#6ff2ff' }
+            const RAW_BOSS_DEFINITIONS = Object.freeze({
+                vibemaster: {
+                    name: 'VIBEMASTER',
+                    baseHp: 4800,
+                    r: 62,
+                    behavior: 'vibemaster',
+                    color: '#c77bff'
+                },
+                void_sentinel: {
+                    name: 'VOID SENTINEL',
+                    baseHp: 4000,
+                    r: 55,
+                    behavior: 'sentinel',
+                    color: '#8B4A9C'
+                },
+                trap_god: {
+                    name: 'TRAPEZOID GOD',
+                    baseHp: 2200,
+                    r: 50,
+                    behavior: 'hex',
+                    color: '#66aaff'
+                },
+                aegis_architect: {
+                    name: 'AEGIS ARCHITECT',
+                    baseHp: 2650,
+                    r: 68,
+                    behavior: 'aegis_architect',
+                    color: '#5dd0ff'
+                },
+                hive_sovereign: {
+                    name: 'HIVE SOVEREIGN',
+                    baseHp: 8500,
+                    r: 85,
+                    behavior: 'broodlord',
+                    color: '#2d5016'
+                },
+                shadow_mirror: {
+                    name: 'SHADOW MIRROR',
+                    baseHp: 7200,
+                    r: 58,
+                    behavior: 'shadow_clone',
+                    color: '#cbd4ff'
+                },
+                death_engine: {
+                    name: 'DEATH ENGINE',
+                    baseHp: 9000,
+                    r: 90,
+                    behavior: 'construct',
+                    color: '#e54d24',
+                    phase: 1,
+                    isLaughing: false,
+                    laughStartTime: 0,
+                    visible: true
+                },
+                sol_luna: {
+                    name: 'SOL & LUNA',
+                    baseHp: 8800,
+                    r: 60,
+                    behavior: 'gemini',
+                    color: '#ff9f3b'
+                },
+                asynchronos: {
+                    name: 'ASYNCHRONOS',
+                    baseHp: 7800,
+                    r: 62,
+                    behavior: 'asynchronos',
+                    color: '#6ff2ff'
+                }
+            });
+
+            const BOSS_ROTATION = Object.freeze([
+                'void_sentinel',
+                'vibemaster',
+                'trap_god',
+                'aegis_architect',
+                'hive_sovereign',
+                'shadow_mirror',
+                'death_engine',
+                'sol_luna',
+                'asynchronos'
             ]);
 
+            const BOSS_DEFINITIONS = Object.freeze(BOSS_ROTATION.map(key => {
+                const def = RAW_BOSS_DEFINITIONS[key];
+                if (!def) {
+                    console.warn(`[BossConfig] Missing definition for boss "${key}".`);
+                    return Object.freeze({ key, name: key.toUpperCase(), baseHp: 3200, r: 55, behavior: 'sentinel', color: '#ffffff' });
+                }
+                return Object.freeze({ key, ...def });
+            }));
+
+            const BOSS_DEFINITION_MAP = (() => {
+                const map = new Map();
+                BOSS_DEFINITIONS.forEach(def => map.set(def.key, def));
+                return map;
+            })();
+
             const BOSS_THEME_MAP = Object.freeze({
+                'VIBEMASTER': 'vibemaster',
                 'VOID SENTINEL': 'void_sentinel',
                 'TRAPEZOID GOD': 'trap_god',
                 'AEGIS ARCHITECT': 'aegis_architect',
@@ -4818,6 +4907,26 @@
             const DEFAULT_MAP_THEME_KEY = 'void_sentinel';
 
             const MAP_THEME_DEFS = Object.freeze({
+                vibemaster: {
+                    key: 'vibemaster',
+                    label: 'Cosmic Loom',
+                    baseFill: '#0e0518',
+                    gradient: {
+                        type: 'radial', x: 0.5, y: 0.42, radius: 0.96, stops: [
+                            { offset: 0, color: 'rgba(180, 80, 255, 0.75)' },
+                            { offset: 0.55, color: 'rgba(40, 12, 80, 0.7)' },
+                            { offset: 1, color: 'rgba(6, 3, 18, 1)' }
+                        ]
+                    },
+                    starLayers: [
+                        { count: 140, speed: 24, color: 'rgba(245, 205, 255, 0.78)', pulseColor: 'rgba(190, 120, 255, 0.92)', minRadius: 0.25, maxRadius: 1.5, twinkleSpeed: 2.1, twinkleAmplitude: 0.55 },
+                        { count: 90, speed: 46, color: 'rgba(120, 220, 255, 0.55)', pulseColor: 'rgba(90, 185, 255, 0.85)', minRadius: 0.22, maxRadius: 1.9, twinkleSpeed: 1.6, twinkleAmplitude: 0.48 }
+                    ],
+                    auroraBands: [
+                        { y: 0.28, thickness: 0.18, alpha: 0.38, waveSpeed: 0.42, waveAmplitude: 0.16, rotation: -0.12, colorStops: ['rgba(120, 40, 200, 0)', 'rgba(200, 120, 255, 0.58)', 'rgba(20, 4, 60, 0)'] },
+                        { y: 0.58, thickness: 0.2, alpha: 0.32, waveSpeed: 0.36, waveAmplitude: 0.14, rotation: 0.18, colorStops: ['rgba(20, 140, 190, 0)', 'rgba(120, 240, 255, 0.52)', 'rgba(6, 30, 50, 0)'] }
+                    ]
+                },
                 void_sentinel: {
                     key: 'void_sentinel',
                     label: 'Sentinel Breach',
@@ -5101,6 +5210,11 @@
                 shadowChampionLastPos: null,
                 floatingTexts: [],
                 hitParticles: [],
+                vibemasterRings: [],
+                vibemasterThreads: [],
+                vibemasterGuardians: [],
+                vibemasterDistortion: null,
+                vibemasterVacuum: null,
                 _enemySpatial: {
                     cellSize: 160,
                     buckets: new Map(),
@@ -6141,6 +6255,13 @@
 
             function applyBossDamage(boss, amount, options = {}) {
                 if (!boss || amount <= 0) return { amount: 0, blocked: false };
+
+                if (boss.behavior === 'vibemaster') {
+                    const vibeResult = applyVibemasterDamage(boss, amount, options);
+                    if (vibeResult) {
+                        return vibeResult;
+                    }
+                }
 
                 if (boss.behavior === 'gemini') {
                     return applyGeminiBossDamage(boss, amount, options);
@@ -11390,7 +11511,15 @@
                         }
                     }
                 } else {
-                    const slowMultiplier = computeGeminiSlowMultiplier(p);
+                    let slowMultiplier = computeGeminiSlowMultiplier(p);
+                    if (p.vibeThreadSlowTimer && p.vibeThreadSlowTimer > 0) {
+                        p.vibeThreadSlowTimer = Math.max(0, p.vibeThreadSlowTimer - dt);
+                        const vibeSlow = clamp(p.vibeThreadSlowStrength || 1, 0.15, 1);
+                        slowMultiplier *= vibeSlow;
+                        if (p.vibeThreadSlowTimer <= 0) {
+                            p.vibeThreadSlowStrength = 1;
+                        }
+                    }
                     p.geminiSlowMultiplier = slowMultiplier;
                     // MOVEMENT LOGIC
                     if (document.body.classList.contains('mobile-controls-active')) {
@@ -12868,6 +12997,83 @@
                             const pulseScale = 1 + Math.sin(performance.now() / 200 + b.pulseOffset) * 0.1;
                             b.r = b.rBase * pulseScale;
                         }
+                    } else if (b.path === 'vibemaster_bloop') {
+                        const target = store.player;
+                        const homingStrength = ensureFiniteNumber(b.homingStrength, 95);
+                        const maxSpeed = ensureFiniteNumber(b.maxSpeed, 230);
+                        const currentVx = ensureFiniteNumber(b.vx, 0);
+                        const currentVy = ensureFiniteNumber(b.vy, 0);
+                        let nextVx = currentVx;
+                        let nextVy = currentVy;
+                        if (target) {
+                            const angle = Math.atan2(target.y - b.y, target.x - b.x);
+                            nextVx += Math.cos(angle) * homingStrength * dt;
+                            nextVy += Math.sin(angle) * homingStrength * dt;
+                            const speed = Math.hypot(nextVx, nextVy) || 0;
+                            if (speed > maxSpeed) {
+                                const scale = maxSpeed / speed;
+                                nextVx *= scale;
+                                nextVy *= scale;
+                            }
+                        }
+                        b.vx = nextVx;
+                        b.vy = nextVy;
+                        b.x += nextVx * dt;
+                        b.y += nextVy * dt;
+                        if (b.life !== undefined) {
+                            b.life -= dt;
+                            if (b.life <= 0) b.dead = true;
+                        }
+                        if (b.rBase === undefined) {
+                            b.rBase = b.r || 6;
+                        }
+                        const shimmer = 1 + Math.sin((performance.now() + (b.pulseOffset || 0)) / 180) * 0.12;
+                        b.r = b.rBase * shimmer;
+                    } else if (b.path === 'vibemaster_shard') {
+                        const accel = Math.max(0, ensureFiniteNumber(b.accel, 220));
+                        const maxSpeed = ensureFiniteNumber(b.maxSpeed, 520);
+                        let vx = ensureFiniteNumber(b.vx, 0);
+                        let vy = ensureFiniteNumber(b.vy, 0);
+                        const speed = Math.hypot(vx, vy);
+                        if (speed > 0.001) {
+                            const nx = vx / speed;
+                            const ny = vy / speed;
+                            const nextSpeed = Math.min(maxSpeed, speed + accel * dt);
+                            vx = nx * nextSpeed;
+                            vy = ny * nextSpeed;
+                        }
+                        b.vx = vx;
+                        b.vy = vy;
+                        b.x += vx * dt;
+                        b.y += vy * dt;
+                        if (b.life !== undefined) {
+                            b.life -= dt;
+                            if (b.life <= 0) b.dead = true;
+                        }
+                    } else if (b.path === 'vibemaster_guardian_beam') {
+                        b.x += ensureFiniteNumber(b.vx, 0) * dt;
+                        b.y += ensureFiniteNumber(b.vy, 0) * dt;
+                        if (b.life !== undefined) {
+                            b.life -= dt;
+                            if (b.life <= 0) b.dead = true;
+                        }
+                        if (b.fadeRate !== undefined) {
+                            b.alpha = Math.max(0, (b.alpha ?? 1) - b.fadeRate * dt);
+                        }
+                    } else if (b.path === 'vibemaster_implosion') {
+                        const grow = Math.max(0, ensureFiniteNumber(b.growSpeed, 18));
+                        const driftVx = ensureFiniteNumber(b.vx, 0);
+                        const driftVy = ensureFiniteNumber(b.vy, 65);
+                        b.vx = driftVx;
+                        b.vy = driftVy;
+                        b.x += driftVx * dt;
+                        b.y += driftVy * dt;
+                        b.r = Math.min(140, (b.r || 26) + grow * dt * 0.6);
+                        b.coreRadius = (b.coreRadius || (b.r * 0.55)) + grow * dt * 0.35;
+                        if (b.life !== undefined) {
+                            b.life -= dt;
+                            if (b.life <= 0) b.dead = true;
+                        }
                     } else {
                         b.x += b.vx * dt;
                         b.y += b.vy * dt;
@@ -12940,6 +13146,14 @@
                         }
                     } else if (b.path === 'aegis_gravity') {
                         if (b.x < -40 || b.x > W + 40 || b.y < -40 || b.y > H + 40) {
+                            b.dead = true;
+                        }
+                    } else if (b.path === 'vibemaster_implosion') {
+                        if (b.y < -160 || b.y > H + 220) {
+                            b.dead = true;
+                        }
+                    } else if (b.path === 'vibemaster_bloop' || b.path === 'vibemaster_shard' || b.path === 'vibemaster_guardian_beam') {
+                        if (b.x < -60 || b.x > W + 60 || b.y < -60 || b.y > H + 120) {
                             b.dead = true;
                         }
                     } else if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) {
@@ -14119,6 +14333,11 @@
                 if (store.geminiSlowFields) {
                     store.geminiSlowFields = [];
                 }
+                store.vibemasterRings = [];
+                store.vibemasterThreads = [];
+                store.vibemasterGuardians = [];
+                store.vibemasterDistortion = null;
+                store.vibemasterVacuum = null;
                 // Also clear poison blobs still in flight to prevent persistent puddles
                 store.bullets = store.bullets.filter(b => {
                     if (b.type === 'poisonBlob') {
@@ -21668,6 +21887,663 @@
                 return best;
             }
 
+            const VIBEMASTER_CONFIG = Object.freeze({
+                ring: { thickness: 18, speed: 90, damage: 20, segments: 12, cooldown: { 1: 6.2, 2: 5.1, 3: 3.6 } },
+                astral: {
+                    homingStrength: 110,
+                    maxSpeed: 240,
+                    shardAccel: 240,
+                    shardMaxSpeed: 560,
+                    shardLife: 6,
+                    cooldown: { 1: 4.2, 2: 3.0, 3: 2.0 },
+                    volley: { 1: 3, 2: 4, 3: 5 }
+                },
+                barrier: { cooldown: 12.5, duration: 8, hpPercent: 0.12, rotationSpeed: 1.1 },
+                threads: { cooldown: 14, life: 7.5, width: 26, slowStrength: 0.45, count: 4 },
+                distortion: { cooldown: 17, duration: 4.4 },
+                guardians: { cooldown: 18, hp: 420, fireCooldown: 1.6, contactDamage: 22 },
+                ritual: { cooldown: 23, duration: 6, healPerSecond: 0.034, shieldPercent: 0.14, beamWidth: 0.32 },
+                vacuum: { duration: 4.5, strength: 320, threshold: 0.12, sphereSpeed: 72 },
+                beam: { damage: 24 }
+            });
+
+            function ensureVibemasterState(boss) {
+                if (!boss) return null;
+                if (boss.vibeState) return boss.vibeState;
+
+                const state = {
+                    phase: 1,
+                    timers: {
+                        chakra: 3.0,
+                        astral: 2.8,
+                        barrier: 5.5,
+                        threads: 8,
+                        distortion: 11,
+                        guardians: 6,
+                        ritual: 18
+                    },
+                    rings: [],
+                    threads: [],
+                    guardians: [],
+                    barrier: null,
+                    distortion: null,
+                    ritual: null,
+                    vacuum: null,
+                    nextRingPattern: 0,
+                    implosionTriggered: false,
+                    phaseAnnouncements: { 2: false, 3: false }
+                };
+
+                state.rings = state.rings;
+                state.threads = state.threads;
+                state.guardians = state.guardians;
+
+                store.vibemasterRings = state.rings;
+                store.vibemasterThreads = state.threads;
+                store.vibemasterGuardians = state.guardians;
+                store.vibemasterDistortion = null;
+                store.vibemasterVacuum = null;
+
+                boss.vibeState = state;
+                return state;
+            }
+
+            function vibemasterRingCooldown(phase) {
+                return VIBEMASTER_CONFIG.ring.cooldown[phase] || VIBEMASTER_CONFIG.ring.cooldown[1];
+            }
+
+            function vibemasterAstralCooldown(phase) {
+                return VIBEMASTER_CONFIG.astral.cooldown[phase] || VIBEMASTER_CONFIG.astral.cooldown[1];
+            }
+
+            function vibemasterAstralVolleySize(phase) {
+                return VIBEMASTER_CONFIG.astral.volley[phase] || VIBEMASTER_CONFIG.astral.volley[1];
+            }
+
+            function spawnVibemasterRing(boss, state) {
+                const ring = {
+                    x: boss.x,
+                    y: boss.y,
+                    radius: Math.max(30, boss.r * 0.7),
+                    speed: VIBEMASTER_CONFIG.ring.speed,
+                    thickness: VIBEMASTER_CONFIG.ring.thickness,
+                    life: 10,
+                    maxLife: 10,
+                    pattern: state.nextRingPattern || 0,
+                    segmentCount: VIBEMASTER_CONFIG.ring.segments,
+                    hitCooldown: 0,
+                    pulse: Math.random() * Math.PI * 2
+                };
+                state.nextRingPattern = (ring.pattern + 1) % 2;
+                state.rings.push(ring);
+                store.vibemasterRings = state.rings;
+            }
+
+            function updateVibemasterRings(dt, boss, state, dmgScale) {
+                const rings = state.rings;
+                if (!rings || !rings.length) return;
+                const player = store.player;
+                for (let i = rings.length - 1; i >= 0; i--) {
+                    const ring = rings[i];
+                    ring.radius += ring.speed * dt;
+                    ring.life -= dt;
+                    ring.hitCooldown = Math.max(0, ring.hitCooldown - dt);
+                    ring.pulse += dt * 2.4;
+                    if (player) {
+                        const dx = player.x - ring.x;
+                        const dy = player.y - ring.y;
+                        const dist = Math.hypot(dx, dy);
+                        const thickness = ring.thickness;
+                        if (dist >= ring.radius - thickness * 0.5 && dist <= ring.radius + thickness * 0.5) {
+                            const angle = Math.atan2(dy, dx);
+                            const segmentAngle = (Math.PI * 2) / Math.max(1, ring.segmentCount);
+                            let idx = Math.floor((angle < 0 ? angle + Math.PI * 2 : angle) / segmentAngle);
+                            idx = Math.max(0, idx);
+                            const isSolid = ((idx + ring.pattern) % 2) === 0;
+                            if (isSolid && ring.hitCooldown <= 0) {
+                                takeDamage(VIBEMASTER_CONFIG.ring.damage * dmgScale);
+                                ring.hitCooldown = 0.35;
+                                store.activeEffects.push(createEffect('hurtPulse', player.x, player.y, (player.r || 16) * 1.6, { color: '#d6a9ff', duration: 0.25 }));
+                            }
+                        }
+                    }
+                    if (ring.life <= 0 || ring.radius > Math.max(W, H) * 1.2) {
+                        rings.splice(i, 1);
+                    }
+                }
+            }
+
+            function spawnVibemasterAstralVolley(boss, state, dmgScale, options = {}) {
+                const count = options.count || vibemasterAstralVolleySize(state.phase);
+                const topMargin = 50;
+                for (let i = 0; i < count; i++) {
+                    const side = i % 2 === 0 ? -1 : 1;
+                    const baseX = side < 0 ? 40 + Math.random() * 80 : W - 40 - Math.random() * 80;
+                    const bullet = getEBulletFromPool({
+                        x: baseX,
+                        y: topMargin + Math.random() * 40,
+                        vx: 0,
+                        vy: 70 + Math.random() * 30,
+                        r: 6,
+                        col: '#a8efff',
+                        dmg: 14 * dmgScale,
+                        life: 7,
+                        path: 'vibemaster_bloop',
+                        homingStrength: VIBEMASTER_CONFIG.astral.homingStrength * (state.phase >= 3 ? 1.25 : 1),
+                        maxSpeed: VIBEMASTER_CONFIG.astral.maxSpeed * (state.phase >= 3 ? 1.2 : 1),
+                        pulseOffset: Math.random() * Math.PI * 2
+                    });
+                    store.eBullets.push(bullet);
+                }
+            }
+
+            function spawnVibemasterShardBurst(boss, state, dmgScale) {
+                const player = store.player;
+                const baseAngle = player ? Math.atan2(player.y - boss.y, player.x - boss.x) : -Math.PI / 2;
+                const count = state.phase >= 3 ? 7 : 5;
+                const spread = 0.55 + state.phase * 0.1;
+                for (let i = 0; i < count; i++) {
+                    const t = count === 1 ? 0 : (i / (count - 1) - 0.5);
+                    const angle = baseAngle + t * spread;
+                    const speed = 200 + state.phase * 40;
+                    const shard = getEBulletFromPool({
+                        x: boss.x,
+                        y: boss.y,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        r: 5,
+                        col: '#d9f4ff',
+                        dmg: 17 * dmgScale,
+                        life: VIBEMASTER_CONFIG.astral.shardLife,
+                        path: 'vibemaster_shard',
+                        accel: VIBEMASTER_CONFIG.astral.shardAccel,
+                        maxSpeed: VIBEMASTER_CONFIG.astral.shardMaxSpeed
+                    });
+                    store.eBullets.push(shard);
+                }
+            }
+
+            function startVibemasterBarrier(boss, state) {
+                const maxHp = boss.hpMax * VIBEMASTER_CONFIG.barrier.hpPercent;
+                state.barrier = {
+                    active: true,
+                    hp: maxHp,
+                    maxHp,
+                    timer: VIBEMASTER_CONFIG.barrier.duration,
+                    angle: 0,
+                    rotationSpeed: VIBEMASTER_CONFIG.barrier.rotationSpeed,
+                    hitPulse: 0
+                };
+                store.activeEffects.push(createEffect('spawnTeleport', boss.x, boss.y, boss.r + 40, { color: '#bca7ff', duration: 0.6 }));
+                announce('The VIBEMASTER retreats behind a meditative barrier!');
+            }
+
+            function updateVibemasterBarrier(dt, boss, state) {
+                const barrier = state.barrier;
+                if (!barrier || !barrier.active) return;
+                barrier.timer -= dt;
+                barrier.angle += dt * barrier.rotationSpeed;
+                if (barrier.hitPulse) barrier.hitPulse = Math.max(0, barrier.hitPulse - dt * 3.2);
+                if (barrier.timer <= 0 || barrier.hp <= 0) {
+                    store.activeEffects.push(createEffect('shieldBreak', boss.x, boss.y, boss.r + 42));
+                    state.barrier = null;
+                }
+            }
+
+            function spawnVibemasterThreads(boss, state) {
+                const count = VIBEMASTER_CONFIG.threads.count + (state.phase >= 3 ? 1 : 0);
+                for (let i = 0; i < count; i++) {
+                    const startX = 80 + Math.random() * (W - 160);
+                    const startY = H * 0.28 + Math.random() * (H * 0.32);
+                    const angle = (Math.random() - 0.5) * 1.2;
+                    const length = 140 + Math.random() * 200;
+                    const endX = startX + Math.cos(angle) * length;
+                    const endY = startY + Math.sin(angle) * length;
+                    state.threads.push({
+                        startX,
+                        startY,
+                        endX,
+                        endY,
+                        width: VIBEMASTER_CONFIG.threads.width,
+                        life: VIBEMASTER_CONFIG.threads.life,
+                        maxLife: VIBEMASTER_CONFIG.threads.life,
+                        pulse: Math.random() * Math.PI * 2
+                    });
+                }
+                store.vibemasterThreads = state.threads;
+                store.activeEffects.push(createEffect('spawnTeleport', boss.x, boss.y + boss.r * 0.6, boss.r + 60, { color: '#8ff5ff', duration: 0.55 }));
+                announce('Cosmic threads constrict your path!');
+            }
+
+            function vibemasterDistanceToSegmentSq(px, py, x1, y1, x2, y2) {
+                const vx = x2 - x1;
+                const vy = y2 - y1;
+                const lenSq = vx * vx + vy * vy;
+                if (lenSq === 0) {
+                    const dx = px - x1;
+                    const dy = py - y1;
+                    return dx * dx + dy * dy;
+                }
+                let t = ((px - x1) * vx + (py - y1) * vy) / lenSq;
+                t = Math.max(0, Math.min(1, t));
+                const cx = x1 + vx * t;
+                const cy = y1 + vy * t;
+                const dx = px - cx;
+                const dy = py - cy;
+                return dx * dx + dy * dy;
+            }
+
+            function updateVibemasterThreads(dt, boss, state) {
+                const threads = state.threads;
+                if (!threads || !threads.length) return;
+                const player = store.player;
+                for (let i = threads.length - 1; i >= 0; i--) {
+                    const thread = threads[i];
+                    thread.life -= dt;
+                    thread.pulse += dt * 2.8;
+                    if (thread.life <= 0) {
+                        threads.splice(i, 1);
+                        continue;
+                    }
+                    if (!player) continue;
+                    const distSq = vibemasterDistanceToSegmentSq(player.x, player.y, thread.startX, thread.startY, thread.endX, thread.endY);
+                    const effective = thread.width + (player.r || 16);
+                    if (distSq <= effective * effective) {
+                        player.vibeThreadSlowStrength = Math.min(player.vibeThreadSlowStrength || 1, VIBEMASTER_CONFIG.threads.slowStrength);
+                        player.vibeThreadSlowTimer = Math.max(player.vibeThreadSlowTimer || 0, 0.32);
+                    }
+                }
+            }
+
+            function spawnVibemasterGuardians(boss, state, dmgScale) {
+                const alive = state.guardians.filter(g => !g.dead);
+                const desired = 2;
+                const toSpawn = Math.max(0, desired - alive.length);
+                if (toSpawn <= 0) return;
+                for (let i = 0; i < toSpawn; i++) {
+                    const side = (alive.length + i) % 2 === 0 ? -1 : 1;
+                    const guardian = {
+                        id: `vibe-guardian-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+                        side,
+                        x: side < 0 ? 90 : W - 90,
+                        y: H * 0.32 + (alive.length + i) * 40,
+                        baseX: side < 0 ? 120 : W - 120,
+                        baseY: H * 0.32 + (alive.length + i) * 40,
+                        hp: VIBEMASTER_CONFIG.guardians.hp,
+                        hpMax: VIBEMASTER_CONFIG.guardians.hp,
+                        fireTimer: 0.8 + i * 0.4,
+                        movePhase: Math.random() * Math.PI * 2,
+                        hitPulse: 0,
+                        dmgScale,
+                        touchCooldown: 0,
+                        color: side < 0 ? '#9de7ff' : '#ffdea8'
+                    };
+                    state.guardians.push(guardian);
+                    store.activeEffects.push(createEffect('spawnTeleport', guardian.x, guardian.y, 38, { color: guardian.color, duration: 0.5 }));
+                }
+                store.vibemasterGuardians = state.guardians;
+                announce('Spirit guardians join the fray!');
+            }
+
+            function updateVibemasterGuardians(dt, boss, state, dmgScale) {
+                const guardians = state.guardians;
+                if (!guardians || !guardians.length) return;
+                const player = store.player;
+                for (let i = guardians.length - 1; i >= 0; i--) {
+                    const guardian = guardians[i];
+                    if (!guardian || guardian.dead) {
+                        guardians.splice(i, 1);
+                        continue;
+                    }
+                    guardian.movePhase += dt * (1.8 + state.phase * 0.2);
+                    const amplitude = 70 + state.phase * 10;
+                    guardian.x = guardian.baseX + Math.sin(guardian.movePhase) * amplitude;
+                    guardian.y = guardian.baseY + Math.cos(guardian.movePhase * 0.8) * 40;
+                    if (guardian.hitPulse) guardian.hitPulse = Math.max(0, guardian.hitPulse - dt * 3.1);
+                    guardian.fireTimer -= dt;
+                    if (guardian.fireTimer <= 0) {
+                        const speed = 250 + state.phase * 40;
+                        const vy = Math.sin(guardian.movePhase * 1.5) * 60;
+                        const beam = getEBulletFromPool({
+                            x: guardian.x,
+                            y: guardian.y,
+                            vx: guardian.side * speed,
+                            vy,
+                            r: 5,
+                            col: '#ffe7b8',
+                            dmg: (VIBEMASTER_CONFIG.guardians.contactDamage || 22) * dmgScale * 0.6,
+                            life: 4,
+                            path: 'vibemaster_guardian_beam',
+                            fadeRate: 0.22
+                        });
+                        beam.alpha = 1;
+                        store.eBullets.push(beam);
+                        guardian.fireTimer = Math.max(0.85, VIBEMASTER_CONFIG.guardians.fireCooldown - state.phase * 0.18);
+                    }
+                    if (guardian.touchCooldown > 0) guardian.touchCooldown = Math.max(0, guardian.touchCooldown - dt);
+                    if (player && !player.isInvincible) {
+                        const radius = 26;
+                        const dx = player.x - guardian.x;
+                        const dy = player.y - guardian.y;
+                        const distSq = dx * dx + dy * dy;
+                        const combined = (player.r || 16) + radius;
+                        if (distSq <= combined * combined && guardian.touchCooldown <= 0) {
+                            takeDamage(VIBEMASTER_CONFIG.guardians.contactDamage * dmgScale);
+                            guardian.touchCooldown = 0.9;
+                        }
+                    }
+                    for (let bi = store.bullets.length - 1; bi >= 0; bi--) {
+                        const bullet = store.bullets[bi];
+                        if (!bullet || bullet.dead) continue;
+                        const dx = bullet.x - guardian.x;
+                        const dy = bullet.y - guardian.y;
+                        const distSq = dx * dx + dy * dy;
+                        const hitRadius = (bullet.r || 3) + 20;
+                        if (distSq <= hitRadius * hitRadius) {
+                            const damage = bullet.dmg || 12;
+                            guardian.hp -= damage;
+                            guardian.hitPulse = 0.4;
+                            if (!bullet.pierce) bullet.dead = true;
+                            spawnHitParticles(guardian.x, guardian.y, guardian.color, { count: 10, scale: 0.6 });
+                            if (store.player.vampirism > 0) {
+                                let heal = damage * store.player.vampirism;
+                                heal = Math.max(heal, 1);
+                                heal = Math.min(heal, 4);
+                                store.player.hp = Math.min(store.player.hpMax, store.player.hp + heal);
+                            }
+                            if (guardian.hp <= 0) {
+                                guardian.dead = true;
+                                store.activeEffects.push(createEffect('spawnTeleport', guardian.x, guardian.y, 60, { color: guardian.color, duration: 0.6 }));
+                                addWorldGold(5);
+                                store.world.score += 120;
+                                guardians.splice(i, 1);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            function startVibemasterDistortion(boss, state) {
+                state.distortion = {
+                    active: true,
+                    timer: VIBEMASTER_CONFIG.distortion.duration,
+                    duration: VIBEMASTER_CONFIG.distortion.duration,
+                    shardTimer: 0.4
+                };
+                store.vibemasterDistortion = state.distortion;
+                announce('The VIBEMASTER opens the Eye of Illusion!');
+            }
+
+            function updateVibemasterDistortion(dt, boss, state, dmgScale) {
+                const distortion = state.distortion;
+                if (!distortion || !distortion.active) return;
+                distortion.timer -= dt;
+                distortion.shardTimer -= dt;
+                if (distortion.shardTimer <= 0) {
+                    spawnVibemasterShardBurst(boss, state, dmgScale);
+                    distortion.shardTimer = Math.max(0.32, state.phase >= 3 ? 0.35 : 0.45);
+                }
+                if (distortion.timer <= 0) {
+                    state.distortion = null;
+                    store.vibemasterDistortion = null;
+                } else {
+                    store.vibemasterDistortion = distortion;
+                }
+            }
+
+            function vibemasterNormalizeAngle(angle) {
+                const twoPi = Math.PI * 2;
+                let result = ((angle % twoPi) + twoPi) % twoPi;
+                if (result > Math.PI) result -= twoPi;
+                return result;
+            }
+
+            function startVibemasterRitual(boss, state) {
+                const maxHp = boss.hpMax * VIBEMASTER_CONFIG.ritual.shieldPercent;
+                state.ritual = {
+                    active: true,
+                    timer: VIBEMASTER_CONFIG.ritual.duration,
+                    duration: VIBEMASTER_CONFIG.ritual.duration,
+                    hp: maxHp,
+                    maxHp,
+                    beamAngle: -Math.PI / 2,
+                    beamDir: 1,
+                    damageCooldown: 0,
+                    hitPulse: 0
+                };
+                store.activeEffects.push(createEffect('bossPhaseChange', boss.x, boss.y));
+                announce('The VIBEMASTER begins a rejuvenation ritual!');
+            }
+
+            function applyVibemasterBeamDamage(boss, ritual, dmgScale) {
+                const player = store.player;
+                if (!player || player.isInvincible) return;
+                const dx = player.x - boss.x;
+                const dy = player.y - boss.y;
+                const dist = Math.hypot(dx, dy);
+                if (dist <= 24) return;
+                const angleToPlayer = Math.atan2(dy, dx);
+                const diff = Math.abs(vibemasterNormalizeAngle(angleToPlayer - ritual.beamAngle));
+                const width = VIBEMASTER_CONFIG.ritual.beamWidth;
+                if (diff <= width) {
+                    if (ritual.damageCooldown <= 0) {
+                        takeDamage(VIBEMASTER_CONFIG.beam.damage * dmgScale);
+                        ritual.damageCooldown = 0.35;
+                        store.activeEffects.push(createEffect('hurtPulse', player.x, player.y, (player.r || 16) * 1.9, { color: '#8fe9ff', duration: 0.3 }));
+                    }
+                }
+            }
+
+            function endVibemasterRitual(boss, state, options = {}) {
+                if (!state.ritual || !state.ritual.active) return;
+                const broken = options.broken;
+                if (broken) {
+                    announce('Ritual interrupted!');
+                }
+                store.activeEffects.push(createEffect('shieldBreak', boss.x, boss.y, boss.r + 36, { color: broken ? '#ffd2ff' : '#bffaff', duration: 0.5 }));
+                state.ritual = null;
+            }
+
+            function updateVibemasterRitual(dt, boss, state, dmgScale) {
+                const ritual = state.ritual;
+                if (!ritual || !ritual.active) return;
+                ritual.timer -= dt;
+                if (ritual.hitPulse) ritual.hitPulse = Math.max(0, ritual.hitPulse - dt * 3.1);
+                if (ritual.damageCooldown > 0) ritual.damageCooldown = Math.max(0, ritual.damageCooldown - dt);
+                const heal = VIBEMASTER_CONFIG.ritual.healPerSecond;
+                if (heal > 0 && boss.hp < boss.hpMax) {
+                    boss.hp = Math.min(boss.hpMax, boss.hp + boss.hpMax * heal * dt);
+                }
+                const sweepSpeed = state.phase >= 3 ? 1.25 : 0.95;
+                ritual.beamAngle += sweepSpeed * ritual.beamDir * dt;
+                if (ritual.beamAngle > Math.PI * 0.65) {
+                    ritual.beamAngle = Math.PI * 0.65;
+                    ritual.beamDir = -1;
+                } else if (ritual.beamAngle < -Math.PI * 0.65) {
+                    ritual.beamAngle = -Math.PI * 0.65;
+                    ritual.beamDir = 1;
+                }
+                applyVibemasterBeamDamage(boss, ritual, dmgScale);
+                if (ritual.timer <= 0 || ritual.hp <= 0) {
+                    endVibemasterRitual(boss, state, { broken: ritual.hp <= 0 });
+                }
+            }
+
+            function triggerVibemasterImplosion(boss, state, dmgScale) {
+                if (state.implosionTriggered) return;
+                state.implosionTriggered = true;
+                state.vacuum = {
+                    active: true,
+                    timer: VIBEMASTER_CONFIG.vacuum.duration,
+                    duration: VIBEMASTER_CONFIG.vacuum.duration,
+                    strength: VIBEMASTER_CONFIG.vacuum.strength
+                };
+                store.vibemasterVacuum = state.vacuum;
+                const sphere = getEBulletFromPool({
+                    x: boss.x,
+                    y: boss.y + boss.r * 0.6,
+                    vx: 0,
+                    vy: VIBEMASTER_CONFIG.vacuum.sphereSpeed,
+                    r: 26,
+                    col: '#ffe8ff',
+                    dmg: 32 * dmgScale,
+                    life: VIBEMASTER_CONFIG.vacuum.duration + 2,
+                    path: 'vibemaster_implosion',
+                    growSpeed: 22
+                });
+                sphere.alpha = 0.85;
+                store.eBullets.push(sphere);
+                if (typeof screenFlash === 'function') {
+                    screenFlash(2, 180, 'rgba(180, 120, 255, 0.45)');
+                }
+                announce('Grand implosion pulls everything to the center!');
+            }
+
+            function updateVibemasterVacuum(dt, boss, state) {
+                const vacuum = state.vacuum;
+                if (!vacuum || !vacuum.active) return;
+                vacuum.timer -= dt;
+                const player = store.player;
+                if (player && !player.isInvincible) {
+                    const dx = boss.x - player.x;
+                    const dy = boss.y - player.y;
+                    const dist = Math.max(30, Math.hypot(dx, dy));
+                    const pull = vacuum.strength * dt / dist;
+                    player.x += dx * pull;
+                    player.y += dy * pull;
+                    player.x = clamp(player.x, 20, W - 20);
+                    player.y = clamp(player.y, 40, H - 40);
+                }
+                if (vacuum.timer <= 0) {
+                    state.vacuum = null;
+                    store.vibemasterVacuum = null;
+                } else {
+                    store.vibemasterVacuum = vacuum;
+                }
+            }
+
+            function applyVibemasterDamage(boss, amount, options = {}) {
+                const state = ensureVibemasterState(boss);
+                if (!state) return { amount, blocked: false };
+
+                if (state.barrier && state.barrier.active) {
+                    state.barrier.hp = Math.max(0, state.barrier.hp - amount);
+                    state.barrier.hitPulse = 0.35;
+                    const impactX = options.point?.x ?? boss.x;
+                    const impactY = options.point?.y ?? boss.y;
+                    store.activeEffects.push(createEffect('shieldHit', impactX, impactY, boss.r + 30));
+                    if (state.barrier.hp <= 0) {
+                        store.activeEffects.push(createEffect('shieldBreak', boss.x, boss.y, boss.r + 42));
+                        state.barrier = null;
+                    }
+                    return { amount: 0, blocked: true };
+                }
+
+                if (state.ritual && state.ritual.active) {
+                    state.ritual.hp = Math.max(0, state.ritual.hp - amount);
+                    state.ritual.hitPulse = 0.4;
+                    if (state.ritual.hp <= 0) {
+                        endVibemasterRitual(boss, state, { broken: true });
+                    }
+                    return { amount: 0, blocked: true };
+                }
+
+                return null;
+            }
+
+            function stepBossVibemaster(dt, boss, dmgScale) {
+                const state = ensureVibemasterState(boss);
+                if (!state) return;
+
+                const targetX = W / 2;
+                const targetY = Math.max(110, H * 0.24);
+                boss.x += (targetX - boss.x) * Math.min(1, dt * 2.4);
+                boss.y += (targetY - boss.y) * Math.min(1, dt * 1.8);
+
+                const hpRatio = boss.hpMax > 0 ? clamp(boss.hp / boss.hpMax, 0, 1) : 1;
+                if (state.phase === 1 && hpRatio <= 0.7) {
+                    state.phase = 2;
+                    state.timers.distortion = 4.5;
+                    state.timers.threads = 2.5;
+                    state.timers.guardians = 3.2;
+                    if (!state.phaseAnnouncements[2]) {
+                        announce('The VIBEMASTER weaves chaotic cascades!');
+                        state.phaseAnnouncements[2] = true;
+                    }
+                }
+                if (state.phase < 3 && hpRatio <= 0.3) {
+                    state.phase = 3;
+                    boss.isEnraged = true;
+                    state.timers.ritual = 5;
+                    state.timers.chakra = Math.min(state.timers.chakra, 2.6);
+                    state.timers.astral = Math.min(state.timers.astral, 1.8);
+                    if (!state.phaseAnnouncements[3]) {
+                        announce('Nirvana\'s Fury ignites!');
+                        state.phaseAnnouncements[3] = true;
+                    }
+                }
+                if (!state.implosionTriggered && hpRatio <= VIBEMASTER_CONFIG.vacuum.threshold) {
+                    triggerVibemasterImplosion(boss, state, dmgScale);
+                }
+
+                state.timers.chakra -= dt;
+                state.timers.astral -= dt;
+                state.timers.barrier -= dt;
+                state.timers.threads -= dt;
+                state.timers.distortion -= dt;
+                state.timers.guardians -= dt;
+                if (state.phase >= 3) {
+                    state.timers.ritual -= dt;
+                }
+
+                if (state.timers.chakra <= 0) {
+                    spawnVibemasterRing(boss, state);
+                    state.timers.chakra = vibemasterRingCooldown(state.phase);
+                }
+
+                if (state.timers.astral <= 0) {
+                    spawnVibemasterAstralVolley(boss, state, dmgScale, {});
+                    const baseCooldown = vibemasterAstralCooldown(state.phase);
+                    state.timers.astral = state.distortion && state.distortion.active ? Math.max(1.1, baseCooldown * 0.6) : baseCooldown;
+                }
+
+                if ((!state.barrier || !state.barrier.active) && state.timers.barrier <= 0) {
+                    startVibemasterBarrier(boss, state);
+                    state.timers.barrier = VIBEMASTER_CONFIG.barrier.cooldown + (state.phase >= 3 ? 0 : 1.5);
+                }
+
+                if (state.phase >= 2 && state.timers.threads <= 0) {
+                    spawnVibemasterThreads(boss, state);
+                    state.timers.threads = VIBEMASTER_CONFIG.threads.cooldown;
+                }
+
+                if (state.phase >= 2 && state.timers.distortion <= 0 && (!state.distortion || !state.distortion.active)) {
+                    startVibemasterDistortion(boss, state);
+                    state.timers.distortion = VIBEMASTER_CONFIG.distortion.cooldown;
+                }
+
+                if (state.phase >= 2 && state.timers.guardians <= 0) {
+                    spawnVibemasterGuardians(boss, state, dmgScale);
+                    state.timers.guardians = VIBEMASTER_CONFIG.guardians.cooldown;
+                }
+
+                if (state.phase >= 3 && state.timers.ritual <= 0 && (!state.ritual || !state.ritual.active)) {
+                    startVibemasterRitual(boss, state);
+                    state.timers.ritual = VIBEMASTER_CONFIG.ritual.cooldown;
+                }
+
+                updateVibemasterRings(dt, boss, state, dmgScale);
+                updateVibemasterBarrier(dt, boss, state);
+                updateVibemasterThreads(dt, boss, state);
+                updateVibemasterGuardians(dt, boss, state, dmgScale);
+                updateVibemasterDistortion(dt, boss, state, dmgScale);
+                updateVibemasterVacuum(dt, boss, state);
+                if (state.ritual && state.ritual.active) {
+                    updateVibemasterRitual(dt, boss, state, dmgScale);
+                }
+            }
+
             function applyGeminiBossDamage(boss, amount, options = {}) {
                 const state = ensureGeminiState(boss);
                 if (!state) {
@@ -23776,6 +24652,7 @@
                 if (b.slowTimer > 0) { b.slowTimer -= dt; dt *= 0.3; }
 
                 switch (b.behavior) {
+                    case 'vibemaster': stepBossVibemaster(dt, b, dmgScale); break;
                     case 'gemini': stepBossGemini(dt, b, dmgScale); break;
                     case 'sentinel': stepBossOmegaSentinel(dt, b, dmgScale); break;
                     case 'aegis_architect': stepBossCoreAegisArchitect(dt, b, dmgScale); break;
@@ -24889,6 +25766,449 @@
                 });
             }
 
+            function drawVibemasterThreads(threads) {
+                if (!threads || !threads.length) return;
+                ctx.save();
+                threads.forEach(thread => {
+                    if (!thread || thread.life <= 0) return;
+                    const lifeRatio = clamp(thread.life / (thread.maxLife || thread.life), 0, 1);
+                    const width = thread.width * (0.65 + 0.35 * Math.sin(thread.pulse));
+                    const gradient = ctx.createLinearGradient(thread.startX, thread.startY, thread.endX, thread.endY);
+                    gradient.addColorStop(0, 'rgba(120, 220, 255, 0)');
+                    gradient.addColorStop(0.35, `rgba(168, 240, 255, ${0.45 * lifeRatio})`);
+                    gradient.addColorStop(0.65, `rgba(255, 210, 255, ${0.6 * lifeRatio})`);
+                    gradient.addColorStop(1, 'rgba(140, 180, 255, 0)');
+                    ctx.strokeStyle = gradient;
+                    ctx.globalAlpha = 0.75;
+                    ctx.lineWidth = width;
+                    ctx.beginPath();
+                    ctx.moveTo(thread.startX, thread.startY);
+                    ctx.lineTo(thread.endX, thread.endY);
+                    ctx.stroke();
+
+                    ctx.globalAlpha = 0.5 * lifeRatio;
+                    ctx.lineWidth = width * 0.4;
+                    ctx.strokeStyle = `rgba(40, 10, 80, ${0.4 + 0.3 * lifeRatio})`;
+                    ctx.beginPath();
+                    ctx.moveTo(thread.startX, thread.startY);
+                    ctx.lineTo(thread.endX, thread.endY);
+                    ctx.stroke();
+                });
+                ctx.restore();
+            }
+
+            function drawVibemasterRings(rings) {
+                if (!rings || !rings.length) return;
+                ctx.save();
+                const circumferenceCache = new Map();
+                rings.forEach(ring => {
+                    if (!ring || ring.life <= 0) return;
+                    const lifeRatio = clamp(ring.life / (ring.maxLife || ring.life), 0, 1);
+                    const pulse = 0.25 + 0.75 * Math.sin(ring.pulse);
+                    const radius = Math.max(10, ring.radius);
+                    const thickness = Math.max(2, ring.thickness * (0.9 + 0.2 * pulse));
+                    const circumference = circumferenceCache.get(radius) || (Math.PI * 2 * radius);
+                    circumferenceCache.set(radius, circumference);
+                    const dashLength = Math.max(6, circumference / Math.max(1, (ring.segmentCount || 8) * 2));
+                    ctx.setLineDash([dashLength * 0.9, dashLength * 0.9]);
+                    ctx.lineDashOffset = ring.pattern ? dashLength * 0.5 : 0;
+                    ctx.lineWidth = thickness;
+                    ctx.strokeStyle = `rgba(214, 169, 255, ${0.35 + 0.45 * lifeRatio})`;
+                    ctx.globalAlpha = 0.85;
+                    ctx.beginPath();
+                    ctx.arc(ring.x, ring.y, radius, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    ctx.globalAlpha = 0.3 * lifeRatio;
+                    ctx.lineWidth = thickness * 0.45;
+                    ctx.strokeStyle = 'rgba(30, 6, 60, 0.6)';
+                    ctx.beginPath();
+                    ctx.arc(ring.x, ring.y, radius, 0, Math.PI * 2);
+                    ctx.stroke();
+                });
+                ctx.setLineDash([]);
+                ctx.restore();
+            }
+
+            function drawVibemasterGuardians(guardians, phase) {
+                if (!guardians || !guardians.length) return;
+                const time = performance.now() / 1000;
+                guardians.forEach(guardian => {
+                    if (!guardian || guardian.dead) return;
+                    ctx.save();
+                    ctx.translate(guardian.x, guardian.y);
+                    const pulse = Math.sin(time * 3 + guardian.movePhase) * 0.25;
+                    const baseRadius = 16 + (phase >= 3 ? 4 : 0);
+                    const radius = baseRadius * (1 + pulse * 0.12) + (guardian.hitPulse || 0) * 8;
+                    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+                    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
+                    gradient.addColorStop(0.45, addAlpha(guardian.color || '#9de7ff', 0.7));
+                    gradient.addColorStop(1, addAlpha(guardian.color || '#9de7ff', 0));
+                    ctx.fillStyle = gradient;
+                    ctx.globalAlpha = 0.85;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.globalAlpha = 0.55;
+                    ctx.strokeStyle = addAlpha(guardian.color || '#9de7ff', 0.8);
+                    ctx.lineWidth = 2.2;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, radius * 1.1, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                });
+            }
+
+            function drawVibemasterDistortion(boss, distortion) {
+                if (!distortion || !distortion.active) return;
+                const ratio = distortion.duration > 0 ? clamp(distortion.timer / distortion.duration, 0, 1) : 0;
+                const outerRadius = (boss.r || 60) * (2 + (1 - ratio) * 0.8);
+                const innerRadius = outerRadius * 0.35;
+                const pulse = Math.sin(performance.now() / 140) * 0.2;
+                ctx.save();
+                ctx.globalAlpha = 0.25 + 0.25 * (1 - ratio);
+                const gradient = ctx.createRadialGradient(boss.x, boss.y, innerRadius * (0.8 + pulse), boss.x, boss.y, outerRadius);
+                gradient.addColorStop(0, 'rgba(200, 245, 255, 0.55)');
+                gradient.addColorStop(0.35, 'rgba(140, 120, 255, 0.35)');
+                gradient.addColorStop(0.65, 'rgba(60, 20, 90, 0.2)');
+                gradient.addColorStop(1, 'rgba(10, 0, 20, 0)');
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(boss.x, boss.y, outerRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            function drawVibemasterVacuum(boss, vacuum) {
+                if (!vacuum || !vacuum.active) return;
+                const ratio = vacuum.duration > 0 ? clamp(1 - vacuum.timer / vacuum.duration, 0, 1) : 1;
+                const outerRadius = (boss.r || 60) * (2.4 + ratio * 1.6);
+                ctx.save();
+                ctx.globalAlpha = 0.3 + 0.3 * ratio;
+                const gradient = ctx.createRadialGradient(boss.x, boss.y, 0, boss.x, boss.y, outerRadius);
+                gradient.addColorStop(0, 'rgba(250, 230, 255, 0.65)');
+                gradient.addColorStop(0.6, 'rgba(200, 150, 255, 0.28)');
+                gradient.addColorStop(1, 'rgba(150, 90, 255, 0)');
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(boss.x, boss.y, outerRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            function drawVibemasterBarrier(boss, barrier) {
+                if (!barrier || !barrier.active) return;
+                const hpRatio = barrier.maxHp > 0 ? clamp(barrier.hp / barrier.maxHp, 0, 1) : 0;
+                const radius = (boss.r || 60) + 32;
+                const glow = 0.7 + (barrier.hitPulse || 0) * 0.8;
+                const segmentCount = 6;
+                const arcSize = Math.PI * 2 / segmentCount * 0.6;
+                ctx.save();
+                ctx.translate(boss.x, boss.y);
+                ctx.rotate(barrier.angle);
+                ctx.lineWidth = 8;
+                ctx.shadowColor = 'rgba(180, 150, 255, 0.8)';
+                ctx.shadowBlur = 18 + glow * 12;
+                for (let i = 0; i < segmentCount; i++) {
+                    const start = (i / segmentCount) * Math.PI * 2 - arcSize / 2;
+                    const end = start + arcSize;
+                    const alpha = 0.35 + hpRatio * 0.55;
+                    ctx.strokeStyle = `rgba(188, 167, 255, ${alpha})`;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, radius, start, end);
+                    ctx.stroke();
+                }
+                ctx.shadowBlur = 0;
+                ctx.globalAlpha = 0.35 + 0.35 * hpRatio;
+                ctx.fillStyle = 'rgba(90, 70, 150, 0.35)';
+                ctx.beginPath();
+                ctx.arc(0, 0, radius - 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            function drawVibemasterRitual(boss, ritual) {
+                if (!ritual || !ritual.active) return;
+                const ratio = ritual.duration > 0 ? clamp(ritual.timer / ritual.duration, 0, 1) : 0;
+                const reach = (boss.r || 60) * 3.2;
+                const width = VIBEMASTER_CONFIG.ritual.beamWidth || 0.25;
+                const baseAlpha = 0.42 + (ritual.hitPulse || 0) * 0.6;
+                ctx.save();
+                ctx.translate(boss.x, boss.y);
+                ctx.globalAlpha = baseAlpha;
+                ctx.fillStyle = 'rgba(140, 245, 255, 0.45)';
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.arc(0, 0, reach, ritual.beamAngle - width, ritual.beamAngle + width);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.globalAlpha = 0.6 - ratio * 0.35;
+                ctx.strokeStyle = 'rgba(80, 200, 255, 0.55)';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.arc(0, 0, reach * 0.35, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            function drawVibemasterWingHalf(time, palette) {
+                const enginePulse = Math.sin(time * 5) * 10 + 25 + (palette.enraged ? 6 : 0);
+                const hue = (palette.wingHue + palette.phase * 18) % 360;
+                ctx.save();
+                ctx.translate(80, 0);
+
+                const engineGradient = ctx.createRadialGradient(0, 0, 5, 0, 0, enginePulse);
+                engineGradient.addColorStop(0, `hsla(${hue}, 100%, ${palette.enraged ? 92 : 88}%, 1)`);
+                engineGradient.addColorStop(0.3, `hsla(${(hue + 26) % 360}, 100%, 65%, 0.9)`);
+                engineGradient.addColorStop(1, `hsla(${(hue + 60) % 360}, 100%, 52%, 0)`);
+                ctx.fillStyle = engineGradient;
+                ctx.beginPath();
+                ctx.arc(0, 0, enginePulse, 0, Math.PI * 2);
+                ctx.fill();
+
+                const metallicWingGradient = ctx.createLinearGradient(0, -100, 180, 100);
+                metallicWingGradient.addColorStop(0, 'rgba(240, 240, 250, 0.85)');
+                metallicWingGradient.addColorStop(0.35, 'rgba(130, 130, 160, 0.72)');
+                metallicWingGradient.addColorStop(1, 'rgba(45, 45, 80, 0.9)');
+                ctx.fillStyle = metallicWingGradient;
+                ctx.strokeStyle = palette.strokeColor;
+                ctx.lineWidth = 2;
+                ctx.shadowColor = `hsla(${(hue + 140) % 360}, 100%, 70%, 0.9)`;
+                ctx.shadowBlur = 18 + (palette.enraged ? 10 : 0);
+                ctx.beginPath();
+                ctx.moveTo(0, -20);
+                ctx.lineTo(150, -100);
+                ctx.lineTo(180, -80);
+                ctx.lineTo(30, 20);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(20, 24);
+                ctx.lineTo(160, 102);
+                ctx.lineTo(140, 124);
+                ctx.lineTo(0, 32);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.shadowBlur = 0;
+                ctx.strokeStyle = `hsla(${(hue + 36) % 360}, 100%, 78%, 0.85)`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(20, 2);
+                ctx.quadraticCurveTo(100, -48, 160, -88);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(10, 30);
+                ctx.quadraticCurveTo(102, 74, 152, 116);
+                ctx.stroke();
+
+                ctx.restore();
+            }
+
+            function drawVibemasterPilotHalf(time, palette) {
+                ctx.save();
+
+                drawVibemasterWingHalf(time, palette);
+
+                const baseHue = (palette.baseHue + 360) % 360;
+                const exoskeletonGradient = ctx.createLinearGradient(-100, -200, 100, 200);
+                exoskeletonGradient.addColorStop(0, `hsl(${baseHue}, 100%, 70%)`);
+                exoskeletonGradient.addColorStop(0.5, `hsl(${(baseHue + 60) % 360}, 100%, 60%)`);
+                exoskeletonGradient.addColorStop(1, `hsl(${(baseHue + 120) % 360}, 100%, 52%)`);
+                ctx.strokeStyle = exoskeletonGradient;
+                ctx.fillStyle = exoskeletonGradient;
+                ctx.lineWidth = 4;
+                ctx.shadowColor = `hsl(${baseHue}, 100%, 62%)`;
+                ctx.shadowBlur = 24 + (palette.enraged ? 6 : 0);
+
+                ctx.beginPath();
+                ctx.moveTo(0, -90);
+                ctx.lineTo(60, -48);
+                ctx.lineTo(42, 104);
+                ctx.lineTo(0, 126);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.moveTo(50, -58);
+                ctx.arc(60, -58, 20, Math.PI, Math.PI * 2);
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.moveTo(76, -48);
+                ctx.lineTo(104, 50);
+                ctx.lineTo(84, 62);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(42, 104);
+                ctx.lineTo(62, 208);
+                ctx.lineTo(40, 220);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.arc(0, -148, 52, Math.PI * 0.5, Math.PI, false);
+                ctx.lineTo(-52, -100);
+                ctx.quadraticCurveTo(-22, -94, 0, -88);
+                ctx.closePath();
+                ctx.fill();
+
+                const visorHue = (palette.baseHue + palette.visorShift + Math.sin(time * 3) * 30 + 360) % 360;
+                ctx.fillStyle = `hsl(${visorHue}, 100%, 80%)`;
+                ctx.shadowColor = `hsl(${visorHue}, 100%, 78%)`;
+                ctx.shadowBlur = 22 + (palette.enraged ? 6 : 0);
+                ctx.fillRect(-46, -140, 48, 22);
+
+                ctx.shadowBlur = 0;
+                const metallicGradient = ctx.createLinearGradient(0, -80, 0, 110);
+                metallicGradient.addColorStop(0, '#ffffff');
+                metallicGradient.addColorStop(0.5, '#b3b3b3');
+                metallicGradient.addColorStop(1, '#8a8a8a');
+                ctx.strokeStyle = metallicGradient;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(12, -80);
+                ctx.lineTo(40, -60);
+                ctx.moveTo(6, 118);
+                ctx.lineTo(36, 108);
+                ctx.stroke();
+
+                ctx.restore();
+            }
+
+            function drawVibemasterPilotFigureCore(time, state, boss) {
+                const phase = state.phase || 1;
+                const isEnraged = !!boss.isEnraged;
+                const baseHue = (time * 50 + phase * 40 + (isEnraged ? 30 : 0)) % 360;
+                const palette = {
+                    baseHue,
+                    wingHue: (baseHue + 70) % 360,
+                    phase,
+                    strokeColor: 'rgba(192, 192, 220, 0.82)',
+                    visorShift: 140 + phase * 12,
+                    enraged: isEnraged
+                };
+
+                ctx.save();
+                drawVibemasterPilotHalf(time, palette);
+                ctx.scale(-1, 1);
+                drawVibemasterPilotHalf(time, palette);
+                ctx.restore();
+
+                ctx.save();
+                const heartPulse = 16 + Math.sin(time * 4.2) * (isEnraged ? 6 : 4);
+                ctx.globalAlpha = 0.75;
+                ctx.fillStyle = `hsla(${(baseHue + 30) % 360}, 100%, 76%, 0.85)`;
+                ctx.beginPath();
+                ctx.arc(0, -40, heartPulse, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                ctx.save();
+                const haloRadius = 138;
+                ctx.globalAlpha = 0.22 + (isEnraged ? 0.12 : 0);
+                ctx.strokeStyle = `hsla(${(baseHue + 80) % 360}, 100%, 70%, 0.75)`;
+                ctx.lineWidth = 6;
+                ctx.setLineDash([36, 18]);
+                ctx.beginPath();
+                ctx.arc(0, 12, haloRadius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.restore();
+            }
+
+            function drawVibemasterBoss(boss) {
+                const state = ensureVibemasterState(boss);
+                if (!state) return;
+
+                const activeBoss = store && store.boss;
+                const sameBoss = !!(activeBoss && (activeBoss === boss || (activeBoss.instanceId && boss.instanceId && activeBoss.instanceId === boss.instanceId) || (activeBoss._instanceId && boss._instanceId && activeBoss._instanceId === boss._instanceId)));
+                let bossHp = ensureFiniteNumber(boss.hp, 0);
+                let bossHpMax = ensureFiniteNumber(boss.hpMax, 1);
+                if (sameBoss) {
+                    bossHp = ensureFiniteNumber(activeBoss.hp, bossHp);
+                    bossHpMax = ensureFiniteNumber(activeBoss.hpMax, bossHpMax);
+                    boss.hp = bossHp;
+                    boss.hpMax = bossHpMax;
+                }
+                const hpRatio = bossHpMax > 0 ? clamp(bossHp / bossHpMax, 0, 1) : 0;
+
+                drawVibemasterThreads(store.vibemasterThreads || state.threads);
+                drawVibemasterVacuum(boss, store.vibemasterVacuum || state.vacuum);
+                drawVibemasterDistortion(boss, store.vibemasterDistortion || state.distortion);
+
+                if (Number.isFinite(boss.x) && Number.isFinite(boss.y)) {
+                    const bossRadius = Number.isFinite(boss.r) ? boss.r : 60;
+                    const radiusX = Math.max(30, bossRadius * 1.6);
+                    const radiusY = Math.max(14, bossRadius * 0.65);
+                    const alpha = Math.max(0.25, Math.min(0.55, 0.25 + bossRadius * 0.0025));
+                    drawEntityShadow(boss.x, boss.y, radiusX, radiusY, { alpha, yOffset: Math.max(18, bossRadius * 0.9) });
+                }
+
+                const time = performance.now() / 1000;
+                const baseRadius = Number.isFinite(boss.r) ? boss.r : 60;
+                const hover = Math.sin(time * 1.15 + (state.phase || 0) * 0.6) * Math.min(10, baseRadius * 0.18);
+                const figureScale = clamp((baseRadius * 2) / 420, 0.24, 0.5);
+                const auraRadius = Math.max(60, baseRadius * 1.35);
+
+                ctx.save();
+                ctx.translate(boss.x, boss.y + hover);
+                const auraGradient = ctx.createRadialGradient(0, 0, auraRadius * 0.32, 0, 0, auraRadius * 1.55);
+                auraGradient.addColorStop(0, 'rgba(255, 255, 255, 0.82)');
+                auraGradient.addColorStop(0.35, 'rgba(220, 180, 255, 0.5)');
+                auraGradient.addColorStop(0.78, 'rgba(50, 20, 100, 0.3)');
+                auraGradient.addColorStop(1, 'rgba(10, 4, 26, 0)');
+                ctx.globalAlpha = 0.75;
+                ctx.fillStyle = auraGradient;
+                ctx.beginPath();
+                ctx.arc(0, 0, auraRadius * 1.55, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.globalAlpha = 0.4 + (boss.isEnraged ? 0.2 : 0);
+                ctx.strokeStyle = `hsla(${(time * 35 + (state.phase || 0) * 50) % 360}, 100%, 75%, 0.6)`;
+                ctx.lineWidth = 2.5;
+                ctx.setLineDash([12, 10]);
+                ctx.beginPath();
+                ctx.arc(0, 0, auraRadius * 1.18, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.restore();
+
+                ctx.save();
+                ctx.translate(boss.x, boss.y + hover);
+                if (boss.isEnraged) {
+                    ctx.globalAlpha = 0.84 + 0.16 * Math.sin(time * 6.5);
+                }
+                ctx.scale(figureScale, figureScale);
+                drawVibemasterPilotFigureCore(time, state, boss);
+                ctx.restore();
+
+                drawVibemasterRitual(boss, state.ritual);
+                drawVibemasterBarrier(boss, state.barrier);
+                drawVibemasterRings(store.vibemasterRings || state.rings);
+                drawVibemasterGuardians(store.vibemasterGuardians || state.guardians, state.phase);
+
+                ctx.save();
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.fillRect(boss.x - 60, boss.y - (boss.r || 60) - 24, 120, 10);
+                ctx.fillStyle = '#d4b8ff';
+                ctx.fillRect(boss.x - 60, boss.y - (boss.r || 60) - 24, 120 * hpRatio, 10);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(boss.x - 60, boss.y - (boss.r || 60) - 24, 120, 10);
+
+                ctx.font = '11px Orbitron, Audiowide, sans-serif';
+                ctx.fillStyle = '#f9ecff';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Phase ${state.phase}`, boss.x, boss.y - (boss.r || 60) - 30);
+                ctx.restore();
+            }
+
             function drawBoss(t) {
                 // Special rendering for Heat Death of the Universe
                 if (t.isHeatDeath) {
@@ -24908,6 +26228,11 @@
 
                 if (t.behavior === 'gemini') {
                     drawGeminiBoss(t);
+                    return;
+                }
+
+                if (t.behavior === 'vibemaster') {
+                    drawVibemasterBoss(t);
                     return;
                 }
 
