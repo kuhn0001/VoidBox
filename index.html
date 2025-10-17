@@ -5396,6 +5396,30 @@
                 return bullet;
             }
 
+            function getBulletColorForSubclass() {
+                const p = store.player;
+                if (!p || !p.subclass) {
+                    return "#b266ff"; // Default purple
+                }
+                
+                switch (p.subclass) {
+                    case 'juggernaut':
+                        return "#ff6b6b"; // Red
+                    case 'marauder':
+                        return "#66ff99"; // Green
+                    case 'demolitioner':
+                        return "#ffd166"; // Gold/Orange
+                    case 'railgunner':
+                        return "#b794ff"; // Purple/Violet
+                    case 'phasestriker':
+                        return "#ff91d2"; // Pink
+                    case 'stormbringer':
+                        return "#6dd0ff"; // Cyan/Light Blue
+                    default:
+                        return "#b266ff"; // Default purple
+                }
+            }
+
             function spawnFragmentProjectile(props = {}) {
                 const defaults = {
                     x: 0,
@@ -10153,7 +10177,9 @@
                         spawnBossLoopChampions(bossLoopCount, bossHpScale);
                     }
                 } else {
-                    store.enemies = [];
+                    // Preserve Cube Burglar across wave transitions - it persists independently
+                    const burglarToKeep = store.enemies.find(e => e && e.type === 'cube_burglar' && !e.dead);
+                    store.enemies = burglarToKeep ? [burglarToKeep] : [];
                     store.waveSpawnQueue = [];
                     store.pendingSpawnCount = 0;
 
@@ -11309,13 +11335,15 @@
                                 e.marauderMarked = true;
                                 announce('CHAMPION DEVASTATION!');
                             } else {
+                                // Apply temporary flatten effect (3 second duration, not permanent)
                                 e.isFlattened = true;
                                 e.flattenedTime = performance.now();
+                                e.flattenDuration = 3.0; // Flatten lasts 3 seconds, then recovers
                                 e.v = 0;
                                 e.vx = 0;
                                 e.vy = 0;
                                 e.hp = Math.min(e.hp, 1);
-                                e.stunTimer = Math.max(e.stunTimer || 0, 999);
+                                e.stunTimer = 3.0; // Match flatten duration (not infinite!)
                                 e.fireRateChance = 0;
                                 e.flattenScale = { x: 2.0, y: 0.1 };
                                 const bonusText = multiplier >= 3.0 ? 'ELITE FLATTEN!' : 'MARAUDER FLATTEN!';
@@ -13398,6 +13426,24 @@
                         }
                     } else if (e.stunTimer && e.stunTimer > 0) {
                         e.stunTimer -= dt;
+                        
+                        // Recover from flatten effect as stun timer expires
+                        if (e.isFlattened && e.flattenDuration) {
+                            e.flattenDuration -= dt;
+                            // Gradually recover scale as flatten wears off
+                            const remainingRatio = Math.max(0, e.flattenDuration / 3.0);
+                            e.flattenScale = { 
+                                x: 1 + remainingRatio, // Scale from 2.0 back to 1.0
+                                y: 0.1 + remainingRatio * 0.9 // Scale from 0.1 back to 1.0
+                            };
+                            
+                            // When flatten expires completely, remove the effect
+                            if (e.flattenDuration <= 0) {
+                                e.isFlattened = false;
+                                e.flattenScale = null;
+                                e.hp = Math.max(1, e.hp); // Restore at least 1 HP so they don't die from the effect
+                            }
+                        }
                     } else {
                         let speedMultiplier = (e.slowTimer > 0) ? 0.3 : 1.0;
                         if (e.hitSlowTimer && e.hitSlowTimer > 0) {
@@ -13967,8 +14013,8 @@
                 }
 
                 const hasNonBurglarEnemies = store.enemies.some(enemy => enemy && !enemy.dead && enemy.type !== 'cube_burglar');
-                const cubeBurglarAlive = store.world.cubeBurglarActive ? getCubeBurglarActiveEnemy() : null;
-                if (!store.boss && !hasNonBurglarEnemies && !cubeBurglarAlive) {
+                // NOTE: Cube Burglar does NOT block progression - it persists across waves and bosses
+                if (!store.boss && !hasNonBurglarEnemies) {
                     // Add some delay before starting next wave to prevent rapid cycling
                     if (!store.world.waveTransitionTimer) {
                         store.world.waveTransitionTimer = performance.now();
@@ -14311,24 +14357,59 @@
                     store.goldenOrbs.length = 0;
                 }
 
-                // Clear any poison puddles and poison blobs from HIVE SOVEREIGN when boss is defeated
+                // ═══════════════════════════════════════════════════════════════════════
+                // COMPREHENSIVE BOSS CLEANUP: Clear all boss-related projectiles, effects, and hazards
+                // ═══════════════════════════════════════════════════════════════════════
+                
+                // Clear poison puddles and slow fields (HIVE SOVEREIGN, GEMINI systems)
                 if (store.poisonPuddles) {
                     store.poisonPuddles = [];
                 }
                 if (store.geminiSlowFields) {
                     store.geminiSlowFields = [];
                 }
+                
+                // Clear all VIBEMASTER systems (rings, threads, guardians, distortion field, vacuum)
                 store.vibemasterRings = [];
                 store.vibemasterThreads = [];
                 store.vibemasterGuardians = [];
                 store.vibemasterDistortion = null;
                 store.vibemasterVacuum = null;
-                // Also clear poison blobs still in flight to prevent persistent puddles
+                
+                // Clear all boss projectiles: poison blobs, EMP novas, lightning bolts, flame pulses
                 store.bullets = store.bullets.filter(b => {
                     if (b.type === 'poisonBlob') {
-                        bulletPool.release(b);
+                        if (bulletPool) bulletPool.release(b);
                         return false;
                     }
+                    return true;
+                });
+                
+                // Clear all enemy bullets/attacks that originated from the boss
+                store.eBullets = store.eBullets.filter(b => {
+                    if (b && (b.enemySource === store.boss || (b.bossBullet && b.type))) {
+                        if (store.eBulletPool && store.eBulletPool.push) {
+                            store.eBulletPool.push(b);
+                        }
+                        return false;
+                    }
+                    return true;
+                });
+                
+                // Clear EMP effects from boss attacks (esp. DEATH ENGINE)
+                store.empNovas = [];
+                
+                // Clear lightning chains/bolts from boss attacks (esp. DEATH ENGINE)
+                store.lightningBolts = [];
+                
+                // Clear flame pulses and related hazards
+                store.flamePulses = [];
+                store.mechPuddles = [];
+                
+                // Clear any lingering visual effects tied to boss
+                store.activeEffects = store.activeEffects.filter(e => {
+                    // Keep general effects, but clear boss-specific ones
+                    if (e && e.bossBullet) return false;
                     return true;
                 });
 
@@ -17862,6 +17943,7 @@
                 const cheatMultishot = Number.isFinite(p.cheatMultishotBonus) ? p.cheatMultishotBonus : 0;
                 const totalMultishot = Math.max(1, baseMultishot + cheatMultishot);
                 const angleSpread = 10;
+                const bulletColor = getBulletColorForSubclass();
                 for (let i = 0; i < totalMultishot; i++) {
                     const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180;
                     spawnBullet({
@@ -17870,7 +17952,7 @@
                         vx: Math.sin(angle) * bulletSpeed,
                         vy: -Math.cos(angle) * bulletSpeed,
                         r: p.explosive ? 5 : 3,
-                        col: p.explosive ? "#cc99ff" : "#b266ff",
+                        col: bulletColor,
                         dmg: 15 * p.dmgMult,
                         pierce: p.piercing,
                         explosive: p.explosive,
@@ -23848,123 +23930,273 @@
                 }
             }
             function stepBossTheHex(dt, b, dmgScale) {
+                // Initialize trap god state
+                if (!b.trapGodInitialized) {
+                    b.trapGodInitialized = true;
+                    b.phase = 1;
+                    b.moveT = 0;
+                    b.tiltDirection = 1; // 1 or -1
+                    b.attackCyclePhase = 0; // 0 or 1 (alternates between attacks)
+                    b.tiltTimer = 0;
+                    b.tiltActive = false;
+                    b.megaSlamTimer = -1;
+                    b.megaSlamActive = false;
+                    b.baseColor = '#ffd700'; // Gold
+                }
+
+                // Determine phase based on HP
+                const hpPercent = b.hp / b.hpMax;
+                const newPhase = hpPercent > 0.5 ? 1 : 2;
+                if (newPhase !== b.phase) {
+                    b.phase = newPhase;
+                    if (b.phase === 2) {
+                        playSound('trap');
+                        b.color = '#ff9500'; // Intensified gold/orange
+                        announce('🏆 TRAPEZOID GOD enters FURY MODE!');
+                    }
+                }
+
+                // ===== MOVEMENT =====
                 if (b.y >= 100) {
                     b.moveT += dt;
-                    if (b.dashTimer && b.dashTimer > 0) {
-                        b.dashTimer -= dt;
-                        b.x += b.vx * dt;
-                        b.x = clamp(b.x, b.r, W - b.r);
-                        if (b.dashTimer <= 0) {
-                            b.dashTimer = 0;
-                            b.vx = 0;
-                            b.dashTrailCooldown = 0;
+                    const phase1Speed = 0.4;
+                    const phase2Speed = 0.6;
+                    const moveSpeed = b.phase === 1 ? phase1Speed : phase2Speed;
+                    
+                    if (b.phase === 2 && Math.random() < 0.08 * dt) {
+                        // Phase 2: occasional small dips downward
+                        if (!b.isDipping) {
+                            b.isDipping = true;
+                            b.dipStartTime = performance.now();
                         }
-                    } else {
-                        const desiredX = W * 0.2 + (W * 0.6) * Math.abs(Math.sin(b.moveT * 0.4));
-                        const followSpeed = 6;
-                        b.x += (desiredX - b.x) * Math.min(1, followSpeed * dt);
                     }
+
+                    if (b.isDipping) {
+                        const dipDuration = 0.3;
+                        const timeSinceDip = (performance.now() - b.dipStartTime) / 1000;
+                        if (timeSinceDip < dipDuration) {
+                            b.y += 60 * Math.sin(Math.PI * timeSinceDip / dipDuration) * dt * 2;
+                        } else {
+                            b.isDipping = false;
+                        }
+                    }
+
+                    const desiredX = W * 0.25 + (W * 0.5) * Math.abs(Math.sin(b.moveT * moveSpeed));
+                    const followSpeed = b.phase === 1 ? 4 : 6;
+                    b.x += (desiredX - b.x) * Math.min(1, followSpeed * dt);
+                    b.x = clamp(b.x, b.r, W - b.r);
                 }
 
+                // ===== ATTACKS =====
                 b.fireT -= dt;
-                if (b.hp / b.hpMax < 0.5 && !b.isEnraged) {
-                    b.isEnraged = true;
-                    playSound('trap');
-                }
-                const fireRate = b.isEnraged ? 0.8 : 1.5;
+                
                 if (b.fireT <= 0) {
-                    b.fireT = fireRate;
-                    b.attackPhase = (b.attackPhase + 1) % 3;
-                    switch (b.attackPhase) {
-                        case 0:
-                            // Gold rain with interspersed powerups for strategic gambling
+                    const phase1FireRate = 2.0;
+                    const phase2FireRate = 1.3;
+                    b.fireT = b.phase === 1 ? phase1FireRate : phase2FireRate;
+
+                    // Phase 1: Standard Coinfall vs Tilt & Pour
+                    if (b.phase === 1) {
+                        if (b.attackCyclePhase === 0) {
+                            // Standard Coinfall
                             b.rainEvent = {
-                                remaining: 20,
-                                interval: 0.05,
-                                timer: 0
+                                remaining: 25,
+                                interval: 0.04,
+                                timer: 0,
+                                powerupChance: 0.15
                             };
-                            break;
-                        case 1:
-                            for (let i = 0; i < 4; i++) {
-                                const isHorizontal = i < 2;
-                                const y = isHorizontal ? 100 + i * 150 : 0;
-                                const x = isHorizontal ? 0 : 200 + (i - 2) * 250;
-                                const vx = isHorizontal ? 300 : 0;
-                                const vy = isHorizontal ? 0 : 300;
+                            announce('💰 Coins cascade down!');
+                        } else {
+                            // Tilt & Pour
+                            b.tiltActive = true;
+                            b.tiltTimer = 2.5; // Duration of pour
+                            b.tiltDirection = Math.random() < 0.5 ? 1 : -1;
+                            announce('🌊 Vault tilts!');
+                        }
+                        b.attackCyclePhase = (b.attackCyclePhase + 1) % 2;
+                    }
+                    // Phase 2: Torrential Coinfall vs Golden Wave vs Mega Slam
+                    else {
+                        const attack = Math.floor(Math.random() * 3);
+                        if (attack === 0) {
+                            // Torrential Coinfall (enhanced)
+                            b.rainEvent = {
+                                remaining: 40,
+                                interval: 0.025,
+                                timer: 0,
+                                powerupChance: 0.08,
+                                isTorrential: true
+                            };
+                            announce('⛈️ TORRENTIAL COINFALL!');
+                        } else if (attack === 1) {
+                            // Golden Wave
+                            const waveDirection = b.x < W / 2 ? 1 : -1;
+                            const waveStartX = waveDirection < 0 ? W : 0;
+                            for (let i = 0; i < 15; i++) {
                                 store.eBullets.push({
-                                    x: x,
-                                    y: y,
-                                    vx: vx,
-                                    vy: vy,
-                                    r: 4,
-                                    col: '#80ffff',
-                                    dmg: 20 * dmgScale,
-                                    isLaser: true,
-                                    life: 2.5
+                                    x: waveStartX,
+                                    y: H * 0.4 + (Math.random() - 0.5) * 80,
+                                    vx: waveDirection * 500,
+                                    vy: 0,
+                                    r: 6,
+                                    col: '#ffd700',
+                                    dmg: 20 * dmgScale
                                 });
                             }
-                            break;
-                        case 2:
-                            const targetX = store.player.x;
-                            const dx = targetX - b.x;
-                            const dashSpeed = 800;
-                            const direction = dx === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(dx);
-                            b.vx = direction * dashSpeed;
-                            b.dashTimer = 0.5;
-                            b.dashTrailCooldown = 0;
-                            break;
+                            announce('🌊 Golden Wave strikes!');
+                        } else {
+                            // Mega Slam setup
+                            b.megaSlamActive = true;
+                            b.megaSlamTimer = 1.5; // Charge time
+                            announce('💥 MEGA SLAM incoming!');
+                        }
                     }
                 }
-                if (b.rainEvent && b.rainEvent.remaining > 0) {
-                    b.rainEvent.timer -= dt;
-                    while (b.rainEvent.timer <= 0 && b.rainEvent.remaining > 0) {
-                        b.rainEvent.timer += b.rainEvent.interval;
-                        b.rainEvent.remaining--;
-                        if (Math.random() < 0.2) {
-                            const powerupTypes = ['double', 'missile', 'drones', 'shield'];
-                            const randomType = powerupTypes[Math.floor(Math.random() * powerupTypes.length)];
 
+                // ===== TILT & POUR ATTACK =====
+                if (b.tiltActive && b.tiltTimer > 0) {
+                    b.tiltTimer -= dt;
+                    
+                    // Spawn coins from tilted corner
+                    const cornerX = b.tiltDirection > 0 ? W : 0;
+                    const coinCount = Math.floor(10 * dt); // 10 coins per second
+                    for (let i = 0; i < coinCount; i++) {
+                        const spreadX = Math.random() * 60 - 30;
+                        const powerupSpawn = Math.random() < 0.1;
+                        
+                        if (powerupSpawn) {
+                            const shieldX = b.tiltDirection > 0 ? 100 : W - 100;
                             store.powerups.push({
-                                x: Math.random() * W,
-                                y: 0,
+                                x: shieldX + (Math.random() - 0.5) * 50,
+                                y: 50,
                                 vx: 0,
-                                vy: 250,
-                                r: 6,
-                                type: randomType,
-                                life: H / 250 + 2
+                                vy: 200,
+                                r: 8,
+                                type: 'shield',
+                                life: 6
                             });
                         } else {
                             store.eBullets.push({
-                                x: Math.random() * W,
-                                y: 0,
-                                vx: 0,
-                                vy: 250,
+                                x: cornerX + spreadX,
+                                y: 80,
+                                vx: b.tiltDirection * 100 + (Math.random() - 0.5) * 80,
+                                vy: 250 + Math.random() * 100,
                                 r: 5,
                                 col: '#ffc83d',
                                 dmg: 15 * dmgScale
                             });
                         }
                     }
-                    if (b.rainEvent.remaining <= 0) {
-                        b.rainEvent = null;
+
+                    if (b.tiltTimer <= 0) {
+                        b.tiltActive = false;
                     }
                 }
-                if (b.dashTimer && b.dashTimer > 0) {
-                    b.dashTrailCooldown -= dt;
-                    if (b.dashTrailCooldown <= 0) {
-                        b.dashTrailCooldown += 0.12;
+
+                // ===== MEGA SLAM ATTACK =====
+                if (b.megaSlamActive && b.megaSlamTimer >= 0) {
+                    b.megaSlamTimer -= dt;
+                    
+                    // Spawn power-up near corner during charge
+                    if (b.megaSlamTimer > 1.0 && !b.megaSlamPowerupSpawned) {
+                        b.megaSlamPowerupSpawned = true;
+                        const cornerX = Math.random() < 0.5 ? 100 : W - 100;
+                        store.powerups.push({
+                            x: cornerX + (Math.random() - 0.5) * 40,
+                            y: H * 0.3,
+                            vx: 0,
+                            vy: 0,
+                            r: 10,
+                            type: 'star_upgrade',
+                            life: 10
+                        });
+                    }
+
+                    // Fire mega coin when charge complete
+                    if (b.megaSlamTimer <= 0) {
+                        b.megaSlamActive = false;
+                        b.megaSlamPowerupSpawned = false;
+                        
+                        // Large slow-moving coin
                         store.eBullets.push({
                             x: b.x,
                             y: b.y,
                             vx: 0,
-                            vy: 0,
-                            r: 8,
-                            col: '#ff8080',
-                            dmg: 25 * dmgScale,
-                            life: 1
+                            vy: 150,
+                            r: 20,
+                            col: '#ffdd00',
+                            dmg: 40 * dmgScale,
+                            isMegaCoin: true,
+                            shockwaveTimer: 0
                         });
                     }
                 }
+
+                // ===== STANDARD COINFALL =====
+                if (b.rainEvent && b.rainEvent.remaining > 0) {
+                    b.rainEvent.timer -= dt;
+                    while (b.rainEvent.timer <= 0 && b.rainEvent.remaining > 0) {
+                        b.rainEvent.timer += b.rainEvent.interval;
+                        b.rainEvent.remaining--;
+                        
+                        // Spawn powerup occasionally
+                        if (Math.random() < b.rainEvent.powerupChance) {
+                            const powerupTypes = ['shield', 'missile', 'drones'];
+                            const randomType = powerupTypes[Math.floor(Math.random() * powerupTypes.length)];
+                            
+                            store.powerups.push({
+                                x: Math.random() * W,
+                                y: 0,
+                                vx: 0,
+                                vy: b.rainEvent.isTorrential ? 350 : 250,
+                                r: 7,
+                                type: randomType,
+                                life: H / 250 + 2
+                            });
+                        } else {
+                            // Regular coin
+                            const fallSpeed = b.rainEvent.isTorrential ? 350 : 250;
+                            store.eBullets.push({
+                                x: Math.random() * W,
+                                y: 0,
+                                vx: (Math.random() - 0.5) * 40,
+                                vy: fallSpeed,
+                                r: 5,
+                                col: '#ffc83d',
+                                dmg: b.rainEvent.isTorrential ? 18 * dmgScale : 15 * dmgScale
+                            });
+                        }
+                    }
+                    
+                    if (b.rainEvent.remaining <= 0) {
+                        b.rainEvent = null;
+                    }
+                }
+
+                // ===== MEGA COIN SHOCKWAVE EFFECT =====
+                store.eBullets.forEach(bullet => {
+                    if (bullet.isMegaCoin && bullet.y >= H - 20) {
+                        if (!bullet.hasExploded) {
+                            bullet.hasExploded = true;
+                            // Create shockwave - low to ground, spreading both directions
+                            for (let i = 0; i < 20; i++) {
+                                const angle = (i / 20) * Math.PI * 2;
+                                // Bias coins to spread horizontally at ground level
+                                const spreadFactor = Math.abs(Math.cos(angle)) > 0.3 ? 1.5 : 0.3;
+                                store.eBullets.push({
+                                    x: bullet.x,
+                                    y: H - 40,
+                                    vx: Math.cos(angle) * 300 * spreadFactor,
+                                    vy: Math.sin(angle) * 80 * spreadFactor + 100,
+                                    r: 6,
+                                    col: '#ffdd00',
+                                    dmg: 22 * dmgScale,
+                                    life: 1.5
+                                });
+                            }
+                        }
+                    }
+                });
             }
             function stepBossGeometron(dt, b, dmgScale) {
                 // Handle DEATH ENGINE specific behavior
@@ -24539,26 +24771,125 @@
                     switch (b.attackPhase) {
                         case 0:
                         case 2:
-                            // Poison blob barrage
+                            // Poison blob barrage - green from mouth, brown from rear
                             b.fireT = 1.8;
                             const numBlobs = 5 + Math.floor(store.world.wave / 10);
-                            for (let i = 0; i < numBlobs; i++) {
-                                const spread = Math.PI * 0.6;
-                                const baseAngle = Math.atan2(store.player.y - b.y, store.player.x - b.x);
-                                const angle = baseAngle + (Math.random() - 0.5) * spread;
-                                const speed = 180 + Math.random() * 80;
+                            
+                            // Decide if this attack is solo blobs or clusters
+                            const useClusters = Math.random() < 0.85; // 85% clusters, 15% solo
+                            
+                            if (useClusters) {
+                                // GREEN BLOBS FROM MOUTH - clustered
+                                const clusterSize = 2 + Math.floor(Math.random() * 3); // 2-4 blobs per cluster
+                                const numClusters = Math.ceil(numBlobs / clusterSize);
+                                
+                                for (let c = 0; c < numClusters; c++) {
+                                    const clusterBlobs = c === numClusters - 1 ? numBlobs - (c * clusterSize) : clusterSize;
+                                    const baseAngle = Math.atan2(store.player.y - b.y, store.player.x - b.x);
+                                    const clusterSpread = (Math.random() - 0.5) * 0.3; // Slight variance per cluster
+                                    
+                                    for (let i = 0; i < clusterBlobs; i++) {
+                                        const spread = Math.PI * 0.25; // Tighter spread within cluster
+                                        const angle = baseAngle + clusterSpread + (Math.random() - 0.5) * spread;
+                                        const speed = 180 + Math.random() * 80;
+                                        
+                                        const mouthOffsetDistance = 70;
+                                        const mouthX = b.x + Math.cos(baseAngle) * mouthOffsetDistance;
+                                        const mouthY = b.y + Math.sin(baseAngle) * mouthOffsetDistance;
 
-                                store.eBullets.push({
-                                    x: b.x,
-                                    y: b.y,
-                                    vx: Math.cos(angle) * speed,
-                                    vy: Math.sin(angle) * speed,
-                                    r: 8,
-                                    col: '#7cfc00',
-                                    dmg: 22 * dmgScale,
-                                    life: 4,
-                                    type: 'poisonBlob'
-                                });
+                                        store.eBullets.push({
+                                            x: mouthX,
+                                            y: mouthY,
+                                            vx: Math.cos(angle) * speed,
+                                            vy: Math.sin(angle) * speed,
+                                            r: 8,
+                                            col: '#7cfc00',
+                                            dmg: 22 * dmgScale,
+                                            life: 4,
+                                            type: 'poisonBlob'
+                                        });
+                                    }
+                                }
+                                
+                                // BROWN BLOBS FROM REAR - clustered
+                                for (let c = 0; c < numClusters; c++) {
+                                    const clusterBlobs = c === numClusters - 1 ? numBlobs - (c * clusterSize) : clusterSize;
+                                    const baseAngle = Math.atan2(store.player.y - b.y, store.player.x - b.x);
+                                    const rearAngle = baseAngle + Math.PI;
+                                    const clusterSpread = (Math.random() - 0.5) * 0.3; // Slight variance per cluster
+                                    
+                                    for (let i = 0; i < clusterBlobs; i++) {
+                                        const spread = Math.PI * 0.25; // Tighter spread within cluster
+                                        const angle = rearAngle + clusterSpread + (Math.random() - 0.5) * spread;
+                                        const speed = 180 + Math.random() * 80;
+                                        
+                                        const rearOffsetDistance = 40;
+                                        const rearX = b.x - Math.cos(baseAngle) * rearOffsetDistance;
+                                        const rearY = b.y - Math.sin(baseAngle) * rearOffsetDistance;
+
+                                        store.eBullets.push({
+                                            x: rearX,
+                                            y: rearY,
+                                            vx: Math.cos(angle) * speed,
+                                            vy: Math.sin(angle) * speed,
+                                            r: 8,
+                                            col: '#8B4513',
+                                            dmg: 22 * dmgScale,
+                                            life: 4,
+                                            type: 'poisonBlob'
+                                        });
+                                    }
+                                }
+                            } else {
+                                // SOLO BLOBS - spread out more
+                                const baseAngle = Math.atan2(store.player.y - b.y, store.player.x - b.x);
+                                
+                                // GREEN SOLO BLOBS FROM MOUTH
+                                for (let i = 0; i < numBlobs; i++) {
+                                    const spread = Math.PI * 0.8; // Wide spread for solo
+                                    const angle = baseAngle + (Math.random() - 0.5) * spread;
+                                    const speed = 180 + Math.random() * 80;
+                                    
+                                    const mouthOffsetDistance = 70;
+                                    const mouthX = b.x + Math.cos(baseAngle) * mouthOffsetDistance;
+                                    const mouthY = b.y + Math.sin(baseAngle) * mouthOffsetDistance;
+
+                                    store.eBullets.push({
+                                        x: mouthX,
+                                        y: mouthY,
+                                        vx: Math.cos(angle) * speed,
+                                        vy: Math.sin(angle) * speed,
+                                        r: 8,
+                                        col: '#7cfc00',
+                                        dmg: 22 * dmgScale,
+                                        life: 4,
+                                        type: 'poisonBlob'
+                                    });
+                                }
+                                
+                                // BROWN SOLO BLOBS FROM REAR
+                                for (let i = 0; i < numBlobs; i++) {
+                                    const spread = Math.PI * 0.8; // Wide spread for solo
+                                    const rearAngle = baseAngle + Math.PI;
+                                    const angle = rearAngle + (Math.random() - 0.5) * spread;
+                                    const speed = 180 + Math.random() * 80;
+                                    
+                                    const rearOffsetDistance = 40;
+                                    const rearX = b.x - Math.cos(baseAngle) * rearOffsetDistance;
+                                    const rearY = b.y - Math.sin(baseAngle) * rearOffsetDistance;
+
+                                    store.eBullets.push({
+                                        x: rearX,
+                                        y: rearY,
+                                        vx: Math.cos(angle) * speed,
+                                        vy: Math.sin(angle) * speed,
+                                        r: 8,
+                                        col: '#8B4513',
+                                        dmg: 22 * dmgScale,
+                                        life: 4,
+                                        type: 'poisonBlob'
+                                    });
+                                }
                             }
                             break;
 
