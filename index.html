@@ -5835,8 +5835,6 @@
                         store.activeEffects.push(createEffect('voidLockChains', store.boss.x, store.boss.y, (store.boss.r || 60) * 1.2));
                     }
                 }
-
-                store.activeEffects.push(createEffect('hitSpark', originX, originY, Math.max(enemy.r || 22, radius * 0.6), { strength: 70 }));
             }
 
             function applyChampionMinionProtocols(bullet, enemy, { baseDamage, championLevel }) {
@@ -5847,7 +5845,6 @@
                     const slowDuration = 0.55 + protocolLevel * 0.18;
                     enemy.hitSlowFactor = Math.min(enemy.hitSlowFactor || 1, bullet.minionProtocolSlowFactor);
                     enemy.hitSlowTimer = Math.max(enemy.hitSlowTimer || 0, slowDuration);
-                    store.activeEffects.push(createEffect('hitSpark', enemy.x, enemy.y, enemy.r || 16, { strength: 30 }));
                 }
 
                 if (protocolLevel >= 2 && bullet.minionProtocolNovaDamageScale > 0) {
@@ -5883,8 +5880,6 @@
                             });
                         }
                     }
-
-                    store.activeEffects.push(createEffect('hitSpark', enemy.x, enemy.y, Math.max(enemy.r || 18, radius * 0.65), { strength: 55 }));
                 }
             }
 
@@ -6008,7 +6003,6 @@
                 // Visual effect for armor penetration
                 const flashLevel = Math.max(1, Math.min(enemy.railgunCrackLevel || 1, 3));
                 store.activeEffects.push(createEffect('armorCrackFlash', enemy.x, enemy.y, flashLevel));
-                store.activeEffects.push(createEffect('hitSpark', enemy.x, enemy.y, 20, { strength: 52 }));
             }
 
             function applyKineticSwarm(enemy, { finalDamage, championLevel }) {
@@ -6016,7 +6010,6 @@
 
                 // Kinetic Swarm: Rapid fire effect with small visual impact
                 const intensity = Math.min(4, championLevel);
-                store.activeEffects.push(createEffect('hitSpark', enemy.x, enemy.y, 14, { strength: 18 + intensity * 4 }));
             }
 
             // FIRE MODULES
@@ -6070,7 +6063,6 @@
                 // Explosion effect (subtle)
                 const visualRadius = Math.min(52, radius * 0.28);
                 store.activeEffects.push(createEffect('jugFearEmber', enemy.x, enemy.y, visualRadius));
-                store.activeEffects.push(createEffect('hitSpark', enemy.x, enemy.y, visualRadius * 0.9, { strength: 42 }));
             }
 
             function applyPlasmaStream(enemy, { finalDamage, championLevel }) {
@@ -6451,6 +6443,29 @@
                         crit: didCrit,
                         effect: false
                     });
+
+                    // Fragment blast hits get gold spark effect + knockback + slow + gold tint
+                    if (b.isFragment) {
+                        store.activeEffects.push(createEffect('hitSpark', hitX, hitY, 45, { 
+                            strength: 180, // Increased from 120 for bigger splashes
+                            colorMode: 'gold',
+                            crit: didCrit 
+                        }));
+                        
+                        // Knockback from fragment blast
+                        const knockbackDir = Math.atan2(e.y - b.y, e.x - b.x);
+                        e.knockback = e.knockback || {};
+                        e.knockback.vx = Math.cos(knockbackDir) * 200; // Increased from 160
+                        e.knockback.vy = Math.sin(knockbackDir) * 200;
+                        e.knockback.type = 'impact';
+                        e.knockback.duration = 0.18;
+                        e.knockback.timer = 0.18;
+                        
+                        // Slow effect for 3 seconds
+                        e.fragmentBlastSlowFactor = 0.65;
+                        e.fragmentBlastSlowTimer = 3.0;
+                        e.fragmentBlastGoldTint = true;
+                    }
 
                     if (e === store.boss || e.type === 'cube_burglar') {
                         const isBurglar = e.type === 'cube_burglar';
@@ -13437,6 +13452,17 @@
                         } else if (e.hitSlowFactor && e.hitSlowFactor !== 1 && (!e.hitSlowTimer || e.hitSlowTimer <= 0)) {
                             e.hitSlowFactor = 1;
                         }
+                        
+                        // Fragment blast slow effect
+                        if (e.fragmentBlastSlowTimer && e.fragmentBlastSlowTimer > 0) {
+                            const slowFactor = e.fragmentBlastSlowFactor !== undefined ? e.fragmentBlastSlowFactor : 0.65;
+                            speedMultiplier *= Math.max(0.3, Math.min(1, slowFactor));
+                            e.fragmentBlastSlowTimer = Math.max(0, e.fragmentBlastSlowTimer - dt);
+                            if (e.fragmentBlastSlowTimer <= 0) {
+                                e.fragmentBlastGoldTint = false;
+                            }
+                        }
+                        
                         if (e.slowTimer > 0) e.slowTimer -= dt;
                         if (e.phaseLockTimer > 0) {
                             speedMultiplier *= e.phaseLockSlowFactor || 0.4;
@@ -18871,6 +18897,34 @@
                     ctx.lineTo(0, radius * 1.9);
                     ctx.lineTo(radius * 0.6, radius * 1.2);
                     ctx.stroke();
+                    ctx.restore();
+                }
+                
+                // Fragment blast gold tint overlay
+                if (e.fragmentBlastGoldTint && e.fragmentBlastSlowTimer && e.fragmentBlastSlowTimer > 0) {
+                    ctx.save();
+                    const pulseStrength = 0.5 + 0.3 * Math.sin(performance.now() / 150);
+                    ctx.globalAlpha = 0.35 * pulseStrength;
+                    ctx.globalCompositeOperation = 'lighter';
+                    
+                    // Gold gradient overlay
+                    const goldGradient = ctx.createRadialGradient(0, 0, a * 0.3, 0, 0, a * 1.3);
+                    goldGradient.addColorStop(0, 'rgba(255, 250, 205, 0.8)');
+                    goldGradient.addColorStop(0.5, 'rgba(252, 246, 186, 0.5)');
+                    goldGradient.addColorStop(1, 'rgba(191, 149, 63, 0)');
+                    ctx.fillStyle = goldGradient;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, a * 1.3, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Bright edge highlight
+                    ctx.globalAlpha = 0.4 * pulseStrength;
+                    ctx.strokeStyle = '#FFFACD';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, a * 1.1, 0, Math.PI * 2);
+                    ctx.stroke();
+                    
                     ctx.restore();
                 }
                 ctx.restore();
@@ -29580,20 +29634,40 @@
                         };
                         break;
                     case "hitSpark":
-                        effect.maxLife = 0.22;
+                        effect.maxLife = opts.colorMode === 'gold' ? 0.5 : 0.22;
                         effect.life = effect.maxLife;
                         effect.radius = radius || 14;
-                        effect.sparks = Array.from({ length: opts.crit ? 8 : 5 }, (_, i) => {
-                            const spread = (Math.random() - 0.5) * 0.9;
-                            const angle = (opts.angle ?? 0) + spread;
-                            const power = (opts.strength ?? 120) * (0.45 + Math.random() * 0.35);
-                            return {
-                                angle,
-                                speed: power * 0.015,
-                                length: effect.radius * (opts.crit ? 1.6 : 1.2) * (0.9 + Math.random() * 0.3),
-                                offset: (i / Math.max(1, (opts.crit ? 8 : 5))) * 0.35
-                            };
-                        });
+                        effect.colorMode = opts.colorMode || 'pink'; // 'pink' or 'gold'
+                        
+                        // For gold splash, create more liquid-like particles with enhanced visuals
+                        if (opts.colorMode === 'gold') {
+                            effect.splashParticles = Array.from({ length: 24 }, (_, i) => { // Increased from 16 to 24 particles
+                                const angle = (i / 24) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
+                                const speed = 250 + Math.random() * 300; // Increased from 180-400 to 250-550
+                                return {
+                                    angle,
+                                    speed,
+                                    size: 10 + Math.random() * 14, // Increased from 6-14 to 10-24 (much bigger!)
+                                    life: 0.5 + Math.random() * 0.2,
+                                    maxLife: 0.5 + Math.random() * 0.2,
+                                    wobble: Math.random() * Math.PI * 2,
+                                    wobbleSpeed: 4 + Math.random() * 6
+                                };
+                            });
+                        } else {
+                            effect.sparks = Array.from({ length: opts.crit ? 8 : 5 }, (_, i) => {
+                                const spread = (Math.random() - 0.5) * 0.9;
+                                const angle = (opts.angle ?? 0) + spread;
+                                const power = (opts.strength ?? 120) * (0.45 + Math.random() * 0.35);
+                                return {
+                                    angle,
+                                    speed: power * 0.015,
+                                    length: effect.radius * (opts.crit ? 1.6 : 1.2) * (0.9 + Math.random() * 0.3),
+                                    offset: (i / Math.max(1, (opts.crit ? 8 : 5))) * 0.35
+                                };
+                            });
+                        }
+                        
                         effect.step = function (dt) {
                             this.life -= dt;
                             if (this.life <= 0) this.isActive = false;
@@ -29604,18 +29678,66 @@
                             ctx.save();
                             ctx.translate(this.x, this.y);
                             ctx.globalCompositeOperation = 'lighter';
-                            ctx.globalAlpha = 0.75 * fade;
-                            ctx.strokeStyle = opts.crit ? '#ffd6ff' : '#ff9adb';
-                            ctx.lineWidth = opts.crit ? 2.6 * fade : 1.8 * fade;
-                            this.sparks.forEach(spark => {
-                                const dist = spark.length * fade;
-                                const dx = Math.cos(spark.angle) * dist;
-                                const dy = Math.sin(spark.angle) * dist;
+                            
+                            // Gold metallic splash mode
+                            if (this.colorMode === 'gold') {
+                                // Larger core splash - increased significantly
+                                const coreRadius = this.radius * (1.2 + t * 1.8); // Increased expansion
+                                ctx.globalAlpha = 0.7 * fade; // Increased alpha from 0.6
+                                const coreGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, coreRadius);
+                                coreGradient.addColorStop(0, 'rgba(255, 250, 205, 0.95)');
+                                coreGradient.addColorStop(0.5, 'rgba(252, 246, 186, 0.8)');
+                                coreGradient.addColorStop(1, 'rgba(191, 149, 63, 0)');
+                                ctx.fillStyle = coreGradient;
                                 ctx.beginPath();
-                                ctx.moveTo(Math.cos(spark.angle) * spark.offset * this.radius, Math.sin(spark.angle) * spark.offset * this.radius);
-                                ctx.lineTo(dx, dy);
-                                ctx.stroke();
-                            });
+                                ctx.arc(0, 0, coreRadius, 0, Math.PI * 2);
+                                ctx.fill();
+                                
+                                // Liquid gold splash particles - bigger and brighter
+                                ctx.globalAlpha = 1.0 * fade; // Max alpha for particles
+                                this.splashParticles.forEach((particle, idx) => {
+                                    particle.life -= 1 / 60; // Approximate dt
+                                    const particleFade = Math.max(0, particle.life / particle.maxLife);
+                                    
+                                    const dist = particle.speed * t;
+                                    const wobbleOffset = Math.sin(t * particle.wobbleSpeed) * 12; // Increased wobble
+                                    const px = Math.cos(particle.angle) * dist + wobbleOffset * Math.sin(particle.angle);
+                                    const py = Math.sin(particle.angle) * dist + wobbleOffset * Math.cos(particle.angle);
+                                    
+                                    // Larger gradient for each drop
+                                    const dropGradient = ctx.createRadialGradient(px, py, 0, px, py, particle.size);
+                                    dropGradient.addColorStop(0, 'rgba(255, 250, 205, 1)'); // Brighter
+                                    dropGradient.addColorStop(0.5, 'rgba(252, 246, 186, 0.9)');
+                                    dropGradient.addColorStop(0.7, 'rgba(191, 149, 63, 0.8)');
+                                    dropGradient.addColorStop(1, 'rgba(170, 119, 28, 0)');
+                                    
+                                    ctx.fillStyle = dropGradient;
+                                    ctx.beginPath();
+                                    ctx.arc(px, py, particle.size * particleFade, 0, Math.PI * 2);
+                                    ctx.fill();
+                                });
+                                
+                                // Bright center highlight - larger
+                                ctx.globalAlpha = 0.8 * fade; // Increased from 0.7
+                                ctx.fillStyle = '#FFFACD';
+                                ctx.beginPath();
+                                ctx.arc(0, 0, this.radius * 0.8, 0, Math.PI * 2); // Increased from 0.5
+                                ctx.fill();
+                            } else {
+                                // Original pink mode
+                                ctx.globalAlpha = 0.75 * fade;
+                                ctx.strokeStyle = opts.crit ? '#ffd6ff' : '#ff9adb';
+                                ctx.lineWidth = opts.crit ? 2.6 * fade : 1.8 * fade;
+                                this.sparks.forEach(spark => {
+                                    const dist = spark.length * fade;
+                                    const dx = Math.cos(spark.angle) * dist;
+                                    const dy = Math.sin(spark.angle) * dist;
+                                    ctx.beginPath();
+                                    ctx.moveTo(Math.cos(spark.angle) * spark.offset * this.radius, Math.sin(spark.angle) * spark.offset * this.radius);
+                                    ctx.lineTo(dx, dy);
+                                    ctx.stroke();
+                                });
+                            }
                             ctx.restore();
                         };
                         break;
@@ -33709,7 +33831,6 @@
                         if (dx * dx + dy * dy <= hitRadius * hitRadius) {
                             championDealDamage(enemy, damage, { x: champion.x, y: champion.y });
                             if (enemy.id) champion.dashHits.add(enemy.id);
-                            store.activeEffects.push(createEffect('hitSpark', enemy.x, enemy.y, enemy.r || 18, { strength: 65 }));
                         }
                         return false;
                     });
@@ -35310,8 +35431,8 @@
             function stepFragmentBlasters(dt, p) {
                 if (!p.fragmentBlasters || p.fragmentBlasters.length === 0) return;
 
-                const meleeRange = 120; // Maximum range for fragments
-                const triggerRange = 60; // Half of melee range - when to fire
+                const meleeRange = 280; // Significantly increased range for larger hitboxes
+                const triggerRange = 200; // Doubled from 60 - to hit bosses from further away
 
                 for (let i = 0; i < p.fragmentBlasters.length; i++) {
                     const barrel = p.fragmentBlasters[i];
@@ -35327,10 +35448,11 @@
                     // Skip if on cooldown or in barrel delay
                     if (barrel.cooldown > 0 || barrel.barrelDelay > 0) continue;
 
-                    // Find nearest enemy within trigger range
+                    // Find nearest enemy within trigger range (including boss)
                     let nearestEnemy = null;
                     let nearestDist = triggerRange;
 
+                    // Check regular enemies
                     for (const e of store.enemies) {
                         if (e.dead) continue;
                         const dx = e.x - p.x;
@@ -35342,6 +35464,19 @@
                             nearestEnemy = e;
                         }
                     }
+                    
+                    // Also check for boss
+                    if (store.boss && !store.boss.dead) {
+                        const bossRadius = store.boss.r || 60;
+                        const dx = store.boss.x - p.x;
+                        const dy = store.boss.y - p.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy) - bossRadius;
+                        
+                        if (dist < nearestDist) {
+                            nearestDist = dist;
+                            nearestEnemy = store.boss;
+                        }
+                    }
 
                     // Fire if enemy found
                     if (nearestEnemy) {
@@ -35350,20 +35485,20 @@
                         const dy = nearestEnemy.y - p.y;
                         const angle = Math.atan2(dy, dx);
 
-                        // Fire a shotgun blast of fragments
-                        const fragmentCount = 10;
-                        const spreadAngle = 0.5; // ~30 degrees spread
+                        // Fire a larger shotgun blast of fragments - increased count and speed
+                        const fragmentCount = 18; // Increased from 10 - more projectiles
+                        const spreadAngle = 0.7; // Increased from 0.5 - wider spread
                         
                         for (let j = 0; j < fragmentCount; j++) {
                             const offsetAngle = angle + (Math.random() - 0.5) * spreadAngle;
-                            const speed = 400 + Math.random() * 100;
+                            const speed = 520 + Math.random() * 150; // Increased from 400-500 to 520-670
 
                             spawnFragmentProjectile({
                                 x: p.x,
                                 y: p.y,
                                 vx: Math.cos(offsetAngle) * speed,
                                 vy: Math.sin(offsetAngle) * speed,
-                                r: 2,
+                                r: 3, // Increased projectile size from 2 to 3
                                 col: '#ff9944',
                                 dmg: 8 * p.dmgMult,
                                 pierce: p.piercing,
