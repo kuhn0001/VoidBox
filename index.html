@@ -9942,25 +9942,7 @@
                             enemy.slowTimer = 0;
                             const speed = enemy.lungeSpeed || VOID_REAPER_CONFIG.lungeSpeed;
                             
-                            // Track player until close, then go straight for dodging
-                            const player = store.player;
-                            const dx = player.x - enemy.x;
-                            const dy = player.y - enemy.y;
-                            const distToPlayer = Math.sqrt(dx * dx + dy * dy);
-                            
-                            // When far from player (>300 units), curve toward them
-                            // When close (<300 units), lock direction for dodgeable straight line
-                            if (distToPlayer > 300 && !enemy.lockedForDodge) {
-                                // Update direction to track player
-                                const targetAngle = Math.atan2(dy, dx);
-                                enemy.heading = targetAngle;
-                                enemy.lungeDirX = Math.cos(targetAngle);
-                                enemy.lungeDirY = Math.sin(targetAngle);
-                            } else {
-                                // Lock direction when close enough
-                                enemy.lockedForDodge = true;
-                            }
-                            
+                            // Use locked-in direction from emerging phase - NO trajectory changes!
                             const dirX = enemy.lungeDirX || Math.cos(enemy.heading || 0);
                             const dirY = enemy.lungeDirY || Math.sin(enemy.heading || 0);
                             enemy.x += dirX * speed * dt;
@@ -9969,62 +9951,61 @@
                             const total = Math.max(1, enemy.totalLungeDistance || 1);
                             enemy.lungeProgress = Math.min(1.15, enemy.lungeDistanceTravelled / total);
 
+                            const player = store.player;
                             if (player && !player.isInvincible && !playerIsInvulnerable()) {
                                 const px = player.x - enemy.x;
                                 const py = player.y - enemy.y;
                                 const dist = Math.sqrt(px * px + py * py);
-                                const reach = enemy.scytheReach || VOID_REAPER_CONFIG.scytheReach;
+                                const playerRadius = player.r || 15;
+                                const reaperRadius = enemy.r || 24;
+                                const reach = playerRadius + reaperRadius + 8; // Direct collision distance
+                                
+                                // Only damage on DIRECT COLLISION - no distance checks
                                 if (dist <= reach) {
-                                    const angleToPlayer = Math.atan2(py, px);
-                                    let diff = angleToPlayer - (enemy.heading || 0);
-                                    if (diff > Math.PI) diff -= Math.PI * 2;
-                                    if (diff < -Math.PI) diff += Math.PI * 2;
-                                    const arc = (enemy.scytheArc || VOID_REAPER_CONFIG.scytheArc) * (0.7 + 0.3 * Math.min(1, enemy.lungeProgress || 0));
-                                    if (Math.abs(diff) <= arc * 0.5) {
-                                        // Check for Shield Pulse (EMP) protection
-                                        if (store.empCharges && store.empCharges.length > 0) {
-                                            // Shield Pulse blocks the reaper!
-                                            const charge = store.empCharges[0];
-                                            triggerEmpBurst(charge.x, charge.y);
-                                            charge.cooldown = EMP_BURST_CONFIG.chargeCooldown;
-                                            store.empGlobalCooldown = Math.max(store.empGlobalCooldown || 0, EMP_BURST_CONFIG.globalCooldown || 0);
-                                            announce('⚡ SHIELD PULSE STOPPED THE REAPER! ⚡');
-                                            screenFlash(1, 200, 'rgba(100, 200, 255, 0.4)');
-                                            // Stun the reaper without dealing direct damage
-                                            enemy.stunTimer = 3.5;
-                                            enemy.phase = 'recovering';
-                                            enemy.hitSlowFactor = 0.3;
-                                            enemy.hitSlowTimer = 4;
-                                            store.activeEffects.push(createEffect('empShockwave', enemy.x, enemy.y, 280));
-                                            return;
-                                        }
-                                        // Check for Aft Flank Shield protection (if reaper is behind player)
-                                        const reaperAngleToPlayer = Math.atan2(player.y - enemy.y, player.x - enemy.x);
-                                        const playerFacingAngle = player.heading || 0;
-                                        let facingDiff = reaperAngleToPlayer - playerFacingAngle;
-                                        if (facingDiff > Math.PI) facingDiff -= Math.PI * 2;
-                                        if (facingDiff < -Math.PI) facingDiff += Math.PI * 2;
-                                        const isFromBehind = Math.abs(facingDiff) > Math.PI * 0.5; // Behind if angle > 90 degrees
-                                        
-                                        if (player.hasRearGuard && player.rearGuardReady && isFromBehind) {
-                                            // Aft Flank Shield blocks the reaper from behind!
-                                            player.rearGuardReady = false;
-                                            player.rearGuardCooldown = 8;
-                                            announce('🛡️ AFT FLANKSHIELD STOPPED THE REAPER! 🛡️');
-                                            playSound('stargun');
-                                            screenFlash(1, 200, 'rgba(255, 215, 0, 0.4)');
-                                            store.activeEffects.push(createEffect("rearGuardBlock"));
-                                            // Stun and damage the reaper
-                                            enemy.hp -= 60;
-                                            enemy.stunTimer = 2.5;
-                                            enemy.phase = 'recovering';
-                                            enemy.hitSlowFactor = 0.4;
-                                            enemy.hitSlowTimer = 3;
-                                            return;
-                                        }
-                                        
-                                        takeDamage(player.hp + player.shield + player.hpMax + 999);
+                                    // Check for Shield Pulse (EMP) protection
+                                    if (store.empCharges && store.empCharges.length > 0) {
+                                        // Shield Pulse blocks the reaper!
+                                        const charge = store.empCharges[0];
+                                        triggerEmpBurst(charge.x, charge.y);
+                                        charge.cooldown = EMP_BURST_CONFIG.chargeCooldown;
+                                        store.empGlobalCooldown = Math.max(store.empGlobalCooldown || 0, EMP_BURST_CONFIG.globalCooldown || 0);
+                                        announce('⚡ SHIELD PULSE STOPPED THE REAPER! ⚡');
+                                        screenFlash(1, 200, 'rgba(100, 200, 255, 0.4)');
+                                        // Stun the reaper without dealing direct damage
+                                        enemy.stunTimer = 3.5;
+                                        enemy.phase = 'recovering';
+                                        enemy.hitSlowFactor = 0.3;
+                                        enemy.hitSlowTimer = 4;
+                                        store.activeEffects.push(createEffect('empShockwave', enemy.x, enemy.y, 280));
+                                        return;
                                     }
+                                    // Check for Aft Flank Shield protection (if reaper is behind player)
+                                    const reaperAngleToPlayer = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+                                    const playerFacingAngle = player.heading || 0;
+                                    let facingDiff = reaperAngleToPlayer - playerFacingAngle;
+                                    if (facingDiff > Math.PI) facingDiff -= Math.PI * 2;
+                                    if (facingDiff < -Math.PI) facingDiff += Math.PI * 2;
+                                    const isFromBehind = Math.abs(facingDiff) > Math.PI * 0.5; // Behind if angle > 90 degrees
+                                    
+                                    if (player.hasRearGuard && player.rearGuardReady && isFromBehind) {
+                                        // Aft Flank Shield blocks the reaper from behind!
+                                        player.rearGuardReady = false;
+                                        player.rearGuardCooldown = 8;
+                                        announce('🛡️ AFT FLANKSHIELD STOPPED THE REAPER! 🛡️');
+                                        playSound('stargun');
+                                        screenFlash(1, 200, 'rgba(255, 215, 0, 0.4)');
+                                        store.activeEffects.push(createEffect("rearGuardBlock"));
+                                        // Stun and damage the reaper
+                                        enemy.hp -= 60;
+                                        enemy.stunTimer = 2.5;
+                                        enemy.phase = 'recovering';
+                                        enemy.hitSlowFactor = 0.4;
+                                        enemy.hitSlowTimer = 3;
+                                        return;
+                                    }
+                                    
+                                    // Direct hit kills the player (instant)
+                                    takeDamage(player.hp + player.shield + player.hpMax + 999);
                                 }
                             }
 
