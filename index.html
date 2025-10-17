@@ -4404,7 +4404,7 @@
                 vampirism: 0, shield: 25, shieldMax: 50, multishot: 2, maxMultishot: 2, isInvincible: false, piercing: 0, explosive: false,
                 timeShardStacks: 0, timeShardTimer: 0, timeShardMultiplier: 1,
                 hasShieldBubble: false, powerupTimers: {},
-                swirlShots: false, attackSpeedStacks: 0,
+                attackSpeedStacks: 0,
                 hasRicochet: false,
                 ricochetLevel: 0,
                 upgradeLevels: { dmg: 0, speed: 0, hp: 0, max_shield: 0, crit_chance: 0, ghost_hounds: 0, launcher: 0, lazarus_beam: 0, gravity_well: 0, star_cannon: 0, fragment_blast: 0, ricochet: 0 },
@@ -4867,11 +4867,11 @@
 
             const BOSS_ROTATION = Object.freeze([
                 'void_sentinel',
-                'vibemaster',
                 'trap_god',
                 'aegis_architect',
                 'hive_sovereign',
                 'shadow_mirror',
+                'vibemaster',
                 'death_engine',
                 'sol_luna',
                 'asynchronos'
@@ -7715,7 +7715,6 @@
                 'void_core': { name: 'VOID CORE', icon: '🌀', duration: 25, type: 'timed' },
                 'cash': { name: 'CASH INFUSION', icon: '💰', duration: 0, type: 'instant', isSpecial: true },
                 'attack_speed': { name: 'HYPER DRIVE', icon: '⚡', duration: 0, type: 'instant', isSpecial: true },
-                'swirly_upgrade': { name: 'SWIRL CORE', icon: '🌪️', duration: 0, type: 'instant', isSpecial: true },
                 'star_upgrade': { name: 'STAR CORE', icon: '🌠', duration: 0, type: 'instant', isSpecial: true },
                 'shadow_champion_token': { name: 'CHAMPION SIGIL', icon: '⚔️', duration: 0, type: 'instant', isSpecial: true },
                 'collar_fragment': { name: 'COLLAR FRAGMENT', icon: '⛓️', duration: 0, type: 'instant', isSpecial: true },
@@ -7794,9 +7793,9 @@
                 store.powerups.push({ x, y, r: 14, type: 'void_core' });
             }
 
-            const VOID_CHAMPION_REWARD_POOL = ['multishot_bundle', 'attack_speed', 'swirly_upgrade', 'star_upgrade'];
+            const VOID_CHAMPION_REWARD_POOL = ['multishot_bundle', 'attack_speed', 'star_upgrade'];
             const VOID_CHAMPION_REWARD_MAP = {
-                purple: 'swirly_upgrade',
+                purple: 'attack_speed',
                 crimson: 'attack_speed',
                 azure: 'multishot_bundle',
                 emerald: 'star_upgrade',
@@ -8103,10 +8102,6 @@
                         spawnSpecialPowerup('attack_speed', dropX, dropY);
                         announce(`${scheme.name} dismantled! Hyper drive matrix recovered!`);
                         break;
-                    case 'swirly_upgrade':
-                        spawnSpecialPowerup('swirly_upgrade', dropX, dropY);
-                        announce(`${scheme.name} collapsed! Swirl core resonance secured!`);
-                        break;
                     case 'star_upgrade':
                         spawnSpecialPowerup('star_upgrade', dropX, dropY);
                         announce(`${scheme.name} defeated! Star core schematics salvaged!`);
@@ -8196,16 +8191,6 @@
                     p.attackSpeedStacks = newStacks;
                     p.fireRate = Math.max(p.fireRate * 0.88, 0.045);
                     announce(`HYPER DRIVE +12% (${newStacks} stack${newStacks === 1 ? '' : 's'})`);
-                    return;
-                }
-                if (typeKey === 'swirly_upgrade') {
-                    if (!p.swirlShots) {
-                        p.swirlShots = true;
-                        announce('SWIRL SHOTS ONLINE!');
-                    } else {
-                        announce('Swirl core overloaded! Diverting to hyper drive.');
-                        applyPowerup('attack_speed', x, y);
-                    }
                     return;
                 }
                 if (typeKey === 'star_upgrade') {
@@ -15206,9 +15191,6 @@
                             weights.fire += 0.6;
                             weights.speed += 0.5;
                             break;
-                        case 'swirly_upgrade':
-                            weights.projectile += 1;
-                            break;
                         case 'star_upgrade':
                             weights.damage += 1;
                             break;
@@ -21977,6 +21959,14 @@
                 state.nextRingPattern = (ring.pattern + 1) % 2;
                 state.rings.push(ring);
                 store.vibemasterRings = state.rings;
+                
+                // Body pulse when spawning ring (chest expansion)
+                if (!state.chakraChargeActive) {
+                    state.chakraChargeActive = true;
+                    setTimeout(() => { state.chakraChargeActive = false; }, 600);
+                }
+                
+                store.activeEffects.push(createEffect('spawnTeleport', boss.x, boss.y, boss.r + 30, { color: '#b8c7ff', duration: 0.4 }));
             }
 
             function updateVibemasterRings(dt, boss, state, dmgScale) {
@@ -22034,6 +22024,12 @@
                         pulseOffset: Math.random() * Math.PI * 2
                     });
                     store.eBullets.push(bullet);
+                }
+                
+                // Signal hand gesture for visual telegraph
+                if (!state.astralGestureActive) {
+                    state.astralGestureActive = true;
+                    setTimeout(() => { state.astralGestureActive = false; }, 800);
                 }
             }
 
@@ -22112,7 +22108,14 @@
                 }
                 store.vibemasterThreads = state.threads;
                 store.activeEffects.push(createEffect('spawnTeleport', boss.x, boss.y + boss.r * 0.6, boss.r + 60, { color: '#8ff5ff', duration: 0.55 }));
-                announce('Cosmic threads constrict your path!');
+                
+                // Rapid hand weaving gesture
+                if (!state.threadWeavingActive) {
+                    state.threadWeavingActive = true;
+                    setTimeout(() => { state.threadWeavingActive = false; }, 1200);
+                }
+                
+                announce('🕸️ Cosmic threads constrict your path! 🕸️');
             }
 
             function vibemasterDistanceToSegmentSq(px, py, x1, y1, x2, y2) {
@@ -22272,7 +22275,9 @@
                     shardTimer: 0.4
                 };
                 store.vibemasterDistortion = state.distortion;
-                announce('The VIBEMASTER opens the Eye of Illusion!');
+                store.activeEffects.push(createEffect('screenFlash', boss.x, boss.y, 1, 'rgba(150, 100, 255, 0.35)'));
+                announce('✨ The VIBEMASTER opens the Eye of Illusion! ✨');
+                playSound('trap'); // Eye opening sound
             }
 
             function updateVibemasterDistortion(dt, boss, state, dmgScale) {
@@ -25956,8 +25961,16 @@
             function drawVibemasterWingHalf(time, palette) {
                 const enginePulse = Math.sin(time * 5) * 10 + 25 + (palette.enraged ? 6 : 0);
                 const hue = (palette.wingHue + palette.phase * 18) % 360;
+                
+                // Wing flap animation - asymmetric motion for dynamic feel
+                const wingFlap = Math.sin(time * 3.8 + (palette.enraged ? Math.PI / 3 : 0)) * 18;
+                const wingRotation = wingFlap * 0.02;
+                
                 ctx.save();
                 ctx.translate(80, 0);
+                
+                // Apply wing rotation for flapping motion
+                ctx.rotate(wingRotation);
 
                 const engineGradient = ctx.createRadialGradient(0, 0, 5, 0, 0, enginePulse);
                 engineGradient.addColorStop(0, `hsla(${hue}, 100%, ${palette.enraged ? 92 : 88}%, 1)`);
@@ -25977,19 +25990,22 @@
                 ctx.lineWidth = 2;
                 ctx.shadowColor = `hsla(${(hue + 140) % 360}, 100%, 70%, 0.9)`;
                 ctx.shadowBlur = 18 + (palette.enraged ? 10 : 0);
+                
+                // Upper wing
                 ctx.beginPath();
                 ctx.moveTo(0, -20);
-                ctx.lineTo(150, -100);
-                ctx.lineTo(180, -80);
+                ctx.lineTo(150 + wingFlap * 0.15, -100 + wingFlap * 0.12);
+                ctx.lineTo(180 + wingFlap * 0.18, -80 + wingFlap * 0.1);
                 ctx.lineTo(30, 20);
                 ctx.closePath();
                 ctx.fill();
                 ctx.stroke();
 
+                // Lower wing
                 ctx.beginPath();
                 ctx.moveTo(20, 24);
-                ctx.lineTo(160, 102);
-                ctx.lineTo(140, 124);
+                ctx.lineTo(160 + wingFlap * 0.12, 102 - wingFlap * 0.15);
+                ctx.lineTo(140 + wingFlap * 0.14, 124 - wingFlap * 0.12);
                 ctx.lineTo(0, 32);
                 ctx.closePath();
                 ctx.fill();
@@ -26000,11 +26016,11 @@
                 ctx.lineWidth = 2;
                 ctx.beginPath();
                 ctx.moveTo(20, 2);
-                ctx.quadraticCurveTo(100, -48, 160, -88);
+                ctx.quadraticCurveTo(100 + wingFlap * 0.08, -48 + wingFlap * 0.1, 160 + wingFlap * 0.15, -88 + wingFlap * 0.12);
                 ctx.stroke();
                 ctx.beginPath();
                 ctx.moveTo(10, 30);
-                ctx.quadraticCurveTo(102, 74, 152, 116);
+                ctx.quadraticCurveTo(102 + wingFlap * 0.06, 74 - wingFlap * 0.12, 152 + wingFlap * 0.12, 116 - wingFlap * 0.1);
                 ctx.stroke();
 
                 ctx.restore();
@@ -26026,6 +26042,10 @@
                 ctx.shadowColor = `hsl(${baseHue}, 100%, 62%)`;
                 ctx.shadowBlur = 24 + (palette.enraged ? 6 : 0);
 
+                // Hand animation - up and down motion for gesturing
+                const handBob = Math.sin(time * 2.8) * 32 + (palette.enraged ? Math.sin(time * 5.2) * 8 : 0);
+                
+                // Main body
                 ctx.beginPath();
                 ctx.moveTo(0, -90);
                 ctx.lineTo(60, -48);
@@ -26034,23 +26054,56 @@
                 ctx.closePath();
                 ctx.fill();
 
+                // Shoulder
                 ctx.beginPath();
                 ctx.moveTo(50, -58);
                 ctx.arc(60, -58, 20, Math.PI, Math.PI * 2);
                 ctx.fill();
 
+                // Upper arm + hand with animation
+                ctx.save();
+                ctx.translate(60, -48);
+                ctx.rotate(Math.sin(time * 2.5) * 0.3);
                 ctx.beginPath();
-                ctx.moveTo(76, -48);
-                ctx.lineTo(104, 50);
-                ctx.lineTo(84, 62);
+                ctx.moveTo(16, -10);
+                ctx.lineTo(44, 50 + handBob * 0.4);
+                ctx.lineTo(24, 62 + handBob * 0.4);
                 ctx.stroke();
+                
+                // Hand (glowing fingers)
+                ctx.save();
+                ctx.translate(24, 62 + handBob * 0.4);
+                const handGlow = 8 + Math.sin(time * 3.5) * 3;
+                ctx.fillStyle = `hsla(${(baseHue + 30) % 360}, 100%, 85%, 0.8)`;
+                ctx.shadowColor = `hsl(${(baseHue + 30) % 360}, 100%, 75%)`;
+                ctx.shadowBlur = handGlow;
+                ctx.beginPath();
+                ctx.arc(0, 0, 12, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Finger tendrils
+                for (let f = 0; f < 4; f++) {
+                    const angle = (f / 4) * Math.PI * 2 + time * 1.8;
+                    const fx = Math.cos(angle) * 20;
+                    const fy = Math.sin(angle) * 20;
+                    ctx.strokeStyle = `hsla(${(baseHue + 40 + f * 10) % 360}, 100%, 70%, 0.6)`;
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(fx, fy);
+                    ctx.stroke();
+                }
+                ctx.restore();
+                ctx.restore();
 
+                // Lower body/legs
                 ctx.beginPath();
                 ctx.moveTo(42, 104);
                 ctx.lineTo(62, 208);
                 ctx.lineTo(40, 220);
                 ctx.stroke();
 
+                // Head with third eye
                 ctx.beginPath();
                 ctx.arc(0, -148, 52, Math.PI * 0.5, Math.PI, false);
                 ctx.lineTo(-52, -100);
@@ -26077,6 +26130,32 @@
                 ctx.moveTo(6, 118);
                 ctx.lineTo(36, 108);
                 ctx.stroke();
+                
+                // THIRD EYE - glows based on phase/attacks
+                const eyeGlowIntensity = palette.thirdEyeGlow || 0.3;
+                const eyeSize = 10 + eyeGlowIntensity * 8;
+                const eyeHue = (palette.baseHue + 200) % 360;
+                ctx.save();
+                ctx.translate(0, -156);
+                ctx.fillStyle = `hsla(${eyeHue}, 100%, 60%, ${0.5 + eyeGlowIntensity * 0.5})`;
+                ctx.shadowColor = `hsl(${eyeHue}, 100%, 70%)`;
+                ctx.shadowBlur = eyeGlowIntensity * 24;
+                ctx.beginPath();
+                ctx.arc(0, 0, eyeSize, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Iris
+                ctx.fillStyle = `hsla(${(eyeHue + 120) % 360}, 100%, 80%, 0.9)`;
+                ctx.beginPath();
+                ctx.arc(0, 0, eyeSize * 0.6, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Pupil
+                ctx.fillStyle = '#000000';
+                ctx.beginPath();
+                ctx.arc(0, 0, eyeSize * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
 
                 ctx.restore();
             }
@@ -26085,13 +26164,27 @@
                 const phase = state.phase || 1;
                 const isEnraged = !!boss.isEnraged;
                 const baseHue = (time * 50 + phase * 40 + (isEnraged ? 30 : 0)) % 360;
+                
+                // Third eye glow intensifies during distortion attack, glows brighter in phase 3
+                let thirdEyeGlow = 0.3 + Math.sin(time * 2.8) * 0.2;
+                if (state.distortion && state.distortion.active) {
+                    thirdEyeGlow = 0.65 + Math.sin(time * 4.5) * 0.25;
+                }
+                if (phase >= 3) {
+                    thirdEyeGlow = Math.min(0.95, thirdEyeGlow + 0.3);
+                }
+                if (isEnraged) {
+                    thirdEyeGlow = Math.min(0.95, thirdEyeGlow + 0.15);
+                }
+                
                 const palette = {
                     baseHue,
                     wingHue: (baseHue + 70) % 360,
                     phase,
                     strokeColor: 'rgba(192, 192, 220, 0.82)',
                     visorShift: 140 + phase * 12,
-                    enraged: isEnraged
+                    enraged: isEnraged,
+                    thirdEyeGlow
                 };
 
                 ctx.save();
