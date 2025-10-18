@@ -3209,72 +3209,6 @@
 </head>
 
 <body>
-    <!-- Asset Loading Screen DISABLED FOR PERFORMANCE TESTING -->
-    <div id="loadingScreen" style="
-        position: fixed; 
-        top: 0; 
-        left: 0; 
-        width: 100%; 
-        height: 100%; 
-        background: linear-gradient(135deg, #0a0a0a 0%, #1a0a2a 50%, #0a0a1a 100%); 
-        display: none; 
-        flex-direction: column; 
-        align-items: center; 
-        justify-content: center; 
-        z-index: 9999;
-        font-family: 'Orbitron', monospace;
-        color: #b266ff;
-    ">
-        <div style="text-align: center; margin-bottom: 40px;">
-            <h1
-                style="font-size: 3em; margin: 0; text-shadow: 0 0 20px #b266ff; animation: pulse 2s ease-in-out infinite;">
-                ⚡ VOID SKIES ⚡
-            </h1>
-            <p style="font-size: 1.2em; margin: 10px 0; color: #cc99ff;">
-                Initializing Combat Systems...
-            </p>
-        </div>
-
-        <div style="width: 400px; max-width: 80vw; margin-bottom: 20px;">
-            <div style="background: rgba(0,0,0,0.5); border: 2px solid #b266ff; border-radius: 10px; padding: 4px;">
-                <div id="loadingBar" style="
-                    height: 20px; 
-                    background: linear-gradient(90deg, #b266ff, #7a49cc); 
-                    border-radius: 6px; 
-                    width: 0%; 
-                    transition: width 0.3s ease;
-                    box-shadow: 0 0 10px #b266ff;
-                "></div>
-            </div>
-            <div id="loadingText" style="text-align: center; margin-top: 10px; font-size: 0.9em; color: #cc99ff;">
-                Loading Assets... 0%
-            </div>
-        </div>
-
-        <div id="loadingDetails" style="
-            font-size: 0.8em; 
-            color: #8866bb; 
-            text-align: center; 
-            min-height: 20px;
-        ">
-            Scanning combat protocols...
-        </div>
-
-        <style>
-            @keyframes pulse {
-
-                0%,
-                100% {
-                    text-shadow: 0 0 20px #b266ff;
-                }
-
-                50% {
-                    text-shadow: 0 0 30px #b266ff, 0 0 40px #b266ff;
-                }
-            }
-        </style>
-    </div>
-
     <div id="wrap">
         <div>
             <div class="stage" id="stage">
@@ -3883,7 +3817,7 @@
                 return `rgba(255,255,255,${normAlpha})`;
             };
             const collide = (a, b) => { const dx = a.x - b.x, dy = a.y - b.y; const rr = (a.r || 0) + (b.r || 0); return dx * dx + dy * dy < rr * rr; };
-            const API_BASE = "https://situated-pulled-hamilton-competitions.trycloudflare.com/api";
+            const API_BASE = "https://antibody-impose-perl-sheffield.trycloudflare.com/api";
             const q = (id) => document.getElementById(id);
             const cvs = q('game'), ctx = cvs.getContext('2d'), stage = q('stage');
             new ResizeObserver(() => {
@@ -5434,12 +5368,19 @@
                     lifetime: 0,
                     maxLifetime: 0.35,
                     isFragment: true,
-                    isFragmentBlast: true
+                    isFragmentBlast: true,
+                    originX: undefined,
+                    originY: undefined
                 };
                 const projectile = { ...defaults, ...props };
                 projectile.dead = false;
                 projectile.lifetime = Number.isFinite(projectile.lifetime) ? projectile.lifetime : 0;
                 projectile.maxLifetime = Math.max(0.05, Number.isFinite(projectile.maxLifetime) ? projectile.maxLifetime : defaults.maxLifetime);
+                projectile.originX = Number.isFinite(projectile.originX) ? projectile.originX : projectile.x;
+                projectile.originY = Number.isFinite(projectile.originY) ? projectile.originY : projectile.y;
+                if (!Number.isFinite(projectile.impactAngle)) {
+                    projectile.impactAngle = Math.atan2(projectile.vy, projectile.vx);
+                }
                 store.fragmentProjectiles.push(projectile);
                 return projectile;
             }
@@ -6446,10 +6387,19 @@
 
                     // Fragment blast hits get gold spark effect + knockback + slow + gold tint
                     if (b.isFragment) {
+                        const sourceX = Number.isFinite(b.originX) ? b.originX : hitX - Math.cos(impactAngle) * 12;
+                        const sourceY = Number.isFinite(b.originY) ? b.originY : hitY - Math.sin(impactAngle) * 12;
+                        const impactSpeed = Math.hypot(Number.isFinite(b.vx) ? b.vx : 0, Number.isFinite(b.vy) ? b.vy : 0);
+                        const travelDistance = Math.hypot(hitX - sourceX, hitY - sourceY);
                         store.activeEffects.push(createEffect('fragmentBlast', hitX, hitY, 0, {
                             color: '#FFD700',
                             explosionCount: 15,
-                            splashCount: 25
+                            splashCount: 25,
+                            sourceX,
+                            sourceY,
+                            impactAngle,
+                            impactSpeed,
+                            travelDistance
                         }));
                         
                         // Knockback from fragment blast
@@ -6561,6 +6511,9 @@
                     if (b.lifetime >= b.maxLifetime) {
                         b.dead = true;
                     }
+                    if (!Number.isFinite(b.originX)) b.originX = b.x;
+                    if (!Number.isFinite(b.originY)) b.originY = b.y;
+                    b.impactAngle = Math.atan2(b.vy, b.vx);
                 }
 
                 if (b.isSwirl) {
@@ -30136,56 +30089,103 @@
                         break;
                     case "fragmentBlast": {
                         const rand = (min, max) => Math.random() * (max - min) + min;
+                        const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
                         const color = opts.color || '#FFD700';
                         const explosionCount = Math.max(0, Math.floor(opts.explosionCount ?? 15));
                         const splashCount = Math.max(0, Math.floor(opts.splashCount ?? 25));
+                        const sourceX = Number.isFinite(opts.sourceX) ? opts.sourceX : x;
+                        const sourceY = Number.isFinite(opts.sourceY) ? opts.sourceY : y;
+                        const impactAngle = Number.isFinite(opts.impactAngle) ? opts.impactAngle : Math.atan2(y - sourceY, x - sourceX);
+                        const travelDistance = Number.isFinite(opts.travelDistance) ? opts.travelDistance : Math.hypot(x - sourceX, y - sourceY);
+                        const impactSpeed = Number.isFinite(opts.impactSpeed) ? opts.impactSpeed : 320;
                         effect.particles = [];
 
-                        const createParticle = (type) => {
-                            const particle = {
-                                x,
-                                y,
-                                size: rand(2, 5),
-                                color,
-                                alpha: 1,
-                                gravity: 0,
-                                vx: 0,
-                                vy: 0
-                            };
+                        const createBaseParticle = (type, overrides = {}) => ({
+                            type,
+                            x,
+                            y,
+                            life: 0,
+                            maxLife: overrides.maxLife ?? (type === 'stream' ? rand(34, 48) : rand(24, 36)),
+                            alpha: 1,
+                            color: overrides.color ?? color,
+                            glowColor: overrides.glowColor ?? '#FFE7A3',
+                            drag: overrides.drag ?? (type === 'stream' ? 0.94 : 0.9),
+                            gravity: overrides.gravity ?? (type === 'stream' ? 0.16 : 0.08),
+                            size: overrides.size ?? rand(2, 4),
+                            rotation: overrides.rotation ?? impactAngle,
+                            length: overrides.length ?? rand(20, 34),
+                            thickness: overrides.thickness ?? rand(1.6, 2.8),
+                            vx: overrides.vx ?? 0,
+                            vy: overrides.vy ?? 0
+                        });
 
-                            if (type === 'splash') {
-                                const angle = rand(-Math.PI * 0.9, -Math.PI * 0.1);
-                                const speed = rand(3, 7);
-                                particle.vx = Math.cos(angle) * speed;
-                                particle.vy = Math.sin(angle) * speed;
-                                particle.gravity = 0.2;
-                            } else {
-                                particle.vx = rand(-2, 2);
-                                particle.vy = rand(-2, 2);
-                            }
+                        // Jets push outward from impact direction to create a molten spray streak
+                        const createDirectionalSplash = () => {
+                            const spread = Math.PI / 7;
+                            const offset = rand(-spread, spread);
+                            const direction = impactAngle + offset;
+                            const speedBoost = clamp(impactSpeed / 90, 2, 10);
+                            const distanceBoost = clamp(travelDistance / 40, 0, 6);
+                            const speed = rand(6, 10) + speedBoost + distanceBoost;
+                            const lengthBase = clamp(travelDistance * 0.45, 26, 120) * rand(0.82, 1.1);
+                            return createBaseParticle('stream', {
+                                vx: Math.cos(direction) * speed,
+                                vy: Math.sin(direction) * speed,
+                                rotation: direction,
+                                length: lengthBase,
+                                thickness: rand(2, 3.6),
+                                gravity: 0.12,
+                                drag: 0.93,
+                                glowColor: '#FFB347',
+                                color: '#FFE59A',
+                                maxLife: rand(32, 46)
+                            });
+                        };
 
-                            return particle;
+                        const createMoltenEmber = () => {
+                            const emberAngle = impactAngle + rand(-Math.PI * 0.4, Math.PI * 0.4);
+                            const speed = rand(2.5, 6.5);
+                            return createBaseParticle('ember', {
+                                vx: Math.cos(emberAngle) * speed,
+                                vy: Math.sin(emberAngle) * speed,
+                                gravity: rand(0.04, 0.12),
+                                drag: 0.88,
+                                size: rand(1.8, 3.6),
+                                glowColor: '#FFF2B8',
+                                color: '#FFC857',
+                                maxLife: rand(22, 34)
+                            });
                         };
 
                         for (let i = 0; i < explosionCount; i++) {
-                            effect.particles.push(createParticle('explosion'));
+                            effect.particles.push(createMoltenEmber());
                         }
                         for (let i = 0; i < splashCount; i++) {
-                            effect.particles.push(createParticle('splash'));
+                            effect.particles.push(createDirectionalSplash());
                         }
 
                         effect.step = function (dt) {
                             const frameFactor = dt > 0 ? dt * 60 : 0;
                             for (const particle of this.particles) {
+                                particle.life += frameFactor;
                                 particle.x += particle.vx * frameFactor;
                                 particle.y += particle.vy * frameFactor;
-                                if (particle.gravity > 0) {
+                                if (particle.gravity) {
                                     particle.vy += particle.gravity * frameFactor;
                                 }
-                                particle.alpha -= 0.03 * frameFactor;
-                                if (particle.alpha < 0) particle.alpha = 0;
+                                if (particle.drag && particle.drag < 1) {
+                                    const dragFactor = Math.pow(particle.drag, Math.max(frameFactor, 0));
+                                    particle.vx *= dragFactor;
+                                    particle.vy *= dragFactor;
+                                }
+                                if (particle.type === 'stream') {
+                                    particle.length = Math.max(10, particle.length - frameFactor * 0.9);
+                                    particle.thickness = Math.max(1, particle.thickness - frameFactor * 0.08);
+                                }
+                                const lifeRatio = particle.maxLife > 0 ? particle.life / particle.maxLife : 1;
+                                particle.alpha = Math.max(0, 1 - lifeRatio);
                             }
-                            this.particles = this.particles.filter(p => p.alpha > 0);
+                            this.particles = this.particles.filter(p => p.alpha > 0.02);
                             if (this.particles.length === 0) {
                                 this.isActive = false;
                             }
@@ -30198,11 +30198,37 @@
                             for (const particle of this.particles) {
                                 const alpha = Math.min(1, Math.max(0, particle.alpha));
                                 if (alpha <= 0) continue;
-                                ctx.globalAlpha = alpha;
-                                ctx.fillStyle = particle.color;
-                                ctx.beginPath();
-                                ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-                                ctx.fill();
+                                if (particle.type === 'stream') {
+                                    ctx.save();
+                                    ctx.translate(particle.x, particle.y);
+                                    ctx.rotate(particle.rotation);
+                                    ctx.globalAlpha = alpha * 0.9;
+                                    const length = particle.length;
+                                    const width = particle.thickness;
+                                    const gradient = ctx.createLinearGradient(0, 0, length, 0);
+                                    gradient.addColorStop(0, particle.glowColor);
+                                    gradient.addColorStop(0.35, particle.color);
+                                    gradient.addColorStop(1, 'rgba(255, 185, 70, 0)');
+                                    ctx.fillStyle = gradient;
+                                    ctx.beginPath();
+                                    ctx.moveTo(0, -width * 0.5);
+                                    ctx.lineTo(length, 0);
+                                    ctx.lineTo(0, width * 0.5);
+                                    ctx.closePath();
+                                    ctx.fill();
+                                    ctx.restore();
+                                } else {
+                                    ctx.globalAlpha = alpha * 0.7;
+                                    ctx.fillStyle = particle.glowColor || particle.color;
+                                    ctx.beginPath();
+                                    ctx.arc(particle.x, particle.y, particle.size * 1.6, 0, Math.PI * 2);
+                                    ctx.fill();
+                                    ctx.globalAlpha = alpha;
+                                    ctx.fillStyle = particle.color;
+                                    ctx.beginPath();
+                                    ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                                    ctx.fill();
+                                }
                             }
                             ctx.restore();
                         };
@@ -40683,307 +40709,6 @@
             }
 
             // Game initialization moved to DOMContentLoaded event
-
-
-            // Optimized Asset Preloader System
-            class AssetPreloader {
-                constructor() {
-                    // Prioritized asset groups for progressive loading
-                    // ASSET GROUPS DISABLED FOR PERFORMANCE TESTING
-                    this.assetGroups = {
-                        critical: {
-                            images: [], // ['cow.png', 'rockyboy.png', 'goggles.png'], // Pilot selection UI
-                            audio: [] // ['Horn.wav', 'epichorntrimmed.m4a'] // Essential UI sounds
-                        },
-                        gameplay: {
-                            images: [], // ['marauder.png', 'jug2.png', 'phase.png', 'storm.png'], // Subclass icons
-                            audio: [] // ['Explosion.m4a', 'thunk.wav', 'cluster.mp3', 'thunder.mp3'] // Core game sounds
-                        },
-                        extended: {
-                            images: [], // ['mar11.png', 'mar2.png', 'mar3.png', 'mar4.png', 'jug3.png'], // Skill trees
-                            audio: [] // ['trap.m4a', 'dogs.m4a', 'charge.m4a', 'beefcharge.m4a', 'shao_kahn.m4a']
-                        }
-                    };
-
-                    this.loadedAssets = new Map(); // Cache for loaded assets
-                    this.loadingPromises = new Map(); // Prevent duplicate loading
-                    this.lastUsed = new Map(); // Track usage for cleanup
-                    this.memoryLimit = 150 * 1024 * 1024; // 150MB memory limit
-                    this.currentMemoryUsage = 0;
-
-                    this.loaded = 0;
-                    this.total = this.getTotalAssetCount();
-                    this.progress = 0;
-                }
-
-                getTotalAssetCount() {
-                    return Object.values(this.assetGroups).reduce((total, group) => {
-                        return total + group.images.length + group.audio.length;
-                    }, 0);
-                }
-
-                updateProgress(assetName, category) {
-                    this.loaded++;
-                    this.progress = Math.floor((this.loaded / this.total) * 100);
-
-                    const loadingBar = document.getElementById('loadingBar');
-                    const loadingText = document.getElementById('loadingText');
-                    const loadingDetails = document.getElementById('loadingDetails');
-
-                    if (loadingBar) loadingBar.style.width = this.progress + '%';
-                    if (loadingText) loadingText.textContent = `Loading Assets... ${this.progress}%`;
-                    if (loadingDetails) {
-                        const categoryName = category === 'image' ? 'Visual Assets' : 'Audio Systems';
-                        loadingDetails.textContent = `${categoryName}: ${assetName}`;
-                    }
-
-                    if (this.loaded >= this.total) {
-                        setTimeout(() => this.finishLoading(), 500);
-                    }
-                }
-
-                estimateAssetSize(src, type) {
-                    // Rough size estimates for memory management
-                    if (type === 'image') {
-                        // Estimate based on typical icon sizes: 64x64 = 16KB, 128x128 = 64KB
-                        return src.includes('skill') || src.includes('tree') ? 16384 : 32768;
-                    } else if (type === 'audio') {
-                        // Audio files typically 50KB-500KB
-                        return src.includes('.m4a') ? 200000 : 100000;
-                    }
-                    return 50000; // Default estimate
-                }
-
-                cleanupUnusedAssets() {
-                    // Skip cleanup if we're under memory pressure threshold (75% of limit)
-                    if (this.currentMemoryUsage < this.memoryLimit * 0.75) {
-                        return;
-                    }
-
-                    const now = Date.now();
-                    const cleanupThreshold = 300000; // 5 minutes
-                    let cleanedMemory = 0;
-                    const assetsToCleanup = [];
-
-                    // Batch identify assets for cleanup to avoid iteration issues
-                    for (const [key, timestamp] of this.lastUsed) {
-                        if (now - timestamp > cleanupThreshold && this.loadedAssets.has(key)) {
-                            assetsToCleanup.push(key);
-                        }
-                    }
-
-                    // Prioritize cleanup of largest assets first
-                    assetsToCleanup.sort((a, b) => {
-                        const sizeA = this.estimateAssetSize(a, this.loadedAssets.get(a) instanceof Image ? 'image' : 'audio');
-                        const sizeB = this.estimateAssetSize(b, this.loadedAssets.get(b) instanceof Image ? 'image' : 'audio');
-                        return sizeB - sizeA;
-                    });
-
-                    // Clean up assets
-                    assetsToCleanup.forEach(key => {
-                        const asset = this.loadedAssets.get(key);
-                        const estimatedSize = this.estimateAssetSize(key, asset instanceof Image ? 'image' : 'audio');
-
-                        this.loadedAssets.delete(key);
-                        this.lastUsed.delete(key);
-                        this.loadingPromises.delete(key); // Also clean up loading promises
-                        this.currentMemoryUsage -= estimatedSize;
-                        cleanedMemory += estimatedSize;
-                    });
-
-
-                }
-
-                loadAssetGroup(groupName) {
-                    return new Promise((resolve) => {
-                        const group = this.assetGroups[groupName];
-                        if (!group) {
-                            resolve();
-                            return;
-                        }
-
-                        const allAssets = [...group.images.map(src => ({ src, type: 'image' })),
-                        ...group.audio.map(src => ({ src, type: 'audio' }))];
-
-                        if (allAssets.length === 0) {
-                            resolve();
-                            return;
-                        }
-
-                        let loadedCount = 0;
-                        const timeout = setTimeout(() => {
-                            resolve();
-                        }, 8000);
-
-                        allAssets.forEach(({ src, type }) => {
-                            this.loadSingleAsset(src, type).then(() => {
-                                loadedCount++;
-                                this.updateProgress(src, type);
-                                if (loadedCount === allAssets.length) {
-                                    clearTimeout(timeout);
-                                    resolve();
-                                }
-                            }).catch(() => {
-                                loadedCount++;
-                                this.updateProgress(src, type);
-                                if (loadedCount === allAssets.length) {
-                                    clearTimeout(timeout);
-                                    resolve();
-                                }
-                            });
-                        });
-                    });
-                }
-
-                loadSingleAsset(src, type) {
-                    // Check if already loaded or loading
-                    if (this.loadedAssets.has(src)) {
-                        this.lastUsed.set(src, Date.now());
-                        return Promise.resolve(this.loadedAssets.get(src));
-                    }
-
-                    if (this.loadingPromises.has(src)) {
-                        return this.loadingPromises.get(src);
-                    }
-
-                    // Check memory limit before loading
-                    const estimatedSize = this.estimateAssetSize(src, type);
-                    if (this.currentMemoryUsage + estimatedSize > this.memoryLimit) {
-                        this.cleanupUnusedAssets();
-                    }
-
-                    const promise = new Promise((resolve, reject) => {
-                        if (type === 'image') {
-                            const img = new Image();
-                            img.onload = () => {
-                                this.loadedAssets.set(src, img);
-                                this.lastUsed.set(src, Date.now());
-                                this.currentMemoryUsage += estimatedSize;
-                                resolve(img);
-                            };
-                            img.onerror = () => {
-                                reject(new Error(`Failed to load ${src}`));
-                            };
-                            img.src = src;
-                        } else if (type === 'audio') {
-                            const audio = new Audio();
-                            audio.oncanplaythrough = () => {
-                                this.loadedAssets.set(src, audio);
-                                this.lastUsed.set(src, Date.now());
-                                this.currentMemoryUsage += estimatedSize;
-                                resolve(audio);
-                            };
-                            audio.onerror = () => {
-                                reject(new Error(`Failed to load ${src}`));
-                            };
-                            audio.volume = 0.1;
-                            audio.src = src;
-                        }
-                    });
-
-                    this.loadingPromises.set(src, promise);
-                    return promise;
-                }
-
-                // Method to get a loaded asset (lazy load if needed)
-                getAsset(src, type = 'image') {
-                    if (this.loadedAssets.has(src)) {
-                        this.lastUsed.set(src, Date.now()); // Update usage
-                        return this.loadedAssets.get(src);
-                    }
-
-                    // Lazy load if not available
-                    this.loadSingleAsset(src, type).catch(err => {
-                        // Lazy load error silenced
-                    });
-
-                    return null; // Return null for immediate use, will be available later
-                }
-
-                // Method to preload assets for a specific feature
-                preloadForFeature(feature) {
-                    const featureAssets = {
-                        'pilot-selection': ['cow.png', 'rockyboy.png', 'goggles.png'],
-                        'subclass-selection': ['marauder.png', 'jug2.png', 'phase.png', 'storm.png'],
-                        'skill-tree': ['mar11.png', 'mar2.png', 'mar3.png', 'jug3.png', 'phase2.png'],
-                        'combat-audio': ['Explosion.m4a', 'thunk.wav', 'cluster.mp3']
-                    };
-
-                    const assets = featureAssets[feature] || [];
-                    return Promise.all(assets.map(src => {
-                        const type = src.includes('.') && (src.endsWith('.mp3') || src.endsWith('.m4a') || src.endsWith('.wav')) ? 'audio' : 'image';
-                        return this.loadSingleAsset(src, type);
-                    }));
-                }
-
-                async startLoading() {
-                    try {
-                        const loadingDetails = document.getElementById('loadingDetails');
-                        if (loadingDetails) loadingDetails.textContent = 'Initializing combat protocols...';
-
-                        // Small delay for visual effect
-                        await new Promise(resolve => setTimeout(resolve, 500));
-
-                        // Progressive loading: Critical first, then gameplay, then extended
-                        if (loadingDetails) loadingDetails.textContent = '🚀 Loading critical assets...';
-                        await this.loadAssetGroup('critical');
-
-                        if (loadingDetails) loadingDetails.textContent = '⚔️ Loading gameplay assets...';
-                        await this.loadAssetGroup('gameplay');
-
-                        // Load extended assets in background after main loading finishes
-                        setTimeout(() => {
-                            this.loadAssetGroup('extended').then(() => {
-                                // Assets loaded silently
-                            });
-                        }, 2000);
-
-                        // Start memory cleanup timer
-                        setInterval(() => this.cleanupUnusedAssets(), 180000); // Every 3 minutes
-
-                    } catch (error) {
-                        this.finishLoading(); // Continue anyway
-                    }
-                }
-
-                finishLoading() {
-                    const loadingDetails = document.getElementById('loadingDetails');
-                    const loadingText = document.getElementById('loadingText');
-
-                    if (loadingDetails) loadingDetails.textContent = '🚀 Combat systems online! Engaging...';
-                    if (loadingText) loadingText.textContent = 'Ready for Combat! 100%';
-
-                    // Make asset manager globally available
-                    window.assetManager = this;
-
-                    // Fade out loading screen
-                    setTimeout(() => {
-                        const loadingScreen = document.getElementById('loadingScreen');
-                        if (loadingScreen) {
-                            loadingScreen.style.transition = 'opacity 1s ease-out';
-                            loadingScreen.style.opacity = '0';
-                            loadingScreen.style.pointerEvents = 'none';
-                            setTimeout(() => {
-                                loadingScreen.style.display = 'none';
-                                this.initializeGame();
-                            }, 1000);
-                        }
-                    }, 800);
-                }
-
-                initializeGame() {
-                    // Initialize mobile controls and start the game
-                    setupMobileControls();
-
-                    // Show a brief "systems online" message
-                    setTimeout(() => {
-                        if (typeof announce === 'function') {
-                            announce('🚀 VOID SKIES: Combat systems online!');
-                        }
-                    }, 500);
-                }
-            }
-
             // Game initialization runs immediately (like fghfgh.html working version)
             try {
                 ensureName();
@@ -41000,14 +40725,6 @@
             }
 
             document.addEventListener('DOMContentLoaded', () => {
-                // SKIP ASSET LOADING FOR PERFORMANCE TESTING - Start game immediately
-
-                // Hide loading screen immediately
-                const loadingScreen = document.getElementById('loadingScreen');
-                if (loadingScreen) {
-                    loadingScreen.style.display = 'none';
-                }
-
                 // Set up upgrade popup OK button
                 const upgradePopupOkBtn = document.getElementById('upgradePopupOkBtn');
                 if (upgradePopupOkBtn) {
