@@ -5055,9 +5055,12 @@
                     lastEnemyOverdriveAnnounce: 0,
                     powerupCooldown: 0,
                     xpMultiplier: 1.0,
-                    collarStacks: 0,
-                    collarTargetStacks: 0,
-                    collarTargetStacks: 0,
+                    enemyCollarStacks: 0,
+                    enemyCollarTargetStacks: 0,
+                    bossCollarStacks: 0,
+                    bossCollarTargetStacks: 0,
+                    enemyCollarDecayTimer: 0,
+                    bossCollarDecayTimer: 0,
                     lateGameDamageScaling: 1,
                     consecutiveFastKills: 0,
                     fastKillBonus: 0,
@@ -6476,7 +6479,7 @@
                         if (!isVoidReaper) {
                             spawnGibs(e.x, e.y, e.color);
                         }
-                        const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
+                        const collarBonus = calculateEnemyCollarBonus();
                         const scoreGain = Math.floor((Number.isFinite(e.score) ? e.score : 0) * collarBonus);
                         const goldGain = Math.floor((Number.isFinite(e.gold) ? e.gold : 0) * collarBonus);
                         const xpGain = Math.floor((Number.isFinite(e.xp) ? e.xp : 0) * collarBonus);
@@ -8157,7 +8160,7 @@
                 }
                 if (typeKey === 'collar_fragment') {
                     const collarGain = 1.75;
-                    scheduleCollarIncrease(collarGain);
+                    scheduleEnemyCollarIncrease(collarGain);
                     if (!store.activeEffects) {
                         store.activeEffects = [];
                     }
@@ -8372,18 +8375,29 @@
                 }
             }
 
-            function sanitizeCollarStacks() {
-                if (!Number.isFinite(store.world.collarStacks)) {
-                    store.world.collarStacks = 0;
+            function sanitizeEnemyCollarStacks() {
+                if (!Number.isFinite(store.world.enemyCollarStacks)) {
+                    store.world.enemyCollarStacks = 0;
                 }
-                if (!Number.isFinite(store.world.collarTargetStacks)) {
-                    store.world.collarTargetStacks = store.world.collarStacks;
+                if (!Number.isFinite(store.world.enemyCollarTargetStacks)) {
+                    store.world.enemyCollarTargetStacks = store.world.enemyCollarStacks;
                 }
-                return store.world.collarStacks;
+                return store.world.enemyCollarStacks;
             }
-            
+
+            function sanitizeBossCollarStacks() {
+                if (!Number.isFinite(store.world.bossCollarStacks)) {
+                    store.world.bossCollarStacks = 0;
+                }
+                if (!Number.isFinite(store.world.bossCollarTargetStacks)) {
+                    store.world.bossCollarTargetStacks = store.world.bossCollarStacks;
+                }
+                return store.world.bossCollarStacks;
+            }
+
             // NO UPPER LIMIT - Collar can scale infinitely to handle any broken build
-            const COLLAR_TARGET_GAIN_MULTIPLIER = 1.6;
+            const ENEMY_COLLAR_TARGET_GAIN_MULTIPLIER = 1.6;
+            const BOSS_COLLAR_TARGET_GAIN_MULTIPLIER = 1.6;
 
             function calculateCollarBonus(stacks) {
                 // UNLIMITED SCALING: No cap, aggressive growth at high stacks
@@ -8412,6 +8426,14 @@
                     tierSix * 0.20;     // 70+: 20% per stack (cheater territory)
                 
                 return 1 + bonus;
+            }
+
+            function calculateEnemyCollarBonus() {
+                return calculateCollarBonus(sanitizeEnemyCollarStacks());
+            }
+
+            function calculateBossCollarBonus() {
+                return calculateCollarBonus(sanitizeBossCollarStacks());
             }
 
             // ═══════════════════════════════════════════════════════════════════════
@@ -9038,43 +9060,82 @@
                 // console.log(`Wave ${store.world.wave} Base XP Pool: ${baseXpPool} (${baseSpawnCount} enemies × ${avgXpPerEnemy} XP)`);
             }
 
-            function setCollarStacks(value) {
-                const clamped = Math.max(0, ensureFiniteNumber(value, 0)); // No upper limit
-                store.world.collarStacks = clamped;
-                store.world.collarTargetStacks = clamped;
+            function setEnemyCollarStacks(value) {
+                const clamped = Math.max(0, ensureFiniteNumber(value, 0));
+                store.world.enemyCollarStacks = clamped;
+                store.world.enemyCollarTargetStacks = clamped;
                 return clamped;
             }
 
-            function approachCollarTarget() {
-                const currentStacks = sanitizeCollarStacks();
-                if (!Number.isFinite(store.world.collarTargetStacks)) {
-                    store.world.collarTargetStacks = currentStacks;
+            function setBossCollarStacks(value) {
+                const clamped = Math.max(0, ensureFiniteNumber(value, 0));
+                store.world.bossCollarStacks = clamped;
+                store.world.bossCollarTargetStacks = clamped;
+                return clamped;
+            }
+
+            function approachEnemyCollarTarget() {
+                const currentStacks = sanitizeEnemyCollarStacks();
+                if (!Number.isFinite(store.world.enemyCollarTargetStacks)) {
+                    store.world.enemyCollarTargetStacks = currentStacks;
                 }
-                const targetStacks = store.world.collarTargetStacks; // No cap
+                const targetStacks = store.world.enemyCollarTargetStacks;
                 const stackGap = targetStacks - currentStacks;
                 if (stackGap > 0) {
                     const maxIncrease = 1 + Math.min(2, currentStacks * 0.05);
                     const appliedIncrease = Math.min(stackGap, maxIncrease);
-                    store.world.collarStacks = currentStacks + appliedIncrease; // No cap
+                    store.world.enemyCollarStacks = currentStacks + appliedIncrease;
                 } else if (stackGap < 0) {
-                    setCollarStacks(targetStacks);
+                    setEnemyCollarStacks(targetStacks);
                 }
+                return store.world.enemyCollarStacks;
             }
 
-            function scheduleCollarIncrease(amount) {
+            function approachBossCollarTarget() {
+                const currentStacks = sanitizeBossCollarStacks();
+                if (!Number.isFinite(store.world.bossCollarTargetStacks)) {
+                    store.world.bossCollarTargetStacks = currentStacks;
+                }
+                const targetStacks = store.world.bossCollarTargetStacks;
+                const stackGap = targetStacks - currentStacks;
+                if (stackGap > 0) {
+                    const maxIncrease = 1 + Math.min(2, currentStacks * 0.05);
+                    const appliedIncrease = Math.min(stackGap, maxIncrease);
+                    store.world.bossCollarStacks = currentStacks + appliedIncrease;
+                } else if (stackGap < 0) {
+                    setBossCollarStacks(targetStacks);
+                }
+                return store.world.bossCollarStacks;
+            }
+
+            function scheduleEnemyCollarIncrease(amount) {
                 const delta = ensureFiniteNumber(amount, 0);
                 if (delta <= 0) {
-                    approachCollarTarget();
-                    return;
+                    return approachEnemyCollarTarget();
                 }
 
-                const currentStacks = sanitizeCollarStacks();
-                if (!Number.isFinite(store.world.collarTargetStacks)) {
-                    store.world.collarTargetStacks = currentStacks;
+                const currentStacks = sanitizeEnemyCollarStacks();
+                if (!Number.isFinite(store.world.enemyCollarTargetStacks)) {
+                    store.world.enemyCollarTargetStacks = currentStacks;
                 }
-                const boostedDelta = delta * COLLAR_TARGET_GAIN_MULTIPLIER;
-                store.world.collarTargetStacks = store.world.collarTargetStacks + boostedDelta; // No cap
-                approachCollarTarget();
+                const boostedDelta = delta * ENEMY_COLLAR_TARGET_GAIN_MULTIPLIER;
+                store.world.enemyCollarTargetStacks = store.world.enemyCollarTargetStacks + boostedDelta;
+                return approachEnemyCollarTarget();
+            }
+
+            function scheduleBossCollarIncrease(amount) {
+                const delta = ensureFiniteNumber(amount, 0);
+                if (delta <= 0) {
+                    return approachBossCollarTarget();
+                }
+
+                const currentStacks = sanitizeBossCollarStacks();
+                if (!Number.isFinite(store.world.bossCollarTargetStacks)) {
+                    store.world.bossCollarTargetStacks = currentStacks;
+                }
+                const boostedDelta = delta * BOSS_COLLAR_TARGET_GAIN_MULTIPLIER;
+                store.world.bossCollarTargetStacks = store.world.bossCollarTargetStacks + boostedDelta;
+                return approachBossCollarTarget();
             }
 
             function ensureFiniteNumber(value, fallback = 0) {
@@ -9741,7 +9802,7 @@
                     }
 
                     if (preemptive) {
-                        const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
+                        const collarBonus = calculateEnemyCollarBonus();
                         const baseGold = Number.isFinite(enemy.gold) ? enemy.gold : 0;
                         const bonusGold = Math.max(2, Math.floor(baseGold * VOID_REAPER_CONFIG.preemptiveGoldBonus * collarBonus)); // Further reduced to 2 for balance
                         const bonusScore = Math.floor((enemy.score || 0) * VOID_REAPER_CONFIG.bonusScoreRatio);
@@ -10194,8 +10255,8 @@
                     store.world.lateGameDamageScaling = lateGameScaling;
 
                     // Apply collar bonus to spawn count with defensive guards
-                    const collarStacks = sanitizeCollarStacks();
-                    const collarBonus = calculateCollarBonus(collarStacks);
+                    const enemyCollarStacks = sanitizeEnemyCollarStacks();
+                    const collarBonus = calculateCollarBonus(enemyCollarStacks);
                     const plannedSpawnCountRaw = spawnCount * collarBonus;
                     const plannedSpawnCount = Math.max(0, ensureFiniteNumber(Math.floor(plannedSpawnCountRaw), 0));
 
@@ -10321,7 +10382,7 @@
                 const cycleRaw = Math.floor((store.world.wave - 5) / 5);
                 const def = getBossDefinitionByCycle(cycleRaw) || BOSS_DEFINITIONS[0];
                 let hp = def.baseHp * scale * store.world.bossHealthBonus;
-                const collarBonus = calculateCollarBonus(sanitizeCollarStacks()); // Diminishing scaling per collar stack
+                const collarBonus = calculateBossCollarBonus();
                 hp *= collarBonus;
 
                 const boss = {
@@ -10356,14 +10417,16 @@
                 boss.spawnWave = waveIndex;
                 boss.spawnedAt = performance.now();
 
-                // console.log(`🏆 Boss Created: ${boss.name} | Wave: ${store.world.wave} | HP: ${hp} | Scale: ${scale} | CollarStacks: ${store.world.collarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x`);
+                // console.log(`🏆 Boss Created: ${boss.name} | Wave: ${store.world.wave} | HP: ${hp} | Scale: ${scale} | BossCollarStacks: ${store.world.bossCollarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x`);
 
                 // Create Boss class instance for DEATH ENGINE
                 if (boss.name === 'DEATH ENGINE') {
                     boss.skullRenderer = new Boss(ctx, boss.x, boss.y, boss.color);
                     // Store collar stacks before Death Engine fight to restore them after
-                    store.world.deathEngineCollarStacks = store.world.collarStacks;
-                    store.world.deathEngineCollarTargetStacks = store.world.collarTargetStacks;
+                    store.world.deathEngineEnemyCollarStacks = store.world.enemyCollarStacks;
+                    store.world.deathEngineEnemyCollarTargetStacks = store.world.enemyCollarTargetStacks;
+                    store.world.deathEngineBossCollarStacks = store.world.bossCollarStacks;
+                    store.world.deathEngineBossCollarTargetStacks = store.world.bossCollarTargetStacks;
                 }
 
                 return boss;
@@ -10402,7 +10465,7 @@
                 }
 
                 c.hp *= waveMultiplier * store.world.enemyHealthBonus;
-                const collarBonus = calculateCollarBonus(sanitizeCollarStacks()); // Diminishing scaling per collar stack
+                const collarBonus = calculateEnemyCollarBonus();
                 c.hp *= collarBonus;
 
                 // console.log(`🔍 Enemy Health Debug | Type: ${type} | Base: ${cfgs[type].hp} | Wave: ${wave} | WaveMult: ${waveMultiplier.toFixed(2)} | EnemyBonus: ${store.world.enemyHealthBonus.toFixed(2)} | CollarBonus: ${collarBonus.toFixed(2)} | Final HP: ${c.hp.toFixed(1)}`);
@@ -12909,10 +12972,10 @@
                     dmgScale = wave10Scale * (1 + veryGentleGrowth);
                 }
                 // Apply collar bonus and late-game scaling to enemy damage
-                const collarBonus = calculateCollarBonus(sanitizeCollarStacks()); // Diminishing scaling per collar stack
+                const collarBonus = calculateEnemyCollarBonus();
                 const lateGameBonus = store.world.lateGameDamageScaling || 1;
                 dmgScale *= collarBonus * lateGameBonus;
-                // console.log(`Wave ${store.world.wave}: Damage scale = ${dmgScale.toFixed(2)} | CollarStacks: ${store.world.collarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x | LateGameBonus: ${lateGameBonus.toFixed(2)}x`);
+                // console.log(`Wave ${store.world.wave}: Damage scale = ${dmgScale.toFixed(2)} | EnemyCollarStacks: ${store.world.enemyCollarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x | LateGameBonus: ${lateGameBonus.toFixed(2)}x`);
                 const player = store.player;
                 let autoBlinkTriggeredThisFrame = false;
 
@@ -14002,7 +14065,7 @@
 
                         // Guaranteed minimum collar stacks for any reasonable clear
                         let collarStacksToAdd = 0;
-                        sanitizeCollarStacks();
+                        sanitizeEnemyCollarStacks();
 
                         if (waveClearTime < 2) {
                             // Ultra-instant clear: +9 collar stacks (addresses missing 9 stack issue)
@@ -14030,8 +14093,8 @@
                             // Very slow clear: reset collar stacks (except during Death Engine fight)
                             const isDeathEngineFight = store.world.boss && store.world.boss.name === 'DEATH ENGINE';
                             if (!isDeathEngineFight) {
-                                const loosenedStacks = Math.max(0, sanitizeCollarStacks() - 2);
-                                setCollarStacks(loosenedStacks);
+                                const loosenedStacks = Math.max(0, sanitizeEnemyCollarStacks() - 2);
+                                setEnemyCollarStacks(loosenedStacks);
                                 announce("🐌 SLOW CLEAR - COLLAR LOOSENS");
                             } else {
                                 announce("THE DEATH ENGINE'S CURSE MAINTAINS THE COLLAR!");
@@ -14042,9 +14105,9 @@
                         collarStacksToAdd = ensureFiniteNumber(collarStacksToAdd, 0);
                         if (store.world.bosses >= 2) {
                             if (collarStacksToAdd > 0) {
-                                scheduleCollarIncrease(collarStacksToAdd);
+                                scheduleEnemyCollarIncrease(collarStacksToAdd);
                             } else {
-                                approachCollarTarget();
+                                approachEnemyCollarTarget();
                             }
                         }
                     }
@@ -14069,31 +14132,47 @@
                 }
 
                 // Collar decay system - prevent infinite stacking
-                if (!store.world.collarDecayTimer) {
-                    store.world.collarDecayTimer = 0;
+                if (!store.world.enemyCollarDecayTimer) {
+                    store.world.enemyCollarDecayTimer = 0;
                 }
-                store.world.collarDecayTimer += dt;
+                store.world.enemyCollarDecayTimer += dt;
 
                 // Apply gradual collar decay every 10 seconds if stacks are high (only after 2nd boss, except during Death Engine fight)
-                if (store.world.collarDecayTimer >= 10 && store.world.bosses >= 2) {
-                    store.world.collarDecayTimer = 0;
+                if (store.world.enemyCollarDecayTimer >= 10 && store.world.bosses >= 2) {
+                    store.world.enemyCollarDecayTimer = 0;
 
                     // Don't decay collar stacks during Death Engine fight due to its intermission phases
                     const isDeathEngineFight = store.world.boss && store.world.boss.name === 'DEATH ENGINE';
 
                     if (!isDeathEngineFight) {
-                        const currentStacks = sanitizeCollarStacks();
+                        const currentStacks = sanitizeEnemyCollarStacks();
                         if (currentStacks > 20) {
                             // Decay faster when collar stacks are very high
                             const decay = Math.max(0.5, currentStacks * 0.02);
                             const newStacks = Math.max(0, currentStacks - decay);
-                            setCollarStacks(newStacks);
+                            setEnemyCollarStacks(newStacks);
                             // High collar stacks decay applied
                         } else if (currentStacks > 5) {
                             // Gentle decay for moderate stacks
                             const newStacks = Math.max(0, currentStacks - 0.3);
-                            setCollarStacks(newStacks);
+                            setEnemyCollarStacks(newStacks);
                         }
+                    }
+                }
+
+                // Boss collar decay: slowly relax stack pressure between guardian encounters
+                if (!store.world.bossCollarDecayTimer) {
+                    store.world.bossCollarDecayTimer = 0;
+                }
+                store.world.bossCollarDecayTimer += dt;
+                if (store.world.bossCollarDecayTimer >= 12 && store.world.bosses >= 3 && !store.boss && store.world.deathEngineBossCollarStacks === undefined) {
+                    store.world.bossCollarDecayTimer = 0;
+                    const bossStacks = sanitizeBossCollarStacks();
+                    if (bossStacks > 15) {
+                        const decay = Math.max(0.6, bossStacks * 0.015);
+                        setBossCollarStacks(Math.max(0, bossStacks - decay));
+                    } else if (bossStacks > 5) {
+                        setBossCollarStacks(Math.max(0, bossStacks - 0.25));
                     }
                 }
 
@@ -14314,7 +14393,7 @@
                 // Use progression logic with point award
                 checkProgressionLogic(true);
 
-                const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
+                const collarBonus = calculateBossCollarBonus();
                 const scoreBonus = Math.floor(2000 * collarBonus);
                 const goldBonus = Math.floor(25 * collarBonus);
                 const xpBonus = Math.floor(100 * collarBonus);
@@ -14393,7 +14472,7 @@
                 let healthBonusMultiplier = 1.0, announcedAdaptation = false;
                 // Calculate collar stacks to add based on boss kill speed (more generous)
                 let collarStacksToAdd = 0;
-                sanitizeCollarStacks();
+                sanitizeBossCollarStacks();
 
                 if (fightDuration <= 2) {
                     const world = store.world;
@@ -14448,8 +14527,8 @@
                 } else {
                     // Very slow kill: reset collar stacks and boss adaptation (except for DEATH ENGINE)
                     if (bossName !== 'DEATH ENGINE') {
-                        setCollarStacks(0);
-                        store.world.collarTargetStacks = 0;
+                        setBossCollarStacks(0);
+                        store.world.bossCollarTargetStacks = 0;
                         store.world.bossHealthBonus = 1;
                         store.world.lastBossRapidKillMultiplier = 1;
                         store.world.enemyHealthBonus = Math.max(1, store.world.enemyHealthBonus * 0.85);
@@ -14465,27 +14544,35 @@
                 }
 
                 // Special handling for Death Engine - restore preserved collar stacks
-                if (bossName === 'DEATH ENGINE' && store.world.deathEngineCollarStacks !== undefined) {
-                    const originalStacks = ensureFiniteNumber(store.world.deathEngineCollarStacks, sanitizeCollarStacks());
-                    const originalTarget = ensureFiniteNumber(store.world.deathEngineCollarTargetStacks, originalStacks);
-                    setCollarStacks(Math.max(0, originalStacks));
-                    store.world.collarTargetStacks = Math.max(store.world.collarStacks, originalTarget); // No cap
+                if (bossName === 'DEATH ENGINE' && store.world.deathEngineBossCollarStacks !== undefined) {
+                    const originalStacks = ensureFiniteNumber(store.world.deathEngineBossCollarStacks, sanitizeBossCollarStacks());
+                    const originalTarget = ensureFiniteNumber(store.world.deathEngineBossCollarTargetStacks, originalStacks);
+                    setBossCollarStacks(Math.max(0, originalStacks));
+                    store.world.bossCollarTargetStacks = Math.max(store.world.bossCollarStacks, originalTarget);
                     const addAfterRestore = ensureFiniteNumber(collarStacksToAdd, 0);
                     if (addAfterRestore > 0) {
-                        scheduleCollarIncrease(addAfterRestore);
+                        scheduleBossCollarIncrease(addAfterRestore);
                     } else {
-                        approachCollarTarget();
+                        approachBossCollarTarget();
                     }
-                    delete store.world.deathEngineCollarStacks; // Clean up
-                    delete store.world.deathEngineCollarTargetStacks;
+                    if (store.world.deathEngineEnemyCollarStacks !== undefined) {
+                        const enemyOriginal = ensureFiniteNumber(store.world.deathEngineEnemyCollarStacks, sanitizeEnemyCollarStacks());
+                        const enemyTarget = ensureFiniteNumber(store.world.deathEngineEnemyCollarTargetStacks, enemyOriginal);
+                        setEnemyCollarStacks(Math.max(0, enemyOriginal));
+                        store.world.enemyCollarTargetStacks = Math.max(store.world.enemyCollarStacks, enemyTarget);
+                    }
+                    delete store.world.deathEngineBossCollarStacks;
+                    delete store.world.deathEngineBossCollarTargetStacks;
+                    delete store.world.deathEngineEnemyCollarStacks;
+                    delete store.world.deathEngineEnemyCollarTargetStacks;
                 } else {
                     // Add collar stacks only after 2nd boss is defeated - collar system starts with 3rd boss
                     collarStacksToAdd = ensureFiniteNumber(collarStacksToAdd, 0);
                     if (store.world.bosses >= 2) {
                         if (collarStacksToAdd > 0) {
-                            scheduleCollarIncrease(collarStacksToAdd);
+                            scheduleBossCollarIncrease(collarStacksToAdd);
                         } else {
-                            approachCollarTarget();
+                            approachBossCollarTarget();
                         }
                     }
                 }
@@ -14675,7 +14762,12 @@
                     lastEnemyOverdriveAnnounce: 0,
                     powerupCooldown: 0,
                     xpMultiplier: 1.0,
-                    collarStacks: 0,
+                    enemyCollarStacks: 0,
+                    enemyCollarTargetStacks: 0,
+                    bossCollarStacks: 0,
+                    bossCollarTargetStacks: 0,
+                    enemyCollarDecayTimer: 0,
+                    bossCollarDecayTimer: 0,
                     lateGameDamageScaling: 1,
                     consecutiveFastKills: 0,
                     fastKillBonus: 0,
@@ -15581,7 +15673,7 @@
                 store.world.cubeBurglarSpawnTimer = 0;
                 store.world.cubeBurglarSpawnAttempts = 0;
                 store.world.cubeBurglarLastAttemptTime = now;
-                const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
+                const collarBonus = calculateEnemyCollarBonus();
                 const gold = Math.floor((enemy.gold || 0) * collarBonus);
                 const xp = Math.floor((enemy.xp || 0) * collarBonus);
                 const score = Math.floor((enemy.score || 0) * collarBonus);
@@ -17303,7 +17395,7 @@
                 }
 
                 if (allowRewards) {
-                    const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
+                    const collarBonus = calculateEnemyCollarBonus();
                     const scoreGain = Math.floor((Number.isFinite(enemy.score) ? enemy.score : 0) * collarBonus);
                     const goldGain = Math.floor((Number.isFinite(enemy.gold) ? enemy.gold : 0) * collarBonus);
                     const xpGain = Math.floor((Number.isFinite(enemy.xp) ? enemy.xp : 0) * collarBonus);
@@ -17712,7 +17804,7 @@
 
                     // COMMENTED OUT: Enhanced collar display with better feedback
                     /*
-                    const collarStacks = sanitizeCollarStacks();
+                    const collarStacks = sanitizeEnemyCollarStacks();
                     const collarBonus = calculateCollarBonus(collarStacks);
                     const collarPercent = (collarBonus - 1) * 100;
                     const collarStatus = collarStacks === 0 ? 'LOOSE' : 
@@ -31124,7 +31216,16 @@
                 if (player.hasStormbringer) reserves.push('<li><strong>Stormbringer Arsenal</strong> • Storm grid discharges ready</li>');
                 if (player.hasPhasestriker) reserves.push('<li><strong>Phasestriker Arsenal</strong> • Blink strikes primed</li>');
                 if (player.missileVolley > 0) reserves.push(`<li><strong>Missile Salvos</strong> • Stored volleys: ${player.missileVolley}</li>`);
-                if ((store.world?.collarStacks || 0) > 0) reserves.push(`<li><strong>Collar Charges</strong> • Stacks: ${store.world.collarStacks}</li>`);
+                if (store.world) {
+                    const enemyStacks = sanitizeEnemyCollarStacks();
+                    if (enemyStacks > 0) {
+                        reserves.push(`<li><strong>Enemy Collar</strong> • Stacks: ${enemyStacks.toFixed(1)}</li>`);
+                    }
+                    const bossStacks = sanitizeBossCollarStacks();
+                    if (bossStacks > 0) {
+                        reserves.push(`<li><strong>Boss Collar</strong> • Stacks: ${bossStacks.toFixed(1)}</li>`);
+                    }
+                }
 
                 const reserveSection = reserves.length
                     ? `<ul class="shop-powerup-list">${reserves.join('')}</ul>`
@@ -31679,7 +31780,7 @@
                     {
                         key: 'Safety Net',
                         value: `Nano ${pad(player.nanoSaves || 0)} • Vamp ${pct(player.vampirism || 0)}`,
-                        detail: `Shield Pulses ${pad(player.grenades || 0)} • Knockback ${pad(player.knockbackShields || 0)} • Collar ${pad(world.collarStacks || 0)}`
+                        detail: `Shield Pulses ${pad(player.grenades || 0)} • Knockback ${pad(player.knockbackShields || 0)} • Enemy Collar ${pad(world.enemyCollarStacks || 0)} • Boss Collar ${pad(world.bossCollarStacks || 0)}`
                     }
                 ];
                 sections.push(renderGridSection('Core Systems', coreRows));
@@ -40432,7 +40533,7 @@
                 const burglar = createCubeBurglar({
                     hpScale: threatScale,
                     lateGameScaling,
-                    damageMult: 1 + Math.max(0, (world.collarStacks || 0) * 0.05)
+                    damageMult: 1 + Math.max(0, (world.enemyCollarStacks || 0) * 0.05)
                 });
 
                 const now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
