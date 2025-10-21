@@ -3793,6 +3793,15 @@
                     return;
                 }
                 const PIXI = window.PIXI;
+                
+                // Prevent duplicate initialization
+                if (window.__voidSkiesBootstrapped) {
+                    console.warn('[VoidSkies] Renderer already initialized; skipping duplicate bootstrap.');
+                    return;
+                }
+                window.__voidSkiesBootstrapped = true;
+                console.log('[VoidSkies] Renderer initializing...');
+                
                 // --- CORE SETUP ---
             const W = 960, H = 540;
             const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -4066,7 +4075,15 @@
                 }
 
                 beginFrame() {
-                    this.container.removeChildren();
+                    // More efficient clearing - destroy: false keeps objects in memory pool
+                    const childCount = this.container.children.length;
+                    
+                    // Warn if creating too many objects per frame
+                    if (childCount > 500 && frameCount % 60 === 0) {
+                        console.warn(`[PERF] High Pixi object count: ${childCount} objects/frame`);
+                    }
+                    
+                    this.container.removeChildren(0, childCount, { children: false, texture: false, baseTexture: false });
                     this._path = [];
                     this._pathClosed = false;
                 }
@@ -11427,146 +11444,183 @@
                 });
             }
 
+            const MAX_SPAWNS_PER_FRAME = 6;
+
             function processWaveSpawnQueue(dt) {
                 if (!store.waveSpawnQueue.length) return;
-                for (let i = store.waveSpawnQueue.length - 1; i >= 0; i--) {
-                    const evt = store.waveSpawnQueue[i];
-                    evt.timer -= dt;
-                    if (evt.timer <= 0) {
-                        spawnClusterEnemies(evt);
-                        store.waveSpawnQueue.splice(i, 1);
+
+                for (let idx = 0; idx < store.waveSpawnQueue.length; idx++) {
+                    const pending = store.waveSpawnQueue[idx];
+                    pending.timer -= dt;
+                    if (pending.timer < -1) {
+                        pending.timer = -1;
                     }
+                }
+
+                let spawnBudget = MAX_SPAWNS_PER_FRAME;
+                const telemetryActive = !!store.telemetryEnabled;
+
+                for (let i = 0; i < store.waveSpawnQueue.length && spawnBudget > 0; ) {
+                    const evt = store.waveSpawnQueue[i];
+                    if (evt.timer > 0) {
+                        i++;
+                        continue;
+                    }
+
+                    const batchLimit = Math.min(spawnBudget, MAX_SPAWNS_PER_FRAME);
+                    const spawnStart = telemetryActive ? performance.now() : 0;
+                    const result = spawnClusterEnemies(evt, batchLimit);
+                    if (telemetryActive) {
+                        performanceMetrics.spawnProcessingTime += performance.now() - spawnStart;
+                        performanceMetrics.spawnsThisFrame += result.spawned;
+                    }
+
+                    spawnBudget -= result.spawned;
+
+                    if (result.done) {
+                        store.waveSpawnQueue.splice(i, 1);
+                        continue;
+                    }
+
+                    evt.timer = 0;
+                    i++;
                 }
             }
 
-            function spawnClusterEnemies(event) {
-                const clusterSize = event.enemies.length;
-                const centerX = Math.max(80, Math.min(W - 80, 80 + Math.random() * (W - 160)));
-                const difficultyProgress = typeof clamp === 'function'
-                    ? clamp(event.difficultyProgress ?? ((event.clusterIndex + 1) / Math.max(1, event.totalClusters)), 0, 1)
-                    : Math.max(0, Math.min(1, event.difficultyProgress ?? ((event.clusterIndex + 1) / Math.max(1, event.totalClusters))));
-                const intensityMultiplier = 1 + difficultyProgress * 0.5;
-                
-                // THEMED SPAWN FORMATIONS based on current wave profile
-                const waveProfile = getSpawnProfileForWave(store.world.wave);
-                let spacing = Math.max(40, 140 - clusterSize * 10);
-                spacing *= Math.max(0.45, 1 - difficultyProgress * 0.35);
-                let formationStyle = 'line'; // default: horizontal line
-                
-                // HUNTER GANG COORDINATION: Pick a gang for this cluster
-                const hunterCount = event.enemies.filter(spec => spec.type === 'hunter').length;
-                const hunterGangForCluster = hunterCount > 0 
-                    ? HUNTER_GANGS[HUNTER_GANG_LIST[Math.floor(Math.random() * HUNTER_GANG_LIST.length)]]
-                    : null;
-                
-                // If spawning hunters, use tighter formation
-                if (hunterCount > 0) {
-                    spacing = Math.max(30, 80 - clusterSize * 8); // Tighter spacing for gangs
-                    formationStyle = 'cluster';
+            function spawnClusterEnemies(event, maxSpawnCount) {
+                if (!event || !Array.isArray(event.enemies) || event.enemies.length === 0) {
+                    return { spawned: 0, done: true };
                 }
-                
-                if (waveProfile && waveProfile.theme) {
-                    switch (waveProfile.theme) {
-                        case 'SWARM_HELL':
-                            // Tight clusters for overwhelming swarms
-                            spacing *= 0.6;
-                            formationStyle = 'cluster';
-                            break;
-                        case 'TANK_RUSH':
-                        case 'ELITE_ASSAULT':
-                            // Wide spread for tanky enemies
-                            spacing *= 1.4;
-                            formationStyle = 'spread';
-                            break;
-                        case 'PRECISION_TEST':
-                            // Maximum spread to test multi-target
-                            spacing *= 1.8;
-                            formationStyle = 'spread';
-                            break;
-                        case 'DODGE_HELL':
-                            // Staggered formation
-                            formationStyle = 'stagger';
-                            break;
-                    }
-                }
-                
-                let spawnedThisCluster = 0;
-                
-                // ORGANIC SPAWN PATTERNS: Use circular/natural clustering instead of grid
-                const circularBias = 0.45 + difficultyProgress * 0.4;
-                const useCircularPattern = Math.random() < circularBias; // Later clusters favor circular strikes
-                const baseClusterRadius = hunterCount > 0 ? 40 : 70;
-                const clusterRadius = Math.max(30, baseClusterRadius * Math.max(0.55, 1 - difficultyProgress * 0.4)); // Higher difficulty = tighter focus fire
-                const angleOffset = Math.random() * Math.PI * 2; // Random rotation
 
-                event.enemies.forEach((spec, idx) => {
-                    let lateralOffset, spawnY;
-                    
-                    if (useCircularPattern && clusterSize > 2) {
-                        // CIRCULAR/ORGANIC PATTERN: Distribute around a circle with variance
-                        const angle = (idx / clusterSize) * Math.PI * 2 + angleOffset;
-                        const radiusVariance = 0.5 + Math.random() * 0.7; // 50%-120% of radius
-                        const actualRadius = clusterRadius * radiusVariance;
-                        
+                const clusterSize = event.enemies.length;
+                const maxPerCall = Math.max(1, maxSpawnCount || clusterSize);
+
+                if (!event._prepared) {
+                    event._prepared = true;
+                    event.spawnCursor = 0;
+                    event.spawnedThisCluster = 0;
+                    event.centerX = Math.max(80, Math.min(W - 80, 80 + Math.random() * (W - 160)));
+                    const rawProgress = event.difficultyProgress ?? ((event.clusterIndex + 1) / Math.max(1, event.totalClusters));
+                    event.difficultyProgress = typeof clamp === 'function'
+                        ? clamp(rawProgress, 0, 1)
+                        : Math.max(0, Math.min(1, rawProgress));
+                    event.intensityMultiplier = 1 + event.difficultyProgress * 0.5;
+                    event.waveProfile = getSpawnProfileForWave(store.world.wave);
+                    event.hunterCount = event.enemies.reduce((count, spec) => spec.type === 'hunter' ? count + 1 : count, 0);
+                    if (event.hunterCount > 0 && typeof HUNTER_GANG_LIST !== 'undefined' && Array.isArray(HUNTER_GANG_LIST) && HUNTER_GANG_LIST.length > 0) {
+                        const gangKey = HUNTER_GANG_LIST[Math.floor(Math.random() * HUNTER_GANG_LIST.length)];
+                        event.hunterGangForCluster = HUNTER_GANGS ? HUNTER_GANGS[gangKey] : null;
+                    } else {
+                        event.hunterGangForCluster = null;
+                    }
+
+                    let spacing = Math.max(40, 140 - clusterSize * 10);
+                    spacing *= Math.max(0.45, 1 - event.difficultyProgress * 0.35);
+                    let formationStyle = 'line';
+
+                    if (event.hunterCount > 0) {
+                        spacing = Math.max(30, 80 - clusterSize * 8);
+                        formationStyle = 'cluster';
+                    }
+
+                    const theme = event.waveProfile?.theme;
+                    if (theme) {
+                        switch (theme) {
+                            case 'SWARM_HELL':
+                                spacing *= 0.6;
+                                formationStyle = 'cluster';
+                                break;
+                            case 'TANK_RUSH':
+                            case 'ELITE_ASSAULT':
+                                spacing *= 1.4;
+                                formationStyle = 'spread';
+                                break;
+                            case 'PRECISION_TEST':
+                                spacing *= 1.8;
+                                formationStyle = 'spread';
+                                break;
+                            case 'DODGE_HELL':
+                                formationStyle = 'stagger';
+                                break;
+                        }
+                    }
+
+                    event.spacing = spacing;
+                    event.formationStyle = formationStyle;
+                    event.useCircularPattern = Math.random() < (0.45 + event.difficultyProgress * 0.4);
+                    const baseClusterRadius = event.hunterCount > 0 ? 40 : 70;
+                    event.clusterRadius = Math.max(30, baseClusterRadius * Math.max(0.55, 1 - event.difficultyProgress * 0.4));
+                    event.angleOffset = Math.random() * Math.PI * 2;
+                }
+
+                let spawned = 0;
+                let aborted = false;
+
+                while (spawned < maxPerCall && event.spawnCursor < clusterSize) {
+                    const idx = event.spawnCursor;
+                    const spec = event.enemies[idx];
+
+                    let lateralOffset = 0;
+                    let spawnY = -140;
+
+                    if (event.useCircularPattern && clusterSize > 2) {
+                        const angle = (idx / clusterSize) * Math.PI * 2 + event.angleOffset;
+                        const radiusVariance = 0.5 + Math.random() * 0.7;
+                        const actualRadius = event.clusterRadius * radiusVariance;
                         lateralOffset = Math.cos(angle) * actualRadius;
-                        const depthOffset = Math.sin(angle) * actualRadius * 0.5; // Less vertical spread
+                        const depthOffset = Math.sin(angle) * actualRadius * 0.5;
                         const depthBase = -140 - Math.random() * 60 - depthOffset;
-                        const aggressionFactor = Math.max(0.45, 1 - difficultyProgress * 0.4);
+                        const aggressionFactor = Math.max(0.45, 1 - event.difficultyProgress * 0.4);
                         spawnY = depthBase * aggressionFactor;
-                        
-                        // Add some noise to break perfect circles
                         lateralOffset += (Math.random() - 0.5) * 25;
                         spawnY += (Math.random() - 0.5) * 30;
                     } else {
-                        // IRREGULAR LINE/CLUSTER: Varied spacing with natural randomness
-                        const baseOffset = (idx - (clusterSize - 1) / 2) * spacing;
-                        
-                        switch (formationStyle) {
+                        const baseOffset = (idx - (clusterSize - 1) / 2) * event.spacing;
+                        switch (event.formationStyle) {
                             case 'cluster':
-                                // Tight cluster with organic variation
-                                if (hunterCount > 0) {
+                                if (event.hunterCount > 0) {
                                     lateralOffset = baseOffset + (Math.random() - 0.5) * 45;
                                     const depthBase = -140 - Math.random() * 50;
-                                    spawnY = depthBase * Math.max(0.5, 1 - difficultyProgress * 0.35);
+                                    spawnY = depthBase * Math.max(0.5, 1 - event.difficultyProgress * 0.35);
                                 } else {
                                     lateralOffset = baseOffset + (Math.random() - 0.5) * 80;
                                     const depthBase = -140 - Math.random() * 100;
-                                    spawnY = depthBase * Math.max(0.5, 1 - difficultyProgress * 0.35);
+                                    spawnY = depthBase * Math.max(0.5, 1 - event.difficultyProgress * 0.35);
                                 }
                                 break;
                             case 'spread':
-                                // Wide spread with natural variance
                                 lateralOffset = baseOffset * (0.8 + Math.random() * 0.4) + (Math.random() - 0.5) * 40;
                                 const depthBaseSpread = -180 - Math.random() * 120;
-                                spawnY = depthBaseSpread * Math.max(0.55, 1 - difficultyProgress * 0.25);
+                                spawnY = depthBaseSpread * Math.max(0.55, 1 - event.difficultyProgress * 0.25);
                                 break;
                             case 'stagger':
-                                // Organic stagger with depth variation
                                 lateralOffset = baseOffset + (Math.random() - 0.5) * 60;
                                 const staggerDepth = -140 - (Math.random() * 100) - (idx % 2 === 0 ? 0 : 60);
-                                spawnY = staggerDepth * Math.max(0.52, 1 - difficultyProgress * 0.3);
+                                spawnY = staggerDepth * Math.max(0.52, 1 - event.difficultyProgress * 0.3);
                                 break;
-                            default: // 'line'
-                                // Natural line with varying gaps
-                                const gapVariance = 0.7 + Math.random() * 0.6; // 70%-130% spacing
+                            default:
+                                const gapVariance = 0.7 + Math.random() * 0.6;
                                 lateralOffset = baseOffset * gapVariance + (Math.random() - 0.5) * 50;
                                 const depthBaseLine = -160 - Math.random() * 140;
-                                spawnY = depthBaseLine * Math.max(0.5, 1 - difficultyProgress * 0.35);
+                                spawnY = depthBaseLine * Math.max(0.5, 1 - event.difficultyProgress * 0.35);
                         }
                     }
-                    
-                    const spawnX = Math.max(40, Math.min(W - 40, centerX + lateralOffset));
+
+                    const spawnX = Math.max(40, Math.min(W - 40, event.centerX + lateralOffset));
                     const props = { ...(spec.props || {}), x: spawnX, y: spawnY };
                     const enemy = spawnEnemy(spec.type, props);
                     store.pendingSpawnCount = Math.max(0, (store.pendingSpawnCount || 0) - 1);
+
                     if (!enemy) {
                         store.world.lastSpawnFallback = true;
-                        return;
+                        event.spawnCursor = clusterSize;
+                        aborted = true;
+                        break;
                     }
 
                     applySpawnSpecToEnemy(enemy, spec);
 
-                    const aggressionBonus = intensityMultiplier;
+                    const aggressionBonus = event.intensityMultiplier;
                     if (Number.isFinite(enemy.v) && enemy.v > 0) {
                         enemy.v *= aggressionBonus;
                     }
@@ -11574,34 +11628,32 @@
                         enemy.vx *= aggressionBonus;
                     }
                     if (Number.isFinite(enemy.fireCooldown) && enemy.fireCooldown > 0 && enemy.fireCooldown < Infinity) {
-                        enemy.fireCooldown = Math.max(0.18, enemy.fireCooldown / Math.max(1, 0.9 + difficultyProgress * 0.6));
+                        enemy.fireCooldown = Math.max(0.18, enemy.fireCooldown / Math.max(1, 0.9 + event.difficultyProgress * 0.6));
                     }
                     if (Number.isFinite(enemy.fireRateChance) && enemy.fireRateChance > 0) {
-                        enemy.fireRateChance = Math.min(0.98, enemy.fireRateChance * (1 + difficultyProgress * 0.5));
+                        enemy.fireRateChance = Math.min(0.98, enemy.fireRateChance * (1 + event.difficultyProgress * 0.5));
                     }
-                    enemy.clusterDifficulty = difficultyProgress;
-                    
-                    // Assign hunter gang (same gang for all hunters in this cluster)
-                    if (enemy.type === 'hunter' && hunterGangForCluster) {
-                        enemy.gang = hunterGangForCluster;
+                    enemy.clusterDifficulty = event.difficultyProgress;
+
+                    if (enemy.type === 'hunter' && event.hunterGangForCluster) {
+                        enemy.gang = event.hunterGangForCluster;
                     }
-                    
-                    // Assign movement behavior based on sector theme
-                    const currentTheme = waveProfile?.theme || 'MIXED_BASICS';
+
+                    const currentTheme = event.waveProfile?.theme || 'MIXED_BASICS';
                     assignMovementBehavior(enemy, currentTheme);
-                    
+
                     activateSpawnIntro(enemy, {
                         duration: spec.spawnDuration,
                         dropDistance: spec.spawnDropDistance,
                         clusterIndex: event.clusterIndex,
                         effectColor: spec.effectColor,
-                        topClampBuffer: Math.max(0.35, 0.75 - difficultyProgress * 0.3),
+                        topClampBuffer: Math.max(0.35, 0.75 - event.difficultyProgress * 0.3),
                         clusterSize
                     });
 
                     store.enemies.push(enemy);
                     store.world.lastSpawnCount = (store.world.lastSpawnCount || 0) + 1;
-                    spawnedThisCluster++;
+                    event.spawnedThisCluster = (event.spawnedThisCluster || 0) + 1;
 
                     store.activeEffects.push(createEffect('spawnTeleport', enemy.x, enemy.spawnTargetY ?? enemy.y, enemy.r || 18, {
                         duration: (enemy.spawnDuration || 0.6) + 0.25,
@@ -11609,10 +11661,16 @@
                         clusterIndex: event.clusterIndex,
                         clusterSize
                     }));
-                });
 
-                if (spawnedThisCluster === 0) {
-                    const fallback = spawnEnemy('drone', { x: centerX, y: -140 });
+                    spawned++;
+                    event.spawnCursor++;
+                }
+
+                let done = aborted || event.spawnCursor >= clusterSize;
+
+                if (done && (!event.spawnedThisCluster || event.spawnedThisCluster === 0) && !event._fallbackAttempted) {
+                    event._fallbackAttempted = true;
+                    const fallback = spawnEnemy('drone', { x: event.centerX, y: -140 });
                     if (fallback) {
                         applySpawnSpecToEnemy(fallback, { lateGameScaling: 1 });
                         activateSpawnIntro(fallback, {
@@ -11633,8 +11691,12 @@
                             clusterSize,
                             fallback: true
                         }));
+                        spawned++;
+                        event.spawnedThisCluster++;
                     }
                 }
+
+                return { spawned, done };
             }
 
             function applySpawnSpecToEnemy(enemy, spec) {
@@ -17011,7 +17073,9 @@
                 // ctx.fillRect(0, 0, W, H);
                 frameTime = performance.now() / 1000;
 
-
+                // Track object creation for performance monitoring
+                if (window.pixiObjectCount === undefined) window.pixiObjectCount = 0;
+                const preRenderCount = ctx.container.children.length;
 
                 const closeBullets = [];
                 const farBullets = [];
@@ -18350,6 +18414,24 @@
                 });
             }
 
+            // Cache for HUD values to avoid layout thrashing
+            const hudCache = {
+                powerupHTML: '',
+                equipmentHTML: '',
+                pilotTitle: '',
+                score: -1,
+                gold: -1,
+                wave: -1,
+                kills: -1,
+                level: -1,
+                hpText: '',
+                shieldText: '',
+                beefShieldText: '',
+                bossTitle: '',
+                bossVisible: false,
+                shopBtnText: ''
+            };
+
             function updateHUD() {
                 const player = store.player;
                 if (!player) return;
@@ -18393,15 +18475,30 @@
                 const shieldPercent = shieldMaxSafe > 0 ? Math.round((shieldValueSafe / shieldMaxSafe) * 100) : 0;
                 const beefShieldPercent = player.pilotGenome === 'beef' && beefShieldMaxSafe > 0 ? Math.round((beefShieldValueSafe / beefShieldMaxSafe) * 100) : 0;
 
-                pilotTitle.textContent = store.name ? `◢ ${store.name} ◣` : "◢ UNIDENTIFIED ◣";
-                scoreNum.textContent = store.world.score;
+                // Only update if changed
+                const newPilotTitle = store.name ? `◢ ${store.name} ◣` : "◢ UNIDENTIFIED ◣";
+                if (hudCache.pilotTitle !== newPilotTitle) {
+                    pilotTitle.textContent = newPilotTitle;
+                    hudCache.pilotTitle = newPilotTitle;
+                }
+
+                if (hudCache.score !== store.world.score) {
+                    scoreNum.textContent = store.world.score;
+                    hudCache.score = store.world.score;
+                }
+
                 const worldGold = getWorldGold();
-                goldNum.textContent = worldGold;
+                if (hudCache.gold !== worldGold) {
+                    goldNum.textContent = worldGold;
+                    hudCache.gold = worldGold;
+                }
+
                 const mechForgeBtn = q('shopBtn');
                 if (mechForgeBtn) {
                     const label = store.world.autoForgeEnabled ? 'UPGRADE HANGAR (AUTO)' : 'UPGRADE HANGAR';
-                    if (mechForgeBtn.textContent !== label) {
+                    if (hudCache.shopBtnText !== label) {
                         mechForgeBtn.textContent = label;
+                        hudCache.shopBtnText = label;
                     }
                 }
                 const nextForgePrompt = store.world.nextMechForgePrompt ?? 135;
@@ -18410,36 +18507,70 @@
                 }
 
                 hpBarFill.style.width = `${hpPercent}%`;
-                hpText.textContent = `HP: ${Math.round(hpValueSafe)} / ${hpMaxSafe}`;
+                
+                const newHpText = `HP: ${Math.round(hpValueSafe)} / ${hpMaxSafe}`;
+                if (hudCache.hpText !== newHpText) {
+                    hpText.textContent = newHpText;
+                    hudCache.hpText = newHpText;
+                }
 
                 if (beefShieldBar && beefShieldText && beefShieldBarFill) {
                     if (player.pilotGenome === 'beef' && beefShieldMaxSafe > 0) {
                         beefShieldBar.style.display = "block";
                         beefShieldBarFill.style.width = `${beefShieldPercent}%`;
-                        beefShieldText.textContent = `BEEF SHIELD: ${Math.round(beefShieldValueSafe)} / ${Math.round(beefShieldMaxSafe)}`;
+                        const newBeefText = `BEEF SHIELD: ${Math.round(beefShieldValueSafe)} / ${Math.round(beefShieldMaxSafe)}`;
+                        if (hudCache.beefShieldText !== newBeefText) {
+                            beefShieldText.textContent = newBeefText;
+                            hudCache.beefShieldText = newBeefText;
+                        }
                     } else {
                         beefShieldBar.style.display = "none";
-                        beefShieldText.textContent = "";
+                        if (hudCache.beefShieldText !== '') {
+                            beefShieldText.textContent = "";
+                            hudCache.beefShieldText = '';
+                        }
                     }
                 }
 
                 shieldBar.style.display = "block";
                 shieldBarFill.style.width = `${shieldPercent}%`;
-                shieldTextEl.textContent = shieldMaxSafe > 0
+                const newShieldText = shieldMaxSafe > 0
                     ? `SHIELD: ${Math.round(shieldValueSafe)} / ${shieldMaxSafe}`
                     : 'SHIELD: 0 / 0';
+                if (hudCache.shieldText !== newShieldText) {
+                    shieldTextEl.textContent = newShieldText;
+                    hudCache.shieldText = newShieldText;
+                }
 
-                if (waveNum) waveNum.textContent = store.world.wave;
-                if (killsNum) killsNum.textContent = store.world.kills;
-                if (levelNum) levelNum.textContent = store.world.level;
+                if (waveNum && hudCache.wave !== store.world.wave) {
+                    waveNum.textContent = store.world.wave;
+                    hudCache.wave = store.world.wave;
+                }
+                if (killsNum && hudCache.kills !== store.world.kills) {
+                    killsNum.textContent = store.world.kills;
+                    hudCache.kills = store.world.kills;
+                }
+                if (levelNum && hudCache.level !== store.world.level) {
+                    levelNum.textContent = store.world.level;
+                    hudCache.level = store.world.level;
+                }
 
                 if (bossContent && bossTitle && bossBarFill) {
-                    if (store.boss) {
-                        bossContent.classList.remove("hide");
-                        bossTitle.textContent = `⚡ ${store.boss.name} ⚡`;
+                    const bossActive = !!store.boss;
+                    if (bossActive) {
+                        if (!hudCache.bossVisible) {
+                            bossContent.classList.remove("hide");
+                            hudCache.bossVisible = true;
+                        }
+                        const newBossTitle = `⚡ ${store.boss.name} ⚡`;
+                        if (hudCache.bossTitle !== newBossTitle) {
+                            bossTitle.textContent = newBossTitle;
+                            hudCache.bossTitle = newBossTitle;
+                        }
                         bossBarFill.style.width = `${Math.round((store.boss.hp / store.boss.hpMax) * 100)}%`;
-                    } else {
+                    } else if (hudCache.bossVisible) {
                         bossContent.classList.add("hide");
+                        hudCache.bossVisible = false;
                     }
                 }
 
@@ -18453,10 +18584,15 @@
                             const percent = Math.round((timer.remaining / timer.max) * 100);
                             timedContent += `<div style="text-align:left;color:#FFD700;font-size:10px;margin-top:2px">${POWERUP_TYPES[key].name} (${Math.ceil(timer.remaining)}s)</div><div class="bar" style="height:3px"><span style="width:${percent}%; background:#FFD700"></span></div>`;
                         });
-                        powerupList.innerHTML = timedContent;
+                        // Only update innerHTML if changed
+                        if (hudCache.powerupHTML !== timedContent) {
+                            powerupList.innerHTML = timedContent;
+                            hudCache.powerupHTML = timedContent;
+                        }
                         powerupEl.classList.remove('hide');
                     } else {
                         powerupEl.classList.add('hide');
+                        hudCache.powerupHTML = '';
                     }
                 }
 
@@ -18467,10 +18603,15 @@
                         if (player.nanoSaves > 0) content += `<div>NANO SAVE [${player.nanoSaves}]</div>`;
                         if (player.hasLauncher) content += `<div>FRAG LAUNCHER [PASSIVE]</div>`;
                         if (player.hasHounds) content += `<div>GHOST HOUNDS [ACTIVE]</div>`;
-                        equipmentList.innerHTML = content;
+                        // Only update innerHTML if changed
+                        if (hudCache.equipmentHTML !== content) {
+                            equipmentList.innerHTML = content;
+                            hudCache.equipmentHTML = content;
+                        }
                         equipEl.classList.remove('hide');
                     } else {
                         equipEl.classList.add('hide');
+                        hudCache.equipmentHTML = '';
                     }
                 }
 
@@ -41364,10 +41505,9 @@
 
             function createPerformanceMetrics() {
                 return {
+                    frameTime: 0,
                     stepWorldTime: 0,
                     renderTime: 0,
-                    frameTime: 0,
-                    // New detailed metrics
                     hudUpdateTime: 0,
                     bulletUpdateTime: 0,
                     enemyUpdateTime: 0,
@@ -41378,7 +41518,9 @@
                     lastSlowLog: 0,
                     activeEnemies: 0,
                     activeBullets: 0,
-                    activeFlames: 0
+                    activeFlames: 0,
+                    spawnProcessingTime: 0,
+                    spawnsThisFrame: 0
                 };
             }
 
@@ -41425,6 +41567,10 @@
 
             setTelemetryEnabled(store.telemetryEnabled, true);
 
+            // FPS spike detection
+            let fpsHistory = [];
+            let lastFPSLog = 0;
+
             function frame(now) {
                 const telemetryActive = !!store.telemetryEnabled;
                 const frameStart = telemetryActive ? performance.now() : 0;
@@ -41436,6 +41582,11 @@
                 const dt = Math.min(rawDt * speedMultiplier, 0.1);
 
                 store.last = now;
+
+                if (telemetryActive) {
+                    performanceMetrics.spawnProcessingTime = 0;
+                    performanceMetrics.spawnsThisFrame = 0;
+                }
 
                 let stepStart;
                 if (telemetryActive) {
@@ -41476,6 +41627,26 @@
 
                     if (frameTime > perfWorstFrameTime) {
                         perfWorstFrameTime = frameTime;
+                    }
+
+                    // Track FPS history for spike detection
+                    const instantFPS = frameTime > 0 ? 1000 / frameTime : 60;
+                    fpsHistory.push(instantFPS);
+                    if (fpsHistory.length > 60) fpsHistory.shift(); // Keep last 60 frames
+
+                    // Detect FPS drops
+                    if (frameTime > 50 && now - lastFPSLog > 2000) { // Frame took >50ms (< 20 FPS)
+                        const avgFPS = fpsHistory.reduce((a, b) => a + b, 0) / fpsHistory.length;
+                        console.warn(`[PERF] FPS Drop! Frame: ${frameTime.toFixed(1)}ms (${instantFPS.toFixed(1)} FPS), Avg: ${avgFPS.toFixed(1)} FPS`);
+                        console.warn(`  Step: ${performanceMetrics.stepWorldTime.toFixed(1)}ms, Render: ${performanceMetrics.renderTime.toFixed(1)}ms`);
+                        if (performanceMetrics.spawnProcessingTime > 0 || performanceMetrics.spawnsThisFrame > 0) {
+                            console.warn(`  Spawn: ${performanceMetrics.spawnsThisFrame} units, ${performanceMetrics.spawnProcessingTime.toFixed(2)}ms`);
+                        }
+                        console.warn(`  Objects: ${performanceMetrics.activeEnemies} enemies, ${performanceMetrics.activeBullets} bullets`);
+                        if (performance.memory) {
+                            console.warn(`  Memory: ${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(1)}MB`);
+                        }
+                        lastFPSLog = now;
                     }
 
                     if (frameTime > 33 && (!performanceMetrics.lastSlowLog || now - performanceMetrics.lastSlowLog > 1500)) {
