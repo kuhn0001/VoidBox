@@ -5316,7 +5316,9 @@
                 let elementMode = player ? (player.bulletElement || 'normal') : 'normal';
                 if (elementMode === 'split') {
                     // Split mode: left half ice, right half poison
-                    bullet.element = (bullet.x < W / 2) ? 'ice' : 'poison';
+                    // Check bullet spawn position relative to screen center
+                    const bulletX = bullet.x || props.x || 0;
+                    bullet.element = (bulletX < W / 2) ? 'ice' : 'poison';
                 } else if (elementMode === 'alternate') {
                     // Alternate mode: alternate volleys between ice and poison
                     bullet.element = (player.bulletElementVolleyCount % 2 === 0) ? 'ice' : 'poison';
@@ -6586,6 +6588,31 @@
                             life,
                             maxLife: life,
                             r: 1 + Math.random() * (b.isLavaBlade ? 1.4 : 2)
+                        });
+                    }
+                    b.particles = b.particles.filter(p => {
+                        p.life -= dt;
+                        p.x += p.vx * dt;
+                        p.y += p.vy * dt;
+                        return p.life > 0;
+                    });
+                } else if (b.element === 'ice' || b.element === 'poison') {
+                    // Spawn trail particles for elemental bullets
+                    b.particleSpawnT = (b.particleSpawnT || 0) - dt;
+                    if (b.particleSpawnT <= 0) {
+                        b.particleSpawnT = b.element === 'ice' ? 0.015 : 0.025; // Ice spawns more frequently for dense mist
+                        const life = 0.25 + Math.random() * 0.2;
+                        const spreadAngle = (Math.random() - 0.5) * 0.4;
+                        const spreadSpeed = (Math.random() - 0.5) * 30;
+                        if (!Array.isArray(b.particles)) b.particles = [];
+                        b.particles.push({
+                            x: 0,
+                            y: 0,
+                            vx: spreadSpeed,
+                            vy: spreadSpeed,
+                            life,
+                            maxLife: life,
+                            r: b.element === 'ice' ? (1.2 + Math.random() * 0.8) : (1.5 + Math.random() * 1.5)
                         });
                     }
                     b.particles = b.particles.filter(p => {
@@ -16809,8 +16836,8 @@
                             ctx.fill();
                         });
                     } else if (b.element === 'ice') {
-                        // Ice bullet: white snowy line with trailing snow particles
-                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+                        // Ice bullet: blue-purple icy line with dense misty trail
+                        ctx.strokeStyle = 'rgba(140, 180, 255, 0.95)'; // Ice blue with purple tint like iceman
                         ctx.lineWidth = r * 0.8;
                         ctx.lineCap = 'round';
                         ctx.lineJoin = 'round';
@@ -16826,14 +16853,21 @@
                         ctx.lineTo(nx * lineLength * 0.5, ny * lineLength * 0.5);
                         ctx.stroke();
                         
-                        // Snow particles trailing the bullet
+                        // Dense misty particles trailing the bullet
                         if (b.particles && b.particles.length > 0) {
                             b.particles.forEach(p => {
                                 const t = Math.max(0, Math.min(1, p.life / p.maxLife));
                                 const particleR = p.r * t;
-                                ctx.fillStyle = `rgba(200, 220, 255, ${0.6 * t})`;
+                                // White misty particles with high opacity for density
+                                ctx.fillStyle = `rgba(255, 255, 255, ${0.75 * t})`;
                                 ctx.beginPath();
                                 ctx.arc(p.x, p.y, particleR, 0, 2 * Math.PI);
+                                ctx.fill();
+                                
+                                // Add extra glow around each particle for misty effect
+                                ctx.fillStyle = `rgba(200, 220, 255, ${0.35 * t})`;
+                                ctx.beginPath();
+                                ctx.arc(p.x, p.y, particleR * 1.8, 0, 2 * Math.PI);
                                 ctx.fill();
                             });
                         }
