@@ -4345,7 +4345,7 @@
                 grenades: 0, knockbackShields: 0, hasVoidBeam: false, voidBeamCooldown: 0,
                 hasLazarusBeam: false, lazarusBeamCooldown: 0,
                 hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 1, vampirismLevel: 0, flamethrowerLevel: 0,
-                flamethrowerT: 0, // Separate timer for lava chunks, unaffected by overclock
+                flamethrowerT: 0, // Separate timer for lava blades, unaffected by overclock
                 fragmentBlasters: [], // Auto-targeting shotgun blasts
                 // Shield recharge delay system
                 shieldRecharging: false,
@@ -4407,7 +4407,11 @@
                     minionProtocols: 0,
                     skin: 'default',
                     unlockedSkins: { default: true }
-                }
+                },
+                // Bullet element system (ice/poison/normal)
+                bulletElement: 'normal',
+                hasIceBullets: false,
+                hasPoisonBullets: false
             };
 
             class Pool {
@@ -4453,7 +4457,7 @@
                 bullet.isFlame = false;
                 bullet.isIceman = false;
                 bullet.isDrone = false;
-                bullet.isLavaChunk = false;
+                bullet.isLavaBlade = false;
                 bullet.isLevelUpPulse = false;
                 bullet.hasRicocheted = false;
                 bullet.ricochetDist = 0;
@@ -5306,6 +5310,7 @@
                 bullet.maxRicochetDist = typeof props.maxRicochetDist === 'number' ? props.maxRicochetDist : 0;
                 bullet.originalDmg = typeof props.originalDmg === 'number' ? props.originalDmg : undefined;
                 const player = store.player;
+                bullet.element = player ? (player.bulletElement || 'normal') : 'normal';
                 const ricochetLevel = player ? (player.ricochetLevel || (player.hasRicochet ? 1 : 0)) : 0;
                 if (props.canRicochet !== undefined) {
                     bullet.canRicochet = !!props.canRicochet;
@@ -5320,7 +5325,7 @@
                 if (bullet.isFlame && !Array.isArray(bullet.particles)) {
                     bullet.particles = [];
                 }
-                if (bullet.canRicochet && !bullet.isFragment && !bullet.isFlame && !bullet.isLavaChunk && !bullet.isLevelUpPulse) {
+                if (bullet.canRicochet && !bullet.isFragment && !bullet.isFlame && !bullet.isLavaBlade && !bullet.isLevelUpPulse) {
                     const baseRadius = Number.isFinite(bullet.r) ? bullet.r : 4;
                     if (baseRadius > 3.2) {
                         bullet.r = 3.2;
@@ -6242,6 +6247,30 @@
             function handleBulletImpact(b, e) {
                 if (b.isFlame) e.slowTimer = 1.0;
 
+                // Handle ice bullets - slow enemy and increase damage taken
+                if (b.element === 'ice') {
+                    // Track ice stacks (max 3)
+                    e.iceStacks = Math.min(3, (e.iceStacks || 0) + 1);
+                    e.iceStackTimer = 3.0; // 3 second duration
+                    
+                    // Apply slow: 10% per stack (10%, 20%, 30%)
+                    const slowAmount = 0.1 * e.iceStacks;
+                    e.speedMultiplier = Math.max(e.speedMultiplier || 1, 1 - slowAmount);
+                }
+
+                // Handle poison bullets - damage over time with stacking
+                if (b.element === 'poison') {
+                    // Track poison stacks (max 3)
+                    e.poisonStacks = Math.min(3, (e.poisonStacks || 0) + 1);
+                    e.poisonStackTimer = 3.0; // 3 second duration
+                    
+                    // Calculate total damage: 10% per stack over 3 seconds
+                    const damagePerStack = b.dmg * 0.1;
+                    e.poisonDamagePerStack = damagePerStack;
+                    e.poisonTickInterval = 0.1;
+                    e.poisonLastTick = 0;
+                }
+
                 if (e.isHeatDeath) {
                     b.dead = true;
                     return;
@@ -6303,6 +6332,11 @@
                     baseDamage: dmg
                 });
                 dmg = vulnBullet.damage;
+
+                // Apply ice damage multiplier bonus (10% per stack)
+                if (e.iceDamageMultiplier && e.iceDamageMultiplier > 1) {
+                    dmg *= e.iceDamageMultiplier;
+                }
 
                 if (e.type === 'cube_burglar') {
                     const cubeResult = applyCubeBurglarHit(e, b, dmg);
@@ -6526,10 +6560,10 @@
                     if (b.life <= 0) b.dead = true;
                     b.particleSpawnT -= dt;
                     if (b.particleSpawnT <= 0) {
-                        b.particleSpawnT = b.isLavaChunk ? 0.1 : 0.05;
+                        b.particleSpawnT = b.isLavaBlade ? 0.1 : 0.05;
                         const life = 0.3 + Math.random() * 0.3;
                         const angle = Math.random() * 2 * Math.PI;
-                        const speed = b.isLavaChunk ? 10 + Math.random() * 15 : 20 + Math.random() * 20;
+                        const speed = b.isLavaBlade ? 12 + Math.random() * 12 : 20 + Math.random() * 20;
                         if (!Array.isArray(b.particles)) b.particles = [];
                         b.particles.push({
                             x: 0,
@@ -6538,7 +6572,7 @@
                             vy: Math.sin(angle) * speed,
                             life,
                             maxLife: life,
-                            r: 1 + Math.random() * (b.isLavaChunk ? 1.5 : 2)
+                            r: 1 + Math.random() * (b.isLavaBlade ? 1.4 : 2)
                         });
                     }
                     b.particles = b.particles.filter(p => {
@@ -6555,7 +6589,7 @@
                 // Ricochet handling - bounce off boundaries
                 const ricochetLevel = store.player ? (store.player.ricochetLevel || (store.player.hasRicochet ? 1 : 0)) : 0;
                 const canRicochet = b.canRicochet !== undefined ? b.canRicochet : ricochetLevel >= 2;
-                if (ricochetLevel > 0 && canRicochet && !b.hasRicocheted && !b.isFragment && !b.isFlame && !b.isLavaChunk && !b.isLevelUpPulse && !b.dead) {
+                if (ricochetLevel > 0 && canRicochet && !b.hasRicocheted && !b.isFragment && !b.isFlame && !b.isLavaBlade && !b.isLevelUpPulse && !b.dead) {
                     let bounced = false;
                     const margin = 5;
                     const travelDistance = 200; // Distance bullet can travel after bounce
@@ -6970,7 +7004,7 @@
                     }
                 },
                 { id: 'shield', name: 'VOID BARRIER', icon: '🩵', desc: 'BIG Shields', apply: () => { store.player.shieldMax *= 1.15 ; store.player.shieldMax += 50 ; store.player.shield = store.player.shieldMax; } },
-                { id: 'flamethrower', name: 'LAVA CHUNKS', icon: '🌋', desc: 'Spews chunks of molten rock in a cone.', apply: () => { store.player.flamethrowerLevel++; } }
+                { id: 'flamethrower', name: 'LAVA BLADES', icon: '🗡️', desc: 'Launches electric cyberpunk lava blades in a cone. Great for up-close enemies.', apply: () => { store.player.flamethrowerLevel++; } }
             ];
 
             const KNOCKBACK_SHIELD_CONFIG = {
@@ -7666,6 +7700,45 @@
                         playSound('epicHorn');
                         return true;
                     }
+                },
+                'ice_bullets': { 
+                    name: "ICE BULLETS", 
+                    icon: '❄️', 
+                    cost: 1000, 
+                    isPremium: true, 
+                    isUnlock: true, 
+                    category: 'attack', 
+                    apply: () => { 
+                        if (!store.player.hasIceBullets) {
+                            store.player.hasIceBullets = true;
+                            if (!store.player.bulletElement || store.player.bulletElement === 'normal') {
+                                store.player.bulletElement = 'ice';
+                            }
+                            announce('❄️ Ice bullets unlocked! Slow enemies on impact.');
+                            playSound('powerup');
+                            return true; 
+                        } 
+                        return false;
+                    }, 
+                    desc: () => 'Unlock ice bullets. Slow enemies on impact.' 
+                },
+                'poison_bullets': { 
+                    name: "POISON BULLETS", 
+                    icon: '☠️', 
+                    cost: 1000, 
+                    isPremium: true, 
+                    isUnlock: true, 
+                    category: 'attack', 
+                    apply: () => { 
+                        if (!store.player.hasPoisonBullets) {
+                            store.player.hasPoisonBullets = true;
+                            announce('☠️ Poison bullets unlocked! Damage enemies over time.');
+                            playSound('powerup');
+                            return true; 
+                        } 
+                        return false;
+                    }, 
+                    desc: () => 'Unlock poison bullets. Damage enemies over time.' 
                 }
             };
 
@@ -7684,6 +7757,8 @@
                 'grenade',
                 'knockback_shield',
                 'fragment_blast',
+                'ice_bullets',
+                'poison_bullets',
                 'ricochet',
                 'launcher',
                 'star_cannon',
@@ -8429,6 +8504,94 @@
                 SWARM: 'swarm'             // Aggressive homing
             });
 
+            // Pursuit AI booster: burst past the player occasionally so dodging requires repositioning
+            function maybeHandleChaseOvershoot(enemy, dt, speedMultiplier = 1, baseSpeedOverride, overrides) {
+                if (!enemy || enemy.dead || !store?.player) return false;
+
+                const config = Object.assign({
+                    triggerRange: 260,
+                    cooldownMin: 1.6,
+                    cooldownMax: 3.4,
+                    durationMin: 0.32,
+                    durationMax: 0.58,
+                    speedBoostMin: 1.35,
+                    speedBoostMax: 1.85,
+                    angleJitter: 0.5,
+                    overshootBias: 140,
+                    downwardBias: 0,
+                    recheckDelay: 0.35
+                }, overrides || {});
+
+                const player = store.player;
+                const dx = player.x - enemy.x;
+                const dy = player.y - enemy.y;
+                const distSq = dx * dx + dy * dy;
+                if (distSq < 4) return false;
+                const dist = Math.sqrt(distSq);
+
+                let state = enemy.pursuitOvershootState;
+                if (!state) {
+                    state = enemy.pursuitOvershootState = {
+                        cooldown: randRange(config.cooldownMin, config.cooldownMax),
+                        active: false,
+                        duration: 0,
+                        speedBoost: 1.5,
+                        angle: 0
+                    };
+                }
+
+                const baseSpeed = Number.isFinite(baseSpeedOverride) ? baseSpeedOverride : (enemy.v || 60);
+
+                const applyOvershootStep = () => {
+                    const speed = baseSpeed * (state.speedBoost || 1.5);
+                    enemy.x += Math.cos(state.angle) * speed * speedMultiplier * dt;
+                    enemy.y += Math.sin(state.angle) * speed * speedMultiplier * dt;
+                    if (config.downwardBias) {
+                        enemy.y += baseSpeed * config.downwardBias * speedMultiplier * dt;
+                    }
+                };
+
+                if (state.active) {
+                    state.duration -= dt;
+                    applyOvershootStep();
+                    if (state.duration <= 0) {
+                        state.active = false;
+                        state.cooldown = randRange(config.cooldownMin, config.cooldownMax);
+                    }
+                    return true;
+                }
+
+                state.cooldown -= dt;
+                if (state.cooldown > 0) {
+                    return false;
+                }
+
+                if (dist > config.triggerRange) {
+                    state.cooldown = config.recheckDelay;
+                    return false;
+                }
+
+                const baseAngle = Math.atan2(dy, dx);
+                const overshootTargetX = player.x + Math.cos(baseAngle) * config.overshootBias;
+                const overshootTargetY = player.y + Math.sin(baseAngle) * config.overshootBias;
+                const angleOffset = (Math.random() - 0.5) * config.angleJitter;
+
+                state.angle = Math.atan2(overshootTargetY - enemy.y, overshootTargetX - enemy.x) + angleOffset;
+                state.speedBoost = randRange(config.speedBoostMin, config.speedBoostMax);
+                state.duration = randRange(config.durationMin, config.durationMax);
+                state.active = true;
+                state.cooldown = randRange(config.cooldownMin, config.cooldownMax);
+
+                state.duration -= dt;
+                applyOvershootStep();
+                if (state.duration <= 0) {
+                    state.active = false;
+                    state.cooldown = randRange(config.cooldownMin, config.cooldownMax);
+                }
+
+                return true;
+            }
+
             // Apply movement behavior to enemy
             function applyMovementBehavior(enemy, dt) {
                 if (!enemy || enemy.dead || enemy.spawnPhase === 'teleport') return;
@@ -8455,10 +8618,24 @@
 
                     case MOVEMENT_BEHAVIORS.FOLLOW:
                         {
+                            const followSpeed = baseSpeed * 1.2;
+                            if (maybeHandleChaseOvershoot(enemy, dt, speedMult, followSpeed, {
+                                triggerRange: 300,
+                                cooldownMin: 1.5,
+                                cooldownMax: 3.2,
+                                durationMin: 0.3,
+                                durationMax: 0.55,
+                                speedBoostMin: 1.35,
+                                speedBoostMax: 1.75,
+                                angleJitter: 0.42,
+                                overshootBias: 170
+                            })) {
+                                break;
+                            }
+
                             const dx = store.player.x - enemy.x;
                             const dy = store.player.y - enemy.y;
                             const dist = Math.max(1, Math.hypot(dx, dy));
-                            const followSpeed = baseSpeed * 1.2;
                             enemy.x += (dx / dist) * followSpeed * speedMult * dt;
                             enemy.y += (dy / dist) * followSpeed * speedMult * dt;
                         }
@@ -8538,10 +8715,25 @@
 
                     case MOVEMENT_BEHAVIORS.SWARM:
                         {
+                            const swarmSpeed = baseSpeed * 1.4;
+                            if (maybeHandleChaseOvershoot(enemy, dt, speedMult, swarmSpeed, {
+                                triggerRange: 260,
+                                cooldownMin: 1.2,
+                                cooldownMax: 2.6,
+                                durationMin: 0.26,
+                                durationMax: 0.5,
+                                speedBoostMin: 1.45,
+                                speedBoostMax: 1.95,
+                                angleJitter: 0.55,
+                                overshootBias: 150,
+                                downwardBias: 0.18
+                            })) {
+                                break;
+                            }
+
                             const dx = store.player.x - enemy.x;
                             const dy = store.player.y - enemy.y;
                             const dist = Math.max(1, Math.hypot(dx, dy));
-                            const swarmSpeed = baseSpeed * 1.4;
                             const weave = Math.sin(enemy.behaviorTime * 4) * 30;
                             enemy.x += (dx / dist) * swarmSpeed * speedMult * dt + weave * dt;
                             enemy.y += (dy / dist) * swarmSpeed * speedMult * dt;
@@ -9128,9 +9320,9 @@
                 }
 
                 const teleportAuraByType = {
-                    drone: '#7fd5ff',
-                    hunter: '#ff6e84',
-                    phantom: '#d9a7ff',
+                    drone: '#7fd5ff', //small alien drone
+                    hunter: '#ff6e84', //snake
+                    phantom: '#d9a7ff', //
                     mech: '#4ef0ff',
                     angler: '#8cf8f8',
                     manta: '#7acbff',
@@ -9573,6 +9765,55 @@
                     };
                 }
 
+                function ensureHunterGangPresence(specs, wave, threatScale, lateGameScaling) {
+                    if (!Array.isArray(specs) || !specs.length) return specs;
+                    if (wave < 6 || wave % 5 === 0) return specs;
+
+                    const total = specs.length;
+                    const baseDesired = Math.max(2, Math.ceil(total * 0.2));
+                    const waveBonus = wave >= 30 ? 3 : wave >= 22 ? 2 : wave >= 14 ? 1 : 0;
+                    const desiredHunters = Math.min(Math.ceil(total * 0.45), baseDesired + waveBonus);
+
+                    if (desiredHunters <= 0) return specs;
+
+                    const currentHunters = specs.reduce((count, spec) => count + (spec.type === 'hunter' ? 1 : 0), 0);
+                    if (currentHunters >= desiredHunters) return specs;
+
+                    const needed = desiredHunters - currentHunters;
+                    const exclusion = new Set(['hunter', 'void_reaper', 'void_champion', 'shadow_champion', 'cube_burglar']);
+                    const preferredReplacements = ['drone', 'construct_gold', 'avian_hatchling'];
+
+                    const candidateIndices = [];
+                    const fallbackIndices = [];
+
+                    for (let i = specs.length - 1; i >= 0; i--) {
+                        const spec = specs[i];
+                        if (!spec || exclusion.has(spec.type)) continue;
+                        if (preferredReplacements.includes(spec.type)) {
+                            candidateIndices.push(i);
+                        } else {
+                            fallbackIndices.push(i);
+                        }
+                    }
+
+                    const replacementOrder = candidateIndices.concat(fallbackIndices);
+                    const injections = Math.min(needed, replacementOrder.length);
+
+                    for (let n = 0; n < injections; n++) {
+                        const idx = replacementOrder[n];
+                        const original = specs[idx];
+                        const gangScale = threatScale * (1 + Math.min(0.3, 0.08 * n));
+                        const hunterSpec = createSpawnSpec('hunter', gangScale, lateGameScaling);
+                        if (original && original.progressIndex !== undefined) {
+                            hunterSpec.progressIndex = original.progressIndex;
+                        }
+                        hunterSpec.injectedHunterGang = true;
+                        specs[idx] = hunterSpec;
+                    }
+
+                    return specs;
+                }
+
                 function shuffleInPlace(list) {
                     for (let i = list.length - 1; i > 0; i--) {
                         const j = Math.floor(Math.random() * (i + 1));
@@ -9609,7 +9850,8 @@
                         specs.push(createSpawnSpec(type, threatScale, lateGameScaling));
                     }
 
-                    shuffleInPlace(specs);
+                        ensureHunterGangPresence(specs, wave, threatScale, lateGameScaling);
+                        shuffleInPlace(specs);
                     return specs;
                 }
 
@@ -11755,7 +11997,7 @@
                     p.flamethrowerT -= dt;
                     if (p.flamethrowerT <= 0) {
                         fireFlamethrower();
-                        p.flamethrowerT = 0.18; // Fixed fire rate for lava chunks
+                        p.flamethrowerT = 0.18; // Fixed fire rate for lava blades
                     }
                 }
 
@@ -12788,6 +13030,47 @@
                     stepBoss(dt);
                 }
 
+                // Check for bullet element toggle orb hover
+                if (store.bulletToggleOrbPos && store.player) {
+                    const orbPos = store.bulletToggleOrbPos;
+                    const playerX = store.player.x;
+                    const playerY = store.player.y;
+                    const dx = playerX - orbPos.x;
+                    const dy = playerY - orbPos.y;
+                    const distToOrb = Math.sqrt(dx * dx + dy * dy);
+                    const hoverRadius = orbPos.radius + 15; // Slightly larger than visual radius for easier targeting
+
+                    // Check if player is hovering over orb
+                    if (distToOrb <= hoverRadius) {
+                        // Only switch if both elements are unlocked (otherwise single switch would be instant)
+                        if (store.player.hasIceBullets && store.player.hasPoisonBullets) {
+                            // Track hover state to avoid rapid switching
+                            if (!store.bulletToggleHovering) {
+                                store.bulletToggleHovering = true;
+                                store.bulletToggleHoverTime = 0;
+                            }
+                            store.bulletToggleHoverTime += dt;
+
+                            // Switch every 0.5 seconds while hovering over the orb
+                            if (store.bulletToggleHoverTime >= 0.5) {
+                                if (store.player.bulletElement === 'normal') {
+                                    store.player.bulletElement = 'ice';
+                                } else if (store.player.bulletElement === 'ice') {
+                                    store.player.bulletElement = 'poison';
+                                } else {
+                                    store.player.bulletElement = 'normal';
+                                }
+                                playSound('stargun');
+                                store.bulletToggleHoverTime = 0; // Reset for next switch
+                            }
+                        }
+                    } else {
+                        // No longer hovering - reset state
+                        store.bulletToggleHovering = false;
+                        store.bulletToggleHoverTime = 0;
+                    }
+                }
+
                 stepPowerups(dt);
                 if (CHAMPION_SYSTEM_ENABLED) {
                     stepPlayerChampion(dt);
@@ -13298,6 +13581,48 @@
                             store.activeEffects.push(createEffect('jugFearEmber', e.x, e.y, e.r || 20));
                         }
                     }
+
+                    // Handle poison DoT with stacking support
+                    if (e.poisonStacks && e.poisonStacks > 0) {
+                        e.poisonStackTimer -= dt;
+                        e.poisonLastTick -= dt;
+                        
+                        // Decay poison stacks if timer expired
+                        if (e.poisonStackTimer <= 0) {
+                            e.poisonStacks = 0;
+                            delete e.poisonStackTimer;
+                            delete e.poisonLastTick;
+                            delete e.poisonDamagePerStack;
+                        }
+                        
+                        // Apply poison damage on tick
+                        if (e.poisonLastTick <= 0 && e.poisonStacks > 0) {
+                            const poisonDamage = (e.poisonDamagePerStack || 0) * e.poisonStacks;
+                            const lethalFloor = (e === store.boss) ? 0 : 1;
+                            const appliedPoison = Math.min(poisonDamage, Math.max(0, e.hp - lethalFloor));
+                            e.hp -= appliedPoison;
+                            e.poisonLastTick = e.poisonTickInterval || 0.1;
+                            store.activeEffects.push(createEffect('poisonCloud', e.x, e.y, e.r || 16));
+                        }
+                    }
+
+                    // Handle old poison DoT (for backwards compatibility)
+                    if (e.poisonDot && e.poisonDot.duration > 0) {
+                        e.poisonDot.duration -= dt;
+                        e.poisonDot.lastTick = (e.poisonDot.lastTick || 0) - dt;
+                        if (e.poisonDot.lastTick <= 0) {
+                            const poisonDamage = e.poisonDot.damage || 5;
+                            const lethalFloor = (e === store.boss) ? 0 : 1;
+                            const appliedPoison = Math.min(poisonDamage, Math.max(0, e.hp - lethalFloor));
+                            e.hp -= appliedPoison;
+                            e.poisonDot.lastTick = e.poisonDot.tickInterval || 0.15;
+                            store.activeEffects.push(createEffect('poisonCloud', e.x, e.y, e.r || 16));
+                        }
+                        if (e.poisonDot.duration <= 0) {
+                            delete e.poisonDot;
+                        }
+                    }
+
                     tickChampionBurn(e, dt);
                     tickChampionVoidMarks(e, dt);
                     tickChampionStormGrid(e, dt);
@@ -13404,6 +13729,12 @@
                         }
                     } else {
                         let speedMultiplier = (e.slowTimer > 0) ? 0.3 : 1.0;
+                        
+                        // Apply ice bullet slow effect
+                        if (e.speedMultiplier !== undefined && e.speedMultiplier < 1) {
+                            speedMultiplier *= e.speedMultiplier;
+                        }
+                        
                         if (e.hitSlowTimer && e.hitSlowTimer > 0) {
                             const slowFactor = e.hitSlowFactor !== undefined ? e.hitSlowFactor : 0.85;
                             speedMultiplier *= Math.max(0.3, Math.min(1, slowFactor));
@@ -13426,6 +13757,21 @@
                         }
                         
                         if (e.slowTimer > 0) e.slowTimer -= dt;
+                        
+                        // Handle ice stacks - decay timer and apply damage reduction bonus
+                        if (e.iceStacks && e.iceStacks > 0) {
+                            e.iceStackTimer = Math.max(0, (e.iceStackTimer || 0) - dt);
+                            if (e.iceStackTimer <= 0) {
+                                e.iceStacks = 0;
+                                delete e.iceStackTimer;
+                            } else {
+                                // Apply 10% damage reduction per stack to speedMultiplier
+                                const iceDamageMultiplier = 1 + (0.1 * e.iceStacks);
+                                // This will be used for damage calculation (when we apply damage in game)
+                                e.iceDamageMultiplier = iceDamageMultiplier;
+                            }
+                        }
+                        
                         if (e.phaseLockTimer > 0) {
                             speedMultiplier *= e.phaseLockSlowFactor || 0.4;
                         }
@@ -13439,14 +13785,31 @@
 
                         // SWARM PROTOCOL: Fast homing enemies (construct_gold, avian_hatchling)
                         if (e.type === 'construct_gold' || e.type === 'avian_hatchling') {
-                            const dx = store.player.x - e.x, dy = store.player.y - e.y, dist = Math.sqrt(dx * dx + dy * dy);
-                            if (dist > 1) {
-                                // Swarm enemies move directly toward player with slight randomness
-                                const wobble = Math.sin(e.t * 8) * 15; // Add micro-dodges
-                                const perpX = -dy / dist;
-                                const perpY = dx / dist;
-                                e.x += ((dx / dist) * e.v + perpX * wobble) * speedMultiplier * dt;
-                                e.y += ((dy / dist) * e.v + perpY * wobble) * speedMultiplier * dt;
+                            e.t = (e.t || 0) + dt;
+                            const overshootHandled = maybeHandleChaseOvershoot(e, dt, speedMultiplier, e.v * 1.25, {
+                                triggerRange: 240,
+                                cooldownMin: 1.1,
+                                cooldownMax: 2.4,
+                                durationMin: 0.28,
+                                durationMax: 0.52,
+                                speedBoostMin: 1.45,
+                                speedBoostMax: 2.05,
+                                angleJitter: 0.6,
+                                overshootBias: 150,
+                                downwardBias: 0.18
+                            });
+                            if (!overshootHandled) {
+                                const dx = store.player.x - e.x;
+                                const dy = store.player.y - e.y;
+                                const dist = Math.sqrt(dx * dx + dy * dy);
+                                if (dist > 1) {
+                                    // Swarm enemies move directly toward player with slight randomness
+                                    const wobble = Math.sin(e.t * 8) * 15; // Add micro-dodges
+                                    const perpX = -dy / dist;
+                                    const perpY = dx / dist;
+                                    e.x += ((dx / dist) * e.v + perpX * wobble) * speedMultiplier * dt;
+                                    e.y += ((dy / dist) * e.v + perpY * wobble) * speedMultiplier * dt;
+                                }
                             }
                         } else if (e.movementBehavior) {
                             // CONTINUOUS SPAWN SYSTEM: Use assigned movement behavior
@@ -13468,16 +13831,30 @@
                             updateHunterGangAbility(e, dt, speedMultiplier);
                             
                             if (!e.isLunging && !e.isFleeing && !e.formationLocked) {
-                                const dx = store.player.x - e.x;
-                                const dy = store.player.y - e.y;
-                                const dist = Math.sqrt(dx * dx + dy * dy);
-                                if (dist > 1) {
-                                    // Hunters actively pursue with full 2D movement
-                                    const pursueFactor = 0.6; // 60% toward player, 40% downward
-                                    e.x += (dx / dist) * e.v * pursueFactor * speedMultiplier * dt;
-                                    e.y += ((dy / dist) * e.v * pursueFactor + e.v * (1 - pursueFactor)) * speedMultiplier * dt;
-                                } else {
-                                    e.y += e.v * speedMultiplier * dt;
+                                const overshootHandled = maybeHandleChaseOvershoot(e, dt, speedMultiplier, e.v, {
+                                    triggerRange: 300,
+                                    cooldownMin: 1.4,
+                                    cooldownMax: 2.9,
+                                    durationMin: 0.35,
+                                    durationMax: 0.6,
+                                    speedBoostMin: 1.35,
+                                    speedBoostMax: 1.75,
+                                    angleJitter: 0.45,
+                                    overshootBias: 210,
+                                    downwardBias: 0.35
+                                });
+                                if (!overshootHandled) {
+                                    const dx = store.player.x - e.x;
+                                    const dy = store.player.y - e.y;
+                                    const dist = Math.sqrt(dx * dx + dy * dy);
+                                    if (dist > 1) {
+                                        // Hunters actively pursue with full 2D movement
+                                        const pursueFactor = 0.6; // 60% toward player, 40% downward
+                                        e.x += (dx / dist) * e.v * pursueFactor * speedMultiplier * dt;
+                                        e.y += ((dy / dist) * e.v * pursueFactor + e.v * (1 - pursueFactor)) * speedMultiplier * dt;
+                                    } else {
+                                        e.y += e.v * speedMultiplier * dt;
+                                    }
                                 }
                             }
                         } else if (e.type === 'angler') {
@@ -16355,19 +16732,48 @@
 
                     const r = b.r * 1.5;
 
-                    if (b.isLavaChunk) {
+                    if (b.isLavaBlade) {
+                        ctx.shadowColor = 'rgba(255, 45, 200, 0.9)';
+                        ctx.shadowBlur = 20;
+                        const bladeHeight = r * 1.4;
+                        const gradient = ctx.createLinearGradient(0, -bladeHeight, 0, bladeHeight);
+                        gradient.addColorStop(0, 'rgba(255, 105, 255, 0.96)');
+                        gradient.addColorStop(0.38, 'rgba(255, 0, 170, 0.98)');
+                        gradient.addColorStop(0.7, 'rgba(0, 255, 175, 0.88)');
+                        gradient.addColorStop(1, 'rgba(255, 215, 90, 0.82)');
+                        ctx.fillStyle = gradient;
                         ctx.beginPath();
-                        ctx.moveTo(0, -r); ctx.lineTo(r, r * 0.2); ctx.lineTo(r * 0.5, r); ctx.lineTo(-r * 0.5, r); ctx.lineTo(-r, r * 0.2);
+                        ctx.moveTo(0, -bladeHeight);
+                        ctx.lineTo(r * 0.6, -bladeHeight * 0.08);
+                        ctx.lineTo(0, bladeHeight);
+                        ctx.lineTo(-r * 0.6, -bladeHeight * 0.08);
                         ctx.closePath();
+                        ctx.lineJoin = 'round';
+                        ctx.lineCap = 'round';
                         ctx.fill();
+                        ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+                        ctx.lineWidth = Math.max(1, r * 0.22);
+                        ctx.stroke();
+                        ctx.strokeStyle = 'rgba(0, 255, 205, 0.35)';
+                        ctx.lineWidth = Math.max(0.6, r * 0.12);
+                        ctx.stroke();
                         b.particles.forEach(p => {
-                            const t = p.life / p.maxLife;
+                            const t = Math.max(0, Math.min(1, p.life / p.maxLife));
                             const particleR = p.r * t;
-                            ctx.fillStyle = `rgba(255, ${60 + Math.random() * 60}, 0, ${0.7 * t})`;
+                            const roll = Math.random();
+                            if (roll < 0.3) {
+                                ctx.fillStyle = `rgba(0, 255, 190, ${0.55 * t})`;
+                            } else if (roll < 0.5) {
+                                ctx.fillStyle = `rgba(255, 220, 90, ${0.5 * t})`;
+                            } else {
+                                ctx.fillStyle = `rgba(255, ${20 + Math.random() * 40}, ${200 + Math.random() * 35}, ${0.75 * t})`;
+                            }
                             ctx.beginPath();
                             ctx.arc(p.x, p.y, particleR, 0, 2 * Math.PI);
                             ctx.fill();
                         });
+                        ctx.restore();
+                        return;
                     } else if (b.isFlame) {
                         ctx.fillStyle = `rgba(255, 150, 50, ${0.3 * (b.life / 50)})`;
                         ctx.beginPath();
@@ -16383,6 +16789,74 @@
                             ctx.arc(p.x, p.y, r_particle, 0, 2 * Math.PI);
                             ctx.fill();
                         });
+                    } else if (b.element === 'ice') {
+                        // Ice bullet: white snowy line with trailing snow particles
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+                        ctx.lineWidth = r * 0.8;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        ctx.beginPath();
+                        // Calculate bullet velocity direction
+                        const vx = b.vx || 0;
+                        const vy = b.vy || 1;
+                        const speed = Math.sqrt(vx * vx + vy * vy);
+                        const nx = speed > 0 ? vx / speed : 0;
+                        const ny = speed > 0 ? vy / speed : 1;
+                        const lineLength = r * 1.8;
+                        ctx.moveTo(-nx * lineLength * 0.5, -ny * lineLength * 0.5);
+                        ctx.lineTo(nx * lineLength * 0.5, ny * lineLength * 0.5);
+                        ctx.stroke();
+                        
+                        // Snow particles trailing the bullet
+                        if (b.particles && b.particles.length > 0) {
+                            b.particles.forEach(p => {
+                                const t = Math.max(0, Math.min(1, p.life / p.maxLife));
+                                const particleR = p.r * t;
+                                ctx.fillStyle = `rgba(200, 220, 255, ${0.6 * t})`;
+                                ctx.beginPath();
+                                ctx.arc(p.x, p.y, particleR, 0, 2 * Math.PI);
+                                ctx.fill();
+                            });
+                        }
+                        
+                        ctx.restore();
+                        return;
+                    } else if (b.element === 'poison') {
+                        // Poison bullet: green line with bubbling effect
+                        ctx.strokeStyle = 'rgba(50, 255, 50, 0.95)';
+                        ctx.lineWidth = r * 0.8;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        ctx.beginPath();
+                        // Calculate bullet velocity direction
+                        const vx = b.vx || 0;
+                        const vy = b.vy || 1;
+                        const speed = Math.sqrt(vx * vx + vy * vy);
+                        const nx = speed > 0 ? vx / speed : 0;
+                        const ny = speed > 0 ? vy / speed : 1;
+                        const lineLength = r * 1.8;
+                        ctx.moveTo(-nx * lineLength * 0.5, -ny * lineLength * 0.5);
+                        ctx.lineTo(nx * lineLength * 0.5, ny * lineLength * 0.5);
+                        ctx.stroke();
+                        
+                        // Poison bubbles trailing the bullet
+                        if (b.particles && b.particles.length > 0) {
+                            b.particles.forEach(p => {
+                                const t = Math.max(0, Math.min(1, p.life / p.maxLife));
+                                const particleR = p.r * t;
+                                ctx.fillStyle = `rgba(100, 255, 100, ${0.5 * t})`;
+                                ctx.beginPath();
+                                ctx.arc(p.x, p.y, particleR, 0, 2 * Math.PI);
+                                ctx.fill();
+                                // Bubble outline
+                                ctx.strokeStyle = `rgba(150, 255, 150, ${0.6 * t})`;
+                                ctx.lineWidth = Math.max(0.5, particleR * 0.3);
+                                ctx.stroke();
+                            });
+                        }
+                        
+                        ctx.restore();
+                        return;
                     } else if (b.isSwirl || b.explosive) {
                         ctx.arc(0, 0, b.r, 0, 2 * Math.PI);
                     } else if (b.isIceman) {
@@ -16393,6 +16867,7 @@
 
                     ctx.closePath();
                     ctx.fill();
+
                     ctx.restore();
                 });
 
@@ -17189,7 +17664,8 @@
                 renderVoidStepSystems(ctx);
                 renderImpactSystem(ctx);
 
-
+                // Draw element toggle orb
+                drawBulletElementToggle();
 
                 // Throttle HUD updates to avoid layout thrashing on every frame
                 if (!window.lastHudUpdate || Date.now() - window.lastHudUpdate > 16) { // ~60fps
@@ -17197,6 +17673,75 @@
                     window.lastHudUpdate = Date.now();
                 }
             }
+
+            function drawBulletElementToggle() {
+                const p = store.player;
+                if (!p.hasIceBullets && !p.hasPoisonBullets) return; // Don't draw if no elements unlocked
+
+                const orbX = 60;
+                const orbY = H - 60;
+                const orbRadius = 18;
+
+                ctx.save();
+
+                // Determine color based on active element
+                let orbColor, glowColor, orbLabel;
+                if (p.bulletElement === 'ice') {
+                    orbColor = 'rgba(100, 180, 255, 0.85)';
+                    glowColor = 'rgba(100, 200, 255, 0.5)';
+                    orbLabel = '❄️';
+                } else if (p.bulletElement === 'poison') {
+                    orbColor = 'rgba(100, 255, 100, 0.85)';
+                    glowColor = 'rgba(120, 255, 120, 0.5)';
+                    orbLabel = '☠️';
+                } else {
+                    orbColor = 'rgba(180, 180, 180, 0.6)';
+                    glowColor = 'rgba(200, 200, 200, 0.3)';
+                    orbLabel = '◉';
+                }
+
+                // Draw glow halo
+                ctx.fillStyle = glowColor;
+                ctx.beginPath();
+                ctx.arc(orbX, orbY, orbRadius + 8, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Draw main orb
+                const gradient = ctx.createRadialGradient(orbX - 5, orbY - 5, 0, orbX, orbY, orbRadius);
+                gradient.addColorStop(0, 'rgba(255, 255, 255, 0.6)');
+                gradient.addColorStop(1, orbColor);
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(orbX, orbY, orbRadius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Draw outline
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(orbX, orbY, orbRadius, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // Draw icon/text
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                ctx.font = 'bold 16px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(orbLabel, orbX, orbY);
+
+                // Draw available elements indicator
+                if (p.hasIceBullets && p.hasPoisonBullets) {
+                    ctx.font = 'bold 8px Arial';
+                    ctx.fillStyle = 'rgba(255, 255, 150, 0.8)';
+                    ctx.fillText('(hover to switch)', orbX, orbY + orbRadius + 12);
+                }
+
+                ctx.restore();
+
+                // Store orb position for hover detection
+                store.bulletToggleOrbPos = { x: orbX, y: orbY, radius: orbRadius };
+            }
+
 
             function takeDamage(dmg) {
                 if (store.player.isInvincible || playerIsInvulnerable()) return;
@@ -18026,7 +18571,20 @@
                     const sideOffset = (i % 2 === 0) ? -15 : 15;
                     const spawnX = p.x + sideOffset;
                     const spawnY = p.y + 5;
-                    spawnBullet({ x: spawnX, y: spawnY, vx: Math.sin(angle) * currentSpeed + (sideOffset * 2), vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 3, col: `rgba(255, ${60 + Math.random() * 60}, 0, 0.9)`, dmg: 2 * p.dmgMult, life: life * 1.5, isFlame: true, isLavaChunk: true, particles: [], particleSpawnT: 0 });
+                    spawnBullet({
+                        x: spawnX,
+                        y: spawnY,
+                        vx: Math.sin(angle) * currentSpeed + (sideOffset * 2),
+                        vy: -Math.cos(angle) * currentSpeed,
+                        r: 4 + Math.random() * 3,
+                        col: `rgba(255, ${20 + Math.random() * 40}, ${190 + Math.random() * 45}, 0.98)`,
+                        dmg: 2 * p.dmgMult,
+                        life: life * 1.5,
+                        isFlame: true,
+                        isLavaBlade: true,
+                        particles: [],
+                        particleSpawnT: 0
+                    });
                 }
 
                 if (p.hasIceman && store.iceman) {
@@ -18036,7 +18594,21 @@
                         const sideOffset = (i % 2 === 0) ? -15 : 15;
                         const spawnX = store.iceman.x + sideOffset;
                         const spawnY = store.iceman.y + 5;
-                        spawnBullet({ x: spawnX, y: spawnY, vx: Math.sin(angle) * currentSpeed + (sideOffset * 2), vy: -Math.cos(angle) * currentSpeed, r: 4 + Math.random() * 2, col: `rgba(100, 150, 255, 0.7)`, dmg: 2 * p.dmgMult * 0.35, life: life, isFlame: true, isIceman: true, isLavaChunk: true, particles: [], particleSpawnT: 0 });
+                        spawnBullet({
+                            x: spawnX,
+                            y: spawnY,
+                            vx: Math.sin(angle) * currentSpeed + (sideOffset * 2),
+                            vy: -Math.cos(angle) * currentSpeed,
+                            r: 4 + Math.random() * 2,
+                            col: `rgba(250, ${40 + Math.random() * 40}, 255, 0.9)`,
+                            dmg: 2 * p.dmgMult * 0.35,
+                            life,
+                            isFlame: true,
+                            isIceman: true,
+                            isLavaBlade: true,
+                            particles: [],
+                            particleSpawnT: 0
+                        });
                     }
                 }
             }
@@ -29198,6 +29770,122 @@
                     ctx.fill();
                     ctx.restore();
                 }
+                
+                // Draw poison damage indicator (green glowing circle)
+                if (e.poisonStacks && e.poisonStacks > 0) {
+                    ctx.save();
+                    const poisonPulse = 0.6 + 0.4 * Math.sin(performance.now() / 300);
+                    const poisonAlpha = 0.5 * poisonPulse;
+                    
+                    // Outer glow ring
+                    ctx.globalAlpha = poisonAlpha * 0.4;
+                    ctx.strokeStyle = '#00dd44';
+                    ctx.lineWidth = 2.5;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, a * (1.3 + e.poisonStacks * 0.15), 0, Math.PI * 2);
+                    ctx.stroke();
+                    
+                    // Inner glow ring
+                    ctx.globalAlpha = poisonAlpha * 0.7;
+                    ctx.strokeStyle = '#00ff66';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, a * (1.1 + e.poisonStacks * 0.1), 0, Math.PI * 2);
+                    ctx.stroke();
+                    
+                    // Poison bubbles around enemy (increases with stacks)
+                    ctx.globalAlpha = 0.6;
+                    const bubbleCount = 4 + (e.poisonStacks * 2); // 4, 6, 8 bubbles for stacks 1, 2, 3
+                    const time = performance.now() / 1000;
+                    for (let i = 0; i < bubbleCount; i++) {
+                        const angle = (i / bubbleCount) * Math.PI * 2 + time;
+                        const radius = a * (1.2 + Math.sin(time * 2 + i) * 0.3);
+                        const bubbleX = Math.cos(angle) * radius;
+                        const bubbleY = Math.sin(angle) * radius;
+                        const bubbleSize = 2 + Math.sin(time * 3 + i) * 1.5;
+                        ctx.fillStyle = '#00ff66';
+                        ctx.beginPath();
+                        ctx.arc(bubbleX, bubbleY, bubbleSize, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.strokeStyle = 'rgba(0, 255, 100, 0.8)';
+                        ctx.lineWidth = 0.5;
+                        ctx.stroke();
+                    }
+                    
+                    // Stack indicator text
+                    if (e.poisonStacks > 1) {
+                        ctx.globalAlpha = poisonAlpha;
+                        ctx.fillStyle = '#00ff66';
+                        ctx.font = 'bold 10px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(e.poisonStacks, 0, a + 12);
+                    }
+                    
+                    ctx.restore();
+                }
+                
+                // Draw ice damage indicator (dark blue glowing circle)
+                if (e.iceStacks && e.iceStacks > 0) {
+                    ctx.save();
+                    const icePulse = 0.6 + 0.4 * Math.cos(performance.now() / 350);
+                    const iceAlpha = 0.5 * icePulse;
+                    
+                    // Outer glow ring
+                    ctx.globalAlpha = iceAlpha * 0.4;
+                    ctx.strokeStyle = '#0033ff';
+                    ctx.lineWidth = 2.5;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, a * (1.3 + e.iceStacks * 0.15), 0, Math.PI * 2);
+                    ctx.stroke();
+                    
+                    // Inner glow ring
+                    ctx.globalAlpha = iceAlpha * 0.7;
+                    ctx.strokeStyle = '#0088ff';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, a * (1.1 + e.iceStacks * 0.1), 0, Math.PI * 2);
+                    ctx.stroke();
+                    
+                    // Snow particles around enemy (increases with stacks)
+                    ctx.globalAlpha = 0.5;
+                    const snowCount = 5 + (e.iceStacks * 2); // 5, 7, 9 snowflakes for stacks 1, 2, 3
+                    const time = performance.now() / 1000;
+                    for (let i = 0; i < snowCount; i++) {
+                        const angle = (i / snowCount) * Math.PI * 2 + time * 0.5;
+                        const radius = a * (1.3 + Math.sin(time * 1.5 + i) * 0.4);
+                        const snowX = Math.cos(angle) * radius;
+                        const snowY = Math.sin(angle) * radius;
+                        const snowSize = 1.5 + Math.sin(time * 2.5 + i) * 1;
+                        
+                        // Draw snowflake as cross/star pattern
+                        ctx.strokeStyle = 'rgba(200, 230, 255, 0.8)';
+                        ctx.lineWidth = 0.8;
+                        ctx.beginPath();
+                        ctx.moveTo(snowX - snowSize, snowY);
+                        ctx.lineTo(snowX + snowSize, snowY);
+                        ctx.moveTo(snowX, snowY - snowSize);
+                        ctx.lineTo(snowX, snowY + snowSize);
+                        ctx.moveTo(snowX - snowSize * 0.7, snowY - snowSize * 0.7);
+                        ctx.lineTo(snowX + snowSize * 0.7, snowY + snowSize * 0.7);
+                        ctx.moveTo(snowX + snowSize * 0.7, snowY - snowSize * 0.7);
+                        ctx.lineTo(snowX - snowSize * 0.7, snowY + snowSize * 0.7);
+                        ctx.stroke();
+                    }
+                    
+                    // Stack indicator text
+                    if (e.iceStacks > 1) {
+                        ctx.globalAlpha = iceAlpha;
+                        ctx.fillStyle = '#00ccff';
+                        ctx.font = 'bold 10px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(e.iceStacks, 0, -a - 12);
+                    }
+                    
+                    ctx.restore();
+                }
+                
                 ctx.restore()
             }
             function createEffect(type, x, y, radius, options = {}) {
