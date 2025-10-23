@@ -4408,10 +4408,11 @@
                     skin: 'default',
                     unlockedSkins: { default: true }
                 },
-                // Bullet element system (ice/poison/normal)
+                // Bullet element system (ice/poison/normal/split/alternate)
                 bulletElement: 'normal',
                 hasIceBullets: false,
-                hasPoisonBullets: false
+                hasPoisonBullets: false,
+                bulletElementVolleyCount: 0 // For alternating mode
             };
 
             class Pool {
@@ -5310,7 +5311,19 @@
                 bullet.maxRicochetDist = typeof props.maxRicochetDist === 'number' ? props.maxRicochetDist : 0;
                 bullet.originalDmg = typeof props.originalDmg === 'number' ? props.originalDmg : undefined;
                 const player = store.player;
-                bullet.element = player ? (player.bulletElement || 'normal') : 'normal';
+                
+                // Determine bullet element based on mode
+                let elementMode = player ? (player.bulletElement || 'normal') : 'normal';
+                if (elementMode === 'split') {
+                    // Split mode: left half ice, right half poison
+                    bullet.element = (bullet.x < W / 2) ? 'ice' : 'poison';
+                } else if (elementMode === 'alternate') {
+                    // Alternate mode: alternate volleys between ice and poison
+                    bullet.element = (player.bulletElementVolleyCount % 2 === 0) ? 'ice' : 'poison';
+                } else {
+                    // Normal, ice, or poison - use directly
+                    bullet.element = elementMode;
+                }
                 const ricochetLevel = player ? (player.ricochetLevel || (player.hasRicochet ? 1 : 0)) : 0;
                 if (props.canRicochet !== undefined) {
                     bullet.canRicochet = !!props.canRicochet;
@@ -13053,10 +13066,16 @@
 
                             // Switch every 0.5 seconds while hovering over the orb
                             if (store.bulletToggleHoverTime >= 0.5) {
+                                // Cycle through: normal -> ice -> poison -> split -> alternate -> normal
                                 if (store.player.bulletElement === 'normal') {
                                     store.player.bulletElement = 'ice';
                                 } else if (store.player.bulletElement === 'ice') {
                                     store.player.bulletElement = 'poison';
+                                } else if (store.player.bulletElement === 'poison') {
+                                    store.player.bulletElement = 'split';
+                                } else if (store.player.bulletElement === 'split') {
+                                    store.player.bulletElement = 'alternate';
+                                    store.player.bulletElementVolleyCount = 0; // Reset counter
                                 } else {
                                     store.player.bulletElement = 'normal';
                                 }
@@ -17694,6 +17713,14 @@
                     orbColor = 'rgba(100, 255, 100, 0.85)';
                     glowColor = 'rgba(120, 255, 120, 0.5)';
                     orbLabel = '☠️';
+                } else if (p.bulletElement === 'split') {
+                    orbColor = 'rgba(100, 220, 180, 0.85)';
+                    glowColor = 'rgba(100, 230, 180, 0.5)';
+                    orbLabel = '⚡';
+                } else if (p.bulletElement === 'alternate') {
+                    orbColor = 'rgba(180, 150, 255, 0.85)';
+                    glowColor = 'rgba(190, 160, 255, 0.5)';
+                    orbLabel = '🔄';
                 } else {
                     orbColor = 'rgba(180, 180, 180, 0.6)';
                     glowColor = 'rgba(200, 200, 200, 0.3)';
@@ -17706,14 +17733,29 @@
                 ctx.arc(orbX, orbY, orbRadius + 8, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Draw main orb
-                const gradient = ctx.createRadialGradient(orbX - 5, orbY - 5, 0, orbX, orbY, orbRadius);
-                gradient.addColorStop(0, 'rgba(255, 255, 255, 0.6)');
-                gradient.addColorStop(1, orbColor);
-                ctx.fillStyle = gradient;
-                ctx.beginPath();
-                ctx.arc(orbX, orbY, orbRadius, 0, Math.PI * 2);
-                ctx.fill();
+                // Draw main orb - special handling for split mode
+                if (p.bulletElement === 'split') {
+                    // Draw left half ice (blue)
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(orbX, orbY, orbRadius, 0, Math.PI * 2);
+                    ctx.clip();
+                    ctx.fillStyle = 'rgba(100, 180, 255, 0.85)';
+                    ctx.fillRect(orbX - orbRadius, orbY - orbRadius, orbRadius, orbRadius * 2);
+                    // Draw right half poison (green)
+                    ctx.fillStyle = 'rgba(100, 255, 100, 0.85)';
+                    ctx.fillRect(orbX, orbY - orbRadius, orbRadius, orbRadius * 2);
+                    ctx.restore();
+                } else {
+                    // Normal gradient orb
+                    const gradient = ctx.createRadialGradient(orbX - 5, orbY - 5, 0, orbX, orbY, orbRadius);
+                    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.6)');
+                    gradient.addColorStop(1, orbColor);
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(orbX, orbY, orbRadius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
 
                 // Draw outline
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
@@ -18460,6 +18502,11 @@
             function firePlayer() {
                 const p = store.player;
                 if (p.beefChargeState && p.beefChargeState !== 'ready') return;
+                
+                // Increment volley counter for alternate mode
+                if (p.bulletElement === 'alternate') {
+                    p.bulletElementVolleyCount = (p.bulletElementVolleyCount || 0) + 1;
+                }
                 
                 // STANDARD MULTISHOT FIRING
                 const baseBulletSpeed = 420;
