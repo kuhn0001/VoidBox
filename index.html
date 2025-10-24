@@ -11,6 +11,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Audiowide&family=Orbitron:wght@500;700&display=swap"
         rel="stylesheet" />
+    <!-- PixiJS v8 -->
+    <script src="https://pixijs.download/release/pixi.js"></script>
     <title>Void Skies</title>
     <style>
         :root {
@@ -3826,9 +3828,218 @@
                 cvs.style.width = cssW + 'px'; cvs.style.height = cssH + 'px';
                 cvs.width = Math.floor(cssW * dpr); cvs.height = Math.floor(cssH * dpr);
                 ctx.setTransform(cvs.width / W, 0, 0, cvs.height / H, 0, 0);
+                
+                // Resize PixiJS renderer and scale to match Canvas2D coordinate system
+                if (pixiApp && pixiApp.renderer) {
+                    pixiApp.renderer.resize(cssW, cssH);
+                    // Scale PixiJS stage to match the 960x540 game coordinate system
+                    const scaleX = cssW / W;
+                    const scaleY = cssH / H;
+                    pixiApp.stage.scale.set(scaleX, scaleY);
+                }
             }).observe(stage);
             const mouse = { x: W / 2, y: H * 0.8 };
             const CHAMPION_SYSTEM_ENABLED = false;
+
+            // ============================================================================
+            // PIXI.JS SETUP - Performance optimization for bullet rendering
+            // ============================================================================
+            let pixiApp = null;
+            let bulletContainer = null;
+            let particleContainer = null;
+            let bulletTextures = {
+                normal: null,
+                ice: null,
+                poison: null,
+                lavaBlade: null
+            };
+            let particleTexture = null;
+            const bulletSpritePool = [];
+            const activeBulletSprites = new Map();
+            const particleSpritePool = [];
+            const activeParticleSprites = new Map();
+
+            // Expose debug object globally for console inspection
+            window.pixiDebug = {
+                get app() { return pixiApp; },
+                get bulletContainer() { return bulletContainer; },
+                get particleContainer() { return particleContainer; },
+                get bulletTextures() { return bulletTextures; },
+                get particleTexture() { return particleTexture; },
+                get activeBullets() { return activeBulletSprites.size; },
+                get activeParticles() { return activeParticleSprites.size; },
+                get pooledBullets() { return bulletSpritePool.length; },
+                get pooledParticles() { return particleSpritePool.length; }
+            };
+
+            // Initialize PixiJS (async)
+            (async () => {
+                try {
+                    pixiApp = new PIXI.Application();
+                    
+                    await pixiApp.init({
+                        width: W,
+                        height: H,
+                        backgroundAlpha: 0,
+                        antialias: true,
+                        resolution: window.devicePixelRatio || 1,
+                        autoDensity: true
+                    });
+
+                    // Insert Pixi canvas as overlay
+                    pixiApp.canvas.style.position = 'absolute';
+                    pixiApp.canvas.style.top = '0';
+                    pixiApp.canvas.style.left = '0';
+                    pixiApp.canvas.style.pointerEvents = 'none';
+                    pixiApp.canvas.style.width = '100%';
+                    pixiApp.canvas.style.height = '100%';
+                    stage.appendChild(pixiApp.canvas);
+
+                    // Create containers for layering
+                    particleContainer = new PIXI.ParticleContainer(10000, {
+                        position: true,
+                        alpha: true,
+                        scale: true,
+                        tint: true
+                    });
+                    bulletContainer = new PIXI.Container();
+                    
+                    pixiApp.stage.addChild(particleContainer);
+                    pixiApp.stage.addChild(bulletContainer);
+
+                    console.log('✅ PixiJS initialized for bullet rendering');
+                } catch (err) {
+                    console.error('❌ Failed to initialize PixiJS:', err);
+                }
+            })();
+
+            // Bullet texture factory
+            function createBulletTextures() {
+                if (!pixiApp || !pixiApp.renderer) return;
+                
+                // Normal bullet (triangle) - WHITE texture so tinting works
+                const normalGraphics = new PIXI.Graphics();
+                normalGraphics.poly([
+                    { x: 0, y: -4.5 },
+                    { x: 3.6, y: 3.6 },
+                    { x: -3.6, y: 3.6 }
+                ]);
+                normalGraphics.fill(0xFFFFFF); // White texture for tinting
+                bulletTextures.normal = pixiApp.renderer.generateTexture(normalGraphics);
+                
+                // Ice bullet (line with glow)
+                const iceGraphics = new PIXI.Graphics();
+                iceGraphics.moveTo(0, -5.4);
+                iceGraphics.lineTo(0, 5.4);
+                iceGraphics.stroke({ width: 2.4, color: 0x8cb4ff, alpha: 0.95, cap: 'round' });
+                bulletTextures.ice = pixiApp.renderer.generateTexture(iceGraphics);
+                
+                // Poison bullet (green line)
+                const poisonGraphics = new PIXI.Graphics();
+                poisonGraphics.moveTo(0, -5.4);
+                poisonGraphics.lineTo(0, 5.4);
+                poisonGraphics.stroke({ width: 2.4, color: 0x32ff32, alpha: 0.95, cap: 'round' });
+                bulletTextures.poison = pixiApp.renderer.generateTexture(poisonGraphics);
+                
+                console.log('✅ Bullet textures created', bulletTextures);
+            }
+
+            // Particle texture factory
+            function createParticleTexture() {
+                if (!pixiApp || !pixiApp.renderer) return;
+                
+                const graphics = new PIXI.Graphics();
+                graphics.circle(0, 0, 8);
+                graphics.fill(0xffffff);
+                particleTexture = pixiApp.renderer.generateTexture(graphics);
+                
+                console.log('✅ Particle texture created', particleTexture);
+            }
+
+            // Bullet sprite pool functions
+            function getBulletSprite(bullet) {
+                if (!bulletContainer) {
+                    console.warn('⚠️ bulletContainer not ready');
+                    return null;
+                }
+                
+                let sprite = bulletSpritePool.pop();
+                if (!sprite) {
+                    sprite = new PIXI.Sprite();
+                    bulletContainer.addChild(sprite);
+                }
+                
+                // Set texture based on element
+                if (bullet.element === 'ice' && bulletTextures.ice) {
+                    sprite.texture = bulletTextures.ice;
+                } else if (bullet.element === 'poison' && bulletTextures.poison) {
+                    sprite.texture = bulletTextures.poison;
+                } else if (bulletTextures.normal) {
+                    sprite.texture = bulletTextures.normal;
+                    // Parse hex color properly
+                    const colorStr = bullet.col.replace('#', '');
+                    sprite.tint = parseInt(colorStr, 16);
+                } else {
+                    console.warn('⚠️ No texture available for bullet', bullet.element);
+                    return null;
+                }
+                
+                sprite.visible = true;
+                sprite.anchor.set(0.5);
+                activeBulletSprites.set(bullet, sprite);
+                return sprite;
+            }
+
+            function releaseBulletSprite(bullet) {
+                const sprite = activeBulletSprites.get(bullet);
+                if (sprite) {
+                    sprite.visible = false;
+                    bulletSpritePool.push(sprite);
+                    activeBulletSprites.delete(bullet);
+                }
+            }
+
+            // Particle sprite pool functions
+            function getParticleSprite(particle, isIce) {
+                if (!particleContainer || !particleTexture) return null;
+                
+                let sprite = particleSpritePool.pop();
+                if (!sprite) {
+                    sprite = new PIXI.Sprite(particleTexture);
+                    particleContainer.addChild(sprite);
+                }
+                
+                sprite.anchor.set(0.5);
+                sprite.visible = true;
+                
+                // Set tint based on type
+                if (isIce) {
+                    sprite.tint = 0xffffff;
+                } else {
+                    sprite.tint = 0x64ff64;
+                }
+                
+                activeParticleSprites.set(particle, sprite);
+                return sprite;
+            }
+
+            function releaseParticleSprite(particle) {
+                const sprite = activeParticleSprites.get(particle);
+                if (sprite) {
+                    sprite.visible = false;
+                    particleSpritePool.push(sprite);
+                    activeParticleSprites.delete(particle);
+                }
+            }
+
+            // Wait for PixiJS to initialize, then create textures
+            setTimeout(() => {
+                if (pixiApp && pixiApp.renderer) {
+                    createBulletTextures();
+                    createParticleTexture();
+                }
+            }, 100);
+            // ============================================================================
 
             const trackedPanelIds = [
                 'shopPanel',
@@ -16770,7 +16981,100 @@
                     }
                 }
 
+                // ============================================================================
+                // PIXI BULLET RENDERING - Performance optimized version
+                // ============================================================================
+                const USE_PIXI_BULLETS = pixiApp && bulletTextures.normal; // Auto-enable when ready
+                
+                // Log once when Pixi takes over
+                if (USE_PIXI_BULLETS && !window._pixiBulletsActive) {
+                    window._pixiBulletsActive = true;
+                    console.log('🚀 PixiJS bullet rendering ACTIVE - Performance boost engaged!');
+                    console.log('📊 Texture info:', {
+                        normal: bulletTextures.normal?.width + 'x' + bulletTextures.normal?.height,
+                        ice: bulletTextures.ice?.width + 'x' + bulletTextures.ice?.height,
+                        poison: bulletTextures.poison?.width + 'x' + bulletTextures.poison?.height
+                    });
+                }
+                
+                if (USE_PIXI_BULLETS) {
+                    // Sync Pixi sprites with bullet data
+                    const currentBullets = new Set();
+                    
+                    store.bullets.forEach(b => {
+                        if (b.dead) return;
+                        
+                        // Skip special bullet types that need Canvas rendering
+                        if (b.isLavaBlade || b.isFlame) {
+                            currentBullets.add(b);
+                            return;
+                        }
+                        
+                        currentBullets.add(b);
+                        
+                        // Get or create sprite
+                        let sprite = activeBulletSprites.get(b);
+                        if (!sprite) {
+                            sprite = getBulletSprite(b);
+                            if (!sprite) return;
+                        }
+                        
+                        // Update sprite position
+                        sprite.x = b.x;
+                        sprite.y = b.y;
+                        
+                        // Calculate rotation from velocity (all bullets need this)
+                        const angle = Math.atan2(b.vy, b.vx);
+                        sprite.rotation = angle + Math.PI / 2;
+                        
+                        // Update particles
+                        if (b.particles && b.particles.length > 0) {
+                            b.particles.forEach(p => {
+                                let pSprite = activeParticleSprites.get(p);
+                                if (!pSprite) {
+                                    pSprite = getParticleSprite(p, b.element === 'ice');
+                                    if (!pSprite) return;
+                                }
+                                
+                                const t = Math.max(0, Math.min(1, p.life / p.maxLife));
+                                pSprite.x = b.x + p.x;
+                                pSprite.y = b.y + p.y;
+                                pSprite.alpha = 0.75 * t;
+                                pSprite.scale.set(p.r * t / 8);
+                            });
+                        }
+                    });
+                    
+                    // Clean up removed bullets
+                    activeBulletSprites.forEach((sprite, bullet) => {
+                        if (!currentBullets.has(bullet)) {
+                            releaseBulletSprite(bullet);
+                        }
+                    });
+                    
+                    // Clean up removed particles
+                    const activeParticles = new Set();
+                    store.bullets.forEach(b => {
+                        if (b.particles) {
+                            b.particles.forEach(p => activeParticles.add(p));
+                        }
+                    });
+                    
+                    activeParticleSprites.forEach((sprite, particle) => {
+                        if (!activeParticles.has(particle)) {
+                            releaseParticleSprite(particle);
+                        }
+                    });
+                }
+                // ============================================================================
+
+                // Canvas fallback rendering (for special bullets or when Pixi not ready)
                 store.bullets.forEach(b => {
+                    // Skip normal bullets if Pixi is handling them
+                    if (USE_PIXI_BULLETS && !b.isLavaBlade && !b.isFlame) {
+                        return;
+                    }
+                    
                     ctx.save();
                     ctx.translate(b.x, b.y);
                     ctx.fillStyle = b.col;
@@ -40251,9 +40555,6 @@
             }
 
             function showSpecSelect(isAdditive = false) {
-                pauseGame();
-                const panel = q('subclassPanel'); // Reuse the subclass panel
-                const grid = q('subclassGrid');
                 const p = store.player;
                 const genome = p.pilotGenome;
 
@@ -40318,10 +40619,15 @@
                     }
                 }
 
+                // Exit early if no choices available - BEFORE pausing game
                 if (!choices.length) {
-                    resumeGame();
                     return;
                 }
+
+                // Only pause game if we have valid choices to show
+                pauseGame();
+                const panel = q('subclassPanel'); // Reuse the subclass panel
+                const grid = q('subclassGrid');
 
                 const title = isAdditive ? 'ENHANCED SPECIALIZATION' : 'CHOOSE SPECIALIZATION';
                 document.querySelector('#subclassPanel h2').textContent = title;
