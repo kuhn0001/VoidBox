@@ -3958,18 +3958,50 @@
                 normalGraphics.fill(0xFFFFFF); // White texture for tinting
                 bulletTextures.normal = pixiApp.renderer.generateTexture(normalGraphics);
                 
-                // Ice bullet (line with glow)
+                // Ice bullet (gradient line: white -> light ice blue -> darker ice blue)
                 const iceGraphics = new PIXI.Graphics();
-                iceGraphics.moveTo(0, -5.4);
-                iceGraphics.lineTo(0, 5.4);
-                iceGraphics.stroke({ width: 2.4, color: 0x8cb4ff, alpha: 0.95, cap: 'round' });
+                // Create gradient effect by drawing multiple segments
+                const iceLength = 6;
+                const iceSegments = 8;
+                const iceColors = [
+                    0xFFFFFF,  // White at tip
+                    0xE3F4FF,  // Very light ice blue
+                    0xB8E6FF,  // Light ice blue
+                    0x8CB4FF,  // Medium ice blue
+                    0x6699FF,  // Darker ice blue
+                    0x4D7FCC,  // Even darker
+                    0x3366AA,  // Deep ice blue
+                    0x1A4D88   // Darkest ice blue at base
+                ];
+                
+                for (let i = 0; i < iceSegments; i++) {
+                    const startY = -iceLength + (i / iceSegments) * (iceLength * 2);
+                    const endY = -iceLength + ((i + 1) / iceSegments) * (iceLength * 2);
+                    const color = iceColors[i];
+                    const alpha = 0.9 + (i / iceSegments) * 0.1; // Slightly more opaque towards base
+                    
+                    iceGraphics.moveTo(0, startY);
+                    iceGraphics.lineTo(0, endY);
+                    iceGraphics.stroke({ width: 2.2, color: color, alpha: alpha, cap: 'round' });
+                }
                 bulletTextures.ice = pixiApp.renderer.generateTexture(iceGraphics);
                 
-                // Poison bullet (green line)
+                // Poison bullet (dart shape - narrow and pointed)
                 const poisonGraphics = new PIXI.Graphics();
-                poisonGraphics.moveTo(0, -5.4);
-                poisonGraphics.lineTo(0, 5.4);
-                poisonGraphics.stroke({ width: 2.4, color: 0x32ff32, alpha: 0.95, cap: 'round' });
+                const dartLength = 7;
+                const dartWidth = 1.2;
+                const tipLength = dartLength * 0.35;
+                
+                // Draw dart shape (pointed tip, narrow body)
+                poisonGraphics.poly([
+                    { x: 0, y: -dartLength },              // Sharp tip
+                    { x: dartWidth, y: -dartLength + tipLength },  // Tip flare
+                    { x: dartWidth * 0.5, y: dartLength },  // Narrow body to base
+                    { x: -dartWidth * 0.5, y: dartLength }, // Other side of base
+                    { x: -dartWidth, y: -dartLength + tipLength }  // Other tip flare
+                ]);
+                poisonGraphics.fill({ color: 0x32FF32, alpha: 0.95 }); // Bright green
+                poisonGraphics.stroke({ width: 0.8, color: 0x00AA00, alpha: 0.8 }); // Darker green outline
                 bulletTextures.poison = pixiApp.renderer.generateTexture(poisonGraphics);
                 
                 // Lava blade (diamond/blade shape with gradient)
@@ -8787,30 +8819,30 @@
             const COLLAR_TARGET_GAIN_MULTIPLIER = 1.6;
 
             function calculateCollarBonus(stacks) {
-                // REDUCED SCALING: Gentler curve to keep equilibrium ~10% behind player power
+                // FURTHER REDUCED SCALING: Even gentler curve - reduced by 1% per tier
                 const safeStacks = Math.max(0, Number.isFinite(stacks) ? stacks : 0);
                 
-                // Softer tiered scaling - rewards good play by staying behind player power curve
-                const tierOneLimit = 5;   // First 5 stacks: 5% each (very gentle start)
-                const tierTwoLimit = 10;  // Next 5 stacks: 6% each (gentle)
-                const tierThreeLimit = 20; // Next 10 stacks: 7% each (moderate)
-                const tierFourLimit = 40;  // Next 20 stacks: 9% each (aggressive)
-                const tierFiveLimit = 70;  // Next 30 stacks: 11% each (very aggressive)
+                // Very soft tiered scaling - stays well behind player power curve
+                const tierOneLimit = 5;   // First 5 stacks: 4% each (very gentle)
+                const tierTwoLimit = 10;  // Next 5 stacks: 5% each (gentle)
+                const tierThreeLimit = 20; // Next 10 stacks: 6% each (moderate)
+                const tierFourLimit = 40;  // Next 20 stacks: 8% each (progressive)
+                const tierFiveLimit = 70;  // Next 30 stacks: 10% each (aggressive)
                 
                 const tierOne = Math.min(safeStacks, tierOneLimit);
                 const tierTwo = Math.min(Math.max(safeStacks - tierOneLimit, 0), tierTwoLimit - tierOneLimit);
                 const tierThree = Math.min(Math.max(safeStacks - tierTwoLimit, 0), tierThreeLimit - tierTwoLimit);
                 const tierFour = Math.min(Math.max(safeStacks - tierThreeLimit, 0), tierFourLimit - tierThreeLimit);
                 const tierFive = Math.min(Math.max(safeStacks - tierFourLimit, 0), tierFiveLimit - tierFourLimit);
-                const tierSix = Math.max(safeStacks - tierFiveLimit, 0); // Beyond 70: 13% each (extreme)
+                const tierSix = Math.max(safeStacks - tierFiveLimit, 0); // Beyond 70: 12% each
                 
                 const bonus = 
-                    tierOne * 0.05 +    // 0-5: 5% per stack (reduced from 8%)
-                    tierTwo * 0.06 +    // 5-10: 6% per stack (reduced from 10%)
-                    tierThree * 0.07 +  // 10-20: 7% per stack (reduced from 12%)
-                    tierFour * 0.09 +   // 20-40: 9% per stack (reduced from 15%)
-                    tierFive * 0.11 +   // 40-70: 11% per stack (reduced from 18%)
-                    tierSix * 0.13;     // 70+: 13% per stack (reduced from 20%)
+                    tierOne * 0.04 +    // 0-5: 4% per stack (reduced from 5%)
+                    tierTwo * 0.05 +    // 5-10: 5% per stack (reduced from 6%)
+                    tierThree * 0.06 +  // 10-20: 6% per stack (reduced from 7%)
+                    tierFour * 0.08 +   // 20-40: 8% per stack (reduced from 9%)
+                    tierFive * 0.10 +   // 40-70: 10% per stack (reduced from 11%)
+                    tierSix * 0.12;     // 70+: 12% per stack (reduced from 13%)
                 
                 return 1 + bonus;
             }
@@ -10948,7 +10980,7 @@
                     hunter: { r: 20, v: 100, vx: 0, hp: 18, color: '#DC143C', xp: 8, score: 80, gold: 3, fireRateChance: 0.005, contactDamage: 8 },
                     trap_king_add: { r: 6, v: 90, vx: 0, hp: 9, color: '#ffc83d', damage: 5, xp: 2, score: 10, gold: 1, contactDamage: 5 },
                     phantom: { r: 14, v: 90, vx: 0, hp: 35, color: '#FFFFFF', xp: 10, score: 100, gold: 3, fireRateChance: 0.006, fireCooldown: 1.5, contactDamage: 8 },
-                    mech: { r: 18, v: 40, vx: 0, hp: 73, color: '#FF8500', xp: 15, score: 150, gold: 6, fireRateChance: 0.007, attackPhase: 0, contactDamage: 10 },
+                    mech: { r: 18, v: 40, vx: 0, hp: 42, color: '#FF8500', xp: 15, score: 150, gold: 6, fireRateChance: 0.007, attackPhase: 0, contactDamage: 10 },
                     construct_gold: { r: 10, v: 120, vx: 0, hp: 17, color: '#e03434', xp: 3, score: 30, gold: 1, contactDamage: 7 },
                     avian_hatchling: { r: 8, v: 150, vx: 0, hp: 22, color: '#9370DB', xp: 4, score: 40, gold: 1, contactDamage: 6 },
                     angler: { r: 22, v: 30, vx: 0, hp: 150, color: '#00008b', xp: 18, score: 180, gold: 4, fireRateChance: 0.008, contactDamage: 10 },
@@ -10966,12 +10998,12 @@
 
                 // FIXED: Much gentler health scaling to prevent unkillable enemies
                 // Old: Math.pow(1.075, wave) - exponential growth was too aggressive
-                // New: Linear growth with soft cap
+                // New: Linear growth with soft cap - REDUCED for better balance
                 let waveMultiplier;
                 if (wave <= 10) {
-                    waveMultiplier = 1 + (wave - 1) * 0.15; // +15% per wave early game
+                    waveMultiplier = 1 + (wave - 1) * 0.10; // +10% per wave early game (reduced from 15%)
                 } else {
-                    waveMultiplier = 1 + 9 * 0.15 + (wave - 10) * 0.05; // +5% per wave after wave 10
+                    waveMultiplier = 1 + 9 * 0.10 + (wave - 10) * 0.03; // +3% per wave after wave 10 (reduced from 5%)
                 }
 
                 c.hp *= waveMultiplier * store.world.enemyHealthBonus;
@@ -14127,6 +14159,10 @@
                             speedMultiplier *= e.cubeBurglarSpeedMultiplier;
                         }
 
+                        // VERTICAL DESCENT REDUCTION: Slow down downward movement to give more time to engage
+                        // Lateral movement remains unchanged for dynamic gameplay
+                        const verticalSpeedMultiplier = speedMultiplier * 0.6; // 60% vertical speed
+
                         // SWARM PROTOCOL: Fast homing enemies (construct_gold, avian_hatchling)
                         if (e.type === 'construct_gold' || e.type === 'avian_hatchling') {
                             e.t = (e.t || 0) + dt;
@@ -14152,7 +14188,7 @@
                                     const perpX = -dy / dist;
                                     const perpY = dx / dist;
                                     e.x += ((dx / dist) * e.v + perpX * wobble) * speedMultiplier * dt;
-                                    e.y += ((dy / dist) * e.v + perpY * wobble) * speedMultiplier * dt;
+                                    e.y += ((dy / dist) * e.v + perpY * wobble) * verticalSpeedMultiplier * dt;
                                 }
                             }
                         } else if (e.movementBehavior) {
@@ -14169,7 +14205,7 @@
                                     e.x += Math.sign(dx) * 25 * trackingStrength * speedMultiplier * dt;
                                 }
                             }
-                            e.y += e.v * speedMultiplier * dt;
+                            e.y += e.v * verticalSpeedMultiplier * dt;
                         } else if (e.type === 'hunter') {
                             // PURSUIT PROTOCOL: Aggressive tracking with gang-specific abilities
                             updateHunterGangAbility(e, dt, speedMultiplier);
@@ -14195,9 +14231,9 @@
                                         // Hunters actively pursue with full 2D movement
                                         const pursueFactor = 0.6; // 60% toward player, 40% downward
                                         e.x += (dx / dist) * e.v * pursueFactor * speedMultiplier * dt;
-                                        e.y += ((dy / dist) * e.v * pursueFactor + e.v * (1 - pursueFactor)) * speedMultiplier * dt;
+                                        e.y += ((dy / dist) * e.v * pursueFactor + e.v * (1 - pursueFactor)) * verticalSpeedMultiplier * dt;
                                     } else {
-                                        e.y += e.v * speedMultiplier * dt;
+                                        e.y += e.v * verticalSpeedMultiplier * dt;
                                     }
                                 }
                             }
@@ -14205,7 +14241,7 @@
                             // TANK PROTOCOL: Slow, steady, horizontal tracking only
                             const dx = store.player.x - e.x;
                             if (Math.abs(dx) > 10) e.x += Math.sign(dx) * 30 * speedMultiplier * dt;
-                            e.y += e.v * speedMultiplier * dt;
+                            e.y += e.v * verticalSpeedMultiplier * dt;
                         } else if (e.type === 'phantom') {
                             // DODGE PROTOCOL: Unpredictable phase-shifting movement
                             const wave = store.world.wave || 1;
@@ -14218,7 +14254,7 @@
                                 e.x = Math.max(e.r + 10, Math.min(W - e.r - 10, e.x));
                             }
                             // Phantoms also move down like normal
-                            e.y += e.v * speedMultiplier * dt;
+                            e.y += e.v * verticalSpeedMultiplier * dt;
                         } else if (e.type === 'mech') {
                             // HEAVY TANK PROTOCOL: Methodical advance with minimal deviation
                             // Mechs are slow and steady, tracking player horizontally
@@ -14227,7 +14263,7 @@
                             if (Math.abs(dx) > 15) {
                                 e.x += Math.sign(dx) * trackSpeed * speedMultiplier * dt;
                             }
-                            e.y += e.v * speedMultiplier * dt;
+                            e.y += e.v * verticalSpeedMultiplier * dt;
                         } else if (e.type === 'manta') {
                             e.t += dt;
 
