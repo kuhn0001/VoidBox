@@ -3949,6 +3949,7 @@
                 normal: null,
                 ice: null,
                 poison: null,
+                fire: null,
                 lavaBlade: null
             };
             let particleTexture = null;
@@ -4050,7 +4051,7 @@
                 }
                 bulletTextures.ice = pixiApp.renderer.generateTexture(iceGraphics);
                 
-                // Poison bullet (dart shape - narrow and pointed)
+            // Poison bullet (dart shape - narrow and pointed)
                 const poisonGraphics = new PIXI.Graphics();
                 const dartLength = 7;
                 const dartWidth = 1.2;
@@ -4067,6 +4068,29 @@
                 poisonGraphics.fill({ color: 0x32FF32, alpha: 0.95 }); // Bright green
                 poisonGraphics.stroke({ width: 0.8, color: 0x00AA00, alpha: 0.8 }); // Darker green outline
                 bulletTextures.poison = pixiApp.renderer.generateTexture(poisonGraphics);
+
+                // Fire bullet (slender ember line with subtle glow)
+                const fireGraphics = new PIXI.Graphics();
+                const fireLength = 7;
+                const fireSegments = 6;
+                const fireColors = [
+                    0xFFE0C2,
+                    0xFFB676,
+                    0xFF8A47,
+                    0xFF6A2A,
+                    0xFF4C1A,
+                    0xD9390F
+                ];
+                for (let i = 0; i < fireSegments; i++) {
+                    const startY = -fireLength + (i / fireSegments) * (fireLength * 2);
+                    const endY = -fireLength + ((i + 1) / fireSegments) * (fireLength * 2);
+                    const color = fireColors[i];
+                    const alpha = 0.8 + (i / fireSegments) * 0.15;
+                    fireGraphics.moveTo(0, startY);
+                    fireGraphics.lineTo(0, endY);
+                    fireGraphics.stroke({ width: 2.2 - i * 0.15, color, alpha, cap: 'round' });
+                }
+                bulletTextures.fire = pixiApp.renderer.generateTexture(fireGraphics);
                 
                 // Lava blade (diamond/blade shape with gradient)
                 const lavaGraphics = new PIXI.Graphics();
@@ -4083,7 +4107,7 @@
                 lavaGraphics.stroke({ width: 1.5, color: 0x00ffcd, alpha: 0.4 }); // Cyan outline
                 bulletTextures.lavaBlade = pixiApp.renderer.generateTexture(lavaGraphics);
                 
-                console.log('✅ Bullet textures created', bulletTextures);
+            console.log('✅ Bullet textures created', bulletTextures);
             }
 
             // Particle texture factory
@@ -4112,15 +4136,22 @@
                 }
                 
                 // Set texture based on bullet type
+                sprite.tint = 0xffffff;
                 if (bullet.isLavaBlade && bulletTextures.lavaBlade) {
                     sprite.texture = bulletTextures.lavaBlade;
                     sprite.scale.set(1.5); // Lava blades are bigger
                 } else if (bullet.element === 'ice' && bulletTextures.ice) {
                     sprite.texture = bulletTextures.ice;
                     sprite.scale.set(1);
+                    sprite.tint = 0xffffff;
                 } else if (bullet.element === 'poison' && bulletTextures.poison) {
                     sprite.texture = bulletTextures.poison;
                     sprite.scale.set(1);
+                    sprite.tint = 0xffffff;
+                } else if (bullet.element === 'fire' && bulletTextures.fire) {
+                    sprite.texture = bulletTextures.fire;
+                    sprite.scale.set(1);
+                    sprite.tint = 0xffffff;
                 } else if (bulletTextures.normal) {
                     sprite.texture = bulletTextures.normal;
                     sprite.scale.set(1);
@@ -4148,7 +4179,7 @@
             }
 
             // Particle sprite pool functions
-            function getParticleSprite(particle, isIce) {
+            function getParticleSprite(particle, element) {
                 if (!particleContainer || !particleTexture) return null;
                 
                 let sprite = particleSpritePool.pop();
@@ -4161,10 +4192,19 @@
                 sprite.visible = true;
                 
                 // Set tint based on type
-                if (isIce) {
-                    sprite.tint = 0xffffff;
-                } else {
-                    sprite.tint = 0x64ff64;
+                switch (element) {
+                    case 'ice':
+                        sprite.tint = 0xffffff;
+                        break;
+                    case 'poison':
+                        sprite.tint = 0x64ff64;
+                        break;
+                    case 'fire':
+                        sprite.tint = 0xff7a3a;
+                        break;
+                    default:
+                        sprite.tint = 0xffffff;
+                        break;
                 }
                 
                 activeParticleSprites.set(particle, sprite);
@@ -4771,6 +4811,7 @@
                 bulletElement: 'normal',
                 hasIceBullets: false,
                 hasPoisonBullets: false,
+                hasFireBullets: false,
                 bulletElementVolleyCount: 0 // For alternating mode
             };
 
@@ -4837,6 +4878,18 @@
 
             const bulletPool = new Pool(createBullet, resetBulletState);
             bulletPool.prefill(100);
+
+            function getAvailableBulletElements(player) {
+                const modes = ['normal'];
+                if (!player) return modes;
+                if (player.hasIceBullets) modes.push('ice');
+                if (player.hasPoisonBullets) modes.push('poison');
+                if (player.hasFireBullets) modes.push('fire');
+                if (player.hasIceBullets && player.hasPoisonBullets) {
+                    modes.push('split', 'alternate');
+                }
+                return modes;
+            }
 
             const STAR_CANNON_BASE_COOLDOWN = 7;
             const STAR_CANNON_MIN_COOLDOWN = 1.4;
@@ -5673,6 +5726,13 @@
                 
                 // Determine bullet element based on mode
                 let elementMode = player ? (player.bulletElement || 'normal') : 'normal';
+                const availableElements = getAvailableBulletElements(player);
+                if (!availableElements.includes(elementMode)) {
+                    elementMode = availableElements[0] || 'normal';
+                    if (player) {
+                        player.bulletElement = elementMode;
+                    }
+                }
                 if (elementMode === 'split') {
                     // Split mode: left half ice, right half poison
                     // Check bullet spawn position relative to screen center
@@ -6589,6 +6649,25 @@
                 burn.lastApplied = performance.now();
             }
 
+            function applyFireBulletBurn(enemy, totalDamage, options = {}) {
+                if (!enemy || enemy.dead || totalDamage <= 0) return;
+                const duration = Number.isFinite(options.duration) ? Math.max(0.1, options.duration) : 5;
+                const lethalFloor = enemy === store.boss ? 0 : 1;
+                const burnEntry = {
+                    duration,
+                    elapsed: 0,
+                    totalDamage,
+                    appliedDamage: 0,
+                    lethalFloor,
+                    effectTimer: 0
+                };
+                if (!Array.isArray(enemy.fireBurns)) {
+                    enemy.fireBurns = [];
+                }
+                enemy.fireBurns.push(burnEntry);
+                store.activeEffects.push(createEffect('fireBurn', enemy.x, enemy.y, enemy.r || 18, { intensity: 0 }));
+            }
+
             function applyBossDamage(boss, amount, options = {}) {
                 if (!boss || amount <= 0) return { amount: 0, blocked: false };
 
@@ -6658,6 +6737,7 @@
                 }
 
                 let dmg = b.dmg || 15;
+                const isFireElement = b.element === 'fire';
                 
                 // Lava blades do more damage the closer the enemy is to the player
                 if (b.isLavaBlade && store.player) {
@@ -6867,6 +6947,13 @@
                         });
                     }
 
+                    if (isFireElement) {
+                        const burnTotal = Math.max(0, dmg * 0.4);
+                        if (burnTotal > 0) {
+                            applyFireBulletBurn(e, burnTotal, { duration: 5 });
+                        }
+                    }
+
                     if (e !== store.boss && e.hp <= 0 && !skipDefaultDeathHandling) {
                         e.dead = true;
                         if (e.type === 'void_champion') {
@@ -6994,6 +7081,28 @@
                             life,
                             maxLife: life,
                             r: b.element === 'ice' ? (1.2 + Math.random() * 0.8) : (1.5 + Math.random() * 1.5)
+                        });
+                    }
+                    b.particles = b.particles.filter(p => {
+                        p.life -= dt;
+                        p.x += p.vx * dt;
+                        p.y += p.vy * dt;
+                        return p.life > 0;
+                    });
+                } else if (b.element === 'fire') {
+                    b.particleSpawnT = (b.particleSpawnT || 0) - dt;
+                    if (b.particleSpawnT <= 0) {
+                        b.particleSpawnT = 0.02;
+                        const life = 0.18 + Math.random() * 0.18;
+                        if (!Array.isArray(b.particles)) b.particles = [];
+                        b.particles.push({
+                            x: 0,
+                            y: 0,
+                            vx: (Math.random() - 0.5) * 28,
+                            vy: (Math.random() - 0.5) * 28,
+                            life,
+                            maxLife: life,
+                            r: 1 + Math.random() * 1.4
                         });
                     }
                     b.particles = b.particles.filter(p => {
@@ -8163,6 +8272,27 @@
                         return false;
                     }, 
                     desc: () => 'Unlock poison bullets. Damage enemies over time.' 
+                },
+                'fire_bullets': {
+                    name: "FIRE BULLETS",
+                    icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" width="1em" height="1em" fill="currentColor"><path d="M216 0c-8.8 0-16 7.2-16 16 0 35.3-28.7 64-64 64-44.2 0-80 35.8-80 80 0 11 9 20 20 20 30.9 0 56 25.1 56 56 0 11 9 20 20 20 30.9 0 56 25.1 56 56 0 27.6-20.1 50.5-46.5 55.3C141.2 373.4 96 424.7 96 488c0 13.3 10.7 24 24 24h144c52.9 0 96-43.1 96-96 0-44.9-31-82.6-72.3-93.2C310 301.5 320 276.6 320 248c0-65.2-47.9-119.2-110.9-127.2 5.8-9.6 9.3-20.8 9.3-32.8 0-8.8-7.2-16-16-16z"/></svg>',
+                    cost: 1200,
+                    isPremium: true,
+                    isUnlock: true,
+                    category: 'attack',
+                    apply: () => {
+                        if (!store.player.hasFireBullets) {
+                            store.player.hasFireBullets = true;
+                            if (!store.player.bulletElement || store.player.bulletElement === 'normal') {
+                                store.player.bulletElement = 'fire';
+                            }
+                            announce('🔥 Fire bullets unlocked! Ignite enemies with escalating burn.');
+                            playSound('powerup');
+                            return true;
+                        }
+                        return false;
+                    },
+                    desc: () => 'Unlock fire bullets. Ignite enemies with ramping burn damage.'
                 }
             };
 
@@ -8183,6 +8313,7 @@
                 'fragment_blast',
                 'ice_bullets',
                 'poison_bullets',
+                'fire_bullets',
                 'ricochet',
                 'launcher',
                 'star_cannon',
@@ -13479,32 +13610,24 @@
 
                     // Check if player is hovering over orb
                     if (distToOrb <= hoverRadius) {
-                        // Only switch if both elements are unlocked (otherwise single switch would be instant)
-                        if (store.player.hasIceBullets && store.player.hasPoisonBullets) {
-                            // Track hover state to avoid rapid switching
+                        const cycleOptions = getAvailableBulletElements(store.player);
+                        if (cycleOptions.length > 1) {
                             if (!store.bulletToggleHovering) {
                                 store.bulletToggleHovering = true;
                                 store.bulletToggleHoverTime = 0;
                             }
                             store.bulletToggleHoverTime += dt;
 
-                            // Switch every 0.5 seconds while hovering over the orb
                             if (store.bulletToggleHoverTime >= 0.5) {
-                                // Cycle through: normal -> ice -> poison -> split -> alternate -> normal
-                                if (store.player.bulletElement === 'normal') {
-                                    store.player.bulletElement = 'ice';
-                                } else if (store.player.bulletElement === 'ice') {
-                                    store.player.bulletElement = 'poison';
-                                } else if (store.player.bulletElement === 'poison') {
-                                    store.player.bulletElement = 'split';
-                                } else if (store.player.bulletElement === 'split') {
-                                    store.player.bulletElement = 'alternate';
-                                    store.player.bulletElementVolleyCount = 0; // Reset counter
-                                } else {
-                                    store.player.bulletElement = 'normal';
+                                const currentIndex = Math.max(0, cycleOptions.indexOf(store.player.bulletElement));
+                                const nextIndex = (currentIndex + 1) % cycleOptions.length;
+                                const nextElement = cycleOptions[nextIndex];
+                                store.player.bulletElement = nextElement;
+                                if (nextElement === 'alternate') {
+                                    store.player.bulletElementVolleyCount = 0;
                                 }
                                 playSound('stargun');
-                                store.bulletToggleHoverTime = 0; // Reset for next switch
+                                store.bulletToggleHoverTime = 0;
                             }
                         }
                     } else {
@@ -14066,7 +14189,90 @@
                         }
                     }
 
+                    // Poison spreading mechanic - poisoned enemies spread poison on collision
+                    if (e.poisonStacks && e.poisonStacks > 0) {
+                        // Initialize poison spread cooldown if not present
+                        if (!e.poisonSpreadCooldown) {
+                            e.poisonSpreadCooldown = 0;
+                        }
+                        
+                        e.poisonSpreadCooldown -= dt;
+                        
+                        // Check for nearby enemies to spread poison to
+                        if (e.poisonSpreadCooldown <= 0) {
+                            const spreadRadius = (e.r || 16) * 2.5; // Detection radius for spreading
+                            
+                            for (const other of store.enemies) {
+                                if (other === e || other.dead) continue;
+                                
+                                const dx = other.x - e.x;
+                                const dy = other.y - e.y;
+                                const distSq = dx * dx + dy * dy;
+                                const maxDistSq = spreadRadius * spreadRadius;
+                                
+                                if (distSq < maxDistSq) {
+                                    // Enemies are touching - spread poison
+                                    if (!other.poisonStacks || other.poisonStacks === 0) {
+                                        // Transfer 1 stack to unpoisoned enemy
+                                        other.poisonStacks = 1;
+                                        other.poisonStackTimer = e.poisonStackTimer || 4;
+                                        other.poisonLastTick = 0.1;
+                                        other.poisonTickInterval = 0.1;
+                                        other.poisonDamagePerStack = e.poisonDamagePerStack || 2;
+                                        
+                                        // Visual effect for poison spread
+                                        store.activeEffects.push(createEffect('poisonCloud', other.x, other.y, other.r || 16));
+                                        
+                                        // Set cooldown to prevent immediate re-spread
+                                        e.poisonSpreadCooldown = 0.5;
+                                        break; // Only spread to one enemy per check
+                                    } else {
+                                        // Add 1 stack and refresh timer
+                                        other.poisonStacks = Math.min(3, other.poisonStacks + 1);
+                                        other.poisonStackTimer = e.poisonStackTimer || 4; // Refresh timer
+                                        other.poisonDamagePerStack = e.poisonDamagePerStack || 2;
+                                        
+                                        // Visual effect
+                                        store.activeEffects.push(createEffect('poisonCloud', other.x, other.y, other.r || 16));
+                                        
+                                        e.poisonSpreadCooldown = 0.5;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     tickChampionBurn(e, dt);
+                    if (Array.isArray(e.fireBurns) && e.fireBurns.length > 0) {
+                        for (let i = e.fireBurns.length - 1; i >= 0; i--) {
+                            const burn = e.fireBurns[i];
+                            burn.effectTimer = (burn.effectTimer || 0) - dt;
+                            burn.elapsed = Math.min(burn.duration, burn.elapsed + dt);
+                            const duration = Math.max(0.001, burn.duration);
+                            const progress = burn.elapsed / duration;
+                            const targetDamage = burn.totalDamage * progress * progress;
+                            let delta = targetDamage - burn.appliedDamage;
+                            if (delta > 0) {
+                                const lethalFloor = burn.lethalFloor ?? (e === store.boss ? 0 : 1);
+                                delta = Math.min(delta, Math.max(0, e.hp - lethalFloor));
+                                if (delta > 0) {
+                                    e.hp -= delta;
+                                    burn.appliedDamage += delta;
+                                    if (burn.effectTimer <= 0) {
+                                        store.activeEffects.push(createEffect('fireBurn', e.x, e.y, e.r || 18, { intensity: progress }));
+                                        burn.effectTimer = 0.15;
+                                    }
+                                }
+                            }
+                            if (burn.elapsed >= duration || burn.appliedDamage >= burn.totalDamage - 1e-4) {
+                                e.fireBurns.splice(i, 1);
+                            }
+                        }
+                        if (!e.fireBurns.length) {
+                            delete e.fireBurns;
+                        }
+                    }
                     tickChampionVoidMarks(e, dt);
                     tickChampionStormGrid(e, dt);
                     if (e.railgunArmorTimer) e.railgunArmorTimer = Math.max(0, e.railgunArmorTimer - dt);
@@ -17759,7 +17965,8 @@
                     console.log('📊 Texture info:', {
                         normal: bulletTextures.normal?.width + 'x' + bulletTextures.normal?.height,
                         ice: bulletTextures.ice?.width + 'x' + bulletTextures.ice?.height,
-                        poison: bulletTextures.poison?.width + 'x' + bulletTextures.poison?.height
+                        poison: bulletTextures.poison?.width + 'x' + bulletTextures.poison?.height,
+                        fire: bulletTextures.fire?.width + 'x' + bulletTextures.fire?.height
                     });
                 }
                 
@@ -17798,7 +18005,7 @@
                             b.particles.forEach(p => {
                                 let pSprite = activeParticleSprites.get(p);
                                 if (!pSprite) {
-                                    pSprite = getParticleSprite(p, b.element === 'ice');
+                                    pSprite = getParticleSprite(p, b.element);
                                     if (!pSprite) return;
                                 }
                                 
@@ -17978,6 +18185,46 @@
                             });
                         }
                         
+                        ctx.restore();
+                        return;
+                    } else if (b.element === 'fire') {
+                        // Fire bullet: ember streak with small flame flickers
+                        ctx.strokeStyle = 'rgba(255, 120, 70, 0.95)';
+                        ctx.lineWidth = r * 0.8;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        ctx.beginPath();
+                        const vx = b.vx || 0;
+                        const vy = b.vy || 1;
+                        const speed = Math.sqrt(vx * vx + vy * vy);
+                        const nx = speed > 0 ? vx / speed : 0;
+                        const ny = speed > 0 ? vy / speed : 1;
+                        const lineLength = r * 1.9;
+                        ctx.moveTo(-nx * lineLength * 0.5, -ny * lineLength * 0.5);
+                        ctx.lineTo(nx * lineLength * 0.5, ny * lineLength * 0.5);
+                        ctx.stroke();
+
+                        const glowRadius = r * 1.4;
+                        const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, glowRadius);
+                        gradient.addColorStop(0, 'rgba(255, 230, 180, 0.6)');
+                        gradient.addColorStop(0.6, 'rgba(255, 140, 60, 0.35)');
+                        gradient.addColorStop(1, 'rgba(120, 30, 0, 0)');
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, glowRadius, 0, 2 * Math.PI);
+                        ctx.fill();
+
+                        if (b.particles && b.particles.length > 0) {
+                            b.particles.forEach(p => {
+                                const t = Math.max(0, Math.min(1, p.life / p.maxLife));
+                                const particleR = p.r * (0.8 + t * 0.6);
+                                ctx.fillStyle = `rgba(255, ${120 + Math.floor(80 * t)}, ${60 + Math.floor(40 * t)}, ${0.55 * t})`;
+                                ctx.beginPath();
+                                ctx.arc(p.x, p.y, particleR, 0, 2 * Math.PI);
+                                ctx.fill();
+                            });
+                        }
+
                         ctx.restore();
                         return;
                     } else if (b.isSwirl || b.explosive) {
@@ -18799,11 +19046,14 @@
 
             function drawBulletElementToggle() {
                 const p = store.player;
-                if (!p.hasIceBullets && !p.hasPoisonBullets) return; // Don't draw if no elements unlocked
+                if (!p) return;
+                if (!p.hasIceBullets && !p.hasPoisonBullets && !p.hasFireBullets) return; // Don't draw if no elements unlocked
 
                 const orbX = 60;
                 const orbY = H - 60;
                 const orbRadius = 18;
+
+                const availableElements = getAvailableBulletElements(p);
 
                 ctx.save();
 
@@ -18817,6 +19067,10 @@
                     orbColor = 'rgba(100, 255, 100, 0.85)';
                     glowColor = 'rgba(120, 255, 120, 0.5)';
                     orbLabel = '☠️';
+                } else if (p.bulletElement === 'fire') {
+                    orbColor = 'rgba(255, 120, 70, 0.85)';
+                    glowColor = 'rgba(255, 140, 90, 0.5)';
+                    orbLabel = '🔥';
                 } else if (p.bulletElement === 'split') {
                     orbColor = 'rgba(100, 220, 180, 0.85)';
                     glowColor = 'rgba(100, 230, 180, 0.5)';
@@ -18876,7 +19130,7 @@
                 ctx.fillText(orbLabel, orbX, orbY);
 
                 // Draw available elements indicator
-                if (p.hasIceBullets && p.hasPoisonBullets) {
+                if (availableElements.length > 1) {
                     ctx.font = 'bold 8px Arial';
                     ctx.fillStyle = 'rgba(255, 255, 150, 0.8)';
                     ctx.fillText('(hover to switch)', orbX, orbY + orbRadius + 12);
@@ -19618,8 +19872,11 @@
                 const baseMultishot = Number.isFinite(p.multishot) ? p.multishot : 2;
                 const cheatMultishot = Number.isFinite(p.cheatMultishotBonus) ? p.cheatMultishotBonus : 0;
                 const totalMultishot = Math.max(1, baseMultishot + cheatMultishot);
-                const angleSpread = 10;
-                const bulletColor = getBulletColorForSubclass();
+                let angleSpread = 10;
+                if (p.bulletElement === 'fire') {
+                    angleSpread = 6;
+                }
+                const bulletColor = p.bulletElement === 'fire' ? '#ff5533' : getBulletColorForSubclass();
                 for (let i = 0; i < totalMultishot; i++) {
                     const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180;
                     spawnBullet({
@@ -30980,6 +31237,36 @@
                             ctx.restore();
                         };
                         break;
+                    case "fireBurn":
+                        effect.maxLife = opts.duration ?? 0.35;
+                        effect.life = effect.maxLife;
+                        effect.radius = radius || 18;
+                        effect.opts = opts;
+                        effect.step = function (dt) {
+                            this.life -= dt;
+                            if (this.life <= 0) this.isActive = false;
+                        };
+                        effect.draw = function () {
+                            const progress = 1 - (this.life / this.maxLife);
+                            const intensity = Math.min(1, Math.max(0, this.opts.intensity ?? 0));
+                            const baseAlpha = 0.35 + intensity * 0.35;
+                            const flicker = 0.75 + Math.sin(performance.now() / 80) * 0.25;
+                            const size = this.radius * (0.85 + progress * 0.4);
+                            ctx.save();
+                            ctx.translate(this.x, this.y);
+                            ctx.globalCompositeOperation = 'lighter';
+                            ctx.globalAlpha = baseAlpha * flicker;
+                            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, size);
+                            gradient.addColorStop(0, 'rgba(255, 235, 200, 0.95)');
+                            gradient.addColorStop(0.5, 'rgba(255, 150, 70, 0.7)');
+                            gradient.addColorStop(1, 'rgba(130, 30, 0, 0)');
+                            ctx.fillStyle = gradient;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, size, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.restore();
+                        };
+                        break;
                     case "beefCharge":
                         effect.maxLife = opts.duration ?? 0.38;
                         effect.origin = x;
@@ -32641,7 +32928,8 @@
                                 (key === 'magnet_pull' && player.magnetRadius > 0) ||
                                 (key === 'rear_guard' && player.hasRearGuard) ||
                                 (key === 'ice_bullets' && player.hasIceBullets) ||
-                                (key === 'poison_bullets' && player.hasPoisonBullets);
+                                (key === 'poison_bullets' && player.hasPoisonBullets) ||
+                                (key === 'fire_bullets' && player.hasFireBullets);
                         }
                         if (alreadyUnlocked) {
                             const reason = key === 'ricochet' ? 'Ricochet rounds fully upgraded.' : 'Already unlocked.';
