@@ -14878,7 +14878,13 @@
                 removeDeadObjects(store.eBullets, bullet => returnEBulletToPool(bullet));
 
                 // Efficient removal for other arrays
-                removeDeadObjects(store.enemies);
+                removeDeadObjects(store.enemies, enemy => {
+                    // Clean up PixiJS graphics for mechs
+                    if (enemy.pixiGraphics) {
+                        enemy.pixiGraphics.destroy();
+                        enemy.pixiGraphics = null;
+                    }
+                });
                 removeDeadObjects(store.shadowHounds);
                 if (store.championMinions && store.championMinions.length) {
                     removeDeadObjects(store.championMinions);
@@ -29626,12 +29632,13 @@
             }
 
             function drawEnemy(e) {
-                // Skip drawing dead mechs - PixiJS handles their cleanup
+                // Skip drawing dead mechs entirely - PixiJS handles their cleanup
                 if (e.dead && (e.type === 'mech' || e.type === 'mech_elite')) {
                     return;
                 }
                 
                 const { x: t, y: o, r: a, type: r, color: n, hp: l, hpMax: s, t: c } = e;
+                
                 ctx.save();
                 let drawX = t;
                 let drawY = o;
