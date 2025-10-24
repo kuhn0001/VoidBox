@@ -11,6 +11,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Audiowide&family=Orbitron:wght@500;700&display=swap"
         rel="stylesheet" />
+    <!-- Font Awesome Pro -->
+    <script src="https://kit.fontawesome.com/ffa205a4e6.js" crossorigin="anonymous"></script>
     <!-- PixiJS v8 -->
     <script src="https://pixijs.download/release/pixi.js"></script>
     <title>Void Skies</title>
@@ -1321,6 +1323,29 @@
             box-shadow: none !important
         }
 
+        .skill-card.unlocked {
+            background: radial-gradient(circle, rgba(30, 30, 40, 0.6) 0%, rgba(25, 25, 35, 0.5) 70%);
+            border: 1px solid rgba(120, 120, 140, 0.3);
+            opacity: 0.65;
+            cursor: default;
+        }
+
+        .skill-card.unlocked:hover {
+            background: radial-gradient(circle, rgba(30, 30, 40, 0.6) 0%, rgba(25, 25, 35, 0.5) 70%);
+            box-shadow: none;
+            transform: none;
+        }
+
+        .unlocked-label {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.12em;
+            color: rgba(140, 140, 160, 0.75);
+            text-shadow: 0 0 8px rgba(100, 100, 120, 0.4);
+            text-transform: uppercase;
+        }
+
         /* Primordial Soldier Laboratory Styles */
         #championDressingRoom {
             width: min(85vw, 650px);
@@ -1558,6 +1583,14 @@
             font-size: 28px;
             margin-bottom: 8px;
             line-height: 1;
+        }
+
+        /* Font Awesome icon styling */
+        .skill-icon i,
+        .shop-item-cost i,
+        .skill-card i {
+            display: inline-block;
+            font-style: normal;
         }
 
         /* Enhanced Attack Module Selection Styles */
@@ -3847,6 +3880,7 @@
             let pixiApp = null;
             let bulletContainer = null;
             let particleContainer = null;
+            let cubeBurglarContainer = null;
             let bulletTextures = {
                 normal: null,
                 ice: null,
@@ -3896,16 +3930,13 @@
                     stage.appendChild(pixiApp.canvas);
 
                     // Create containers for layering
-                    particleContainer = new PIXI.ParticleContainer(10000, {
-                        position: true,
-                        alpha: true,
-                        scale: true,
-                        tint: true
-                    });
+                    particleContainer = new PIXI.Container();
                     bulletContainer = new PIXI.Container();
+                    cubeBurglarContainer = new PIXI.Container();
                     
                     pixiApp.stage.addChild(particleContainer);
                     pixiApp.stage.addChild(bulletContainer);
+                    pixiApp.stage.addChild(cubeBurglarContainer);
 
                     console.log('✅ PixiJS initialized for bullet rendering');
                 } catch (err) {
@@ -3941,6 +3972,21 @@
                 poisonGraphics.stroke({ width: 2.4, color: 0x32ff32, alpha: 0.95, cap: 'round' });
                 bulletTextures.poison = pixiApp.renderer.generateTexture(poisonGraphics);
                 
+                // Lava blade (diamond/blade shape with gradient)
+                const lavaGraphics = new PIXI.Graphics();
+                const bladeHeight = 8;
+                const bladeWidth = 4;
+                // Create blade shape
+                lavaGraphics.poly([
+                    { x: 0, y: -bladeHeight },
+                    { x: bladeWidth * 0.6, y: -bladeHeight * 0.08 },
+                    { x: 0, y: bladeHeight },
+                    { x: -bladeWidth * 0.6, y: -bladeHeight * 0.08 }
+                ]);
+                lavaGraphics.fill({ color: 0xff00aa, alpha: 0.95 }); // Hot pink/magenta
+                lavaGraphics.stroke({ width: 1.5, color: 0x00ffcd, alpha: 0.4 }); // Cyan outline
+                bulletTextures.lavaBlade = pixiApp.renderer.generateTexture(lavaGraphics);
+                
                 console.log('✅ Bullet textures created', bulletTextures);
             }
 
@@ -3969,13 +4015,19 @@
                     bulletContainer.addChild(sprite);
                 }
                 
-                // Set texture based on element
-                if (bullet.element === 'ice' && bulletTextures.ice) {
+                // Set texture based on bullet type
+                if (bullet.isLavaBlade && bulletTextures.lavaBlade) {
+                    sprite.texture = bulletTextures.lavaBlade;
+                    sprite.scale.set(1.5); // Lava blades are bigger
+                } else if (bullet.element === 'ice' && bulletTextures.ice) {
                     sprite.texture = bulletTextures.ice;
+                    sprite.scale.set(1);
                 } else if (bullet.element === 'poison' && bulletTextures.poison) {
                     sprite.texture = bulletTextures.poison;
+                    sprite.scale.set(1);
                 } else if (bulletTextures.normal) {
                     sprite.texture = bulletTextures.normal;
+                    sprite.scale.set(1);
                     // Parse hex color properly
                     const colorStr = bullet.col.replace('#', '');
                     sprite.tint = parseInt(colorStr, 16);
@@ -6508,6 +6560,17 @@
                 }
 
                 let dmg = b.dmg || 15;
+                
+                // Lava blades do more damage the closer the enemy is to the player
+                if (b.isLavaBlade && store.player) {
+                    const distToPlayer = Math.hypot(e.x - store.player.x, e.y - store.player.y);
+                    // Scale from 1x at 300px to 3x at point-blank (0px)
+                    const maxDistance = 300;
+                    const distanceFactor = Math.max(0, Math.min(1, 1 - (distToPlayer / maxDistance)));
+                    const damageMultiplier = 1 + (distanceFactor * 2); // 1x to 3x
+                    dmg *= damageMultiplier;
+                }
+                
                 if (b.isChampionShot && b.vulnerabilityProfile && e) {
                     dmg = applyChampionVulnerabilityScaling(dmg, e, b.vulnerabilityProfile);
                 }
@@ -6739,7 +6802,16 @@
                         const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
                         const scoreGain = Math.floor((Number.isFinite(e.score) ? e.score : 0) * collarBonus);
                         const goldGain = Math.floor((Number.isFinite(e.gold) ? e.gold : 0) * collarBonus);
-                        const xpGain = Math.floor((Number.isFinite(e.xp) ? e.xp : 0) * collarBonus);
+                        
+                        // Increase XP generation after 5th boss (wave 25+)
+                        let xpBase = Number.isFinite(e.xp) ? e.xp : 0;
+                        if (store.world.wave >= 25) {
+                            const wavesAfter25 = store.world.wave - 25;
+                            const xpMultiplier = 1 + (wavesAfter25 * 0.05); // +5% per wave after 25
+                            xpBase *= xpMultiplier;
+                        }
+                        const xpGain = Math.floor(xpBase * collarBonus);
+                        
                         if (scoreGain) store.world.score += scoreGain;
                         if (goldGain) addWorldGold(goldGain);
                         if (xpGain) awardXp(xpGain); // Apply XP diminishing returns
@@ -7255,7 +7327,7 @@
                     }
                 },
                 { id: 'shield', name: 'VOID BARRIER', icon: '🩵', desc: 'BIG Shields', apply: () => { store.player.shieldMax *= 1.15 ; store.player.shieldMax += 50 ; store.player.shield = store.player.shieldMax; } },
-                { id: 'flamethrower', name: 'LAVA BLADES', icon: '🗡️', desc: 'Launches electric cyberpunk lava blades in a cone. Great for up-close enemies.', apply: () => { store.player.flamethrowerLevel++; } }
+                { id: 'flamethrower', name: 'LAVA BLADES', icon: '<i class="fa-duotone fa-solid fa-scythe"></i>', desc: 'Launches electric cyberpunk lava blades in a cone. Great for up-close enemies.', apply: () => { store.player.flamethrowerLevel++; } }
             ];
 
             const KNOCKBACK_SHIELD_CONFIG = {
@@ -7328,7 +7400,7 @@
 
 
             const SHOP_UPGRADES = {
-                'repair': { name: "NANO REPAIR", icon: '🔧', cost: 3, isPremium: true, category: 'health', apply: () => { if (store.player.hp < store.player.hpMax) { store.player.hp = Math.min(store.player.hpMax, store.player.hp + store.player.hpMax * 0.25); return true; } return false; }, desc: () => `Restore 25% of max HP.` },
+                'repair': { name: "NANO REPAIR", icon: '<i class="fa-sharp-duotone fa-regular fa-screwdriver-wrench"></i>', cost: 3, isPremium: true, category: 'health', apply: () => { if (store.player.hp < store.player.hpMax) { store.player.hp = Math.min(store.player.hpMax, store.player.hp + store.player.hpMax * 0.25); return true; } return false; }, desc: () => `Restore 25% of max HP.` },
                 'vampirism': {
                     name: "VAMPIRIC ROUNDS", icon: '🩸', isPremium: true, max: 4, category: 'utility',
                     apply: () => {
@@ -7342,10 +7414,10 @@
                 },
                 'hp': {
                     name: "MAX HP",
-                    icon: '❤️',
+                    icon: '<i class="fa-duotone fa-regular fa-heart-circle-plus"></i>',
                     baseCost: 25,
                     scale: 1.1,
-                    maxLevel: 20,
+                    maxLevel: 999, // Unlimited
                     category: 'health',
                     effect: (level) => {
                         const p = store.player;
@@ -7363,12 +7435,12 @@
                 },
                 'nano_save': { name: "NANO CHARGE", icon: '💾', cost: 25, isPremium: true, max: 5, category: 'utility', apply: () => { if (store.player.nanoSaves < 5) { store.player.nanoSaves++; return true; } return false; }, desc: () => `Blocks death, sets HP to 10, +15 max HP, opens shop. Charges: ${store.player.nanoSaves}/5` },
                 'luck_boost': { name: "LUCK BOOST", icon: '🍀', baseCost: 50, scale: 2, maxLevel: 5, category: 'utility', effect: (level) => { store.player.luckBoost = (store.player.luckBoost || 0) + (0.15 / Math.pow(2, level)); }, desc: level => `+${(0.15 / Math.pow(2, level) * 100).toFixed(1)}% drop chance (Lvl ${level + 1})` },
-                'dmg': { name: "DAMAGE", icon: '💪', baseCost: 50, scale: 1.5, maxLevel: 10, category: 'attack', effect: () => store.player.dmgMult *= 1.06, desc: level => `+6% Damage (Lvl ${level + 1})` },
+                'dmg': { name: "DAMAGE", icon: '<i class="fa-sharp-duotone fa-light fa-poo-storm"></i>', baseCost: 50, scale: 1.5, maxLevel: 10, category: 'attack', effect: () => store.player.dmgMult *= 1.06, desc: level => `+6% Damage (Lvl ${level + 1})` },
                 'crit_chance': { name: "SHINOBI REFLEXES", icon: '🥷', baseCost: 40, increment: 24, maxLevel: 10, category: 'attack', effect: () => { store.player.critChance *= 1.5; store.player.critDamage *= 1.5; }, desc: level => `+50% Crit Chance & Dmg (Lvl ${level + 1})` },
                 'speed': { name: "SPEED", icon: '🚀', baseCost: 40, scale: 1.6, maxLevel: 8, category: 'utility', effect: () => store.player.speed *= 1.10, desc: level => `+10% Speed (Lvl ${level + 1})` },
                 'grenade': { 
                     name: "SHIELD PULSE", 
-                    icon: '⚡�️', 
+                    icon: '<i class="fa-duotone fa-regular fa-wave-square"></i>', 
                     cost: 70, 
                     isPremium: true, 
                     max: 3, 
@@ -7507,10 +7579,10 @@
                 },
                 'max_shield': {
                     name: "MAX SHIELD",
-                    icon: '🛡️',
+                    icon: '<i class="fa-sharp-duotone fa-regular fa-shield-plus"></i>',
                     baseCost: 30,
                     scale: 1.2,
-                    maxLevel: 20, // Increased max level
+                    maxLevel: 999, // Unlimited
                     category: 'health',
                     effect: (level) => {
                         const p = store.player;
@@ -7533,7 +7605,7 @@
                         }
                     }
                 },
-                'rear_guard': { name: 'AFT FLANKSHIELD', icon: '🛡️✨', baseCost: 130, scale: 2, maxLevel: 2, category: 'utility', effect: (level) => { if (level === 0) store.player.hasRearGuard = true; else store.player.rearGuardCooldown = 6; }, desc: level => level === 0 ? `Blocks one enemy volley from behind every 8s.` : `Reduce cooldown to 6s.` },
+                'rear_guard': { name: 'AFT FLANKSHIELD', icon: '<i class="fa-sharp fa-solid fa-shield-cross"></i>', baseCost: 130, scale: 2, maxLevel: 2, category: 'utility', effect: (level) => { if (level === 0) store.player.hasRearGuard = true; else store.player.rearGuardCooldown = 6; }, desc: level => level === 0 ? `Blocks one enemy volley from behind every 8s.` : `Reduce cooldown to 6s.` },
                 'launcher': {
                     name: 'FRAG LAUNCHER',
                     icon: '💥',
@@ -7954,7 +8026,7 @@
                 },
                 'ice_bullets': { 
                     name: "ICE BULLETS", 
-                    icon: '❄️', 
+                    icon: '<i class="fa-duotone fa-regular fa-face-icicles"></i>', 
                     cost: 1000, 
                     isPremium: true, 
                     isUnlock: true, 
@@ -7975,7 +8047,7 @@
                 },
                 'poison_bullets': { 
                     name: "POISON BULLETS", 
-                    icon: '☠️', 
+                    icon: '<i class="fa-duotone fa-regular fa-flask-round-poison"></i>', 
                     cost: 1000, 
                     isPremium: true, 
                     isUnlock: true, 
@@ -7983,6 +8055,9 @@
                     apply: () => { 
                         if (!store.player.hasPoisonBullets) {
                             store.player.hasPoisonBullets = true;
+                            if (!store.player.bulletElement || store.player.bulletElement === 'normal') {
+                                store.player.bulletElement = 'poison';
+                            }
                             announce('☠️ Poison bullets unlocked! Damage enemies over time.');
                             playSound('powerup');
                             return true; 
@@ -8712,30 +8787,30 @@
             const COLLAR_TARGET_GAIN_MULTIPLIER = 1.6;
 
             function calculateCollarBonus(stacks) {
-                // UNLIMITED SCALING: No cap, aggressive growth at high stacks
+                // REDUCED SCALING: Gentler curve to keep equilibrium ~10% behind player power
                 const safeStacks = Math.max(0, Number.isFinite(stacks) ? stacks : 0);
                 
-                // Tiered scaling that accelerates at high stacks to counter broken builds
-                const tierOneLimit = 5;   // First 5 stacks: 8% each (gentle start)
-                const tierTwoLimit = 10;  // Next 5 stacks: 10% each (moderate)
-                const tierThreeLimit = 20; // Next 10 stacks: 12% each (aggressive)
-                const tierFourLimit = 40;  // Next 20 stacks: 15% each (very aggressive)
-                const tierFiveLimit = 70;  // Next 30 stacks: 18% each (extreme)
+                // Softer tiered scaling - rewards good play by staying behind player power curve
+                const tierOneLimit = 5;   // First 5 stacks: 5% each (very gentle start)
+                const tierTwoLimit = 10;  // Next 5 stacks: 6% each (gentle)
+                const tierThreeLimit = 20; // Next 10 stacks: 7% each (moderate)
+                const tierFourLimit = 40;  // Next 20 stacks: 9% each (aggressive)
+                const tierFiveLimit = 70;  // Next 30 stacks: 11% each (very aggressive)
                 
                 const tierOne = Math.min(safeStacks, tierOneLimit);
                 const tierTwo = Math.min(Math.max(safeStacks - tierOneLimit, 0), tierTwoLimit - tierOneLimit);
                 const tierThree = Math.min(Math.max(safeStacks - tierTwoLimit, 0), tierThreeLimit - tierTwoLimit);
                 const tierFour = Math.min(Math.max(safeStacks - tierThreeLimit, 0), tierFourLimit - tierThreeLimit);
                 const tierFive = Math.min(Math.max(safeStacks - tierFourLimit, 0), tierFiveLimit - tierFourLimit);
-                const tierSix = Math.max(safeStacks - tierFiveLimit, 0); // Beyond 70: 20% each (unstoppable)
+                const tierSix = Math.max(safeStacks - tierFiveLimit, 0); // Beyond 70: 13% each (extreme)
                 
                 const bonus = 
-                    tierOne * 0.08 +    // 0-5: 8% per stack
-                    tierTwo * 0.10 +    // 5-10: 10% per stack
-                    tierThree * 0.12 +  // 10-20: 12% per stack
-                    tierFour * 0.15 +   // 20-40: 15% per stack
-                    tierFive * 0.18 +   // 40-70: 18% per stack
-                    tierSix * 0.20;     // 70+: 20% per stack (cheater territory)
+                    tierOne * 0.05 +    // 0-5: 5% per stack (reduced from 8%)
+                    tierTwo * 0.06 +    // 5-10: 6% per stack (reduced from 10%)
+                    tierThree * 0.07 +  // 10-20: 7% per stack (reduced from 12%)
+                    tierFour * 0.09 +   // 20-40: 9% per stack (reduced from 15%)
+                    tierFive * 0.11 +   // 40-70: 11% per stack (reduced from 18%)
+                    tierSix * 0.13;     // 70+: 13% per stack (reduced from 20%)
                 
                 return 1 + bonus;
             }
@@ -10814,8 +10889,13 @@
                 const cycleRaw = Math.floor((store.world.wave - 5) / 5);
                 const def = getBossDefinitionByCycle(cycleRaw) || BOSS_DEFINITIONS[0];
                 let hp = def.baseHp * scale * store.world.bossHealthBonus;
-                const collarBonus = calculateCollarBonus(sanitizeCollarStacks()); // Diminishing scaling per collar stack
-                hp *= collarBonus;
+                
+                // Only apply collar scaling AFTER 2nd boss is defeated (bosses > 2 means 3rd boss and beyond)
+                let collarBonus = 1;
+                if (store.world.bosses > 2) {
+                    collarBonus = calculateCollarBonus(sanitizeCollarStacks());
+                    hp *= collarBonus;
+                }
 
                 const boss = {
                     ...def,
@@ -10849,7 +10929,7 @@
                 boss.spawnWave = waveIndex;
                 boss.spawnedAt = performance.now();
 
-                // console.log(`🏆 Boss Created: ${boss.name} | Wave: ${store.world.wave} | HP: ${hp} | Scale: ${scale} | CollarStacks: ${store.world.collarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x`);
+                console.log(`🏆 Boss Created: ${boss.name} | Wave: ${store.world.wave} | HP: ${hp.toFixed(0)} | Scale: ${scale} | CollarStacks: ${store.world.collarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x`);
 
                 // Create Boss class instance for DEATH ENGINE
                 if (boss.name === 'DEATH ENGINE') {
@@ -10895,10 +10975,17 @@
                 }
 
                 c.hp *= waveMultiplier * store.world.enemyHealthBonus;
-                const collarBonus = calculateCollarBonus(sanitizeCollarStacks()); // Diminishing scaling per collar stack
-                c.hp *= collarBonus;
+                
+                // Apply collar scaling ONLY AFTER 2nd boss is defeated (not based on wave number)
+                let enemyCollarMultiplier = 1;
+                if (store.world.bosses > 2) {
+                    const collarBonus = calculateCollarBonus(sanitizeCollarStacks()); // Diminishing scaling per collar stack
+                    // Reduce collar effect on regular enemies (50% effectiveness) to prevent bullet sponges
+                    enemyCollarMultiplier = 1 + ((collarBonus - 1) * 0.5);
+                    c.hp *= enemyCollarMultiplier;
+                }
 
-                // console.log(`🔍 Enemy Health Debug | Type: ${type} | Base: ${cfgs[type].hp} | Wave: ${wave} | WaveMult: ${waveMultiplier.toFixed(2)} | EnemyBonus: ${store.world.enemyHealthBonus.toFixed(2)} | CollarBonus: ${collarBonus.toFixed(2)} | Final HP: ${c.hp.toFixed(1)}`);
+                console.log(`🔍 Enemy Health Debug | Type: ${type} | Base: ${cfgs[type].hp} | Wave: ${wave} | WaveMult: ${waveMultiplier.toFixed(2)} | EnemyBonus: ${store.world.enemyHealthBonus.toFixed(2)} | BossesDefeated: ${store.world.bosses} | CollarActive: ${store.world.bosses > 2} | EnemyCollarMult: ${enemyCollarMultiplier.toFixed(2)} | Final HP: ${c.hp.toFixed(1)}`);
                 
                 // ORGANIC SPAWN POSITIONING: Add more natural clustering and variance
                 let spawnX, spawnY;
@@ -15113,9 +15200,9 @@
                     delete store.world.deathEngineCollarStacks; // Clean up
                     delete store.world.deathEngineCollarTargetStacks;
                 } else {
-                    // Add collar stacks only after 2nd boss is defeated - collar system starts with 3rd boss
+                    // Add collar stacks ONLY AFTER 2nd boss is defeated - collar tracking starts with 3rd boss
                     collarStacksToAdd = ensureFiniteNumber(collarStacksToAdd, 0);
-                    if (store.world.bosses >= 2) {
+                    if (store.world.bosses > 2) {
                         if (collarStacksToAdd > 0) {
                             scheduleCollarIncrease(collarStacksToAdd);
                         } else {
@@ -15414,8 +15501,8 @@
                 detailCubeScale: 0.55,
                 easeFactor: 6.5,
                 damageFlashDuration: 0.32,
-                baseCubeHealth: 110,
-                baseDetailHealth: 35,
+                baseCubeHealth: 93.5, // Reduced by 15% from 110
+                baseDetailHealth: 29.75, // Reduced by 15% from 35
                 baseAuraDamageBonus: 0.22,
                 stackDamageBonus: 0.08,
                 auraDuration: 1.3,
@@ -15782,10 +15869,22 @@
                     captureCooldown: 0,
                     auraPulse: 0,
                     contactCooldown: 0,
-                    shadowGround: 70
+                    shadowGround: 70,
+                    dashCooldown: 0,
+                    isDashing: false,
+                    dashDuration: 0
                 };
 
-                const healthMultiplier = hpScale * lateGameScaling;
+                let healthMultiplier = hpScale * lateGameScaling;
+                
+                // Apply collar scaling ONLY AFTER 2nd boss is defeated (same as enemies/bosses)
+                if (store.world.bosses > 2) {
+                    const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
+                    // Cube burglar gets 50% collar effectiveness like regular enemies
+                    const cubeBurglarCollarMultiplier = 1 + ((collarBonus - 1) * 0.5);
+                    healthMultiplier *= cubeBurglarCollarMultiplier;
+                }
+                
                 enemy.cubes = buildCubeBurglarCubes(enemy, healthMultiplier);
                 enemy.cubeAliveCount = enemy.cubes.filter(c => !c.isDetail).length;
                 enemy.hpMax = enemy.cubes.reduce((sum, cube) => sum + cube.hpMax, 0);
@@ -16206,6 +16305,14 @@
             function defeatCubeBurglar(enemy) {
                 if (!enemy || enemy.dead) return;
                 enemy.dead = true;
+                
+                // Clean up PixiJS graphics
+                if (enemy.pixiGraphics && cubeBurglarContainer) {
+                    cubeBurglarContainer.removeChild(enemy.pixiGraphics);
+                    enemy.pixiGraphics.destroy();
+                    enemy.pixiGraphics = null;
+                }
+                
                 store.world.cubeBurglarActive = false;
                 store.world.cubeBurglarCooldown = CUBE_BURGLAR_CONFIG.spawnCooldown;
                 store.world.cubeBurglarDefeated = (store.world.cubeBurglarDefeated || 0) + 1;
@@ -16318,6 +16425,46 @@
                 enemy.highlightCubeId = bestCube.id;
                 enemy.highlightTimer = 0.35;
 
+                // Dash behind enemies when hit (if cooldown allows)
+                if (enemy.dashCooldown <= 0) {
+                    const nearbyEnemies = store.enemies.filter(e => 
+                        e && e !== enemy && !e.dead && e.type !== 'cube_burglar' && 
+                        Math.hypot(e.x - enemy.x, e.y - enemy.y) < 400
+                    );
+                    if (nearbyEnemies.length > 0) {
+                        // Find best enemy to dash behind (furthest from player)
+                        const player = store.player;
+                        let bestEnemy = null;
+                        let bestScore = -Infinity;
+                        for (const e of nearbyEnemies) {
+                            const distToPlayer = Math.hypot(e.x - player.x, e.y - player.y);
+                            const distToMe = Math.hypot(e.x - enemy.x, e.y - enemy.y);
+                            const score = distToPlayer - distToMe * 0.5; // Prefer far-from-player but not too far from burglar
+                            if (score > bestScore) {
+                                bestScore = score;
+                                bestEnemy = e;
+                            }
+                        }
+                        if (bestEnemy) {
+                            // Dash to position behind the enemy (opposite from player)
+                            const dx = bestEnemy.x - player.x;
+                            const dy = bestEnemy.y - player.y;
+                            const dist = Math.hypot(dx, dy);
+                            if (dist > 0) {
+                                const behindDist = 50; // Distance behind enemy
+                                const targetX = bestEnemy.x + (dx / dist) * behindDist;
+                                const targetY = bestEnemy.y + (dy / dist) * behindDist;
+                                enemy.target = { x: targetX, y: targetY };
+                                enemy.targetBehavior = 'dash';
+                                enemy.targetTimer = 0.4; // Quick dash
+                                enemy.isDashing = true;
+                                enemy.dashDuration = 0.4;
+                                enemy.dashCooldown = 3.5; // 3.5 second cooldown
+                            }
+                        }
+                    }
+                }
+
                 if (bestCube.destroyed && !bestCube.isDetail) {
                     enemy.cubeAliveCount = Math.max(0, enemy.cubeAliveCount - 1);
                     const gold = CUBE_BURGLAR_CONFIG.perCubeGold;
@@ -16391,10 +16538,22 @@
                     enemy.kiteTimer -= dt;
                 }
 
+                // Update dash state
+                if (enemy.dashCooldown > 0) {
+                    enemy.dashCooldown -= dt;
+                }
+                if (enemy.isDashing) {
+                    enemy.dashDuration -= dt;
+                    if (enemy.dashDuration <= 0) {
+                        enemy.isDashing = false;
+                    }
+                }
+
                 const dx = enemy.target.x - enemy.x;
                 const dy = enemy.target.y - enemy.y;
                 const dist = Math.max(1, Math.hypot(dx, dy));
-                const moveSpeed = enemy.moveSpeed + enemy.buffStacks * 12;
+                const baseMoveSpeed = enemy.moveSpeed + enemy.buffStacks * 12;
+                const moveSpeed = enemy.isDashing ? baseMoveSpeed * 2.5 : baseMoveSpeed; // 2.5x speed during dash
                 enemy.x += (dx / dist) * moveSpeed * dt;
                 enemy.y += (dy / dist) * (moveSpeed * 0.85) * dt;
 
@@ -16438,8 +16597,167 @@
                 }
             }
 
+            function drawCubeBurglarPixi(enemy) {
+                if (!enemy || enemy.dead || !cubeBurglarContainer) return;
+                
+                // Create or reuse graphics object
+                if (!enemy.pixiGraphics) {
+                    enemy.pixiGraphics = new PIXI.Graphics();
+                    cubeBurglarContainer.addChild(enemy.pixiGraphics);
+                }
+                
+                const graphics = enemy.pixiGraphics;
+                graphics.clear();
+                
+                // Draw aura
+                const auraPulse = 1 + (enemy.auraPulse || 0) * 0.22;
+                const auraRange = enemy.auraRange || 220;
+                const auraAlpha = 0.28 + (enemy.buffStacks * 0.04);
+                graphics.circle(enemy.x, enemy.y, auraRange * auraPulse);
+                graphics.fill({ color: 0xff6ad5, alpha: auraAlpha * 0.35 });
+                
+                // Draw shadow
+                const groundY = enemy.shadowGround ?? 70;
+                graphics.ellipse(enemy.x, enemy.y + groundY, 30, 15);
+                graphics.fill({ color: 0x000000, alpha: 0.18 });
+                
+                // Get and sort cubes by depth
+                const cubes = enemy.cubes.filter(cube => cube && !cube.destroyed);
+                const sorted = cubes.slice().sort((a, b) => (a.screen?.z || 0) - (b.screen?.z || 0));
+                const highlightId = enemy.highlightTimer > 0 ? enemy.highlightCubeId : null;
+                
+                // Draw each cube
+                sorted.forEach(cube => {
+                    const screen = cube.screen;
+                    let screenX = enemy.x + screen.x;
+                    let screenY = enemy.y + screen.y;
+                    
+                    if (cube.damageTimer > 0) {
+                        screenX += (Math.random() - 0.5) * 3;
+                        screenY += (Math.random() - 0.5) * 3;
+                    }
+                    
+                    const size = cube.size + Math.sin((enemy.time || 0) * 0.9 + cube.pulseOffset) * 0.8;
+                    
+                    // Isometric cube vertices
+                    const points = [
+                        { x: 0, y: -size },
+                        { x: size, y: -size / 2 },
+                        { x: size, y: size / 2 },
+                        { x: 0, y: size },
+                        { x: -size, y: size / 2 },
+                        { x: -size, y: -size / 2 }
+                    ];
+                    
+                    // Parse HSL color and get variants
+                    const cubeAlpha = cube.isKnapsack ? 0.65 : 0.85;
+                    const baseColor = parseHslToHex(cube.color);
+                    const topColor = lightenColor(baseColor, 18);
+                    const rightColor = darkenColor(baseColor, 18);
+                    
+                    // Draw top face
+                    graphics.poly([
+                        { x: screenX + points[0].x, y: screenY + points[0].y },
+                        { x: screenX + points[1].x, y: screenY + points[1].y },
+                        { x: screenX + points[2].x, y: screenY + points[2].y - size },
+                        { x: screenX + points[5].x, y: screenY + points[5].y - size }
+                    ]);
+                    graphics.fill({ color: topColor, alpha: cubeAlpha });
+                    graphics.stroke({ width: 0.6, color: darkenColor(topColor, 12), alpha: cubeAlpha });
+                    
+                    // Draw left face
+                    graphics.poly([
+                        { x: screenX + points[0].x, y: screenY + points[0].y },
+                        { x: screenX + points[5].x, y: screenY + points[5].y },
+                        { x: screenX + points[4].x, y: screenY + points[4].y },
+                        { x: screenX + points[3].x, y: screenY + points[3].y }
+                    ]);
+                    graphics.fill({ color: baseColor, alpha: cubeAlpha });
+                    graphics.stroke({ width: 0.6, color: darkenColor(baseColor, 12), alpha: cubeAlpha });
+                    
+                    // Draw right face
+                    graphics.poly([
+                        { x: screenX + points[0].x, y: screenY + points[0].y },
+                        { x: screenX + points[1].x, y: screenY + points[1].y },
+                        { x: screenX + points[2].x, y: screenY + points[2].y },
+                        { x: screenX + points[3].x, y: screenY + points[3].y }
+                    ]);
+                    graphics.fill({ color: rightColor, alpha: cubeAlpha });
+                    graphics.stroke({ width: 0.6, color: darkenColor(rightColor, 12), alpha: cubeAlpha });
+                    
+                    // Draw highlight if this cube was recently hit
+                    if (highlightId === cube.id) {
+                        const highlightAlpha = Math.max(0.2, enemy.highlightTimer);
+                        graphics.ellipse(screenX, screenY, size * 1.25, size * 0.75);
+                        graphics.stroke({ width: 1.2, color: 0xffdfef, alpha: highlightAlpha });
+                    }
+                });
+            }
+            
+            // Helper functions for color manipulation in PixiJS
+            function parseHslToHex(hslString) {
+                // Parse HSL string like "hsl(120, 50%, 50%)" to hex
+                const match = hslString.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
+                if (!match) return 0xffffff;
+                
+                const h = parseInt(match[1]) / 360;
+                const s = parseInt(match[2]) / 100;
+                const l = parseInt(match[3]) / 100;
+                
+                const hue2rgb = (p, q, t) => {
+                    if (t < 0) t += 1;
+                    if (t > 1) t -= 1;
+                    if (t < 1/6) return p + (q - p) * 6 * t;
+                    if (t < 1/2) return q;
+                    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                    return p;
+                };
+                
+                const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                const p = 2 * l - q;
+                const r = Math.round(hue2rgb(p, q, h + 1/3) * 255);
+                const g = Math.round(hue2rgb(p, q, h) * 255);
+                const b = Math.round(hue2rgb(p, q, h - 1/3) * 255);
+                
+                return (r << 16) | (g << 8) | b;
+            }
+            
+            function lightenColor(hex, percent) {
+                const r = (hex >> 16) & 0xff;
+                const g = (hex >> 8) & 0xff;
+                const b = hex & 0xff;
+                
+                const factor = 1 + (percent / 100);
+                const nr = Math.min(255, Math.round(r * factor));
+                const ng = Math.min(255, Math.round(g * factor));
+                const nb = Math.min(255, Math.round(b * factor));
+                
+                return (nr << 16) | (ng << 8) | nb;
+            }
+            
+            function darkenColor(hex, percent) {
+                const r = (hex >> 16) & 0xff;
+                const g = (hex >> 8) & 0xff;
+                const b = hex & 0xff;
+                
+                const factor = 1 - (percent / 100);
+                const nr = Math.max(0, Math.round(r * factor));
+                const ng = Math.max(0, Math.round(g * factor));
+                const nb = Math.max(0, Math.round(b * factor));
+                
+                return (nr << 16) | (ng << 8) | nb;
+            }
+
             function drawCubeBurglar(enemy) {
                 if (!enemy || enemy.dead) return;
+                
+                // Use PixiJS rendering if available
+                if (pixiApp && cubeBurglarContainer) {
+                    drawCubeBurglarPixi(enemy);
+                    return;
+                }
+                
+                // Fallback to canvas rendering
                 const auraPulse = 1 + (enemy.auraPulse || 0) * 0.22;
                 const auraRange = enemy.auraRange || 220;
                 ctx.save();
@@ -17070,8 +17388,8 @@
 
                 // Canvas fallback rendering (for special bullets or when Pixi not ready)
                 store.bullets.forEach(b => {
-                    // Skip normal bullets if Pixi is handling them
-                    if (USE_PIXI_BULLETS && !b.isLavaBlade && !b.isFlame) {
+                    // Skip bullets if Pixi is handling them (including lava blades now!)
+                    if (USE_PIXI_BULLETS && !b.isFlame) {
                         return;
                     }
                     
@@ -31951,7 +32269,9 @@
                                 (key === 'launcher' && player.hasLauncher) ||
                                 (key === 'luck_boost' && player.luckBoost > 0) ||
                                 (key === 'magnet_pull' && player.magnetRadius > 0) ||
-                                (key === 'rear_guard' && player.hasRearGuard);
+                                (key === 'rear_guard' && player.hasRearGuard) ||
+                                (key === 'ice_bullets' && player.hasIceBullets) ||
+                                (key === 'poison_bullets' && player.hasPoisonBullets);
                         }
                         if (alreadyUnlocked) {
                             const reason = key === 'ricochet' ? 'Ricochet rounds fully upgraded.' : 'Already unlocked.';
@@ -32471,9 +32791,27 @@
                     }
                 });
 
-                const shopItems = shopItemOrder
+                // Sort items: unlocked/maxed items go to bottom
+                const shopItemsUnsorted = shopItemOrder
                     .map(key => currentItems.find(item => item && item.key === key))
                     .filter(Boolean);
+                
+                const availableItems = [];
+                const unlockedItems = [];
+                
+                shopItemsUnsorted.forEach(item => {
+                    const isMaxed = item.info && item.info.reason && 
+                        (item.info.reason.includes('Max level') || 
+                         item.info.reason.includes('Already unlocked') || 
+                         item.info.reason.includes('fully upgraded'));
+                    if (isMaxed) {
+                        unlockedItems.push(item);
+                    } else {
+                        availableItems.push(item);
+                    }
+                });
+                
+                const shopItems = [...availableItems, ...unlockedItems];
 
                 const buildCard = (entry) => {
                     const { key, upgrade, info } = entry;
@@ -32483,21 +32821,32 @@
                     const name = typeof upgrade.getName === 'function' ? upgrade.getName(info, level) : upgrade.name;
                     let desc = typeof upgrade.desc === 'function' ? upgrade.desc(level, info) : upgrade.desc;
                     const costValue = info && Number.isFinite(info.cost) ? info.cost : upgrade.cost;
-                    const costText = Number.isFinite(costValue)
-                        ? costValue
-                        : (info && info.reason && /already/i.test(info.reason) ? 'Owned' : '---');
+                    
+                    // Check if this is a fully unlocked/maxed upgrade
+                    const isMaxed = info && info.reason && 
+                        (info.reason.includes('Max level') || 
+                         info.reason.includes('Already unlocked') || 
+                         info.reason.includes('fully upgraded'));
+                    
+                    const costText = isMaxed 
+                        ? '<span class="unlocked-label">UNLOCKED</span>'
+                        : (Number.isFinite(costValue) ? costValue : '---');
+                    
                     const available = info ? !!info.available : (Number.isFinite(costValue) && (store.world?.gold ?? 0) >= costValue);
                     const isDisabled = !available;
-                    if (isDisabled && info && info.reason) {
+                    if (isDisabled && info && info.reason && !isMaxed) {
                         desc = info.reason;
                     }
-                    return `<div class="skill-card shop-item ${isDisabled ? 'disabled' : ''} shop-item-${category}" data-key="${key}">
+                    
+                    const cardClasses = `skill-card shop-item ${isDisabled ? 'disabled' : ''} ${isMaxed ? 'unlocked' : ''} shop-item-${category}`;
+                    
+                    return `<div class="${cardClasses}" data-key="${key}">
                 <div class="skill-icon">${icon}</div>
                 <div>
                     <div class="skill-title">${name || ''}</div>
                     <div class="skill-desc">${desc || ''}</div>
                 </div>
-                <div class="shop-item-cost">Cost: ${costText}</div>
+                <div class="shop-item-cost">${isMaxed ? '' : 'Cost: '}${costText}</div>
             </div>`;
                 };
 
@@ -32535,7 +32884,7 @@
                 }
                 grid.querySelectorAll(".shop-item").forEach(item => {
                     item.addEventListener("click", () => {
-                        if (item.classList.contains('disabled')) return;
+                        if (item.classList.contains('disabled') || item.classList.contains('unlocked')) return;
                         const key = item.dataset.key;
                         attemptPurchaseUpgrade(key);
                     })
