@@ -10981,6 +10981,7 @@
                     trap_king_add: { r: 6, v: 90, vx: 0, hp: 9, color: '#ffc83d', damage: 5, xp: 2, score: 10, gold: 1, contactDamage: 5 },
                     phantom: { r: 14, v: 90, vx: 0, hp: 35, color: '#FFFFFF', xp: 10, score: 100, gold: 3, fireRateChance: 0.006, fireCooldown: 1.5, contactDamage: 8 },
                     mech: { r: 18, v: 40, vx: 0, hp: 42, color: '#FF8500', xp: 15, score: 150, gold: 6, fireRateChance: 0.007, attackPhase: 0, contactDamage: 10 },
+                    mech_elite: { r: 18, v: 40, vx: 0, hp: 85, color: '#9d00ff', color2: '#ff0044', xp: 35, score: 400, gold: 18, fireRateChance: 0.008, attackPhase: 0, contactDamage: 14, isElite: true },
                     construct_gold: { r: 10, v: 120, vx: 0, hp: 17, color: '#e03434', xp: 3, score: 30, gold: 1, contactDamage: 7 },
                     avian_hatchling: { r: 8, v: 150, vx: 0, hp: 22, color: '#9370DB', xp: 4, score: 40, gold: 1, contactDamage: 6 },
                     angler: { r: 22, v: 30, vx: 0, hp: 150, color: '#00008b', xp: 18, score: 180, gold: 4, fireRateChance: 0.008, contactDamage: 10 },
@@ -14160,8 +14161,9 @@
                         }
 
                         // VERTICAL DESCENT REDUCTION: Slow down downward movement to give more time to engage
-                        // Lateral movement remains unchanged for dynamic gameplay
-                        const verticalSpeedMultiplier = speedMultiplier * 0.6; // 60% vertical speed
+                        // Lateral movement remains at full speedMultiplier for dynamic gameplay
+                        const horizontalSpeedMultiplier = speedMultiplier; // Full speed for X movement
+                        const verticalSpeedMultiplier = speedMultiplier * 0.6; // 60% speed for Y movement (slower descent)
 
                         // SWARM PROTOCOL: Fast homing enemies (construct_gold, avian_hatchling)
                         if (e.type === 'construct_gold' || e.type === 'avian_hatchling') {
@@ -14188,24 +14190,70 @@
                                     const perpX = -dy / dist;
                                     const perpY = dx / dist;
                                     e.x += ((dx / dist) * e.v + perpX * wobble) * speedMultiplier * dt;
-                                    e.y += ((dy / dist) * e.v + perpY * wobble) * verticalSpeedMultiplier * dt;
+                                    e.y += ((dy / dist) * e.v + perpY * wobble) * speedMultiplier * dt;
                                 }
                             }
                         } else if (e.movementBehavior) {
                             // CONTINUOUS SPAWN SYSTEM: Use assigned movement behavior
                             applyMovementBehavior(e, dt);
                         } else if (e.type === 'drone') {
-                            // BASIC PROTOCOL: Simple downward movement with slight tracking
-                            const wave = store.world.wave || 1;
-                            if (wave >= 9) {
-                                // In swarm waves, drones get basic homing
-                                const dx = store.player.x - e.x;
-                                const trackingStrength = 0.3; // Gentle tracking
-                                if (Math.abs(dx) > 20) {
-                                    e.x += Math.sign(dx) * 25 * trackingStrength * speedMultiplier * dt;
+                            // DYNAMIC AI PROTOCOL: Chase → Attack → Dodge cycle
+                            if (!e.aiState) {
+                                e.aiState = 'chase';
+                                e.aiTimer = 0;
+                                e.aiCycleCount = 0;
+                            }
+                            
+                            e.aiTimer += dt;
+                            const dx = store.player.x - e.x;
+                            const dy = store.player.y - e.y;
+                            const distToPlayer = Math.sqrt(dx * dx + dy * dy);
+                            
+                            if (e.aiState === 'chase') {
+                                // Chase toward player
+                                const chaseSpeed = 0.4;
+                                if (distToPlayer > 10) {
+                                    e.x += (dx / distToPlayer) * e.v * chaseSpeed * speedMultiplier * dt;
+                                    e.y += (dy / distToPlayer) * e.v * chaseSpeed * speedMultiplier * dt;
+                                }
+                                // Switch to attack when close enough or after 1.5 seconds
+                                if (distToPlayer < 180 || e.aiTimer > 1.5) {
+                                    e.aiState = 'attack';
+                                    e.aiTimer = 0;
+                                }
+                            } else if (e.aiState === 'attack') {
+                                // Stop and prepare to fire
+                                const stopDrift = 0.92;
+                                e.x += (dx / Math.max(1, distToPlayer)) * e.v * 0.1 * speedMultiplier * dt * stopDrift;
+                                e.y += e.v * 0.15 * verticalSpeedMultiplier * dt;
+                                
+                                // Fire at player if cooldown allows
+                                if (e.fireT <= 0 && distToPlayer < 300) {
+                                    e.fireT = e.fireCooldown || 2.5;
+                                }
+                                
+                                // Switch to dodge after 0.8 seconds
+                                if (e.aiTimer > 0.8) {
+                                    e.aiState = 'dodge';
+                                    e.aiTimer = 0;
+                                    e.dodgeDirection = Math.random() < 0.5 ? -1 : 1;
+                                }
+                            } else if (e.aiState === 'dodge') {
+                                // Strafe sideways to evade
+                                const dodgeSpeed = 65;
+                                e.x += e.dodgeDirection * dodgeSpeed * speedMultiplier * dt;
+                                e.y += e.v * 0.3 * verticalSpeedMultiplier * dt;
+                                
+                                // Clamp to screen
+                                e.x = Math.max(e.r + 10, Math.min(W - e.r - 10, e.x));
+                                
+                                // Switch back to chase after 0.7 seconds
+                                if (e.aiTimer > 0.7) {
+                                    e.aiState = 'chase';
+                                    e.aiTimer = 0;
+                                    e.aiCycleCount++;
                                 }
                             }
-                            e.y += e.v * verticalSpeedMultiplier * dt;
                         } else if (e.type === 'hunter') {
                             // PURSUIT PROTOCOL: Aggressive tracking with gang-specific abilities
                             updateHunterGangAbility(e, dt, speedMultiplier);
@@ -14243,18 +14291,74 @@
                             if (Math.abs(dx) > 10) e.x += Math.sign(dx) * 30 * speedMultiplier * dt;
                             e.y += e.v * verticalSpeedMultiplier * dt;
                         } else if (e.type === 'phantom') {
-                            // DODGE PROTOCOL: Unpredictable phase-shifting movement
-                            const wave = store.world.wave || 1;
-                            if (wave >= 13) {
-                                // In precision/dodge waves, phantoms weave horizontally
-                                const weaveSpeed = 40;
-                                const weavePattern = Math.sin(e.t * 2.5) * weaveSpeed;
+                            // DYNAMIC PHASE-SHIFT PROTOCOL: Aggressive chase → Burst attack → Evasive weave
+                            if (!e.aiState) {
+                                e.aiState = 'chase';
+                                e.aiTimer = 0;
+                                e.phaseShiftCooldown = 0;
+                            }
+                            
+                            e.aiTimer += dt;
+                            e.phaseShiftCooldown = Math.max(0, e.phaseShiftCooldown - dt);
+                            
+                            const dx = store.player.x - e.x;
+                            const dy = store.player.y - e.y;
+                            const distToPlayer = Math.sqrt(dx * dx + dy * dy);
+                            
+                            if (e.aiState === 'chase') {
+                                // Aggressive pursuit
+                                const chaseSpeed = 0.55;
+                                if (distToPlayer > 10) {
+                                    e.x += (dx / distToPlayer) * e.v * chaseSpeed * speedMultiplier * dt;
+                                    e.y += (dy / distToPlayer) * e.v * chaseSpeed * speedMultiplier * dt;
+                                }
+                                // Switch to attack when in range
+                                if (distToPlayer < 200 || e.aiTimer > 1.2) {
+                                    e.aiState = 'attack';
+                                    e.aiTimer = 0;
+                                }
+                            } else if (e.aiState === 'attack') {
+                                // Hover and rapid fire
+                                e.x += (dx / Math.max(1, distToPlayer)) * e.v * 0.08 * speedMultiplier * dt;
+                                e.y += e.v * 0.1 * verticalSpeedMultiplier * dt;
+                                
+                                // Phantoms fire more frequently during attack phase
+                                if (e.fireT <= 0 && distToPlayer < 320) {
+                                    e.fireT = (e.fireCooldown || 2.0) * 0.7; // Faster firing
+                                }
+                                
+                                // Switch to weave after burst
+                                if (e.aiTimer > 1.0) {
+                                    e.aiState = 'weave';
+                                    e.aiTimer = 0;
+                                    e.weaveDirection = Math.random() < 0.5 ? -1 : 1;
+                                    e.weavePhase = Math.random() * Math.PI * 2;
+                                }
+                            } else if (e.aiState === 'weave') {
+                                // Evasive serpentine movement
+                                const weaveSpeed = 55;
+                                const weavePattern = Math.sin(e.weavePhase + e.aiTimer * 3.5) * weaveSpeed;
                                 e.x += weavePattern * speedMultiplier * dt;
+                                e.y += e.v * 0.4 * verticalSpeedMultiplier * dt;
+                                
                                 // Clamp to screen
                                 e.x = Math.max(e.r + 10, Math.min(W - e.r - 10, e.x));
+                                
+                                // Phase shift (quick dodge) when player is close
+                                if (distToPlayer < 100 && e.phaseShiftCooldown <= 0) {
+                                    const shiftDist = 60;
+                                    const shiftAngle = Math.atan2(dy, dx) + (Math.random() - 0.5) * Math.PI;
+                                    e.x -= Math.cos(shiftAngle) * shiftDist;
+                                    e.y -= Math.sin(shiftAngle) * shiftDist * 0.5;
+                                    e.phaseShiftCooldown = 2.5;
+                                }
+                                
+                                // Switch back to chase
+                                if (e.aiTimer > 1.0) {
+                                    e.aiState = 'chase';
+                                    e.aiTimer = 0;
+                                }
                             }
-                            // Phantoms also move down like normal
-                            e.y += e.v * verticalSpeedMultiplier * dt;
                         } else if (e.type === 'mech') {
                             // HEAVY TANK PROTOCOL: Methodical advance with minimal deviation
                             // Mechs are slow and steady, tracking player horizontally
@@ -14280,7 +14384,7 @@
                             }
                             
                             e.x = e.startX + waveAmplitude * Math.sin(e.t * waveFrequency);
-                            e.y += e.v * speedMultiplier * dt;
+                            e.y += e.v * verticalSpeedMultiplier * dt;
                         } else if (e.type === 'shadow_champion') {
                             const boss = store.boss && store.boss.behavior === 'shadow_clone' ? store.boss : null;
                             const enrageThreshold = e.enrageThreshold ?? 0.45;
@@ -14363,7 +14467,7 @@
                             }
                         } else if (!e.isOrbiter) {
                             e.x += (e.vx || 0) * speedMultiplier * dt;
-                            e.y += e.v * speedMultiplier * dt;
+                            e.y += e.v * verticalSpeedMultiplier * dt;
                         } else {
                             // Smooth following behavior for orbiters instead of rigid orbital motion
                             let orbitTarget = null;
@@ -14482,6 +14586,71 @@
                                     store.eBullets.push(lob);
                                 }
                                 e.fireT = 0.8; break; // Much more frequent attacks - reduced from 1.2 to 0.8
+                            }
+                            case 'mech_elite': {
+                                e.attackPhase = (e.attackPhase || 0) + 1;
+                                // Elite mech: sparkler attacks + enhanced lobs + shoulder cannons
+                                if (e.attackPhase % 5 === 1) {
+                                    // Sparkler burst - multi-directional spread with visual flair
+                                    const sparklerCount = 12;
+                                    const baseAngle = Math.atan2(store.player.y - e.y, store.player.x - e.x);
+                                    for (let i = 0; i < sparklerCount; i++) {
+                                        const spreadAngle = (i / sparklerCount) * Math.PI * 2;
+                                        const finalAngle = baseAngle + (spreadAngle - Math.PI);
+                                        const speed = 140 + Math.random() * 40;
+                                        const sparkler = {
+                                            x: e.x,
+                                            y: e.y,
+                                            vx: Math.cos(finalAngle) * speed,
+                                            vy: Math.sin(finalAngle) * speed,
+                                            r: 3,
+                                            col: '#ffff00',
+                                            dmg: 14 * dmgScale * damageMult,
+                                            life: 2.5,
+                                            isSparkler: true
+                                        };
+                                        empowerEnemyProjectile(e, sparkler);
+                                        store.eBullets.push(sparkler);
+                                    }
+                                } else if (e.attackPhase % 5 === 3) {
+                                    // Enhanced shoulder cannon attack
+                                    const shoulderLeftX = e.x - e.r * 1.2, shoulderRightX = e.x + e.r * 1.2, shoulderY = e.y - e.r;
+                                    const angleLeft = Math.atan2(store.player.y - shoulderY, store.player.x - shoulderLeftX);
+                                    {
+                                        const bulletLeft = { x: shoulderLeftX, y: shoulderY, vx: Math.cos(angleLeft) * 180, vy: Math.sin(angleLeft) * 180, r: 5, col: '#ff0044', dmg: 16 * dmgScale * damageMult };
+                                        empowerEnemyProjectile(e, bulletLeft);
+                                        store.eBullets.push(bulletLeft);
+                                    }
+                                    const angleRight = Math.atan2(store.player.y - shoulderY, store.player.x - shoulderRightX);
+                                    {
+                                        const bulletRight = { x: shoulderRightX, y: shoulderY, vx: Math.cos(angleRight) * 180, vy: Math.sin(angleRight) * 180, r: 5, col: '#ff0044', dmg: 16 * dmgScale * damageMult };
+                                        empowerEnemyProjectile(e, bulletRight);
+                                        store.eBullets.push(bulletRight);
+                                    }
+                                } else {
+                                    // Enhanced lob attack
+                                    const randomOffsetX = (Math.random() - 0.5) * 300;
+                                    const targetX = Math.max(80, Math.min(W - 80, store.player.x + randomOffsetX));
+                                    const minY = Math.max(H * 0.5, e.y + 100);
+                                    const maxY = H - 80;
+                                    const targetY = minY + Math.random() * (maxY - minY);
+                                    const dx = targetX - e.x;
+                                    const dy = targetY - e.y;
+                                    const dist = Math.sqrt(dx * dx + dy * dy);
+                                    const timeToTarget = Math.max(1.5, dist / 120);
+                                    const gravity = 250;
+                                    const vx = dx / timeToTarget;
+                                    const vy = (dy - 0.5 * gravity * timeToTarget * timeToTarget) / timeToTarget;
+                                    const lob = {
+                                        x: e.x, y: e.y, vx: vx, vy: vy, r: 7,
+                                        col: '#9d00ff', dmg: 22 * dmgScale * damageMult,
+                                        gravity: gravity, isMechVolley: true, sourceId: e.id,
+                                        targetX: targetX, targetY: targetY
+                                    };
+                                    empowerEnemyProjectile(e, lob);
+                                    store.eBullets.push(lob);
+                                }
+                                e.fireT = 0.7; break; // Faster than normal mech
                             }
                             case 'angler': {
                                 const a = Math.atan2(store.player.y - e.y, store.player.x - e.x);
@@ -15011,7 +15180,7 @@
                 const appliedMultiplier = 1 + (rawMultiplier - 1) * 0.45; // Apply damping so scaling is gentler
                 const healthBaseline = ensureFiniteNumber(world.enemyHealthBonus, 1);
                 const densityBaseline = normalizeEnemyDensityBonus(world.enemyDensityBonus);
-                world.enemyHealthBonus = Math.min(60, healthBaseline * appliedMultiplier);
+                world.enemyHealthBonus = Math.min(3.0, healthBaseline * appliedMultiplier); // Cap at 3x multiplier
                 world.enemyDensityBonus = normalizeEnemyDensityBonus(densityBaseline * (1 + (appliedMultiplier - 1) * 0.28));
                 world.lastThreatScale = Math.max(world.lastThreatScale || 1, world.enemyHealthBonus);
 
@@ -15161,8 +15330,8 @@
                         const bossBaseline = ensureFiniteNumber(world.bossHealthBonus, 1);
                         const enemyBaseline = ensureFiniteNumber(world.enemyHealthBonus, 1);
                         const densityBaseline = normalizeEnemyDensityBonus(world.enemyDensityBonus);
-                        world.bossHealthBonus = Math.min(30, bossBaseline * overdrive);
-                        world.enemyHealthBonus = Math.min(40, enemyBaseline * (1 + (overdrive - 1) * 0.45));
+                        world.bossHealthBonus = Math.min(5.0, bossBaseline * overdrive); // Cap at 5x multiplier
+                        world.enemyHealthBonus = Math.min(2.5, enemyBaseline * (1 + (overdrive - 1) * 0.45)); // Cap at 2.5x multiplier
                         world.enemyDensityBonus = normalizeEnemyDensityBonus(densityBaseline * (1 + (overdrive - 1) * 0.22));
                     }
                     if (world && world.wave >= 15) {
@@ -16782,6 +16951,177 @@
                 const nb = Math.max(0, Math.round(b * factor));
                 
                 return (nr << 16) | (ng << 8) | nb;
+            }
+
+            function drawMechPixi(enemy) {
+                if (!enemy) return;
+                
+                // Cleanup if dead
+                if (enemy.dead) {
+                    if (enemy.pixiGraphics) {
+                        enemy.pixiGraphics.destroy();
+                        enemy.pixiGraphics = null;
+                    }
+                    return;
+                }
+                
+                // Create or reuse graphics object
+                if (!enemy.pixiGraphics) {
+                    enemy.pixiGraphics = new PIXI.Graphics();
+                    pixiApp.stage.addChild(enemy.pixiGraphics);
+                }
+                
+                const graphics = enemy.pixiGraphics;
+                graphics.clear();
+                
+                const isElite = enemy.isElite || enemy.type === 'mech_elite';
+                const time = performance.now() / 1000;
+                const pulseFactor = 1 + 0.05 * Math.sin(time * 4);
+                
+                // Color schemes
+                let mainColor, accentColor, metalColor, glowColor, highlightColor, chassisGradientColors;
+                
+                if (isElite) {
+                    // Purple and red gradient elite variant
+                    mainColor = 0x4a0080;
+                    accentColor = 0xff0044;
+                    metalColor = 0x8800aa;
+                    glowColor = 0xff44ff;
+                    highlightColor = 0xff6699;
+                    chassisGradientColors = [0xff0044, 0x7700aa, 0x4a0080];
+                } else {
+                    // Normal aqua blue theme
+                    mainColor = 0x0e4b5c;
+                    accentColor = 0x20b2aa;
+                    metalColor = 0x2e8b8b;
+                    glowColor = 0x00ffff;
+                    highlightColor = 0x40e0d0;
+                    chassisGradientColors = [0x40e0d0, 0x0e4b5c, 0x051e28];
+                }
+                
+                const r = enemy.r;
+                
+                // Main chassis
+                graphics.poly([
+                    -r * 1.2, -r * 1.0,
+                    r * 1.2, -r * 1.0,
+                    r * 0.7, r * 0.6,
+                    -r * 0.7, r * 0.6
+                ]);
+                graphics.fill(chassisGradientColors[1]);
+                graphics.stroke({ width: 2, color: accentColor });
+                
+                // Top highlight layer
+                graphics.poly([
+                    -r * 1.1, -r * 0.95,
+                    r * 1.1, -r * 0.95,
+                    r * 0.8, -r * 0.2,
+                    -r * 0.8, -r * 0.2
+                ]);
+                graphics.fill({ color: chassisGradientColors[0], alpha: 0.3 });
+                
+                // Armor plating lines
+                graphics.lineStyle(1, metalColor);
+                for (let i = -2; i <= 2; i++) {
+                    graphics.moveTo(i * r * 0.2, -r * 0.8);
+                    graphics.lineTo(i * r * 0.15, r * 0.4);
+                }
+                
+                // Rivets
+                const rivetColor = isElite ? 0xff0088 : 0x5f9ea0;
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        graphics.circle(i * r * 0.3, j * r * 0.3, r * 0.08);
+                        graphics.fill(rivetColor);
+                    }
+                }
+                
+                // Left turret
+                graphics.rect(-r * 1.6, -r * 0.9, r * 0.7, r * 1.8);
+                graphics.fill(mainColor);
+                graphics.stroke({ width: 3, color: accentColor });
+                
+                // Left cannon barrel
+                graphics.rect(-r * 1.3 - r * 0.5, -r * 0.1, r * 0.8, r * 0.2);
+                graphics.fill(metalColor);
+                graphics.stroke({ width: 3, color: accentColor });
+                
+                // Right turret
+                graphics.rect(r * 0.9, -r * 0.9, r * 0.7, r * 1.8);
+                graphics.fill(mainColor);
+                graphics.stroke({ width: 3, color: accentColor });
+                
+                // Right cannon barrel
+                graphics.rect(r * 1.3, -r * 0.1, r * 0.8, r * 0.2);
+                graphics.fill(metalColor);
+                graphics.stroke({ width: 3, color: accentColor });
+                
+                // Eyes/sensors with glow
+                graphics.circle(-r * 0.3, -r * 0.4, r * 0.12 * pulseFactor);
+                graphics.fill({ color: glowColor, alpha: 0.9 });
+                graphics.circle(r * 0.3, -r * 0.4, r * 0.12 * pulseFactor);
+                graphics.fill({ color: glowColor, alpha: 0.9 });
+                
+                // Outer glow for eyes
+                graphics.circle(-r * 0.3, -r * 0.4, r * 0.18 * pulseFactor);
+                graphics.fill({ color: glowColor, alpha: 0.3 });
+                graphics.circle(r * 0.3, -r * 0.4, r * 0.18 * pulseFactor);
+                graphics.fill({ color: glowColor, alpha: 0.3 });
+                
+                // Left tread
+                graphics.circle(-r * 1.3, r * 1.2, r * 0.6);
+                graphics.fill(0x1c4e4e);
+                graphics.stroke({ width: 2, color: metalColor });
+                
+                // Left tread segments
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2 + time * 2;
+                    const x = -r * 1.3 + Math.cos(angle) * r * 0.4;
+                    const y = r * 1.2 + Math.sin(angle) * r * 0.4;
+                    graphics.rect(x - r * 0.1, y - r * 0.05, r * 0.2, r * 0.1);
+                    graphics.fill(0x4682b4);
+                }
+                
+                // Right tread
+                graphics.circle(r * 1.3, r * 1.2, r * 0.6);
+                graphics.fill(0x1c4e4e);
+                graphics.stroke({ width: 2, color: metalColor });
+                
+                // Right tread segments
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2 + time * 2;
+                    const x = r * 1.3 + Math.cos(angle) * r * 0.4;
+                    const y = r * 1.2 + Math.sin(angle) * r * 0.4;
+                    graphics.rect(x - r * 0.1, y - r * 0.05, r * 0.2, r * 0.1);
+                    graphics.fill(0x4682b4);
+                }
+                
+                // Command cockpit
+                graphics.rect(-r * 0.4, -r * 1.4, r * 0.8, r * 0.5);
+                graphics.fill({ color: accentColor, alpha: 0.6 });
+                graphics.stroke({ width: 2, color: highlightColor });
+                
+                // Cockpit window
+                graphics.rect(-r * 0.3, -r * 1.3, r * 0.6, r * 0.3);
+                graphics.fill({ color: glowColor, alpha: 0.4 });
+                
+                // Elite sparkle effects
+                if (isElite) {
+                    const sparkleCount = 6;
+                    for (let i = 0; i < sparkleCount; i++) {
+                        const angle = (i / sparkleCount) * Math.PI * 2 + time * 3;
+                        const dist = r * 1.5;
+                        const sx = Math.cos(angle) * dist;
+                        const sy = Math.sin(angle) * dist;
+                        const sparkleSize = r * 0.08 * (1 + 0.5 * Math.sin(time * 5 + i));
+                        graphics.star(sx, sy, 4, sparkleSize, sparkleSize * 0.5);
+                        graphics.fill({ color: 0xffff00, alpha: 0.7 });
+                    }
+                }
+                
+                // Position graphics
+                graphics.x = enemy.x;
+                graphics.y = enemy.y;
             }
 
             function drawCubeBurglar(enemy) {
@@ -29220,6 +29560,32 @@
             });
 
             const VOID_CHAMPION_COLOR_SCHEMES = {
+                black: {
+                    name: 'Shadow Wraith',
+                    shadowColor: '#555555',
+                    auraColor: '#1a1a1a',
+                    hullGradient: ['#2a2a2a', '#000000', '#0f0f0f'],
+                    strokeColor: '#666666',
+                    finColor: [80, 80, 80],
+                    visorGradient: ['#4d4d4d', '#1a1a1a'],
+                    eyeColor: '#ff0000',
+                    coreGlow: '#333333',
+                    coreColor: '#cccccc',
+                    thrusterColor: '#202020'
+                },
+                blue: {
+                    name: 'Azure Phantom',
+                    shadowColor: '#4488ff',
+                    auraColor: '#0044cc',
+                    hullGradient: ['#1144aa', '#001122', '#002244'],
+                    strokeColor: '#66aaff',
+                    finColor: [100, 150, 255],
+                    visorGradient: ['#ccddff', '#0066cc'],
+                    eyeColor: '#00ffff',
+                    coreGlow: '#88bbff',
+                    coreColor: '#ffffff',
+                    thrusterColor: '#0088ff'
+                },
                 purple: {
                     name: 'Void Wraith',
                     shadowColor: '#b56bff',
@@ -29233,57 +29599,18 @@
                     coreColor: '#ffe6ff',
                     thrusterColor: '#732bff'
                 },
-                crimson: {
-                    name: 'Crimson Reaper',
-                    shadowColor: '#ff4444',
-                    auraColor: '#cc1100',
-                    hullGradient: ['#8b0000', '#330000', '#4a0000'],
-                    strokeColor: '#ff6666',
-                    finColor: [200, 50, 50],
-                    visorGradient: ['#ffcccc', '#990000'],
-                    eyeColor: '#ffff00',
-                    coreGlow: '#ff8888',
-                    coreColor: '#ffffff',
-                    thrusterColor: '#cc0000'
-                },
-                azure: {
-                    name: 'Azure Phantom',
-                    shadowColor: '#4488ff',
-                    auraColor: '#0044cc',
-                    hullGradient: ['#1144aa', '#001122', '#002244'],
-                    strokeColor: '#66aaff',
-                    finColor: [100, 150, 255],
-                    visorGradient: ['#ccddff', '#0066cc'],
-                    eyeColor: '#00ffff',
-                    coreGlow: '#88bbff',
-                    coreColor: '#ffffff',
-                    thrusterColor: '#0088ff'
-                },
-                emerald: {
-                    name: 'Emerald Specter',
-                    shadowColor: '#44ff44',
-                    auraColor: '#00cc44',
-                    hullGradient: ['#006600', '#001100', '#003300'],
-                    strokeColor: '#66ff66',
-                    finColor: [50, 200, 50],
-                    visorGradient: ['#ccffcc', '#009900'],
-                    eyeColor: '#ffff00',
-                    coreGlow: '#88ff88',
-                    coreColor: '#ffffff',
-                    thrusterColor: '#00cc00'
-                },
-                golden: {
-                    name: 'Golden Harbinger',
-                    shadowColor: '#ffcc44',
-                    auraColor: '#cc8800',
-                    hullGradient: ['#b8860b', '#4a3c00', '#6b5b00'],
-                    strokeColor: '#ffd700',
-                    finColor: [255, 200, 50],
-                    visorGradient: ['#fffacd', '#daa520'],
-                    eyeColor: '#ff4500',
-                    coreGlow: '#ffd700',
-                    coreColor: '#ffffff',
-                    thrusterColor: '#b8860b'
+                darkgold: {
+                    name: 'Dark Gold Harbinger',
+                    shadowColor: '#9b7a3d',
+                    auraColor: '#6b5000',
+                    hullGradient: ['#7a5c1a', '#2a1f00', '#4a3800'],
+                    strokeColor: '#b8941f',
+                    finColor: [180, 140, 50],
+                    visorGradient: ['#d4b876', '#8a6500'],
+                    eyeColor: '#ff6600',
+                    coreGlow: '#b89f5a',
+                    coreColor: '#ffe4a0',
+                    thrusterColor: '#8a6b1a'
                 }
             };
 
@@ -29299,6 +29626,11 @@
             }
 
             function drawEnemy(e) {
+                // Skip drawing dead mechs - PixiJS handles their cleanup
+                if (e.dead && (e.type === 'mech' || e.type === 'mech_elite')) {
+                    return;
+                }
+                
                 const { x: t, y: o, r: a, type: r, color: n, hp: l, hpMax: s, t: c } = e;
                 ctx.save();
                 let drawX = t;
@@ -29505,176 +29837,12 @@
                     case "phantom":
                         ctx.globalAlpha = .6 + .4 * Math.sin(5 * c); ctx.strokeStyle = n; ctx.fillStyle = n + "99"; ctx.moveTo(0, -.8 * a); ctx.quadraticCurveTo(a, -.5 * a, .8 * a, .8 * a); ctx.quadraticCurveTo(0, .5 * a, -.8 * a, .8 * a); ctx.quadraticCurveTo(-a, -.5 * a, 0, -.8 * a); ctx.closePath(); ctx.fill(); ctx.stroke(); for (let e = -1; e <= 1; e++)ctx.beginPath(), ctx.moveTo(e * .4 * a, .6 * a), ctx.quadraticCurveTo(e * .5 * a, a, e * .3 * a + 2 * Math.sin(4 * c + e), 1.2 * a), ctx.stroke(); break;
                     case "mech":
-                        // Enhanced mechanical tank enemy with Aquaman aqua blue theme
-                        const time = performance.now() / 1000;
-                        const pulseFactor = 1 + 0.05 * Math.sin(time * 4);
-
-                        // Aquaman color scheme: aqua blues and ocean greens
-                        const mainColor = '#0e4b5c'; // Deep aqua blue
-                        const accentColor = '#20b2aa'; // Light sea green
-                        const metalColor = '#2e8b8b'; // Dark cyan/teal
-                        const glowColor = '#00ffff'; // Bright cyan glow
-                        const highlightColor = '#40e0d0'; // Turquoise highlights
-
-                        ctx.lineWidth = 2;
-
-                        // Main chassis with aqua gradient shading
-                        const chassisGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, a * 1.2);
-                        chassisGradient.addColorStop(0, highlightColor);
-                        chassisGradient.addColorStop(0.6, mainColor);
-                        chassisGradient.addColorStop(1, '#051e28'); // Deep ocean blue
-
-                        ctx.fillStyle = chassisGradient;
-                        ctx.strokeStyle = accentColor;
-                        ctx.beginPath();
-                        ctx.moveTo(-a * 1.2, -a * 1.0);
-                        ctx.lineTo(a * 1.2, -a * 1.0);
-                        ctx.lineTo(a * 0.7, a * 0.6);
-                        ctx.lineTo(-a * 0.7, a * 0.6);
-                        ctx.closePath();
-                        ctx.fill();
-                        ctx.stroke();
-
-                        // Armor plating with rivets
-                        ctx.strokeStyle = metalColor;
-                        ctx.lineWidth = 1;
-                        for (let i = -2; i <= 2; i++) {
-                            ctx.beginPath();
-                            ctx.moveTo(i * a * 0.2, -a * 0.8);
-                            ctx.lineTo(i * a * 0.15, a * 0.4);
-                            ctx.stroke();
+                    case "mech_elite":
+                        // Use PixiJS rendering for hardware acceleration
+                        if (pixiApp) {
+                            drawMechPixi(e);
                         }
-
-                        // Rivets with aqua metallic finish
-                        ctx.fillStyle = '#5f9ea0'; // Cadet blue rivets
-                        for (let i = -1; i <= 1; i++) {
-                            for (let j = -1; j <= 1; j++) {
-                                ctx.beginPath();
-                                ctx.arc(i * a * 0.3, j * a * 0.3, a * 0.08, 0, Math.PI * 2);
-                                ctx.fill();
-                            }
-                        }
-
-                        // Weapon turrets with menacing design
-                        ctx.lineWidth = 3;
-                        // Left turret
-                        ctx.fillStyle = mainColor;
-                        ctx.strokeStyle = accentColor;
-                        ctx.beginPath();
-                        ctx.rect(-a * 1.6, -a * 0.9, a * 0.7, a * 1.8);
-                        ctx.fill(); ctx.stroke();
-
-                        // Left cannon barrel
-                        ctx.fillStyle = metalColor;
-                        ctx.beginPath();
-                        ctx.rect(-a * 1.3 - a * 0.5, -a * 0.1, a * 0.8, a * 0.2);
-                        ctx.fill(); ctx.stroke();
-
-                        // Right turret
-                        ctx.fillStyle = mainColor;
-                        ctx.strokeStyle = accentColor;
-                        ctx.beginPath();
-                        ctx.rect(a * 0.9, -a * 0.9, a * 0.7, a * 1.8);
-                        ctx.fill(); ctx.stroke();
-
-                        // Right cannon barrel
-                        ctx.fillStyle = metalColor;
-                        ctx.beginPath();
-                        ctx.rect(a * 1.3, -a * 0.1, a * 0.8, a * 0.2);
-                        ctx.fill(); ctx.stroke();
-
-                        // Aqua blue eyes/sensors with oceanic glow
-                        ctx.shadowColor = glowColor;
-                        ctx.shadowBlur = 8 * pulseFactor;
-                        ctx.fillStyle = glowColor;
-                        ctx.beginPath();
-                        ctx.arc(-a * 0.3, -a * 0.4, a * 0.12, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.beginPath();
-                        ctx.arc(a * 0.3, -a * 0.4, a * 0.12, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.shadowBlur = 0;
-
-                        // Tank treads with aqua metallic detail
-                        ctx.fillStyle = '#1c4e4e'; // Dark teal treads
-                        ctx.strokeStyle = metalColor;
-                        ctx.lineWidth = 2;
-
-                        // Left tread
-                        ctx.beginPath();
-                        ctx.arc(-a * 1.3, a * 1.2, a * 0.6, 0, Math.PI * 2);
-                        ctx.fill(); ctx.stroke();
-
-                        // Tread segments
-                        for (let i = 0; i < 8; i++) {
-                            const angle = (i / 8) * Math.PI * 2 + time * 2;
-                            const x = -a * 1.3 + Math.cos(angle) * a * 0.4;
-                            const y = a * 1.2 + Math.sin(angle) * a * 0.4;
-                            ctx.fillStyle = '#4682b4'; // Steel blue segments
-                            ctx.beginPath();
-                            ctx.rect(x - a * 0.1, y - a * 0.05, a * 0.2, a * 0.1);
-                            ctx.fill();
-                        }
-
-                        // Right tread
-                        ctx.fillStyle = '#1c4e4e'; // Dark teal treads
-                        ctx.beginPath();
-                        ctx.arc(a * 1.3, a * 1.2, a * 0.6, 0, Math.PI * 2);
-                        ctx.fill(); ctx.stroke();
-
-                        // Right tread segments
-                        for (let i = 0; i < 8; i++) {
-                            const angle = (i / 8) * Math.PI * 2 + time * 2;
-                            const x = a * 1.3 + Math.cos(angle) * a * 0.4;
-                            const y = a * 1.2 + Math.sin(angle) * a * 0.4;
-                            ctx.fillStyle = '#4682b4'; // Steel blue segments
-                            ctx.beginPath();
-                            ctx.rect(x - a * 0.1, y - a * 0.05, a * 0.2, a * 0.1);
-                            ctx.fill();
-                        }
-
-                        // Command center/cockpit with aqua gradient
-                        const cockpitGradient = ctx.createLinearGradient(0, -a * 1.4, 0, -a * 1.0);
-                        cockpitGradient.addColorStop(0, accentColor);
-                        cockpitGradient.addColorStop(0.5, mainColor);
-                        cockpitGradient.addColorStop(1, '#0a2533'); // Deep ocean blue
-
-                        ctx.fillStyle = cockpitGradient;
-                        ctx.strokeStyle = metalColor;
-                        ctx.lineWidth = 2;
-                        ctx.beginPath();
-                        ctx.rect(-a * 0.4, -a * 1.4, a * 0.8, a * 0.5);
-                        ctx.fill(); ctx.stroke();
-
-                        // Antenna/communication array
-                        ctx.strokeStyle = metalColor;
-                        ctx.lineWidth = 3;
-                        ctx.beginPath();
-                        ctx.moveTo(0, -a * 1.4);
-                        ctx.lineTo(-a * 0.2, -a * 1.8);
-                        ctx.moveTo(0, -a * 1.4);
-                        ctx.lineTo(a * 0.2, -a * 1.8);
-                        ctx.stroke();
-
-                        // Aqua warning lights
-                        ctx.fillStyle = time % 1 < 0.5 ? glowColor : '#004d4d';
-                        ctx.beginPath();
-                        ctx.arc(-a * 0.25, -a * 1.15, a * 0.06, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.beginPath();
-                        ctx.arc(a * 0.25, -a * 1.15, a * 0.06, 0, Math.PI * 2);
-                        ctx.fill();
-
-                        // Aqua energy exhaust vents
-                        ctx.fillStyle = '#00bfff'; // Deep sky blue exhaust
-                        ctx.shadowColor = '#00bfff';
-                        ctx.shadowBlur = 4;
-                        for (let i = 0; i < 3; i++) {
-                            ctx.beginPath();
-                            ctx.rect(-a * 0.1 + i * a * 0.1, a * 0.4, a * 0.05, a * 0.2);
-                            ctx.fill();
-                        }
-                        ctx.shadowBlur = 0;
+                        // No canvas fallback needed - PixiJS required for this game
                         break;
                     case "shadow_champion": {
                         const time = performance.now() / 1000;
