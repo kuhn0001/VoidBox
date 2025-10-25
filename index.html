@@ -9016,30 +9016,30 @@
             const COLLAR_TARGET_GAIN_MULTIPLIER = 1.6;
 
             function calculateCollarBonus(stacks) {
-                // FURTHER REDUCED SCALING: Even gentler curve - reduced by 1% per tier
+                // STEEPER SCALING: Increased by 1% per tier to create meaningful challenge
                 const safeStacks = Math.max(0, Number.isFinite(stacks) ? stacks : 0);
                 
-                // Very soft tiered scaling - stays well behind player power curve
-                const tierOneLimit = 5;   // First 5 stacks: 4% each (very gentle)
-                const tierTwoLimit = 10;  // Next 5 stacks: 5% each (gentle)
-                const tierThreeLimit = 20; // Next 10 stacks: 6% each (moderate)
-                const tierFourLimit = 40;  // Next 20 stacks: 8% each (progressive)
-                const tierFiveLimit = 70;  // Next 30 stacks: 10% each (aggressive)
+                // Progressive tiered scaling - matches player power growth more closely
+                const tierOneLimit = 5;   // First 5 stacks: 5% each
+                const tierTwoLimit = 10;  // Next 5 stacks: 6% each
+                const tierThreeLimit = 20; // Next 10 stacks: 7% each
+                const tierFourLimit = 40;  // Next 20 stacks: 9% each
+                const tierFiveLimit = 70;  // Next 30 stacks: 11% each
                 
                 const tierOne = Math.min(safeStacks, tierOneLimit);
                 const tierTwo = Math.min(Math.max(safeStacks - tierOneLimit, 0), tierTwoLimit - tierOneLimit);
                 const tierThree = Math.min(Math.max(safeStacks - tierTwoLimit, 0), tierThreeLimit - tierTwoLimit);
                 const tierFour = Math.min(Math.max(safeStacks - tierThreeLimit, 0), tierFourLimit - tierThreeLimit);
                 const tierFive = Math.min(Math.max(safeStacks - tierFourLimit, 0), tierFiveLimit - tierFourLimit);
-                const tierSix = Math.max(safeStacks - tierFiveLimit, 0); // Beyond 70: 12% each
+                const tierSix = Math.max(safeStacks - tierFiveLimit, 0); // Beyond 70: 13% each
                 
                 const bonus = 
-                    tierOne * 0.04 +    // 0-5: 4% per stack (reduced from 5%)
-                    tierTwo * 0.05 +    // 5-10: 5% per stack (reduced from 6%)
-                    tierThree * 0.06 +  // 10-20: 6% per stack (reduced from 7%)
-                    tierFour * 0.08 +   // 20-40: 8% per stack (reduced from 9%)
-                    tierFive * 0.10 +   // 40-70: 10% per stack (reduced from 11%)
-                    tierSix * 0.12;     // 70+: 12% per stack (reduced from 13%)
+                    tierOne * 0.05 +    // 0-5: 5% per stack (increased from 4%)
+                    tierTwo * 0.06 +    // 5-10: 6% per stack (increased from 5%)
+                    tierThree * 0.07 +  // 10-20: 7% per stack (increased from 6%)
+                    tierFour * 0.09 +   // 20-40: 9% per stack (increased from 8%)
+                    tierFive * 0.11 +   // 40-70: 11% per stack (increased from 10%)
+                    tierSix * 0.13;     // 70+: 13% per stack (increased from 12%)
                 
                 return 1 + bonus;
             }
@@ -10990,10 +10990,18 @@
                     // Store late-game scaling factor globally for damage calculations
                     store.world.lateGameDamageScaling = lateGameScaling;
 
-                    // Apply collar bonus to spawn count with defensive guards
+                    // Apply collar bonus to spawn count with MORE AGGRESSIVE scaling
                     const collarStacks = sanitizeCollarStacks();
-                    const collarBonus = calculateCollarBonus(collarStacks);
-                    const plannedSpawnCountRaw = spawnCount * collarBonus;
+                    let spawnCollarMultiplier = 1;
+                    
+                    // NEW: Collar increases spawn density after 2nd boss (steeper than HP/damage scaling)
+                    if (store.world.bosses > 2) {
+                        const collarBonus = calculateCollarBonus(collarStacks);
+                        // 85% effectiveness for spawn density - higher than HP scaling to increase challenge
+                        spawnCollarMultiplier = 1 + ((collarBonus - 1) * 0.85);
+                    }
+                    
+                    const plannedSpawnCountRaw = spawnCount * spawnCollarMultiplier;
                     const plannedSpawnCount = Math.max(0, ensureFiniteNumber(Math.floor(plannedSpawnCountRaw), 0));
 
                     const rawEnemyCap = ensureFiniteNumber(store.world.enemyCap, 43);
@@ -11015,6 +11023,8 @@
                     store.world.lastSpawnOverflow = Math.max(0, plannedSpawnCount - spawnIterations);
                     store.world.lastPlannedSpawnCount = plannedSpawnCount;
                     store.world.lastSpawnCount = 0;
+                    
+                    console.log(`🔢 Spawn Density Debug | Wave: ${store.world.wave} | BaseCount: ${spawnCount} | CollarStacks: ${collarStacks.toFixed(1)} | CollarMult: ${spawnCollarMultiplier.toFixed(2)} | FinalCount: ${spawnIterations} | ThreatScale: ${threatScale.toFixed(2)}`);
 
                     spawnCount = spawnIterations;
 
@@ -11173,20 +11183,20 @@
 
             function spawnEnemy(type = 'drone', props = {}) {
                 const cfgs = {
-                    drone: { r: 10, v: 80, vx: 0, hp: 22, color: '#C0C0C0', xp: 5, score: 50, gold: 2, fireRateChance: 0.004, contactDamage: 6 },
-                    hunter: { r: 20, v: 100, vx: 0, hp: 18, color: '#DC143C', xp: 8, score: 80, gold: 3, fireRateChance: 0.005, contactDamage: 8 },
-                    trap_king_add: { r: 6, v: 90, vx: 0, hp: 9, color: '#ffc83d', damage: 5, xp: 2, score: 10, gold: 1, contactDamage: 5 },
-                    phantom: { r: 14, v: 90, vx: 0, hp: 35, color: '#FFFFFF', xp: 10, score: 100, gold: 3, fireRateChance: 0.006, fireCooldown: 1.5, contactDamage: 8 },
-                    mech: { r: 18, v: 40, vx: 0, hp: 42, color: '#FF8500', xp: 15, score: 150, gold: 6, fireRateChance: 0.007, attackPhase: 0, contactDamage: 10 },
-                    mech_elite: { r: 18, v: 40, vx: 0, hp: 85, color: '#9d00ff', color2: '#ff0044', xp: 35, score: 400, gold: 18, fireRateChance: 0.008, attackPhase: 0, contactDamage: 14, isElite: true },
-                    construct_gold: { r: 10, v: 120, vx: 0, hp: 17, color: '#e03434', xp: 3, score: 30, gold: 1, contactDamage: 7 },
-                    avian_hatchling: { r: 8, v: 150, vx: 0, hp: 22, color: '#9370DB', xp: 4, score: 40, gold: 1, contactDamage: 6 },
-                    angler: { r: 22, v: 30, vx: 0, hp: 150, color: '#00008b', xp: 18, score: 180, gold: 4, fireRateChance: 0.008, contactDamage: 10 },
-                    manta: { r: 26, v: 50, vx: 0, hp: 175, color: '#53B6FF', xp: 22, score: 220, gold: 5, fireRateChance: 0.009, contactDamage: 10 },
-                    shadow_champion: { r: 18, v: 70, vx: 0, hp: 620, color: '#cbd4ff', xp: 60, score: 480, gold: 25, fireRateChance: 1, fireCooldown: 1.45, contactDamage: 14 },
-                    void_champion: { r: 16, v: 48, vx: 0, hp: 190, color: '#5A28D8', xp: 32, score: 325, gold: 2, fireRateChance: 0.75, fireCooldown: 1.65, contactDamage: 10 },
-                    void_champion_orb: { r: 6, v: 0, vx: 0, hp: 22, color: '#FF7DEB', xp: 2, score: 24, gold: 1, fireRateChance: 0.55, fireCooldown: 1.25, contactDamage: 4 },
-                    void_reaper: { r: 20, v: 0, vx: 0, hp: 165, color: '#9f74ff', xp: 55, score: 520, gold: 50, contactDamage: 11 }
+                    drone: { r: 10, v: 80, vx: 0, hp: 30, color: '#C0C0C0', xp: 5, score: 50, gold: 2, fireRateChance: 0.004, contactDamage: 8 },
+                    hunter: { r: 20, v: 100, vx: 0, hp: 26, color: '#DC143C', xp: 8, score: 80, gold: 3, fireRateChance: 0.005, contactDamage: 10 },
+                    trap_king_add: { r: 6, v: 90, vx: 0, hp: 12, color: '#ffc83d', damage: 5, xp: 2, score: 10, gold: 1, contactDamage: 6 },
+                    phantom: { r: 14, v: 90, vx: 0, hp: 48, color: '#FFFFFF', xp: 10, score: 100, gold: 3, fireRateChance: 0.006, fireCooldown: 1.5, contactDamage: 10 },
+                    mech: { r: 18, v: 40, vx: 0, hp: 60, color: '#FF8500', xp: 15, score: 150, gold: 6, fireRateChance: 0.007, attackPhase: 0, contactDamage: 12 },
+                    mech_elite: { r: 18, v: 40, vx: 0, hp: 120, color: '#9d00ff', color2: '#ff0044', xp: 35, score: 400, gold: 18, fireRateChance: 0.008, attackPhase: 0, contactDamage: 16, isElite: true },
+                    construct_gold: { r: 10, v: 120, vx: 0, hp: 24, color: '#e03434', xp: 3, score: 30, gold: 1, contactDamage: 9 },
+                    avian_hatchling: { r: 8, v: 150, vx: 0, hp: 30, color: '#9370DB', xp: 4, score: 40, gold: 1, contactDamage: 8 },
+                    angler: { r: 22, v: 30, vx: 0, hp: 210, color: '#00008b', xp: 18, score: 180, gold: 4, fireRateChance: 0.008, contactDamage: 12 },
+                    manta: { r: 26, v: 50, vx: 0, hp: 245, color: '#53B6FF', xp: 22, score: 220, gold: 5, fireRateChance: 0.009, contactDamage: 12 },
+                    shadow_champion: { r: 18, v: 70, vx: 0, hp: 860, color: '#cbd4ff', xp: 60, score: 480, gold: 25, fireRateChance: 1, fireCooldown: 1.45, contactDamage: 16 },
+                    void_champion: { r: 16, v: 48, vx: 0, hp: 265, color: '#5A28D8', xp: 32, score: 325, gold: 2, fireRateChance: 0.75, fireCooldown: 1.65, contactDamage: 12 },
+                    void_champion_orb: { r: 6, v: 0, vx: 0, hp: 30, color: '#FF7DEB', xp: 2, score: 24, gold: 1, fireRateChance: 0.55, fireCooldown: 1.25, contactDamage: 5 },
+                    void_reaper: { r: 20, v: 0, vx: 0, hp: 230, color: '#9f74ff', xp: 55, score: 520, gold: 50, contactDamage: 13 }
                 };
                 const baseCfg = cfgs[type];
                 if (!baseCfg) {
@@ -11208,14 +11218,18 @@
                 
                 // Apply collar scaling ONLY AFTER 2nd boss is defeated (not based on wave number)
                 let enemyCollarMultiplier = 1;
+                let enemyCollarDamageMultiplier = 1;
                 if (store.world.bosses > 2) {
-                    const collarBonus = calculateCollarBonus(sanitizeCollarStacks()); // Diminishing scaling per collar stack
-                    // Reduce collar effect on regular enemies (50% effectiveness) to prevent bullet sponges
-                    enemyCollarMultiplier = 1 + ((collarBonus - 1) * 0.5);
+                    const collarBonus = calculateCollarBonus(sanitizeCollarStacks()); // Steeper scaling now
+                    // Increased collar effect on regular enemies (75% effectiveness) for better challenge scaling
+                    enemyCollarMultiplier = 1 + ((collarBonus - 1) * 0.75);
                     c.hp *= enemyCollarMultiplier;
+                    
+                    // NEW: Collar also scales enemy damage (60% effectiveness to prevent one-shots)
+                    enemyCollarDamageMultiplier = 1 + ((collarBonus - 1) * 0.6);
                 }
 
-                console.log(`🔍 Enemy Health Debug | Type: ${type} | Base: ${cfgs[type].hp} | Wave: ${wave} | WaveMult: ${waveMultiplier.toFixed(2)} | EnemyBonus: ${store.world.enemyHealthBonus.toFixed(2)} | BossesDefeated: ${store.world.bosses} | CollarActive: ${store.world.bosses > 2} | EnemyCollarMult: ${enemyCollarMultiplier.toFixed(2)} | Final HP: ${c.hp.toFixed(1)}`);
+                console.log(`🔍 Enemy Health Debug | Type: ${type} | Base: ${cfgs[type].hp} | Wave: ${wave} | WaveMult: ${waveMultiplier.toFixed(2)} | EnemyBonus: ${store.world.enemyHealthBonus.toFixed(2)} | BossesDefeated: ${store.world.bosses} | CollarActive: ${store.world.bosses > 2} | EnemyCollarMult: ${enemyCollarMultiplier.toFixed(2)} | DamageMult: ${enemyCollarDamageMultiplier.toFixed(2)} | Final HP: ${c.hp.toFixed(1)}`);
                 
                 // ORGANIC SPAWN POSITIONING: Add more natural clustering and variance
                 let spawnX, spawnY;
@@ -11274,10 +11288,19 @@
 
                 e.damageMult = props.damageMult !== undefined ? props.damageMult : 1;
                 e.baseContactDamage = props.baseContactDamage || c.contactDamage || 8;
+                
+                // Apply collar damage multiplier
+                if (store.world.bosses > 2) {
+                    e.damageMult *= enemyCollarDamageMultiplier;
+                }
+                
                 e.contactDamage = e.baseContactDamage * e.damageMult;
 
                 if (!props.damageMult && props.hpScale && props.hpScale !== 1) {
                     e.damageMult = props.hpScale;
+                    if (store.world.bosses > 2) {
+                        e.damageMult *= enemyCollarDamageMultiplier;
+                    }
                     e.contactDamage = e.baseContactDamage * e.damageMult;
                 }
 
@@ -15582,6 +15605,11 @@
                 world.lastBossAwardToken = awardToken;
                 if (activeBoss) {
                     activeBoss.dead = true;
+                    // Clean up PixiJS resources for Vibemaster
+                    if (activeBoss.pixiContainer) {
+                        activeBoss.pixiContainer.destroy({ children: true });
+                        activeBoss.pixiContainer = null;
+                    }
                 }
 
                 const now = performance.now();
@@ -28582,7 +28610,141 @@
                 ctx.restore();
             }
 
+            function drawVibemasterPixi(boss) {
+                if (!boss || !pixiApp) return;
+                
+                // Cleanup if dead
+                if (boss.dead) {
+                    if (boss.pixiContainer) {
+                        boss.pixiContainer.destroy({ children: true });
+                        boss.pixiContainer = null;
+                    }
+                    return;
+                }
+                
+                const state = ensureVibemasterState(boss);
+                if (!state) return;
+                
+                // Create or reuse graphics container
+                if (!boss.pixiContainer) {
+                    boss.pixiContainer = new PIXI.Container();
+                    pixiApp.stage.addChild(boss.pixiContainer);
+                }
+                
+                const container = boss.pixiContainer;
+                container.removeChildren();
+                
+                const time = performance.now() / 1000;
+                const baseRadius = Number.isFinite(boss.r) ? boss.r : 60;
+                const hover = Math.sin(time * 1.15 + (state.phase || 0) * 0.6) * Math.min(10, baseRadius * 0.18);
+                const auraRadius = Math.max(60, baseRadius * 1.35);
+                
+                // Main aura circle
+                const aura = new PIXI.Graphics();
+                aura.circle(0, 0, auraRadius * 1.55);
+                aura.fill({ color: 0xdcb4ff, alpha: 0.25 });
+                aura.circle(0, 0, auraRadius * 1.35);
+                aura.fill({ color: 0xffffff, alpha: 0.18 });
+                container.addChild(aura);
+                
+                // Rotating ring (simplified from dash pattern)
+                const ring = new PIXI.Graphics();
+                ring.circle(0, 0, auraRadius * 1.18);
+                ring.stroke({ width: 2.5, color: 0xdcb4ff, alpha: 0.4 + (boss.isEnraged ? 0.2 : 0) });
+                ring.rotation = time * 0.3;
+                container.addChild(ring);
+                
+                // Simplified body - core glow
+                const core = new PIXI.Graphics();
+                const coreScale = clamp((baseRadius * 2) / 420, 0.24, 0.5);
+                core.scale.set(coreScale);
+                
+                // Main body shape - simplified geometric form
+                core.poly([
+                    { x: 0, y: -90 },
+                    { x: 60, y: -48 },
+                    { x: 42, y: 104 },
+                    { x: -42, y: 104 },
+                    { x: -60, y: -48 }
+                ]);
+                core.fill({ color: 0x9d89ff, alpha: 0.7 });
+                core.stroke({ width: 2, color: 0xdcb4ff });
+                
+                // Eyes/glow points
+                core.circle(-30, -30, 12);
+                core.fill({ color: 0xffffff, alpha: 0.9 });
+                core.circle(30, -30, 12);
+                core.fill({ color: 0xffffff, alpha: 0.9 });
+                
+                // Wing hints (simple triangles)
+                core.poly([
+                    { x: 60, y: -20 },
+                    { x: 140, y: -60 },
+                    { x: 80, y: 40 }
+                ]);
+                core.fill({ color: 0xb8a8ff, alpha: 0.5 });
+                core.poly([
+                    { x: -60, y: -20 },
+                    { x: -140, y: -60 },
+                    { x: -80, y: 40 }
+                ]);
+                core.fill({ color: 0xb8a8ff, alpha: 0.5 });
+                
+                container.addChild(core);
+                
+                // Position
+                container.x = boss.x;
+                container.y = boss.y + hover;
+                
+                // Draw effects on canvas (these are dynamic and less performance-critical)
+                drawVibemasterThreads(store.vibemasterThreads || state.threads);
+                drawVibemasterRings(store.vibemasterRings || state.rings);
+                drawVibemasterGuardians(store.vibemasterGuardians || state.guardians, state.phase);
+                
+                // Draw shadow on canvas
+                if (Number.isFinite(boss.x) && Number.isFinite(boss.y)) {
+                    const radiusX = Math.max(30, baseRadius * 1.6);
+                    const radiusY = Math.max(14, baseRadius * 0.65);
+                    const alpha = Math.max(0.25, Math.min(0.55, 0.25 + baseRadius * 0.0025));
+                    drawEntityShadow(boss.x, boss.y, radiusX, radiusY, { alpha, yOffset: Math.max(18, baseRadius * 0.9) });
+                }
+                
+                // HP bar on canvas
+                const activeBoss = store && store.boss;
+                const sameBoss = !!(activeBoss && (activeBoss === boss || (activeBoss.instanceId && boss.instanceId && activeBoss.instanceId === boss.instanceId) || (activeBoss._instanceId && boss._instanceId && activeBoss._instanceId === boss._instanceId)));
+                let bossHp = ensureFiniteNumber(boss.hp, 0);
+                let bossHpMax = ensureFiniteNumber(boss.hpMax, 1);
+                if (sameBoss) {
+                    bossHp = ensureFiniteNumber(activeBoss.hp, bossHp);
+                    bossHpMax = ensureFiniteNumber(activeBoss.hpMax, bossHpMax);
+                    boss.hp = bossHp;
+                    boss.hpMax = bossHpMax;
+                }
+                const hpRatio = bossHpMax > 0 ? clamp(bossHp / bossHpMax, 0, 1) : 0;
+                
+                ctx.save();
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.fillRect(boss.x - 60, boss.y - (boss.r || 60) - 24, 120, 10);
+                ctx.fillStyle = '#d4b8ff';
+                ctx.fillRect(boss.x - 60, boss.y - (boss.r || 60) - 24, 120 * hpRatio, 10);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(boss.x - 60, boss.y - (boss.r || 60) - 24, 120, 10);
+                ctx.font = '11px Orbitron, Audiowide, sans-serif';
+                ctx.fillStyle = '#f9ecff';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Phase ${state.phase}`, boss.x, boss.y - (boss.r || 60) - 30);
+                ctx.restore();
+            }
+
             function drawVibemasterBoss(boss) {
+                // Use PixiJS rendering for performance
+                if (pixiApp) {
+                    drawVibemasterPixi(boss);
+                    return;
+                }
+                
+                // Fallback to canvas (original code for compatibility)
                 const state = ensureVibemasterState(boss);
                 if (!state) return;
 
