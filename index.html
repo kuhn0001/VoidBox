@@ -20928,34 +20928,6 @@
                     ctx.stroke();
                     ctx.restore();
                 }
-                
-                // Fragment blast gold tint overlay
-                if (e.fragmentBlastGoldTint && e.fragmentBlastSlowTimer && e.fragmentBlastSlowTimer > 0) {
-                    ctx.save();
-                    const pulseStrength = 0.5 + 0.3 * Math.sin(performance.now() / 150);
-                    ctx.globalAlpha = 0.35 * pulseStrength;
-                    ctx.globalCompositeOperation = 'lighter';
-                    
-                    // Gold gradient overlay
-                    const goldGradient = ctx.createRadialGradient(0, 0, a * 0.3, 0, 0, a * 1.3);
-                    goldGradient.addColorStop(0, 'rgba(255, 250, 205, 0.8)');
-                    goldGradient.addColorStop(0.5, 'rgba(252, 246, 186, 0.5)');
-                    goldGradient.addColorStop(1, 'rgba(191, 149, 63, 0)');
-                    ctx.fillStyle = goldGradient;
-                    ctx.beginPath();
-                    ctx.arc(0, 0, a * 1.3, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    // Bright edge highlight
-                    ctx.globalAlpha = 0.4 * pulseStrength;
-                    ctx.strokeStyle = '#FFFACD';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.arc(0, 0, a * 1.1, 0, Math.PI * 2);
-                    ctx.stroke();
-                    
-                    ctx.restore();
-                }
                 ctx.restore();
             }
 
@@ -30164,6 +30136,33 @@
                 ctx.translate(drawX, drawY);
                 const spawnAlpha = e.spawnOpacity !== undefined ? Math.max(0.2, Math.min(1, e.spawnOpacity)) : 1;
                 ctx.globalAlpha *= spawnAlpha;
+
+                if (e.fragmentBlastGoldTint && e.fragmentBlastSlowTimer && e.fragmentBlastSlowTimer > 0) {
+                    ctx.save();
+                    const pulseSeed = (e.id || 0) * 17.23;
+                    const pulseStrength = 0.5 + 0.3 * Math.sin(performance.now() / 150 + pulseSeed);
+                    const auraRadius = Math.max(22, a * 1.35);
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.globalAlpha *= 0.35 * pulseStrength;
+
+                    const goldGradient = ctx.createRadialGradient(0, 0, auraRadius * 0.3, 0, 0, auraRadius);
+                    goldGradient.addColorStop(0, 'rgba(255, 250, 205, 0.85)');
+                    goldGradient.addColorStop(0.5, 'rgba(252, 246, 186, 0.5)');
+                    goldGradient.addColorStop(1, 'rgba(191, 149, 63, 0)');
+                    ctx.fillStyle = goldGradient;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.globalAlpha = 0.4 * pulseStrength;
+                    ctx.strokeStyle = '#FFFACD';
+                    ctx.lineWidth = Math.max(1.5, a * 0.08);
+                    ctx.beginPath();
+                    ctx.arc(0, 0, auraRadius * 0.8, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    ctx.restore();
+                }
                 
                 // Apply stealth alpha for Obsidian Reapers gang
                 if (e.type === 'hunter' && e.isStealthed && e.stealthAlpha !== undefined) {
