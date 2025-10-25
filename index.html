@@ -15458,8 +15458,49 @@
                 const appliedMultiplier = 1 + (rawMultiplier - 1) * 0.45; // Apply damping so scaling is gentler
                 const healthBaseline = ensureFiniteNumber(world.enemyHealthBonus, 1);
                 const densityBaseline = normalizeEnemyDensityBonus(world.enemyDensityBonus);
-                world.enemyHealthBonus = Math.min(3.0, healthBaseline * appliedMultiplier); // Cap at 3x multiplier
-                world.enemyDensityBonus = normalizeEnemyDensityBonus(densityBaseline * (1 + (appliedMultiplier - 1) * 0.28));
+                const bossCount = ensureFiniteNumber(world.bosses, 0);
+                const waveIndex = ensureFiniteNumber(world.wave, 1);
+
+                let dynamicCap;
+                if (bossCount <= 1) {
+                    dynamicCap = 1.6;
+                } else if (bossCount === 2) {
+                    dynamicCap = 1.9;
+                } else if (bossCount === 3) {
+                    dynamicCap = 2.2;
+                } else {
+                    dynamicCap = Math.min(3.0, 2.2 + (bossCount - 3) * 0.25);
+                }
+                dynamicCap += Math.min(0.5, Math.max(0, waveIndex - 12) * 0.02);
+                dynamicCap = Math.min(3.0, Math.max(1.2, dynamicCap));
+
+                const increaseTargetLinear = healthBaseline + Math.max(0, (appliedMultiplier - 1) * 0.28);
+                const increaseTargetScaled = healthBaseline * (1 + Math.max(0, (appliedMultiplier - 1) * 0.35));
+                const desiredUpper = Math.min(dynamicCap, Math.min(increaseTargetLinear, increaseTargetScaled));
+                const desiredLower = Math.min(dynamicCap, Math.max(1, desiredUpper));
+                const growthTarget = ensureFiniteNumber(desiredLower, healthBaseline);
+
+                let newHealthBonus = healthBaseline;
+                if (healthBaseline > growthTarget + 0.01) {
+                    const overshoot = healthBaseline - growthTarget;
+                    const dropStep = Math.max(0.04, Math.min(0.35, overshoot * 0.6));
+                    newHealthBonus = Math.max(growthTarget, healthBaseline - dropStep);
+                } else if (growthTarget > healthBaseline + 0.01) {
+                    const gain = growthTarget - healthBaseline;
+                    const riseStep = Math.max(0.02, Math.min(0.3, gain * 0.5));
+                    newHealthBonus = Math.min(dynamicCap, healthBaseline + riseStep);
+                }
+
+                newHealthBonus = Math.max(1, Math.min(dynamicCap, ensureFiniteNumber(newHealthBonus, healthBaseline)));
+
+                if (newHealthBonus < healthBaseline - 0.01) {
+                    const reductionRatio = Math.min(0.25, Math.max(0.05, (healthBaseline - newHealthBonus) * 0.4));
+                    world.enemyDensityBonus = normalizeEnemyDensityBonus(densityBaseline * (1 - reductionRatio));
+                } else {
+                    world.enemyDensityBonus = normalizeEnemyDensityBonus(densityBaseline * (1 + (appliedMultiplier - 1) * 0.28));
+                }
+
+                world.enemyHealthBonus = newHealthBonus;
                 world.lastThreatScale = Math.max(world.lastThreatScale || 1, world.enemyHealthBonus);
 
                 if (now - world.lastEnemyOverdriveAnnounce > 1800) {
