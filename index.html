@@ -853,6 +853,27 @@
             align-items: center;
         }
 
+        .shop-power-card-title svg.powerup-icon {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+            filter: drop-shadow(0 0 4px rgba(255, 95, 180, 0.65));
+        }
+
+        .shop-power-card-title .powerup-icon--fallback {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+
+        .shop-power-card-title .shop-power-card-name {
+            display: inline-flex;
+            align-items: center;
+        }
+
         .shop-power-card-meta {
             font-size: 10px;
             color: rgba(214, 190, 255, 0.86);
@@ -3281,9 +3302,12 @@
                                     id="beefShieldBarFill"
                                     style="background:linear-gradient(90deg,#ff8c00,#ff4500)"></span></div>
                             <div style="font-size: 9px; text-align: center; line-height: 1;" id="beefShieldText"></div>
-                            <div class="bar" id="shieldBar" style="margin-top:2px;display:none"><span id="shieldBarFill"
-                                    style="background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div>
-                            <div style="font-size: 9px; text-align: center; line-height: 1;" id="shieldText"></div>
+                <div class="bar" id="shieldBar" style="margin-top:2px;display:none"><span id="shieldBarFill"
+                    style="background:linear-gradient(90deg,#80ffff,#66aaff)"></span></div>
+                <div style="font-size: 9px; text-align: center; line-height: 1;" id="shieldText"></div>
+                <div class="bar" id="xpBar" style="margin-top:4px;"><span id="xpBarFill"
+                    style="width:0%;background:linear-gradient(90deg,#9bff00,#38ffcc)"></span></div>
+                <div style="font-size: 9px; text-align: center; line-height: 1;" id="xpText">XP: 0 / 0</div>
                         </div>
                         <div id="hudBossContent" class="hud-card hide">
                             <div class="hud-title" id="bossTitle">⚡ BOSS ⚡</div>
@@ -4094,32 +4118,42 @@
                 
                 // Lava blade (diamond/blade shape with gradient) - high res crisp version
                 const lavaGraphics = new PIXI.Graphics();
-                const bladeHeight = 11.2; // Base size (will be scaled 1.5x to ~16px)
-                const bladeWidth = 5.6; // Base size
-                
-                // Cyberpunk gradient: Ultraviolet → Synthwave → Neo-Tokyo → Grid Glitch
+                const bladeHeight = 13.5; // Base size (will be scaled 1.5x for ~20px)
+                const bladeWidth = 6.8; // Base size
+
+                // Cyberpunk gradient: Plasma core → Neon magma → Miami haze
                 const gradient = new PIXI.FillGradient(0, -bladeHeight, 0, bladeHeight);
-                gradient.addColorStop(0, 'rgba(138, 43, 226, 1)');    // Ultraviolet - deep purple
-                gradient.addColorStop(0.33, 'rgba(255, 0, 255, 1)');   // Synthwave - hot magenta
-                gradient.addColorStop(0.66, 'rgba(255, 20, 147, 1)');  // Neo-Tokyo - deep pink
-                gradient.addColorStop(1, 'rgba(255, 182, 193, 0.9)');  // Grid Glitch - light pink
-                
+                gradient.addColorStop(0, '#ff174f'); // Plasma core red
+                gradient.addColorStop(0.38, '#ff3f87'); // Neon magma pink
+                gradient.addColorStop(0.7, '#ff74d3'); // Miami haze blush
+                gradient.addColorStop(1, '#ffe3ff'); // Soft bloom
+
                 // Create blade shape
                 lavaGraphics.poly([
                     { x: 0, y: -bladeHeight },
-                    { x: bladeWidth * 0.6, y: -bladeHeight * 0.08 },
+                    { x: bladeWidth * 0.64, y: -bladeHeight * 0.06 },
                     { x: 0, y: bladeHeight },
-                    { x: -bladeWidth * 0.6, y: -bladeHeight * 0.08 }
+                    { x: -bladeWidth * 0.64, y: -bladeHeight * 0.06 }
                 ]);
                 lavaGraphics.fill(gradient);
-                
-                // Outline strokes with cyan glow (cyberpunk accent)
-                lavaGraphics.stroke({ width: 0.55, color: 'rgba(0, 0, 0, 0.5)' });
-                lavaGraphics.stroke({ width: 0.3, color: 'rgba(0, 255, 200, 0.4)' }); // Cyan glow
-                
-                // Generate at 4x resolution for crisp edges
+
+                // Inner glow highlight for extra brightness
+                lavaGraphics.poly([
+                    { x: 0, y: -bladeHeight * 0.72 },
+                    { x: bladeWidth * 0.32, y: -bladeHeight * 0.04 },
+                    { x: 0, y: bladeHeight * 0.78 },
+                    { x: -bladeWidth * 0.32, y: -bladeHeight * 0.04 }
+                ]);
+                lavaGraphics.fill({ color: 0xffc9ff, alpha: 0.55 });
+
+                // Outline strokes with neon accent and soft shadow
+                lavaGraphics.stroke({ width: 0.6, color: 'rgba(20, 0, 25, 0.55)' });
+                lavaGraphics.stroke({ width: 0.38, color: 'rgba(255, 80, 160, 0.85)' });
+
+                // Generate at higher resolution for crisp edges
                 bulletTextures.lavaBlade = pixiApp.renderer.generateTexture(lavaGraphics, {
-                    resolution: 4
+                    resolution: 6,
+                    scaleMode: PIXI.SCALE_MODES.LINEAR
                 });
                 
             console.log('✅ Bullet textures created', bulletTextures);
@@ -4760,6 +4794,10 @@
                 hasLazarusBeam: false, lazarusBeamCooldown: 0,
                 hasLauncher: false, hasHounds: false, missileFireT: 0, nanoSaves: 1, vampirismLevel: 0, flamethrowerLevel: 0,
                 flamethrowerT: 0, // Separate timer for lava blades, unaffected by overclock
+                splitShotActive: false,
+                splitShotSpread: 0.22,
+                piercingPowerupActive: false,
+                piercingPowerupBonus: 0,
                 fragmentBlasters: [], // Auto-targeting shotgun blasts
                 // Shield recharge delay system
                 shieldRecharging: false,
@@ -4883,6 +4921,12 @@
                 bullet.target = undefined;
                 bullet.particles = null;
                 bullet.particleSpawnT = 0;
+                bullet.skipSplit = false;
+                if (bullet.piercedIds) {
+                    bullet.piercedIds.clear();
+                } else {
+                    bullet.piercedIds = new Set();
+                }
             }
 
             function createBullet() {
@@ -5732,7 +5776,10 @@
 
             function spawnBullet(props = {}) {
                 const bullet = bulletPool.get();
+                const skipSplit = props.skipSplit === true;
+                const presetElement = typeof props.presetElement === 'string' ? props.presetElement : null;
                 Object.assign(bullet, props);
+                bullet.skipSplit = skipSplit;
                 bullet.hasRicocheted = props.hasRicocheted === true;
                 bullet.ricochetDist = typeof props.ricochetDist === 'number' ? props.ricochetDist : 0;
                 bullet.maxRicochetDist = typeof props.maxRicochetDist === 'number' ? props.maxRicochetDist : 0;
@@ -5740,25 +5787,31 @@
                 const player = store.player;
                 
                 // Determine bullet element based on mode
-                let elementMode = player ? (player.bulletElement || 'normal') : 'normal';
-                const availableElements = getAvailableBulletElements(player);
-                if (!availableElements.includes(elementMode)) {
-                    elementMode = availableElements[0] || 'normal';
-                    if (player) {
-                        player.bulletElement = elementMode;
+                if (presetElement) {
+                    bullet.element = presetElement;
+                } else {
+                    let elementMode = player ? (player.bulletElement || 'normal') : 'normal';
+                    const availableElements = getAvailableBulletElements(player);
+                    if (!availableElements.includes(elementMode)) {
+                        elementMode = availableElements[0] || 'normal';
+                        if (player) {
+                            player.bulletElement = elementMode;
+                        }
+                    }
+                    if (elementMode === 'split') {
+                        // Split mode: left half ice, right half poison
+                        const bulletX = Number.isFinite(bullet.x) ? bullet.x : (props.x ?? 0);
+                        bullet.element = (bulletX < W / 2) ? 'ice' : 'poison';
+                    } else if (elementMode === 'alternate') {
+                        // Alternate mode: alternate volleys between ice and poison
+                        bullet.element = (player.bulletElementVolleyCount % 2 === 0) ? 'ice' : 'poison';
+                    } else {
+                        // Normal, ice, or poison - use directly
+                        bullet.element = elementMode;
                     }
                 }
-                if (elementMode === 'split') {
-                    // Split mode: left half ice, right half poison
-                    // Check bullet spawn position relative to screen center
-                    const bulletX = bullet.x || props.x || 0;
-                    bullet.element = (bulletX < W / 2) ? 'ice' : 'poison';
-                } else if (elementMode === 'alternate') {
-                    // Alternate mode: alternate volleys between ice and poison
-                    bullet.element = (player.bulletElementVolleyCount % 2 === 0) ? 'ice' : 'poison';
-                } else {
-                    // Normal, ice, or poison - use directly
-                    bullet.element = elementMode;
+                if ('presetElement' in bullet) {
+                    delete bullet.presetElement;
                 }
                 const ricochetLevel = player ? (player.ricochetLevel || (player.hasRicochet ? 1 : 0)) : 0;
                 if (props.canRicochet !== undefined) {
@@ -5781,7 +5834,70 @@
                     }
                 }
                 store.bullets.push(bullet);
+
+                if (player && player.splitShotActive && !bullet.skipSplit) {
+                    const prohibited = bullet.isFragment || bullet.isFlame || bullet.isLavaBlade || bullet.isLevelUpPulse || bullet.explosive;
+                    if (!prohibited) {
+                        const speed = Math.hypot(bullet.vx || 0, bullet.vy || 0);
+                        if (speed > 60) {
+                            const spread = Number.isFinite(player.splitShotSpread) ? player.splitShotSpread : 0.18;
+                            const halfSpread = spread * 0.5;
+                            const baseAngle = Math.atan2(bullet.vy, bullet.vx);
+                            const rightAngle = baseAngle + halfSpread;
+                            const leftAngle = baseAngle - halfSpread;
+
+                            bullet.vx = Math.cos(leftAngle) * speed;
+                            bullet.vy = Math.sin(leftAngle) * speed;
+                            bullet.skipSplit = true;
+
+                            const cloneProps = {
+                                x: bullet.x,
+                                y: bullet.y,
+                                vx: Math.cos(rightAngle) * speed,
+                                vy: Math.sin(rightAngle) * speed,
+                                r: bullet.r,
+                                col: bullet.col,
+                                dmg: bullet.dmg,
+                                pierce: bullet.pierce,
+                                explosive: bullet.explosive,
+                                presetElement: bullet.element,
+                                isSwirl: bullet.isSwirl,
+                                isFlame: bullet.isFlame,
+                                isIceman: bullet.isIceman,
+                                isDrone: bullet.isDrone,
+                                isBeefClone: bullet.isBeefClone,
+                                isChampionShot: bullet.isChampionShot,
+                                isLavaBlade: bullet.isLavaBlade,
+                                isLevelUpPulse: bullet.isLevelUpPulse,
+                                hasRicocheted: bullet.hasRicocheted,
+                                canRicochet: bullet.canRicochet,
+                                ricochetDist: bullet.ricochetDist,
+                                maxRicochetDist: bullet.maxRicochetDist,
+                                originalDmg: bullet.originalDmg,
+                                gravity: bullet.gravity,
+                                target: bullet.target,
+                                spawnTime: bullet.spawnTime,
+                                life: bullet.life,
+                                maxLife: bullet.maxLife,
+                                skipSplit: true
+                            };
+                            spawnBullet(cloneProps);
+                        }
+                    }
+                }
                 return bullet;
+            }
+
+            function consumeBulletPierce(bullet) {
+                if (!bullet) return true;
+                const remaining = Number.isFinite(bullet.pierce) ? bullet.pierce : 0;
+                if (remaining > 0) {
+                    bullet.pierce = Math.max(0, remaining - 1);
+                    return false;
+                }
+                bullet.pierce = 0;
+                bullet.dead = true;
+                return true;
             }
 
             function getBulletColorForSubclass() {
@@ -6751,6 +6867,16 @@
                     return;
                 }
 
+                if (b.piercedIds) {
+                    const targetId = (e && (e.id ?? e._id ?? e.enemyId)) ?? null;
+                    if (targetId !== null) {
+                        if (b.piercedIds.has(targetId)) {
+                            return;
+                        }
+                        b.piercedIds.add(targetId);
+                    }
+                }
+
                 let dmg = b.dmg || 15;
                 const isFireElement = b.element === 'fire';
                 
@@ -6830,7 +6956,7 @@
                 if (e.type === 'cube_burglar') {
                     const cubeResult = applyCubeBurglarHit(e, b, dmg);
                     if (!cubeResult.hit) {
-                        if (!b.pierce) b.dead = true;
+                        consumeBulletPierce(b);
                         return;
                     }
                     dmg = cubeResult.damageApplied;
@@ -7034,7 +7160,7 @@
                 }
                 
                 if (b.explosive) explode(b.x, b.y, false, true);
-                if (!b.pierce) b.dead = true;
+                consumeBulletPierce(b);
             }
 
             function updatePlayerProjectile(b, dt, bossTarget, state) {
@@ -7231,9 +7357,7 @@
                             store.timeShards.splice(si, 1);
                         }
 
-                        if (!b.pierce) {
-                            b.dead = true;
-                        }
+                        consumeBulletPierce(b);
                         break;
                     }
                 }
@@ -7280,9 +7404,7 @@
                                 store.mechPuddles.splice(i, 1);
                             }
 
-                            if (!b.pierce) {
-                                b.dead = true;
-                            }
+                            consumeBulletPierce(b);
                             break;
                         }
                     }
@@ -8349,12 +8471,17 @@
                 'champion_skin'
             ];
 
+            const SPLIT_SHOT_ICON_SVG = `<svg class="powerup-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path fill="#ff2f6f" d="M10.8 3 5.4 12l5.4 9h-2.6L2.8 12 8.2 3z"/><path fill="#ff7ad6" d="M13.2 3 18.6 12l-5.4 9h2.6L21.2 12 15.8 3z"/></svg>`;
+            const PIERCE_SHOT_ICON_SVG = `<svg class="powerup-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="#2a0129" stroke="#ff4f98" stroke-width="2"/><path fill="#ff90d8" d="M6.5 12h8.2l-2.8-2.8 1.4-1.4L19.5 12l-6.2 6.2-1.4-1.4 2.8-2.8H6.5z"/></svg>`;
+
             const POWERUP_TYPES = {
                 'double': { name: 'SCATTER SHOT', icon: '⬆️', duration: 0, type: 'instant' },
                 'drones': { name: 'SIDE DRONES', icon: '🚁', duration: 15, type: 'timed' },
                 'shield': { name: 'SHIELD BUBBLE', icon: '🛡️', duration: 0, type: 'instant' },
                 'repair': { name: 'REPAIR KIT', icon: '❤️', duration: 0, type: 'instant' },
                 'missile': { name: 'HOMING MISSILES', icon: '🚀', duration: 20, type: 'timed' },
+                'split_shot': { name: 'NEON SPLIT', icon: '✦', canvasIcon: '✦', svgIcon: SPLIT_SHOT_ICON_SVG, duration: 8, type: 'timed' },
+                'pierce_shot': { name: 'PHASE PIERCE', icon: '⟠', canvasIcon: '⟠', svgIcon: PIERCE_SHOT_ICON_SVG, duration: 8, type: 'timed', pierceBonus: 2 },
                 'upgrade': { name: 'UPGRADE CORE', icon: '⚡', duration: 0, type: 'instant', isSpecial: true },
                 'void_core': { name: 'VOID CORE', icon: '🌀', duration: 25, type: 'timed' },
                 'cash': { name: 'CASH INFUSION', icon: '💰', duration: 0, type: 'instant', isSpecial: true },
@@ -8835,6 +8962,43 @@
                     p.attackSpeedStacks = newStacks;
                     p.fireRate = Math.max(p.fireRate * 0.88, 0.045);
                     announce(`HYPER DRIVE +12% (${newStacks} stack${newStacks === 1 ? '' : 's'})`);
+                    return;
+                }
+                if (typeKey === 'split_shot') {
+                    const duration = powerup.duration || 8;
+                    const timer = p.powerupTimers[typeKey];
+                    if (timer) {
+                        timer.remaining += duration;
+                        timer.max = (timer.max || duration) + duration;
+                    } else {
+                        p.powerupTimers[typeKey] = { remaining: duration, max: duration };
+                    }
+                    p.splitShotActive = true;
+                    if (hasCoords) {
+                        addFloatingText(x, y, powerup.name, { color: '#ff6bd6', fontSize: 14 });
+                    } else {
+                        announce(powerup.name);
+                    }
+                    return;
+                }
+                if (typeKey === 'pierce_shot') {
+                    const duration = powerup.duration || 8;
+                    const bonus = Number.isFinite(powerup.pierceBonus) ? powerup.pierceBonus : 2;
+                    const timer = p.powerupTimers[typeKey];
+                    if (timer) {
+                        timer.remaining += duration;
+                        timer.max = (timer.max || duration) + duration;
+                    } else {
+                        p.powerupTimers[typeKey] = { remaining: duration, max: duration };
+                        p.piercing = (p.piercing || 0) + bonus;
+                        p.piercingPowerupBonus = bonus;
+                    }
+                    p.piercingPowerupActive = true;
+                    if (hasCoords) {
+                        addFloatingText(x, y, powerup.name, { color: '#ff4fa3', fontSize: 14 });
+                    } else {
+                        announce(powerup.name);
+                    }
                     return;
                 }
                 if (typeKey === 'star_upgrade') {
@@ -12708,6 +12872,14 @@
                             p.voidCoreStacks = 0;
                             p.voidCoreDmgMult = 1;
                             p.voidCoreFireRateMult = 1;
+                        } else if (key === 'split_shot') {
+                            p.splitShotActive = false;
+                        } else if (key === 'pierce_shot') {
+                            if (p.piercingPowerupActive) {
+                                p.piercing = Math.max(0, (p.piercing || 0) - (p.piercingPowerupBonus || 0));
+                                p.piercingPowerupActive = false;
+                                p.piercingPowerupBonus = 0;
+                            }
                         }
                         delete p.powerupTimers[key];
                     }
@@ -17734,7 +17906,7 @@
                     }
                     const displayPowerup = stolen[stolen.length - 1] || null;
                     const iconDef = displayPowerup && POWERUP_TYPES[displayPowerup.type];
-                    const icon = iconDef && iconDef.icon ? iconDef.icon : '?';
+                    const icon = iconDef ? (iconDef.canvasIcon || iconDef.icon || '?') : '?';
                     const bubbleRadius = Math.max(8, CUBE_BURGLAR_CONFIG.cubeSize * 2.2);
                     ctx.save();
                     ctx.translate(bellyX, bellyY + 2);
@@ -19659,7 +19831,17 @@
             }
 
             function escapeHtml(s) { s = String(s ?? ''); return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
-            function announce(text) { const el = q('announce'); el.textContent = text; el.classList.remove('hide'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('hide'), 2500); }
+            function announce(text) {
+                if (typeof text !== 'string' || !/sector/i.test(text)) {
+                    return;
+                }
+                const el = q('announce');
+                if (!el) return;
+                el.textContent = text;
+                el.classList.remove('hide');
+                clearTimeout(el._t);
+                el._t = setTimeout(() => el.classList.add('hide'), 2500);
+            }
             
             // Floating text system for powerup pickups
             function addFloatingText(x, y, text, options = {}) {
@@ -19725,6 +19907,8 @@
                 const shieldBar = q("shieldBar");
                 const shieldBarFill = q("shieldBarFill");
                 const shieldTextEl = q("shieldText");
+                const xpBarFill = q("xpBarFill");
+                const xpText = q("xpText");
                 const waveNum = q("waveNum");
                 const killsNum = q("killsNum");
                 const levelNum = q("levelNum");
@@ -19788,6 +19972,20 @@
                 shieldTextEl.textContent = shieldMaxSafe > 0
                     ? `SHIELD: ${Math.round(shieldValueSafe)} / ${shieldMaxSafe}`
                     : 'SHIELD: 0 / 0';
+
+                if (xpBarFill && xpText && store.world) {
+                    const level = Number.isFinite(store.world.level) ? Math.max(1, store.world.level) : 1;
+                    const xpMultiplier = Number.isFinite(store.world.xpMultiplier) ? Math.max(0.01, store.world.xpMultiplier) : 1;
+                    const wave = Number.isFinite(store.world.wave) ? Math.max(1, store.world.wave) : 1;
+                    const xpCurrent = Number.isFinite(store.world.xp) ? Math.max(0, store.world.xp) : 0;
+                    const levelFactor = level >= 8 ? 1.3 : level >= 4 ? 1.1 : 1;
+                    const waveFactor = wave > 10 ? 1.3 : 1;
+                    const xpNeededRaw = level * 100 * xpMultiplier * levelFactor * waveFactor;
+                    const xpNeeded = Math.max(1, Math.floor(xpNeededRaw));
+                    const xpPercent = Math.max(0, Math.min(100, Math.round((xpCurrent / xpNeeded) * 100)));
+                    xpBarFill.style.width = `${xpPercent}%`;
+                    xpText.textContent = `XP: ${Math.floor(xpCurrent)} / ${xpNeeded}`;
+                }
 
                 if (waveNum) waveNum.textContent = store.world.wave;
                 if (killsNum) killsNum.textContent = store.world.kills;
@@ -27350,7 +27548,10 @@
                 ctx.font = iconFont;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(cfg.icon, 0, 1);
+                const iconGlyph = cfg ? (cfg.canvasIcon || cfg.icon || '') : '';
+                if (iconGlyph) {
+                    ctx.fillText(iconGlyph, 0, 1);
+                }
                 ctx.restore();
             }
             function drawDrone(d) { const p = store.player; ctx.save(); ctx.translate(p.x + d.offset, p.y + 20); ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(6, 6); ctx.lineTo(-6, 6); ctx.closePath(); ctx.fillStyle = '#c49cff'; ctx.fill(); ctx.restore(); }
@@ -33599,8 +33800,10 @@
                     const maxRaw = Number(timer.max ?? timer.duration ?? remaining);
                     const max = Number.isFinite(maxRaw) && maxRaw > 0 ? maxRaw : Math.max(remaining, 1);
                     const pct = max > 0 ? clamp(Math.round((remaining / max) * 100), 0, 100) : 0;
+                    const iconMarkup = type.svgIcon || (type.icon ? `<span class="powerup-icon powerup-icon--fallback">${type.icon}</span>` : '');
+                    const nameMarkup = `<span class="shop-power-card-name">${type.name}</span>`;
                     return `<div class="shop-power-card">
-    <div class="shop-power-card-title">${type.icon} ${type.name}</div>
+    <div class="shop-power-card-title">${iconMarkup}${nameMarkup}</div>
     <div class="shop-power-card-meta">${Math.ceil(remaining)}s remaining</div>
     <div class="shop-power-bar"><span style="width:${pct}%;"></span></div>
 </div>`;
@@ -42790,7 +42993,7 @@
                 store.cheatsUsed = true;
                 announce('CHEAT: POWER UP!');
                 resetGame();
-                setWorldGold(10000);
+                setWorldGold(100000);
                 store.player.multishot = 4;
                 initWave();
                 cheatCodeBuffer = "";
