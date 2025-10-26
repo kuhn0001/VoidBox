@@ -4092,10 +4092,18 @@
                 }
                 bulletTextures.fire = pixiApp.renderer.generateTexture(fireGraphics);
                 
-                // Lava blade (diamond/blade shape with gradient)
+                // Lava blade (diamond/blade shape with gradient) - high res crisp version
                 const lavaGraphics = new PIXI.Graphics();
-                const bladeHeight = 8;
-                const bladeWidth = 4;
+                const bladeHeight = 11.2; // Base size (will be scaled 1.5x to ~16px)
+                const bladeWidth = 5.6; // Base size
+                
+                // Cyberpunk gradient: Ultraviolet → Synthwave → Neo-Tokyo → Grid Glitch
+                const gradient = new PIXI.FillGradient(0, -bladeHeight, 0, bladeHeight);
+                gradient.addColorStop(0, 'rgba(138, 43, 226, 1)');    // Ultraviolet - deep purple
+                gradient.addColorStop(0.33, 'rgba(255, 0, 255, 1)');   // Synthwave - hot magenta
+                gradient.addColorStop(0.66, 'rgba(255, 20, 147, 1)');  // Neo-Tokyo - deep pink
+                gradient.addColorStop(1, 'rgba(255, 182, 193, 0.9)');  // Grid Glitch - light pink
+                
                 // Create blade shape
                 lavaGraphics.poly([
                     { x: 0, y: -bladeHeight },
@@ -4103,9 +4111,16 @@
                     { x: 0, y: bladeHeight },
                     { x: -bladeWidth * 0.6, y: -bladeHeight * 0.08 }
                 ]);
-                lavaGraphics.fill({ color: 0xff00aa, alpha: 0.95 }); // Hot pink/magenta
-                lavaGraphics.stroke({ width: 1.5, color: 0x00ffcd, alpha: 0.4 }); // Cyan outline
-                bulletTextures.lavaBlade = pixiApp.renderer.generateTexture(lavaGraphics);
+                lavaGraphics.fill(gradient);
+                
+                // Outline strokes with cyan glow (cyberpunk accent)
+                lavaGraphics.stroke({ width: 0.55, color: 'rgba(0, 0, 0, 0.5)' });
+                lavaGraphics.stroke({ width: 0.3, color: 'rgba(0, 255, 200, 0.4)' }); // Cyan glow
+                
+                // Generate at 4x resolution for crisp edges
+                bulletTextures.lavaBlade = pixiApp.renderer.generateTexture(lavaGraphics, {
+                    resolution: 4
+                });
                 
             console.log('✅ Bullet textures created', bulletTextures);
             }
