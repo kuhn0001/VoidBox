@@ -6742,10 +6742,17 @@
                 // Lava blades do more damage the closer the enemy is to the player
                 if (b.isLavaBlade && store.player) {
                     const distToPlayer = Math.hypot(e.x - store.player.x, e.y - store.player.y);
-                    // Scale from 1x at 300px to 3x at point-blank (0px)
-                    const maxDistance = 300;
-                    const distanceFactor = Math.max(0, Math.min(1, 1 - (distToPlayer / maxDistance)));
-                    const damageMultiplier = 1 + (distanceFactor * 2); // 1x to 3x
+                    // Steep damage dropoff: full damage at 125px, minimal at 200px
+                    let damageMultiplier = 1;
+                    if (distToPlayer <= 125) {
+                        damageMultiplier = 3; // Full damage up to 125px
+                    } else if (distToPlayer <= 200) {
+                        // Sharp falloff from 125-200px: 3x down to 0.5x
+                        const falloffFactor = (200 - distToPlayer) / 75; // 75px range for falloff
+                        damageMultiplier = 0.5 + (falloffFactor * 2.5); // 0.5x to 3x
+                    } else {
+                        damageMultiplier = 0; // No damage beyond 200px
+                    }
                     dmg *= damageMultiplier;
                 }
                 
@@ -18081,8 +18088,8 @@
                     store.bullets.forEach(b => {
                         if (b.dead) return;
                         
-                        // Skip only flame bullets that need Canvas rendering
-                        if (b.isFlame) {
+                        // Skip only flame bullets that need Canvas rendering (not lava blades!)
+                        if (b.isFlame && !b.isLavaBlade) {
                             currentBullets.add(b);
                             return;
                         }
@@ -18103,6 +18110,36 @@
                         // Calculate rotation from velocity (all bullets need this)
                         const angle = Math.atan2(b.vy, b.vx);
                         sprite.rotation = angle + Math.PI / 2;
+                        
+                        // Update lava blade scale and alpha based on distance from spawn
+                        if (b.isLavaBlade) {
+                            const distanceFromBirth = Math.hypot(
+                                b.x - (b.lavaBladeBirthX || b.x),
+                                b.y - (b.lavaBladeBirthY || b.y)
+                            );
+                            
+                            // Match damage dropoff curve: 3x at 0-125px, sharp drop 125-200px
+                            let sizeScale = 1;
+                            let alphaScale = 1;
+                            
+                            if (distanceFromBirth <= 125) {
+                                // Full size/alpha up to 125px
+                                sizeScale = 1;
+                                alphaScale = 1;
+                            } else if (distanceFromBirth <= 200) {
+                                // Sharp falloff from 125-200px: 1.0 down to 0.1
+                                const falloffFactor = (200 - distanceFromBirth) / 75;
+                                sizeScale = 0.1 + (falloffFactor * 0.9); // 0.1 to 1.0
+                                alphaScale = 0.1 + (falloffFactor * 0.9); // 0.1 to 1.0
+                            } else {
+                                // Beyond 200px: nearly invisible
+                                sizeScale = 0.05;
+                                alphaScale = 0.05;
+                            }
+                            
+                            sprite.scale.set(1.5 * sizeScale);
+                            sprite.alpha = alphaScale;
+                        }
                         
                         // Update particles
                         if (b.particles && b.particles.length > 0) {
@@ -18147,8 +18184,8 @@
 
                 // Canvas fallback rendering (for special bullets or when Pixi not ready)
                 store.bullets.forEach(b => {
-                    // Skip bullets if Pixi is handling them (lava blades now use Pixi!)
-                    if (USE_PIXI_BULLETS && !b.isFlame) {
+                    // Skip bullets if Pixi is handling them (skip lava blades AND flames)
+                    if (USE_PIXI_BULLETS && (!b.isFlame || b.isLavaBlade)) {
                         return;
                     }
                     
@@ -18159,49 +18196,9 @@
 
                     const r = b.r * 1.5;
 
-                    if (b.isLavaBlade) {
-                        ctx.shadowColor = 'rgba(255, 45, 200, 0.9)';
-                        ctx.shadowBlur = 20;
-                        const bladeHeight = r * 1.4;
-                        const gradient = ctx.createLinearGradient(0, -bladeHeight, 0, bladeHeight);
-                        gradient.addColorStop(0, 'rgba(255, 105, 255, 0.96)');
-                        gradient.addColorStop(0.38, 'rgba(255, 0, 170, 0.98)');
-                        gradient.addColorStop(0.7, 'rgba(0, 255, 175, 0.88)');
-                        gradient.addColorStop(1, 'rgba(255, 215, 90, 0.82)');
-                        ctx.fillStyle = gradient;
-                        ctx.beginPath();
-                        ctx.moveTo(0, -bladeHeight);
-                        ctx.lineTo(r * 0.6, -bladeHeight * 0.08);
-                        ctx.lineTo(0, bladeHeight);
-                        ctx.lineTo(-r * 0.6, -bladeHeight * 0.08);
-                        ctx.closePath();
-                        ctx.lineJoin = 'round';
-                        ctx.lineCap = 'round';
-                        ctx.fill();
-                        ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
-                        ctx.lineWidth = Math.max(1, r * 0.22);
-                        ctx.stroke();
-                        ctx.strokeStyle = 'rgba(0, 255, 205, 0.35)';
-                        ctx.lineWidth = Math.max(0.6, r * 0.12);
-                        ctx.stroke();
-                        b.particles.forEach(p => {
-                            const t = Math.max(0, Math.min(1, p.life / p.maxLife));
-                            const particleR = p.r * t;
-                            const roll = Math.random();
-                            if (roll < 0.3) {
-                                ctx.fillStyle = `rgba(0, 255, 190, ${0.55 * t})`;
-                            } else if (roll < 0.5) {
-                                ctx.fillStyle = `rgba(255, 220, 90, ${0.5 * t})`;
-                            } else {
-                                ctx.fillStyle = `rgba(255, ${20 + Math.random() * 40}, ${200 + Math.random() * 35}, ${0.75 * t})`;
-                            }
-                            ctx.beginPath();
-                            ctx.arc(p.x, p.y, particleR, 0, 2 * Math.PI);
-                            ctx.fill();
-                        });
-                        ctx.restore();
-                        return;
-                    } else if (b.isFlame) {
+                    // Lava blades are rendered by PixiJS - no canvas fallback needed
+                    
+                    if (b.isFlame) {
                         ctx.fillStyle = `rgba(255, 150, 50, ${0.3 * (b.life / 50)})`;
                         ctx.beginPath();
                         ctx.arc(0, 0, b.r * 0.5, 0, 2 * Math.PI);
@@ -20070,11 +20067,13 @@
                 const p = store.player;
                 if (p.beefChargeState && p.beefChargeState !== 'ready') return;
 
+                // Cap range at 200px
+                const maxRange = 200;
                 let numFlames, angleRange, speed, life;
                 switch (p.flamethrowerLevel) {
-                    case 1: numFlames = 4; angleRange = 40; speed = 250; life = 0.35; break;    // Halved from 8
-                    case 2: numFlames = 6; angleRange = 70; speed = 280; life = 0.4; break;     // Halved from 12
-                    default: numFlames = 8; angleRange = 90; speed = 320; life = 0.5; break;    // Halved from 16
+                    case 1: numFlames = 4; angleRange = 40; speed = 250; life = maxRange / speed; break;    // ~0.8s to reach 200px
+                    case 2: numFlames = 6; angleRange = 70; speed = 280; life = maxRange / speed; break;     // ~0.71s to reach 200px
+                    default: numFlames = 8; angleRange = 90; speed = 320; life = maxRange / speed; break;    // ~0.625s to reach 200px
                 }
 
                 for (let i = 0; i < numFlames; i++) {
@@ -20091,9 +20090,11 @@
                         r: 4 + Math.random() * 3,
                         col: `rgba(255, ${20 + Math.random() * 40}, ${190 + Math.random() * 45}, 0.98)`,
                         dmg: 2 * p.dmgMult,
-                        life: life * 1.5,
-                        isFlame: false,
+                        life: life,
+                        isFlame: true,
                         isLavaBlade: true,
+                        lavaBladeBirthX: spawnX,
+                        lavaBladeBirthY: spawnY,
                         particles: [],
                         particleSpawnT: 0
                     });
@@ -20115,9 +20116,11 @@
                             col: `rgba(250, ${40 + Math.random() * 40}, 255, 0.9)`,
                             dmg: 2 * p.dmgMult * 0.35,
                             life,
-                            isFlame: false,
+                            isFlame: true,
                             isIceman: true,
                             isLavaBlade: true,
+                            lavaBladeBirthX: spawnX,
+                            lavaBladeBirthY: spawnY,
                             particles: [],
                             particleSpawnT: 0
                         });
