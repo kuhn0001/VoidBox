@@ -10902,16 +10902,16 @@
                     store.world.pendingVoidReaper = null;
                     store.world.voidReaperWarningIssued = false;
 
-                    // FIXED: Balanced boss scaling instead of aggressive exponential growth
-                    // Old: 1 + (wave/5 - 1) * 1.5 caused 4x HP by wave 15
-                    // New: Gentler scaling with reasonable progression
+                    // Boss scaling with higher ceiling for late game challenge
                     let bossHpScale;
                     if (store.world.wave <= 5) {
                         bossHpScale = 1; // No scaling for early bosses
                     } else if (store.world.wave <= 15) {
-                        bossHpScale = 1 + (store.world.wave - 5) * 0.2; // +20% per wave 6-15
+                        bossHpScale = 1 + (store.world.wave - 5) * 0.3; // +30% per wave 6-15
+                    } else if (store.world.wave <= 30) {
+                        bossHpScale = 1 + 10 * 0.3 + (store.world.wave - 15) * 0.25; // +25% per wave 16-30
                     } else {
-                        bossHpScale = 1 + 10 * 0.2 + (store.world.wave - 15) * 0.1; // +10% per wave after 15
+                        bossHpScale = 1 + 10 * 0.3 + 15 * 0.25 + (store.world.wave - 30) * 0.2; // +20% per wave after 30
                     }
 
                     store.boss = createBoss(bossHpScale);
@@ -17355,6 +17355,84 @@
                 const nb = Math.max(0, Math.round(b * factor));
                 
                 return (nr << 16) | (ng << 8) | nb;
+            }
+
+            function drawMantaPixi(enemy) {
+                if (!enemy) return;
+                
+                // Cleanup if dead
+                if (enemy.dead) {
+                    if (enemy.pixiGraphics) {
+                        enemy.pixiGraphics.destroy();
+                        enemy.pixiGraphics = null;
+                    }
+                    return;
+                }
+                
+                // Create or reuse graphics object
+                if (!enemy.pixiGraphics) {
+                    enemy.pixiGraphics = new PIXI.Graphics();
+                    pixiApp.stage.addChild(enemy.pixiGraphics);
+                }
+                
+                const graphics = enemy.pixiGraphics;
+                graphics.clear();
+                graphics.position.set(enemy.x, enemy.y);
+                
+                const time = performance.now() / 1000;
+                const r = enemy.r;
+                
+                // Futuristic drone color scheme - electric cyan and purple
+                const bodyColor = 0x1a0033; // Deep purple body
+                const accentColor = 0x00ffff; // Cyan accent
+                const coreColor = 0xff00ff; // Magenta core
+                const glowPulse = 0.7 + 0.3 * Math.sin(time * 3);
+                
+                // Main hexagonal body
+                const hexPoints = [];
+                for (let i = 0; i < 6; i++) {
+                    const angle = (Math.PI / 3) * i;
+                    hexPoints.push(Math.cos(angle) * r * 0.8, Math.sin(angle) * r * 0.8);
+                }
+                graphics.poly(hexPoints);
+                graphics.fill(bodyColor);
+                graphics.stroke({ width: 2, color: accentColor, alpha: glowPulse });
+                
+                // Energy core in center
+                graphics.circle(0, 0, r * 0.3);
+                graphics.fill({ color: coreColor, alpha: glowPulse });
+                
+                // Inner hexagon glow
+                const innerHexPoints = [];
+                for (let i = 0; i < 6; i++) {
+                    const angle = (Math.PI / 3) * i + time * 2; // Rotating inner hex
+                    innerHexPoints.push(Math.cos(angle) * r * 0.5, Math.sin(angle) * r * 0.5);
+                }
+                graphics.poly(innerHexPoints);
+                graphics.stroke({ width: 1, color: accentColor, alpha: 0.5 });
+                
+                // Four drone arms extending from corners
+                const armLength = r * 1.2;
+                const armWidth = r * 0.15;
+                for (let i = 0; i < 4; i++) {
+                    const angle = (Math.PI / 2) * i + Math.PI / 4;
+                    const baseX = Math.cos(angle) * r * 0.6;
+                    const baseY = Math.sin(angle) * r * 0.6;
+                    const endX = Math.cos(angle) * armLength;
+                    const endY = Math.sin(angle) * armLength;
+                    
+                    // Arm beam
+                    graphics.moveTo(baseX, baseY);
+                    graphics.lineTo(endX, endY);
+                    graphics.stroke({ width: 3, color: bodyColor });
+                    graphics.moveTo(baseX, baseY);
+                    graphics.lineTo(endX, endY);
+                    graphics.stroke({ width: 1, color: accentColor });
+                    
+                    // Energy tip on arm
+                    graphics.circle(endX, endY, armWidth);
+                    graphics.fill({ color: coreColor, alpha: glowPulse });
+                }
             }
 
             function drawMechPixi(enemy) {
@@ -24625,7 +24703,9 @@
                 const state = ensureVibemasterState(boss);
                 if (!state) return;
 
-                const targetX = W / 2;
+                // Smooth side-to-side movement
+                const time = performance.now() / 1000;
+                const targetX = W / 2 + Math.sin(time * 0.6) * 180; // Glide left/right 180px
                 const targetY = Math.max(110, H * 0.24);
                 boss.x += (targetX - boss.x) * Math.min(1, dt * 2.4);
                 boss.y += (targetY - boss.y) * Math.min(1, dt * 1.8);
@@ -28628,6 +28708,143 @@
                 ctx.restore();
             }
 
+            function drawVibemasterWingPixi(container, time, state, xBase = 80) {
+                // Engine glow pulse - intensifies with attacks
+                const isAttacking = state && (state.timers.astral < 0.3 || state.timers.chakra < 0.3);
+                const enginePulse = Math.sin(time * 5) * 10 + 25;
+                const engineHue = (time * 60) % 360;
+                
+                const engineColors = [
+                    hslToHex(engineHue, 100, 90),
+                    hslToHex((engineHue + 30) % 360, 100, 60),
+                    hslToHex((engineHue + 60) % 360, 100, 50)
+                ];
+                
+                // Engine glow (radial gradient effect with multiple circles)
+                const engine = new PIXI.Graphics();
+                engine.circle(xBase, 0, enginePulse);
+                engine.fill({ color: engineColors[2], alpha: 0 });
+                engine.circle(xBase, 0, enginePulse * 0.6);
+                engine.fill({ color: engineColors[1], alpha: 0.8 });
+                engine.circle(xBase, 0, enginePulse * 0.3);
+                engine.fill({ color: engineColors[0], alpha: 1 });
+                container.addChild(engine);
+                
+                // Wing structure
+                const wing = new PIXI.Graphics();
+                
+                // Upper wing panel
+                wing.poly([
+                    xBase + 0, -20,
+                    xBase + 150, -100,
+                    xBase + 180, -80,
+                    xBase + 30, 20
+                ]);
+                wing.fill({ color: 0x808090 });
+                wing.stroke({ width: 2, color: 0xc0c0d0 });
+                
+                // Lower wing panel
+                wing.poly([
+                    xBase + 20, 25,
+                    xBase + 160, 100,
+                    xBase + 140, 120,
+                    xBase + 0, 30
+                ]);
+                wing.fill({ color: 0x404050 });
+                wing.stroke({ width: 2, color: 0xc0c0d0 });
+                
+                // Energy lines
+                const wingLineHue = ((time * 80 + 30) % 360);
+                const wingLineColor = hslToHex(wingLineHue, 100, 80);
+                wing.moveTo(xBase + 20, 0);
+                wing.quadraticCurveTo(xBase + 100, -50, xBase + 160, -90);
+                wing.stroke({ width: 2, color: wingLineColor, alpha: 0.8 });
+                wing.moveTo(xBase + 10, 28);
+                wing.quadraticCurveTo(xBase + 100, 70, xBase + 150, 110);
+                wing.stroke({ width: 2, color: wingLineColor, alpha: 0.8 });
+                
+                container.addChild(wing);
+            }
+            
+            function drawVibemasterHalfPilotPixi(container, time, state) {
+                // Rainbow exoskeleton colors
+                const hue = (time * 50) % 360;
+                const exoColor1 = hslToHex(hue, 100, 70);
+                const exoColor2 = hslToHex((hue + 60) % 360, 100, 60);
+                const exoColor3 = hslToHex((hue + 120) % 360, 100, 50);
+                
+                const body = new PIXI.Graphics();
+                
+                // Draw wing first
+                drawVibemasterWingPixi(container, time, state, 80);
+                
+                // Torso
+                body.poly([
+                    0, -90,
+                    60, -50,
+                    40, 100,
+                    0, 120
+                ]);
+                body.fill({ color: exoColor2 });
+                
+                // Shoulder
+                body.moveTo(50, -60);
+                body.arc(60, -60, 20, Math.PI, Math.PI * 2);
+                body.fill({ color: exoColor1 });
+                
+                // Arm - with wild spinning animation
+                const armSpin = time * 3;
+                const armX = 75 + Math.cos(armSpin) * 25;
+                const armY = -50 + Math.sin(armSpin) * 80;
+                body.moveTo(75, -50);
+                body.lineTo(armX, armY);
+                body.lineTo(armX - 20, armY + 10);
+                body.stroke({ width: 4, color: exoColor2 });
+                
+                // Leg - dancing
+                const legKick = Math.sin(time * 4) * 20;
+                body.moveTo(40, 100);
+                body.lineTo(60 + legKick, 200);
+                body.lineTo(40 + legKick * 0.5, 210);
+                body.stroke({ width: 4, color: exoColor3 });
+                
+                // Helmet/Head
+                body.arc(0, -150, 50, Math.PI * 0.5, Math.PI, false);
+                body.lineTo(-50, -100);
+                body.quadraticCurveTo(-20, -95, 0, -90);
+                body.fill({ color: exoColor1 });
+                
+                // Visor
+                const visorHue = (200 + Math.sin(time * 3) * 30) % 360;
+                const visorColor = hslToHex(visorHue, 100, 80);
+                body.rect(-45, -140, 45, 20);
+                body.fill({ color: visorColor });
+                
+                // Metallic highlights
+                body.moveTo(10, -80);
+                body.lineTo(40, -60);
+                body.stroke({ width: 1.5, color: 0xffffff, alpha: 0.7 });
+                body.moveTo(5, 115);
+                body.lineTo(35, 105);
+                body.stroke({ width: 1.5, color: 0xaaaaaa, alpha: 0.7 });
+                
+                container.addChild(body);
+            }
+            
+            function hslToHex(h, s, l) {
+                l /= 100;
+                const a = s * Math.min(l, 1 - l) / 100;
+                const f = n => {
+                    const k = (n + h / 30) % 12;
+                    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+                    return Math.round(255 * color);
+                };
+                const r = f(0);
+                const g = f(8);
+                const b = f(4);
+                return (r << 16) | (g << 8) | b;
+            }
+
             function drawVibemasterPixi(boss) {
                 if (!boss || !pixiApp) return;
                 
@@ -28654,65 +28871,52 @@
                 
                 const time = performance.now() / 1000;
                 const baseRadius = Number.isFinite(boss.r) ? boss.r : 60;
-                const hover = Math.sin(time * 1.15 + (state.phase || 0) * 0.6) * Math.min(10, baseRadius * 0.18);
-                const auraRadius = Math.max(60, baseRadius * 1.35);
+                const hover = Math.sin(time * 0.5) * 10; // Reduced hovering effect
                 
-                // Main aura circle
-                const aura = new PIXI.Graphics();
-                aura.circle(0, 0, auraRadius * 1.55);
-                aura.fill({ color: 0xdcb4ff, alpha: 0.25 });
-                aura.circle(0, 0, auraRadius * 1.35);
-                aura.fill({ color: 0xffffff, alpha: 0.18 });
-                container.addChild(aura);
+                // Scale everything down
+                const scale = 0.5; // Make VIBEMASTER 50% size
                 
-                // Rotating ring (simplified from dash pattern)
-                const ring = new PIXI.Graphics();
-                ring.circle(0, 0, auraRadius * 1.18);
-                ring.stroke({ width: 2.5, color: 0xdcb4ff, alpha: 0.4 + (boss.isEnraged ? 0.2 : 0) });
-                ring.rotation = time * 0.3;
-                container.addChild(ring);
+                // Psychedelic background layers (7 rotating geometric shapes)
+                for (let i = 7; i > 0; i--) {
+                    const layer = new PIXI.Graphics();
+                    const radius = (baseRadius * 3 / 7) * i * (Math.sin(time + i) * 0.1 + 0.9) * scale;
+                    const sides = 3 + (i % 4); // Triangles, squares, pentagons, hexagons
+                    const angleStep = (Math.PI * 2) / sides;
+                    const pulse = Math.sin(time * 0.5 + i) * 0.05 + 1;
+                    const hue = ((time * 30 + i * 30) % 360);
+                    const layerColor = hslToHex(hue, 100, 70);
+                    
+                    const points = [];
+                    for (let j = 0; j < sides; j++) {
+                        const angle = j * angleStep + time * 0.1 * (i % 3 + 1);
+                        points.push(Math.cos(angle) * radius * pulse, Math.sin(angle) * radius * pulse);
+                    }
+                    layer.poly(points);
+                    layer.stroke({ width: 1, color: layerColor, alpha: 0.4 });
+                    layer.rotation = time * 0.05 * i;
+                    container.addChild(layer);
+                }
                 
-                // Simplified body - core glow
-                const core = new PIXI.Graphics();
-                const coreScale = clamp((baseRadius * 2) / 420, 0.24, 0.5);
-                core.scale.set(coreScale);
+                // Create a sub-container for the pilot so we can scale it
+                const pilotContainer = new PIXI.Container();
+                pilotContainer.scale.set(scale);
                 
-                // Main body shape - simplified geometric form
-                core.poly([
-                    { x: 0, y: -90 },
-                    { x: 60, y: -48 },
-                    { x: 42, y: 104 },
-                    { x: -42, y: 104 },
-                    { x: -60, y: -48 }
-                ]);
-                core.fill({ color: 0x9d89ff, alpha: 0.7 });
-                core.stroke({ width: 2, color: 0xdcb4ff });
+                // Draw right half
+                const rightHalf = new PIXI.Container();
+                drawVibemasterHalfPilotPixi(rightHalf, time, state);
+                pilotContainer.addChild(rightHalf);
                 
-                // Eyes/glow points
-                core.circle(-30, -30, 12);
-                core.fill({ color: 0xffffff, alpha: 0.9 });
-                core.circle(30, -30, 12);
-                core.fill({ color: 0xffffff, alpha: 0.9 });
+                // Draw left half (mirrored)
+                const leftHalf = new PIXI.Container();
+                leftHalf.scale.x = -1; // Mirror horizontally
+                drawVibemasterHalfPilotPixi(leftHalf, time, state);
+                pilotContainer.addChild(leftHalf);
                 
-                // Wing hints (simple triangles)
-                core.poly([
-                    { x: 60, y: -20 },
-                    { x: 140, y: -60 },
-                    { x: 80, y: 40 }
-                ]);
-                core.fill({ color: 0xb8a8ff, alpha: 0.5 });
-                core.poly([
-                    { x: -60, y: -20 },
-                    { x: -140, y: -60 },
-                    { x: -80, y: 40 }
-                ]);
-                core.fill({ color: 0xb8a8ff, alpha: 0.5 });
+                container.addChild(pilotContainer);
                 
-                container.addChild(core);
-                
-                // Position
+                // Position (moved down more)
                 container.x = boss.x;
-                container.y = boss.y + hover;
+                container.y = boss.y + hover + 60; // Added 60px offset to move down
                 
                 // Draw effects on canvas (these are dynamic and less performance-critical)
                 drawVibemasterThreads(store.vibemasterThreads || state.threads);
@@ -31229,26 +31433,11 @@
                         break;
                     }
                     case "manta": {
-                        const scale = a / 36;
-                        ctx.save(); ctx.scale(scale, scale);
-                        ctx.fillStyle = n + "cc"; ctx.strokeStyle = n; ctx.lineWidth = 2;
-
-                        ctx.beginPath();
-                        ctx.moveTo(-36, 0);
-                        ctx.quadraticCurveTo(-8, -18, 0, -8);
-                        ctx.quadraticCurveTo(8, -18, 36, 0);
-                        ctx.quadraticCurveTo(8, 14, 0, 8);
-                        ctx.quadraticCurveTo(-8, 14, -36, 0);
-                        ctx.closePath(); ctx.fill(); ctx.stroke();
-
-                        ctx.beginPath();
-                        ctx.moveTo(0, 8);
-                        ctx.quadraticCurveTo(4, 22, 0, 30);
-                        ctx.stroke();
-
-                        ctx.beginPath();
-                        ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.stroke();
-                        ctx.restore();
+                        // Use PixiJS rendering for hardware acceleration
+                        if (pixiApp) {
+                            drawMantaPixi(e);
+                        }
+                        // No canvas fallback needed - PixiJS required for this game
                         break;
                     }
                 }
@@ -42606,6 +42795,57 @@
                 initWave();
                 cheatCodeBuffer = "";
             }
+            
+            function activateBossCheat() {
+                store.cheatsUsed = true;
+                
+                // Clear enemies
+                store.enemies = [];
+                
+                // Get VIBEMASTER definition directly
+                const vibemasterDef = RAW_BOSS_DEFINITIONS.vibemaster;
+                const scale = 1;
+                let hp = vibemasterDef.baseHp * scale * store.world.bossHealthBonus;
+                
+                // Create VIBEMASTER boss
+                const boss = {
+                    ...vibemasterDef,
+                    key: 'vibemaster',
+                    themeKey: 'vibemaster',
+                    x: W / 2,
+                    y: -80,
+                    hpMax: hp,
+                    hp,
+                    t: 0,
+                    fireT: 0,
+                    moveT: 0,
+                    vx: 100,
+                    vy: 30,
+                    patternPhase: 0,
+                    isEnraged: false,
+                    attackPhase: 0,
+                    phaseTimer: 0,
+                    dashTimer: 0,
+                    dashTrailCooldown: 0,
+                    rainEvent: null,
+                    phase: 0,
+                    isLaughing: false,
+                    laughStartTime: 0,
+                    visible: true
+                };
+                
+                const instanceSuffix = Math.random().toString(36).slice(2, 8);
+                boss.instanceId = `boss-cheat-${Date.now().toString(36)}-${instanceSuffix}`;
+                boss._instanceId = boss.instanceId;
+                boss.spawnWave = store.world.wave;
+                boss.spawnedAt = performance.now();
+                
+                store.boss = boss;
+                applyBossTheme(boss);
+                
+                announce('CHEAT: VIBEMASTER SPAWNED!');
+                cheatCodeBuffer = "";
+            }
 
             // ENABLED: Spec2 cheat functions  
             function activateSpec2Cheat() {
@@ -42855,6 +43095,8 @@
                         cheatCodeBuffer = "";
                     } else if (cheatCodeBuffer.endsWith('burglar')) {
                         activateCubeBurglarCheat();
+                    } else if (cheatCodeBuffer.endsWith('boss')) {
+                        activateBossCheat();
                     } else {
                         const subclassCode = Object.keys(SUBCLASS_CHEAT_CODES).find(code => cheatCodeBuffer.endsWith(code));
                         if (subclassCode) {
