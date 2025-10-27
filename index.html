@@ -28491,65 +28491,42 @@
                 tickChampionBurn(b, dt);
                 tickChampionVoidMarks(b, dt);
 
+                // BOSS IMMUNITY: Bosses are completely immune to movement-affecting debuffs
+                // They can still take damage from ice/poison/fire, but movement is unaffected
+                
+                // Ice stacks still apply damage multiplier but NOT movement slow
                 if (b.iceStacks && b.iceStacks > 0) {
                     b.iceStackTimer = Math.max(0, (b.iceStackTimer || 0) - dt);
                     if (b.iceStackTimer <= 0) {
                         b.iceStacks = 0;
                         delete b.iceStackTimer;
-                        delete b.speedMultiplier;
                         delete b.iceDamageMultiplier;
                         if (b.isFrozen) delete b.isFrozen;
                     } else {
                         const activeStacks = Math.min(b.iceStacks, 3);
                         b.iceDamageMultiplier = 1 + (0.1 * activeStacks);
                         
-                        // BOSSES NEVER FULLY FREEZE - only slow down heavily
-                        // This prevents bosses from being completely stopped by ice
-                        const targetSpeed = ICE_SPEED_BY_STACK[activeStacks] ?? 0;
-                        if (b.speedMultiplier === undefined) {
-                            b.speedMultiplier = targetSpeed;
-                        } else {
-                            b.speedMultiplier = Math.min(b.speedMultiplier, targetSpeed);
-                        }
-
-                        // Set visual frozen state for ice overlay, but don't lock movement
+                        // Set visual frozen state for ice overlay only
                         if (activeStacks >= 3) {
                             b.isFrozen = true;
-                            // Bosses move at 30% speed when "frozen" instead of 0%
-                            b.speedMultiplier = Math.max(0.3, b.speedMultiplier);
                         } else if (b.isFrozen) {
                             delete b.isFrozen;
                         }
                     }
                 } else {
                     if (b.isFrozen) delete b.isFrozen;
-                    if (b.speedMultiplier === 0) delete b.speedMultiplier;
                     if (b.iceDamageMultiplier !== undefined) delete b.iceDamageMultiplier;
                 }
 
-                // Bosses never get completely frozen - they just slow down
-                const freezeLocked = false;
-                let behaviourDt = dt;
+                // Clear any movement-affecting timers/multipliers - bosses ignore these
+                if (b.slowTimer) delete b.slowTimer;
+                if (b.speedMultiplier !== undefined) delete b.speedMultiplier;
 
-                if (b.slowTimer > 0) {
-                    b.slowTimer -= dt;
-                    behaviourDt *= 0.3;
-                }
+                // Use full dt for boss behavior - no movement slowdown ever
+                const behaviourDt = dt;
 
-                if (!freezeLocked && b.speedMultiplier !== undefined && b.speedMultiplier >= 0 && b.speedMultiplier < 1) {
-                    behaviourDt *= b.speedMultiplier;
-                }
-
-                if (b.y < 100 && !freezeLocked) {
+                if (b.y < 100) {
                     b.y += b.vy * behaviourDt;
-                }
-
-                if (freezeLocked) {
-                    b.vx = 0;
-                    b.vy = 0;
-                    if (b.dashVX) b.dashVX = 0;
-                    if (b.dashVY) b.dashVY = 0;
-                    return;
                 }
 
                 switch (b.behavior) {
