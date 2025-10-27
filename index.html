@@ -150,7 +150,8 @@
             grid-template-columns: 1fr auto 1fr;
             align-items: start;
             padding: 4px;
-            pointer-events: none
+            pointer-events: none;
+            z-index: 5
         }
 
         #hud {
@@ -3854,184 +3855,142 @@
             // --- CORE SETUP ---
             const W = 960, H = 540;
             const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+            const q = (id) => document.getElementById(id);
+            const CHAMPION_SYSTEM_ENABLED = true;
+            const API_BASE = "https://jonathan-ecommerce-virginia-separation.trycloudflare.com/api";
             const withAlpha = (color, alpha) => {
                 if (!color) return `rgba(255,255,255,${alpha})`;
                 const normAlpha = Math.max(0, Math.min(1, alpha));
-                if (color.startsWith('rgba')) {
-                    return color.replace(/rgba\(([^)]+)\)/, (_, body) => {
-                        const parts = body.split(',').map(part => part.trim());
-                        return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${normAlpha})`;
-                    });
+                if (color.startsWith('rgba(')) {
+                    return color.replace(/[\d.]+\)$/,`${normAlpha})`);
                 }
-                if (color.startsWith('rgb')) {
-                    const inner = color.slice(color.indexOf('(') + 1, color.indexOf(')')).split(',').map(p => p.trim());
-                    return `rgba(${inner[0]}, ${inner[1]}, ${inner[2]}, ${normAlpha})`;
+                if (color.startsWith('rgb(')) {
+                    return color.replace('rgb(','rgba(').replace(')',`,${normAlpha})`);
                 }
                 if (color.startsWith('#')) {
-                    let hex = color.slice(1);
-                    if (hex.length === 3) {
-                        hex = hex.split('').map(ch => ch + ch).join('');
-                    }
-                    const r = parseInt(hex.slice(0, 2), 16);
-                    const g = parseInt(hex.slice(2, 4), 16);
-                    const b = parseInt(hex.slice(4, 6), 16);
-                    if ([r, g, b].some(Number.isNaN)) {
-                        return `rgba(255,255,255,${normAlpha})`;
-                    }
-                    return `rgba(${r}, ${g}, ${b}, ${normAlpha})`;
+                    const hex = color.slice(1);
+                    const r = parseInt(hex.slice(0,2),16);
+                    const g = parseInt(hex.slice(2,4),16);
+                    const b = parseInt(hex.slice(4,6),16);
+                    return `rgba(${r},${g},${b},${normAlpha})`;
                 }
-                return `rgba(255,255,255,${normAlpha})`;
+                return color;
             };
-            const collide = (a, b) => { const dx = a.x - b.x, dy = a.y - b.y; const rr = (a.r || 0) + (b.r || 0); return dx * dx + dy * dy < rr * rr; };
-            const API_BASE = "https://jonathan-ecommerce-virginia-separation.trycloudflare.com/api";
-            const q = (id) => document.getElementById(id);
-            const cvs = q('game'), ctx = cvs.getContext('2d'), stage = q('stage');
-            
-            // Track resize state to prevent issues on mobile
-            let isResizing = false;
-            let resizeTimeout = null;
-            
-            new ResizeObserver(() => {
-                if (isResizing) return;
-                isResizing = true;
-                
-                try {
-                    const r = stage.getBoundingClientRect(), cssW = Math.floor(r.width), cssH = Math.floor(r.height),
-                        dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-                    cvs.style.width = cssW + 'px'; cvs.style.height = cssH + 'px';
-                    cvs.width = Math.floor(cssW * dpr); cvs.height = Math.floor(cssH * dpr);
-                    ctx.setTransform(cvs.width / W, 0, 0, cvs.height / H, 0, 0);
-                    
-                    // Resize PixiJS renderer and scale to match Canvas2D coordinate system
-                    if (pixiApp && pixiApp.renderer) {
-                        pixiApp.renderer.resize(cssW, cssH);
-                        // Scale PixiJS stage to match the 960x540 game coordinate system
-                        const scaleX = cssW / W;
-                        const scaleY = cssH / H;
-                        pixiApp.stage.scale.set(scaleX, scaleY);
-                    }
-                } catch (err) {
-                    console.error('❌ Resize error:', err);
-                } finally {
-                    // Debounce resize to prevent rapid calls
-                    clearTimeout(resizeTimeout);
-                    resizeTimeout = setTimeout(() => {
-                        isResizing = false;
-                    }, 100);
-                }
-            }).observe(stage);
-            
-            // Handle visibility changes on mobile to prevent white screen issues
-            document.addEventListener('visibilitychange', () => {
-                if (document.hidden) {
-                    // Page is hidden, pause rendering if needed
-                    console.log('🔕 Page hidden, pausing...');
-                } else {
-                    // Page is visible again, restore canvas state
-                    console.log('🔔 Page visible, restoring...');
-                    
-                    // Force a resize to restore canvas state
-                    setTimeout(() => {
-                        try {
-                            const r = stage.getBoundingClientRect();
-                            const cssW = Math.floor(r.width);
-                            const cssH = Math.floor(r.height);
-                            const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-                            
-                            cvs.style.width = cssW + 'px';
-                            cvs.style.height = cssH + 'px';
-                            cvs.width = Math.floor(cssW * dpr);
-                            cvs.height = Math.floor(cssH * dpr);
-                            ctx.setTransform(cvs.width / W, 0, 0, cvs.height / H, 0, 0);
-                            
-                            if (pixiApp && pixiApp.renderer) {
-                                pixiApp.renderer.resize(cssW, cssH);
-                                const scaleX = cssW / W;
-                                const scaleY = cssH / H;
-                                pixiApp.stage.scale.set(scaleX, scaleY);
-                            }
-                            
-                            console.log('✅ Canvas restored:', cssW, 'x', cssH);
-                        } catch (err) {
-                            console.error('❌ Failed to restore canvas:', err);
-                        }
-                    }, 100);
-                }
-            }, { passive: true });
-            
-            const mouse = { x: W / 2, y: H * 0.8 };
-            const CHAMPION_SYSTEM_ENABLED = false;
 
-            // ============================================================================
-            // PIXI.JS SETUP - Performance optimization for bullet rendering
-            // ============================================================================
-            let pixiApp = null;
-            let bulletContainer = null;
-            let particleContainer = null;
-            let cubeBurglarContainer = null;
-            let bulletTextures = {
-                normal: null,
-                ice: null,
-                poison: null,
-                fire: null,
-                lavaBlade: null
-            };
-            let particleTexture = null;
+            function getCollisionCenter(entity) {
+                if (!entity) {
+                    return { x: 0, y: 0 };
+                }
+                const x = Number.isFinite(entity.collisionX) ? entity.collisionX
+                    : Number.isFinite(entity.cx) ? entity.cx
+                    : Number.isFinite(entity.x) ? entity.x
+                    : 0;
+                const y = Number.isFinite(entity.collisionY) ? entity.collisionY
+                    : Number.isFinite(entity.cy) ? entity.cy
+                    : Number.isFinite(entity.y) ? entity.y
+                    : 0;
+                return { x, y };
+            }
+
+            function getCollisionRadius(entity) {
+                if (!entity) return 0;
+                const candidate = [
+                    entity.collisionRadius,
+                    entity.hitRadius,
+                    entity.hitboxRadius,
+                    entity.hitR,
+                    entity.r,
+                    entity.radius
+                ].find(value => Number.isFinite(value));
+                if (Number.isFinite(candidate)) {
+                    return Math.max(0, candidate);
+                }
+                const width = Number.isFinite(entity.width) ? Math.abs(entity.width) * 0.5 : 0;
+                const height = Number.isFinite(entity.height) ? Math.abs(entity.height) * 0.5 : 0;
+                if (width || height) {
+                    return Math.max(width, height);
+                }
+                if (Number.isFinite(entity.size)) {
+                    return Math.max(0, entity.size * 0.5);
+                }
+                return 0;
+            }
+
+            function collide(a, b) {
+                if (!a || !b) return false;
+                const aRadius = getCollisionRadius(a);
+                const bRadius = getCollisionRadius(b);
+                const paddingA = Number.isFinite(a.collisionPadding) ? a.collisionPadding : 0;
+                const paddingB = Number.isFinite(b.collisionPadding) ? b.collisionPadding : 0;
+                const combined = aRadius + bRadius + paddingA + paddingB;
+                if (combined <= 0) return false;
+                const ac = getCollisionCenter(a);
+                const bc = getCollisionCenter(b);
+                const dx = ac.x - bc.x;
+                const dy = ac.y - bc.y;
+                return dx * dx + dy * dy <= combined * combined;
+            }
+
+            // --- PIXI SETUP ---
+            let pixiApp, particleContainer, bulletContainer, cubeBurglarContainer;
+            const bulletTextures = {};
+            let particleTexture;
             const bulletSpritePool = [];
-            const activeBulletSprites = new Map();
             const particleSpritePool = [];
+            const activeBulletSprites = new Map();
             const activeParticleSprites = new Map();
-
-            // Expose debug object globally for console inspection
-            window.pixiDebug = {
-                get app() { return pixiApp; },
-                get bulletContainer() { return bulletContainer; },
-                get particleContainer() { return particleContainer; },
-                get bulletTextures() { return bulletTextures; },
-                get particleTexture() { return particleTexture; },
-                get activeBullets() { return activeBulletSprites.size; },
-                get activeParticles() { return activeParticleSprites.size; },
-                get pooledBullets() { return bulletSpritePool.length; },
-                get pooledParticles() { return particleSpritePool.length; }
-            };
-
-            // Initialize PixiJS (async)
-            (async () => {
+            (() => {
                 try {
+                    const stage = document.querySelector('.stage');
                     pixiApp = new PIXI.Application();
-                    
-                    await pixiApp.init({
+                    pixiApp.init({
                         width: W,
                         height: H,
                         backgroundAlpha: 0,
                         antialias: true,
                         resolution: window.devicePixelRatio || 1,
                         autoDensity: true
+                    }).then(() => {
+                        pixiApp.canvas.style.position = 'absolute';
+                        pixiApp.canvas.style.top = '0';
+                        pixiApp.canvas.style.left = '0';
+                        pixiApp.canvas.style.pointerEvents = 'none';
+                        pixiApp.canvas.style.width = '100%';
+                        pixiApp.canvas.style.height = '100%';
+                        pixiApp.canvas.style.zIndex = '2';
+                        stage.appendChild(pixiApp.canvas);
+
+                        // Create containers for layering
+                        particleContainer = new PIXI.Container();
+                        bulletContainer = new PIXI.Container();
+                        cubeBurglarContainer = new PIXI.Container();
+                        
+                        pixiApp.stage.addChild(particleContainer);
+                        pixiApp.stage.addChild(bulletContainer);
+                        pixiApp.stage.addChild(cubeBurglarContainer);
+
+                        console.log('✅ PixiJS initialized for bullet rendering');
                     });
-
-                    // Insert Pixi canvas as overlay
-                    pixiApp.canvas.style.position = 'absolute';
-                    pixiApp.canvas.style.top = '0';
-                    pixiApp.canvas.style.left = '0';
-                    pixiApp.canvas.style.pointerEvents = 'none';
-                    pixiApp.canvas.style.width = '100%';
-                    pixiApp.canvas.style.height = '100%';
-                    stage.appendChild(pixiApp.canvas);
-
-                    // Create containers for layering
-                    particleContainer = new PIXI.Container();
-                    bulletContainer = new PIXI.Container();
-                    cubeBurglarContainer = new PIXI.Container();
-                    
-                    pixiApp.stage.addChild(particleContainer);
-                    pixiApp.stage.addChild(bulletContainer);
-                    pixiApp.stage.addChild(cubeBurglarContainer);
-
-                    console.log('✅ PixiJS initialized for bullet rendering');
                 } catch (err) {
                     console.error('❌ Failed to initialize PixiJS:', err);
                 }
             })();
+
+            // --- MAIN CANVAS SETUP ---
+            const cvs = document.createElement('canvas');
+            cvs.width = W;
+            cvs.height = H;
+            cvs.style.position = 'absolute';
+            cvs.style.top = '0';
+            cvs.style.left = '0';
+            cvs.style.width = '100%';
+            cvs.style.height = '100%';
+            cvs.style.zIndex = '1';
+            document.querySelector('.stage').appendChild(cvs);
+            const ctx = cvs.getContext('2d');
+            
+            // Mouse input tracking
+            const mouse = { x: W / 2, y: H / 2 };
 
             // Bullet texture factory
             function createBulletTextures() {
@@ -4860,12 +4819,12 @@
                     skin: 'default',
                     unlockedSkins: { default: true }
                 },
-                // Bullet element system (ice/poison/normal/split/alternate)
-                bulletElement: 'normal',
+                // Bullet element system (ice/poison/fire toggles)
                 hasIceBullets: false,
                 hasPoisonBullets: false,
                 hasFireBullets: false,
-                bulletElementVolleyCount: 0 // For alternating mode
+                bulletElementToggles: { ice: false, poison: false, fire: false },
+                bulletElementCycleIndex: 0
             };
 
             class Pool {
@@ -4938,16 +4897,71 @@
             const bulletPool = new Pool(createBullet, resetBulletState);
             bulletPool.prefill(100);
 
-            function getAvailableBulletElements(player) {
-                const modes = ['normal'];
-                if (!player) return modes;
-                if (player.hasIceBullets) modes.push('ice');
-                if (player.hasPoisonBullets) modes.push('poison');
-                if (player.hasFireBullets) modes.push('fire');
-                if (player.hasIceBullets && player.hasPoisonBullets) {
-                    modes.push('split', 'alternate');
+            function ensureBulletElementState(player) {
+                if (!player) return;
+                if (!player.bulletElementToggles) {
+                    player.bulletElementToggles = { ice: false, poison: false, fire: false };
+                } else {
+                    const toggles = player.bulletElementToggles;
+                    if (typeof toggles.ice !== 'boolean') toggles.ice = !!toggles.ice;
+                    if (typeof toggles.poison !== 'boolean') toggles.poison = !!toggles.poison;
+                    if (typeof toggles.fire !== 'boolean') toggles.fire = !!toggles.fire;
                 }
-                return modes;
+                if (!Number.isFinite(player.bulletElementCycleIndex)) {
+                    player.bulletElementCycleIndex = 0;
+                }
+            }
+
+            function getUnlockedBulletElements(player) {
+                if (!player) return [];
+                ensureBulletElementState(player);
+                const unlocked = [];
+                if (player.hasIceBullets) unlocked.push('ice');
+                if (player.hasPoisonBullets) unlocked.push('poison');
+                if (player.hasFireBullets) unlocked.push('fire');
+                return unlocked;
+            }
+
+            function getActiveBulletElements(player) {
+                if (!player) return [];
+                ensureBulletElementState(player);
+                const toggles = player.bulletElementToggles;
+                return getUnlockedBulletElements(player).filter(element => !!toggles[element]);
+            }
+
+            function setBulletElementToggle(player, element, enabled) {
+                if (!player) return;
+                ensureBulletElementState(player);
+                const unlocked = getUnlockedBulletElements(player);
+                if (!unlocked.includes(element)) return;
+                const toggles = player.bulletElementToggles;
+                const next = !!enabled;
+                if (toggles[element] === next) return;
+                toggles[element] = next;
+                resetBulletElementCycle(player);
+            }
+
+            function toggleBulletElement(player, element) {
+                if (!player) return;
+                ensureBulletElementState(player);
+                const unlocked = getUnlockedBulletElements(player);
+                if (!unlocked.includes(element)) return;
+                player.bulletElementToggles[element] = !player.bulletElementToggles[element];
+                resetBulletElementCycle(player);
+            }
+
+            function resetBulletElementCycle(player) {
+                if (!player) return;
+                player.bulletElementCycleIndex = 0;
+            }
+
+            function activateBulletElementIfNone(player, element) {
+                if (!player) return;
+                ensureBulletElementState(player);
+                const toggles = player.bulletElementToggles;
+                if (!toggles.ice && !toggles.poison && !toggles.fire) {
+                    setBulletElementToggle(player, element, true);
+                }
             }
 
             const STAR_CANNON_BASE_COOLDOWN = 7;
@@ -5649,6 +5663,21 @@
                 telemetryEnabled: initialTelemetryEnabled
             };
 
+            window.__voidDebug = {
+                get store() {
+                    return store;
+                },
+                countBullets() {
+                    return Array.isArray(store?.bullets) ? store.bullets.length : null;
+                },
+                countBulletSprites() {
+                    return activeBulletSprites?.size ?? null;
+                },
+                countPooledSprites() {
+                    return bulletSpritePool?.length ?? null;
+                }
+            };
+
             function getActiveAutoForgeProfileId() {
                 const worldId = store?.world?.autoForgeProfileId;
                 if (worldId && AUTO_FORGE_PROFILE_MAP.has(worldId)) {
@@ -5790,25 +5819,19 @@
                 if (presetElement) {
                     bullet.element = presetElement;
                 } else {
-                    let elementMode = player ? (player.bulletElement || 'normal') : 'normal';
-                    const availableElements = getAvailableBulletElements(player);
-                    if (!availableElements.includes(elementMode)) {
-                        elementMode = availableElements[0] || 'normal';
+                    const activeElements = getActiveBulletElements(player);
+                    let elementMode = 'normal';
+                    if (activeElements.length === 1) {
+                        elementMode = activeElements[0];
+                    } else if (activeElements.length > 1) {
+                        ensureBulletElementState(player);
+                        const idx = player ? (player.bulletElementCycleIndex || 0) : 0;
+                        elementMode = activeElements[idx % activeElements.length];
                         if (player) {
-                            player.bulletElement = elementMode;
+                            player.bulletElementCycleIndex = (idx + 1) % activeElements.length;
                         }
                     }
-                    if (elementMode === 'split') {
-                        // Split mode: left half ice, right half poison
-                        const bulletX = Number.isFinite(bullet.x) ? bullet.x : (props.x ?? 0);
-                        bullet.element = (bulletX < W / 2) ? 'ice' : 'poison';
-                    } else if (elementMode === 'alternate') {
-                        // Alternate mode: alternate volleys between ice and poison
-                        bullet.element = (player.bulletElementVolleyCount % 2 === 0) ? 'ice' : 'poison';
-                    } else {
-                        // Normal, ice, or poison - use directly
-                        bullet.element = elementMode;
-                    }
+                    bullet.element = elementMode;
                 }
                 if ('presetElement' in bullet) {
                     delete bullet.presetElement;
@@ -6421,6 +6444,12 @@
                             sourceAttackModule: 'ember',
                             championLevel: level
                         });
+                        spawnDotDamageText(target, tickDamage, {
+                            color: '#ffb66b',
+                            riseSpeed: 32,
+                            jitter: 6,
+                            scale: 0.95
+                        });
                     } else {
                         break;
                     }
@@ -6844,6 +6873,7 @@
                 }
 
                 // Handle poison bullets - damage over time with stacking
+                let pendingPoison = null;
                 if (b.element === 'poison') {
                     // Track poison stacks (max 3)
                     e.poisonStacks = Math.min(3, (e.poisonStacks || 0) + 1);
@@ -6851,8 +6881,10 @@
                     
                     // Calculate total damage: 10% per stack over 3 seconds, but only 75% effective on bosses
                     const bossReduction = e.isBoss ? 0.75 : 1.0;
-                    const damagePerStack = b.dmg * 0.1 * bossReduction;
-                    e.poisonDamagePerStack = damagePerStack;
+                    pendingPoison = {
+                        bossReduction,
+                        baseDamage: b.dmg || 0
+                    };
                     e.poisonTickInterval = 0.1;
                     e.poisonLastTick = 0;
                 }
@@ -6904,6 +6936,7 @@
                 let impactPoint = null;
                 let skipDefaultDamage = false;
                 let skipDefaultDeathHandling = false;
+                let actualDamageApplied = 0;
                 if (e === store.boss && b.isDrone) dmg *= 0.4;
 
                 if (Math.random() < store.player.critChance) {
@@ -6960,6 +6993,7 @@
                         return;
                     }
                     dmg = cubeResult.damageApplied;
+                    actualDamageApplied = cubeResult.damageApplied;
                     if (cubeResult.impactPoint) {
                         impactPoint = cubeResult.impactPoint;
                     }
@@ -7003,11 +7037,22 @@
                     }
                     const bossDamageResult = applyBossDamage(e, dmg, bossOptions);
                     dmg = bossDamageResult.amount;
+                    actualDamageApplied = bossDamageResult.amount;
                 } else if (!skipDefaultDamage) {
+                    const prevHp = e.hp;
                     e.hp -= dmg;
+                    actualDamageApplied = Math.max(0, prevHp - e.hp);
                     // Mark hunter as just hit for gang abilities (Crimson Vipers lunge)
                     if (e.type === 'hunter' && e.gang && e.gang.ability === 'lunge') {
                         e.wasJustHit = true;
+                    }
+                }
+
+                if (pendingPoison) {
+                    const baseForPoison = Math.max(actualDamageApplied, pendingPoison.baseDamage);
+                    const damagePerStack = baseForPoison * 0.1 * pendingPoison.bossReduction;
+                    if (damagePerStack > 0) {
+                        e.poisonDamagePerStack = damagePerStack;
                     }
                 }
 
@@ -8385,9 +8430,7 @@
                     apply: () => { 
                         if (!store.player.hasIceBullets) {
                             store.player.hasIceBullets = true;
-                            if (!store.player.bulletElement || store.player.bulletElement === 'normal') {
-                                store.player.bulletElement = 'ice';
-                            }
+                            activateBulletElementIfNone(store.player, 'ice');
                             announce('❄️ Ice bullets unlocked! Slow enemies on impact.');
                             playSound('powerup');
                             return true; 
@@ -8406,9 +8449,7 @@
                     apply: () => { 
                         if (!store.player.hasPoisonBullets) {
                             store.player.hasPoisonBullets = true;
-                            if (!store.player.bulletElement || store.player.bulletElement === 'normal') {
-                                store.player.bulletElement = 'poison';
-                            }
+                            activateBulletElementIfNone(store.player, 'poison');
                             announce('☠️ Poison bullets unlocked! Damage enemies over time.');
                             playSound('powerup');
                             return true; 
@@ -8427,9 +8468,7 @@
                     apply: () => {
                         if (!store.player.hasFireBullets) {
                             store.player.hasFireBullets = true;
-                            if (!store.player.bulletElement || store.player.bulletElement === 'normal') {
-                                store.player.bulletElement = 'fire';
-                            }
+                            activateBulletElementIfNone(store.player, 'fire');
                             announce('🔥 Fire bullets unlocked! Ignite enemies with escalating burn.');
                             playSound('powerup');
                             return true;
@@ -13816,42 +13855,44 @@
                 }
 
                 // Check for bullet element toggle orb hover
-                if (store.bulletToggleOrbPos && store.player) {
-                    const orbPos = store.bulletToggleOrbPos;
+                if (store.bulletToggleOrbs && store.player) {
                     const playerX = store.player.x;
                     const playerY = store.player.y;
-                    const dx = playerX - orbPos.x;
-                    const dy = playerY - orbPos.y;
-                    const distToOrb = Math.sqrt(dx * dx + dy * dy);
-                    const hoverRadius = orbPos.radius + 15; // Slightly larger than visual radius for easier targeting
-
-                    // Check if player is hovering over orb
-                    if (distToOrb <= hoverRadius) {
-                        const cycleOptions = getAvailableBulletElements(store.player);
-                        if (cycleOptions.length > 1) {
-                            if (!store.bulletToggleHovering) {
-                                store.bulletToggleHovering = true;
-                                store.bulletToggleHoverTime = 0;
-                            }
-                            store.bulletToggleHoverTime += dt;
-
-                            if (store.bulletToggleHoverTime >= 0.5) {
-                                const currentIndex = Math.max(0, cycleOptions.indexOf(store.player.bulletElement));
-                                const nextIndex = (currentIndex + 1) % cycleOptions.length;
-                                const nextElement = cycleOptions[nextIndex];
-                                store.player.bulletElement = nextElement;
-                                if (nextElement === 'alternate') {
-                                    store.player.bulletElementVolleyCount = 0;
-                                }
+                    const hoverMargin = 15;
+                    const toggleDelay = 0.45;
+                    if (!store.bulletToggleHoverTimers) {
+                        store.bulletToggleHoverTimers = { ice: 0, poison: 0, fire: 0 };
+                    }
+                    const timers = store.bulletToggleHoverTimers;
+                    for (const orb of store.bulletToggleOrbs) {
+                        if (!orb || !orb.element) continue;
+                        const key = orb.element;
+                        if (!orb.active) {
+                            timers[key] = 0;
+                            continue;
+                        }
+                        const dx = playerX - orb.x;
+                        const dy = playerY - orb.y;
+                        const distToOrb = Math.hypot(dx, dy);
+                        if (distToOrb <= orb.radius + hoverMargin) {
+                            timers[key] = Math.min(timers[key] + dt, toggleDelay + 0.3);
+                            if (timers[key] >= toggleDelay) {
+                                toggleBulletElement(store.player, key);
                                 playSound('stargun');
-                                store.bulletToggleHoverTime = 0;
+                                timers[key] = -0.35; // brief cooldown before another toggle
+                            }
+                        } else {
+                            if (timers[key] > 0) {
+                                timers[key] = Math.max(0, timers[key] - dt * 2);
+                            } else if (timers[key] < 0) {
+                                timers[key] = Math.min(0, timers[key] + dt);
                             }
                         }
-                    } else {
-                        // No longer hovering - reset state
-                        store.bulletToggleHovering = false;
-                        store.bulletToggleHoverTime = 0;
                     }
+                } else if (store.bulletToggleHoverTimers) {
+                    store.bulletToggleHoverTimers.ice = 0;
+                    store.bulletToggleHoverTimers.poison = 0;
+                    store.bulletToggleHoverTimers.fire = 0;
                 }
 
                 stepPowerups(dt);
@@ -14362,6 +14403,12 @@
                             e.hp -= appliedBurn;
                             e.jugBurnTick = 0.45;
                             store.activeEffects.push(createEffect('jugFearEmber', e.x, e.y, e.r || 20));
+                            spawnDotDamageText(e, appliedBurn, {
+                                color: '#ff995c',
+                                jitter: 4,
+                                riseSpeed: 30,
+                                scale: 0.9
+                            });
                         }
                     }
 
@@ -14385,7 +14432,12 @@
                             const appliedPoison = Math.min(poisonDamage, Math.max(0, e.hp - lethalFloor));
                             e.hp -= appliedPoison;
                             e.poisonLastTick = e.poisonTickInterval || 0.1;
-                            store.activeEffects.push(createEffect('poisonCloud', e.x, e.y, e.r || 16));
+                            spawnDotDamageText(e, appliedPoison, {
+                                color: '#48ff9a',
+                                jitter: 5,
+                                riseSpeed: 26,
+                                scale: 0.85
+                            });
                         }
                     }
 
@@ -14399,7 +14451,12 @@
                             const appliedPoison = Math.min(poisonDamage, Math.max(0, e.hp - lethalFloor));
                             e.hp -= appliedPoison;
                             e.poisonDot.lastTick = e.poisonDot.tickInterval || 0.15;
-                            store.activeEffects.push(createEffect('poisonCloud', e.x, e.y, e.r || 16));
+                            spawnDotDamageText(e, appliedPoison, {
+                                color: '#48ff9a',
+                                jitter: 5,
+                                riseSpeed: 24,
+                                scale: 0.8
+                            });
                         }
                         if (e.poisonDot.duration <= 0) {
                             delete e.poisonDot;
@@ -14437,9 +14494,6 @@
                                         other.poisonTickInterval = 0.1;
                                         other.poisonDamagePerStack = e.poisonDamagePerStack || 2;
                                         
-                                        // Visual effect for poison spread
-                                        store.activeEffects.push(createEffect('poisonCloud', other.x, other.y, other.r || 16));
-                                        
                                         // Set cooldown to prevent immediate re-spread
                                         e.poisonSpreadCooldown = 0.5;
                                         break; // Only spread to one enemy per check
@@ -14448,9 +14502,6 @@
                                         other.poisonStacks = Math.min(3, other.poisonStacks + 1);
                                         other.poisonStackTimer = e.poisonStackTimer || 4; // Refresh timer
                                         other.poisonDamagePerStack = e.poisonDamagePerStack || 2;
-                                        
-                                        // Visual effect
-                                        store.activeEffects.push(createEffect('poisonCloud', other.x, other.y, other.r || 16));
                                         
                                         e.poisonSpreadCooldown = 0.5;
                                         break;
@@ -14476,6 +14527,12 @@
                                 if (delta > 0) {
                                     e.hp -= delta;
                                     burn.appliedDamage += delta;
+                                    spawnDotDamageText(e, delta, {
+                                        color: '#ff7a45',
+                                        jitter: 5,
+                                        riseSpeed: 34,
+                                        scale: 0.95
+                                    });
                                     if (burn.effectTimer <= 0) {
                                         store.activeEffects.push(createEffect('fireBurn', e.x, e.y, e.r || 18, { intensity: progress }));
                                         burn.effectTimer = 0.15;
@@ -19412,100 +19469,121 @@
 
             function drawBulletElementToggle() {
                 const p = store.player;
-                if (!p) return;
-                if (!p.hasIceBullets && !p.hasPoisonBullets && !p.hasFireBullets) return; // Don't draw if no elements unlocked
+                if (!p) {
+                    store.bulletToggleOrbs = null;
+                    return;
+                }
+                if (!p.hasIceBullets && !p.hasPoisonBullets && !p.hasFireBullets) {
+                    store.bulletToggleOrbs = null;
+                    return;
+                }
 
-                const orbX = 60;
-                const orbY = H - 60;
-                const orbRadius = 18;
+                ensureBulletElementState(p);
+                const toggles = p.bulletElementToggles;
 
-                const availableElements = getAvailableBulletElements(p);
+                const orbRadius = 17;
+                const spacing = 46;
+                const baseX = 70;
+                const orbY = H - 58;
+
+                const entries = [
+                    {
+                        element: 'ice',
+                        unlocked: p.hasIceBullets,
+                        colorOn: 'rgba(110, 190, 255, 0.92)',
+                        colorOff: 'rgba(160, 190, 220, 0.45)',
+                        glowOn: 'rgba(100, 210, 255, 0.5)',
+                        glowOff: 'rgba(200, 210, 230, 0.24)',
+                        label: '❄️'
+                    },
+                    {
+                        element: 'poison',
+                        unlocked: p.hasPoisonBullets,
+                        colorOn: 'rgba(120, 255, 140, 0.92)',
+                        colorOff: 'rgba(170, 210, 170, 0.45)',
+                        glowOn: 'rgba(140, 255, 170, 0.5)',
+                        glowOff: 'rgba(210, 230, 210, 0.24)',
+                        label: '☠️'
+                    },
+                    {
+                        element: 'fire',
+                        unlocked: p.hasFireBullets,
+                        colorOn: 'rgba(255, 150, 90, 0.92)',
+                        colorOff: 'rgba(215, 170, 150, 0.45)',
+                        glowOn: 'rgba(255, 160, 120, 0.5)',
+                        glowOff: 'rgba(220, 200, 190, 0.24)',
+                        label: '🔥'
+                    }
+                ];
 
                 ctx.save();
-
-                // Determine color based on active element
-                let orbColor, glowColor, orbLabel;
-                if (p.bulletElement === 'ice') {
-                    orbColor = 'rgba(100, 180, 255, 0.85)';
-                    glowColor = 'rgba(100, 200, 255, 0.5)';
-                    orbLabel = '❄️';
-                } else if (p.bulletElement === 'poison') {
-                    orbColor = 'rgba(100, 255, 100, 0.85)';
-                    glowColor = 'rgba(120, 255, 120, 0.5)';
-                    orbLabel = '☠️';
-                } else if (p.bulletElement === 'fire') {
-                    orbColor = 'rgba(255, 120, 70, 0.85)';
-                    glowColor = 'rgba(255, 140, 90, 0.5)';
-                    orbLabel = '🔥';
-                } else if (p.bulletElement === 'split') {
-                    orbColor = 'rgba(100, 220, 180, 0.85)';
-                    glowColor = 'rgba(100, 230, 180, 0.5)';
-                    orbLabel = '⚡';
-                } else if (p.bulletElement === 'alternate') {
-                    orbColor = 'rgba(180, 150, 255, 0.85)';
-                    glowColor = 'rgba(190, 160, 255, 0.5)';
-                    orbLabel = '🔄';
-                } else {
-                    orbColor = 'rgba(180, 180, 180, 0.6)';
-                    glowColor = 'rgba(200, 200, 200, 0.3)';
-                    orbLabel = '◉';
-                }
-
-                // Draw glow halo
-                ctx.fillStyle = glowColor;
-                ctx.beginPath();
-                ctx.arc(orbX, orbY, orbRadius + 8, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Draw main orb - special handling for split mode
-                if (p.bulletElement === 'split') {
-                    // Draw left half ice (blue)
-                    ctx.save();
-                    ctx.beginPath();
-                    ctx.arc(orbX, orbY, orbRadius, 0, Math.PI * 2);
-                    ctx.clip();
-                    ctx.fillStyle = 'rgba(100, 180, 255, 0.85)';
-                    ctx.fillRect(orbX - orbRadius, orbY - orbRadius, orbRadius, orbRadius * 2);
-                    // Draw right half poison (green)
-                    ctx.fillStyle = 'rgba(100, 255, 100, 0.85)';
-                    ctx.fillRect(orbX, orbY - orbRadius, orbRadius, orbRadius * 2);
-                    ctx.restore();
-                } else {
-                    // Normal gradient orb
-                    const gradient = ctx.createRadialGradient(orbX - 5, orbY - 5, 0, orbX, orbY, orbRadius);
-                    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.6)');
-                    gradient.addColorStop(1, orbColor);
-                    ctx.fillStyle = gradient;
-                    ctx.beginPath();
-                    ctx.arc(orbX, orbY, orbRadius, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-
-                // Draw outline
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(orbX, orbY, orbRadius, 0, Math.PI * 2);
-                ctx.stroke();
-
-                // Draw icon/text
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-                ctx.font = 'bold 16px Arial';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(orbLabel, orbX, orbY);
 
-                // Draw available elements indicator
-                if (availableElements.length > 1) {
-                    ctx.font = 'bold 8px Arial';
-                    ctx.fillStyle = 'rgba(255, 255, 150, 0.8)';
-                    ctx.fillText('(hover to switch)', orbX, orbY + orbRadius + 12);
+                const orbsForHover = [];
+                let unlockedCount = 0;
+
+                entries.forEach((entry, idx) => {
+                    const x = baseX + idx * spacing;
+                    const unlocked = entry.unlocked;
+                    const active = unlocked && !!toggles[entry.element];
+                    const glowColor = active ? entry.glowOn : entry.glowOff;
+                    const fillColor = active ? entry.colorOn : entry.colorOff;
+
+                    if (unlocked) unlockedCount++;
+
+                    // Glow halo
+                    ctx.fillStyle = glowColor;
+                    ctx.beginPath();
+                    ctx.arc(x, orbY, orbRadius + 7, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Orb body
+                    const gradient = ctx.createRadialGradient(x - 4, orbY - 5, 0, x, orbY, orbRadius);
+                    gradient.addColorStop(0, active ? 'rgba(255, 255, 255, 0.75)' : 'rgba(240, 240, 240, 0.5)');
+                    gradient.addColorStop(1, fillColor);
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(x, orbY, orbRadius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Outline
+                    ctx.strokeStyle = active ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.35)';
+                    ctx.lineWidth = active ? 2.4 : 1.6;
+                    ctx.beginPath();
+                    ctx.arc(x, orbY, orbRadius, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    // Label/icon
+                    ctx.font = unlocked ? 'bold 15px Arial' : 'bold 13px Arial';
+                    ctx.fillStyle = unlocked ? 'rgba(255, 255, 255, 0.92)' : 'rgba(210, 210, 210, 0.75)';
+                    const label = unlocked ? entry.label : '🔒';
+                    ctx.fillText(label, x, orbY);
+
+                    if (!unlocked) {
+                        ctx.font = 'bold 8px Arial';
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                        ctx.fillText('LOCKED', x, orbY + orbRadius + 8);
+                    }
+
+                    orbsForHover.push({ element: entry.element, x, y: orbY, radius: orbRadius, active: unlocked });
+                });
+
+                ctx.font = 'bold 9px Arial';
+                ctx.fillStyle = 'rgba(255, 255, 200, 0.9)';
+                const tipY = orbY + orbRadius + 16;
+                if (unlockedCount > 0) {
+                    const tip = 'Hover each orb to toggle your elemental mix';
+                    ctx.fillText(tip, baseX + spacing, tipY);
+                }
+                if (!toggles.ice && !toggles.poison && !toggles.fire) {
+                    ctx.fillStyle = 'rgba(220, 220, 220, 0.85)';
+                    ctx.fillText('All off = default ballistics', baseX + spacing, tipY + 12);
                 }
 
                 ctx.restore();
 
-                // Store orb position for hover detection
-                store.bulletToggleOrbPos = { x: orbX, y: orbY, radius: orbRadius };
+                store.bulletToggleOrbs = orbsForHover;
             }
 
 
@@ -20253,22 +20331,19 @@
                 const p = store.player;
                 if (p.beefChargeState && p.beefChargeState !== 'ready') return;
                 
-                // Increment volley counter for alternate mode
-                if (p.bulletElement === 'alternate') {
-                    p.bulletElementVolleyCount = (p.bulletElementVolleyCount || 0) + 1;
-                }
-                
                 // STANDARD MULTISHOT FIRING
+                const activeElements = getActiveBulletElements(p);
+                const fireOnly = activeElements.length === 1 && activeElements[0] === 'fire';
                 const baseBulletSpeed = 420;
                 const bulletSpeed = baseBulletSpeed;
                 const baseMultishot = Number.isFinite(p.multishot) ? p.multishot : 2;
                 const cheatMultishot = Number.isFinite(p.cheatMultishotBonus) ? p.cheatMultishotBonus : 0;
                 const totalMultishot = Math.max(1, baseMultishot + cheatMultishot);
                 let angleSpread = 10;
-                if (p.bulletElement === 'fire') {
+                if (fireOnly) {
                     angleSpread = 6;
                 }
-                const bulletColor = p.bulletElement === 'fire' ? '#ff5533' : getBulletColorForSubclass();
+                const bulletColor = fireOnly ? '#ff5533' : getBulletColorForSubclass();
                 for (let i = 0; i < totalMultishot; i++) {
                     const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180;
                     spawnBullet({
@@ -30091,47 +30166,93 @@
 
                 } else { const time = performance.now() / 1000; ctx.fillStyle = '#2c2c54'; ctx.strokeStyle = '#40407a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, t.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#706fd3'; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.8, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#f0932b'; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.3, 0, Math.PI * 2); ctx.fill(); for (let i = 0; i < 6; i++) { ctx.save(); ctx.rotate(i * Math.PI / 3 + time * 0.3); ctx.translate(t.r * 0.6, 0); ctx.fillStyle = '#ff6348'; ctx.strokeStyle = '#2f3542'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.15, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore(); } const eyeSize = t.r * 0.12; ctx.fillStyle = '#ff3838'; ctx.beginPath(); ctx.arc(-t.r * 0.2, -t.r * 0.15, eyeSize, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(t.r * 0.2, -t.r * 0.15, eyeSize, 0, Math.PI * 2); ctx.fill(); for (let i = 0; i < 4; i++) { ctx.save(); ctx.rotate(i * Math.PI / 2 + time * -0.5); ctx.translate(t.r * 0.9, 0); ctx.fillStyle = '#3c6382'; ctx.strokeStyle = '#40407a'; ctx.lineWidth = 2; ctx.fillRect(-t.r * 0.08, -t.r * 0.06, t.r * 0.16, t.r * 0.12); ctx.strokeRect(-t.r * 0.08, -t.r * 0.06, t.r * 0.16, t.r * 0.12); ctx.restore(); } }
                 
-                // Draw poison status effect (green glowing aura with bubbles)
+                // Draw poison status effect (sickly tint + wobble + bubbles)
                 if (t.poisonStacks && t.poisonStacks > 0) {
                     ctx.save();
-                    const poisonPulse = 0.6 + 0.4 * Math.cos(performance.now() / 400);
-                    const poisonAlpha = 0.5 * poisonPulse;
-                    
-                    // Outer glow ring
-                    ctx.globalAlpha = poisonAlpha * 0.4;
-                    ctx.strokeStyle = '#00ff66';
-                    ctx.lineWidth = 2.5;
-                    ctx.beginPath();
-                    ctx.arc(0, 0, t.r * (1.3 + t.poisonStacks * 0.15), 0, Math.PI * 2);
-                    ctx.stroke();
-                    
-                    // Inner glow ring
-                    ctx.globalAlpha = poisonAlpha * 0.7;
-                    ctx.strokeStyle = '#00ff66';
-                    ctx.lineWidth = 1.5;
-                    ctx.beginPath();
-                    ctx.arc(0, 0, t.r * (1.1 + t.poisonStacks * 0.1), 0, Math.PI * 2);
-                    ctx.stroke();
-                    
-                    // Poison bubbles around boss (increases with stacks)
-                    ctx.globalAlpha = 0.6;
-                    const bubbleCount = 4 + (t.poisonStacks * 2); // 4, 6, 8 bubbles for stacks 1, 2, 3
                     const time = performance.now() / 1000;
+                    const intensity = Math.min(t.poisonStacks / 3, 1);
+                    const pulse = 0.85 + 0.15 * Math.sin(time * 3.1 + (t.id || 0));
+                    const wobble = Math.sin(time * 4 + (t.id || 0) * 0.33) * t.r * (0.06 + intensity * 0.04);
+                    const mistRadius = t.r * (1.24 + intensity * 0.38);
+
+                    // Slight wobble so the target looks unsteady
+                    ctx.translate(Math.sin(time * 2.5 + (t.id || 0)) * wobble * 0.6, Math.cos(time * 2.1 + (t.id || 0)) * wobble * 0.4);
+                    ctx.rotate(Math.sin(time * 1.7 + (t.id || 0)) * 0.04 * (0.6 + intensity * 0.6));
+
+                    // Sickly green tint hugging the body
+                    ctx.globalCompositeOperation = 'source-over';
+                    ctx.globalAlpha = 0.28 + intensity * 0.32;
+                    const sickTint = ctx.createRadialGradient(0, 0, t.r * 0.2, 0, 0, mistRadius * 0.85);
+                    sickTint.addColorStop(0, 'rgba(120, 255, 160, 0.8)');
+                    sickTint.addColorStop(0.55, 'rgba(70, 185, 90, 0.65)');
+                    sickTint.addColorStop(1, 'rgba(20, 75, 30, 0)');
+                    ctx.fillStyle = sickTint;
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, mistRadius * (0.82 + 0.08 * pulse), mistRadius * (0.78 + 0.1 * Math.sin(time * 2.8 + pulse)), 0, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Pulsing poisonous mist
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.globalAlpha = 0.35 + intensity * 0.38;
+                    const baseMist = ctx.createRadialGradient(0, 0, mistRadius * 0.2, 0, 0, mistRadius * 1.08);
+                    baseMist.addColorStop(0, 'rgba(160, 255, 210, 0.9)');
+                    baseMist.addColorStop(0.5, 'rgba(60, 235, 140, 0.55)');
+                    baseMist.addColorStop(1, 'rgba(15, 120, 45, 0)');
+                    ctx.fillStyle = baseMist;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, mistRadius * (0.95 + 0.12 * pulse), 0, Math.PI * 2);
+                    ctx.fill();
+
+                    const swirlCount = 5 + Math.floor(intensity * 3);
+                    ctx.globalAlpha = 0.22 + intensity * 0.3;
+                    for (let i = 0; i < swirlCount; i++) {
+                        const swirlAngle = time * (1.3 + intensity * 0.6) + i * (Math.PI * 2 / swirlCount);
+                        const offset = Math.sin(time * 1.8 + i) * t.r * (0.26 + intensity * 0.14);
+                        ctx.save();
+                        ctx.rotate(swirlAngle);
+                        const swirlLength = mistRadius * (0.55 + Math.sin(time * 2.4 + i) * 0.12);
+                        const swirlWidth = mistRadius * (0.3 + intensity * 0.14);
+                        ctx.translate(offset, 0);
+                        ctx.beginPath();
+                        ctx.ellipse(0, 0, swirlLength, swirlWidth * 0.45, 0, 0, Math.PI * 2);
+                        ctx.fillStyle = 'rgba(90, 255, 170, 0.85)';
+                        ctx.fill();
+                        ctx.restore();
+                    }
+
+                    // Green bubbles bubbling up from the target
+                    const bubbleCount = 4 + Math.floor(intensity * 4);
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.globalAlpha = 0.55;
                     for (let i = 0; i < bubbleCount; i++) {
-                        const angle = (i / bubbleCount) * Math.PI * 2 + time;
-                        const radius = t.r * (1.2 + Math.sin(time * 2 + i) * 0.3);
-                        const bubbleX = Math.cos(angle) * radius;
-                        const bubbleY = Math.sin(angle) * radius;
-                        const bubbleSize = 2 + Math.sin(time * 3 + i) * 1.5;
-                        ctx.fillStyle = '#00ff66';
+                        const progress = (time * (0.45 + intensity * 0.45) + i * 0.37 + (t.id || 0) * 0.11) % 1;
+                        const bubbleX = Math.sin(progress * Math.PI * 2 + i) * t.r * (0.35 + intensity * 0.25);
+                        const bubbleY = -t.r * (0.4 + progress * (0.7 + intensity * 0.4));
+                        const bubbleSize = t.r * (0.08 + intensity * 0.05 + progress * 0.04);
+                        const bubbleGlow = ctx.createRadialGradient(bubbleX, bubbleY, 0, bubbleX, bubbleY, bubbleSize * 1.6);
+                        bubbleGlow.addColorStop(0, 'rgba(190, 255, 210, 0.9)');
+                        bubbleGlow.addColorStop(0.6, 'rgba(110, 255, 150, 0.45)');
+                        bubbleGlow.addColorStop(1, 'rgba(0, 120, 40, 0)');
+                        ctx.fillStyle = bubbleGlow;
+                        ctx.beginPath();
+                        ctx.arc(bubbleX, bubbleY, bubbleSize * 1.4, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.fillStyle = 'rgba(190, 255, 220, 0.8)';
                         ctx.beginPath();
                         ctx.arc(bubbleX, bubbleY, bubbleSize, 0, Math.PI * 2);
                         ctx.fill();
-                        ctx.strokeStyle = 'rgba(0, 255, 100, 0.8)';
-                        ctx.lineWidth = 0.5;
-                        ctx.stroke();
                     }
-                    
+
+                    if (t.poisonStacks > 1) {
+                        ctx.globalCompositeOperation = 'source-over';
+                        ctx.globalAlpha = 0.7 + intensity * 0.25;
+                        ctx.fillStyle = '#7dff9b';
+                        ctx.font = 'bold 11px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(t.poisonStacks, 0, mistRadius * 0.85);
+                    }
+
                     ctx.restore();
                 }
                 
@@ -31746,57 +31867,53 @@
                     ctx.restore();
                 }
                 
-                // Draw poison damage indicator (green glowing circle)
+                // Draw poison status effect (green mist)
                 if (e.poisonStacks && e.poisonStacks > 0) {
                     ctx.save();
-                    const poisonPulse = 0.6 + 0.4 * Math.sin(performance.now() / 300);
-                    const poisonAlpha = 0.5 * poisonPulse;
-                    
-                    // Outer glow ring
-                    ctx.globalAlpha = poisonAlpha * 0.4;
-                    ctx.strokeStyle = '#00dd44';
-                    ctx.lineWidth = 2.5;
-                    ctx.beginPath();
-                    ctx.arc(0, 0, a * (1.3 + e.poisonStacks * 0.15), 0, Math.PI * 2);
-                    ctx.stroke();
-                    
-                    // Inner glow ring
-                    ctx.globalAlpha = poisonAlpha * 0.7;
-                    ctx.strokeStyle = '#00ff66';
-                    ctx.lineWidth = 1.5;
-                    ctx.beginPath();
-                    ctx.arc(0, 0, a * (1.1 + e.poisonStacks * 0.1), 0, Math.PI * 2);
-                    ctx.stroke();
-                    
-                    // Poison bubbles around enemy (increases with stacks)
-                    ctx.globalAlpha = 0.6;
-                    const bubbleCount = 4 + (e.poisonStacks * 2); // 4, 6, 8 bubbles for stacks 1, 2, 3
                     const time = performance.now() / 1000;
-                    for (let i = 0; i < bubbleCount; i++) {
-                        const angle = (i / bubbleCount) * Math.PI * 2 + time;
-                        const radius = a * (1.2 + Math.sin(time * 2 + i) * 0.3);
-                        const bubbleX = Math.cos(angle) * radius;
-                        const bubbleY = Math.sin(angle) * radius;
-                        const bubbleSize = 2 + Math.sin(time * 3 + i) * 1.5;
-                        ctx.fillStyle = '#00ff66';
+                    const intensity = Math.min(e.poisonStacks / 3, 1);
+                    const phaseSeed = (e.id || 0) * 0.23;
+                    const pulse = 0.85 + 0.15 * Math.sin(time * 3.2 + phaseSeed);
+                    const mistRadius = a * (1.15 + intensity * 0.35);
+
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.globalAlpha = 0.3 + intensity * 0.4;
+                    const baseMist = ctx.createRadialGradient(0, 0, mistRadius * 0.25, 0, 0, mistRadius * 1.12);
+                    baseMist.addColorStop(0, 'rgba(150, 255, 200, 0.88)');
+                    baseMist.addColorStop(0.5, 'rgba(70, 235, 140, 0.55)');
+                    baseMist.addColorStop(1, 'rgba(15, 110, 45, 0)');
+                    ctx.fillStyle = baseMist;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, mistRadius * (0.95 + 0.1 * pulse), 0, Math.PI * 2);
+                    ctx.fill();
+
+                    const swirlCount = 5 + Math.floor(intensity * 3);
+                    ctx.globalAlpha = 0.22 + intensity * 0.28;
+                    for (let i = 0; i < swirlCount; i++) {
+                        const swirlAngle = time * (1.25 + intensity * 0.55) + phaseSeed + i * (Math.PI * 2 / swirlCount);
+                        const offset = Math.sin(time * 1.8 + i + phaseSeed) * a * (0.24 + intensity * 0.1);
+                        ctx.save();
+                        ctx.rotate(swirlAngle);
+                        const swirlLength = mistRadius * (0.5 + Math.sin(time * 2.2 + i) * 0.14);
+                        const swirlWidth = mistRadius * (0.26 + intensity * 0.12);
+                        ctx.translate(offset, 0);
                         ctx.beginPath();
-                        ctx.arc(bubbleX, bubbleY, bubbleSize, 0, Math.PI * 2);
+                        ctx.ellipse(0, 0, swirlLength, swirlWidth * 0.5, 0, 0, Math.PI * 2);
+                        ctx.fillStyle = 'rgba(75, 255, 150, 0.85)';
                         ctx.fill();
-                        ctx.strokeStyle = 'rgba(0, 255, 100, 0.8)';
-                        ctx.lineWidth = 0.5;
-                        ctx.stroke();
+                        ctx.restore();
                     }
-                    
-                    // Stack indicator text
+
                     if (e.poisonStacks > 1) {
-                        ctx.globalAlpha = poisonAlpha;
-                        ctx.fillStyle = '#00ff66';
+                        ctx.globalCompositeOperation = 'source-over';
+                        ctx.globalAlpha = 0.65 + intensity * 0.25;
+                        ctx.fillStyle = '#7dff9b';
                         ctx.font = 'bold 10px Arial';
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'middle';
                         ctx.fillText(e.poisonStacks, 0, a + 12);
                     }
-                    
+
                     ctx.restore();
                 }
                 
@@ -31894,7 +32011,7 @@
                         effect.draw = function () {
                             const progress = 1 - (this.life / this.maxLife);
                             const intensity = Math.min(1, Math.max(0, this.opts.intensity ?? 0));
-                            const baseAlpha = 0.35 + intensity * 0.35;
+                            const baseAlpha = 0.38 + intensity * 0.37;
                             const flicker = 0.75 + Math.sin(performance.now() / 80) * 0.25;
                             const size = this.radius * (0.85 + progress * 0.4);
                             ctx.save();
@@ -31902,9 +32019,10 @@
                             ctx.globalCompositeOperation = 'lighter';
                             ctx.globalAlpha = baseAlpha * flicker;
                             const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, size);
-                            gradient.addColorStop(0, 'rgba(255, 235, 200, 0.95)');
-                            gradient.addColorStop(0.5, 'rgba(255, 150, 70, 0.7)');
-                            gradient.addColorStop(1, 'rgba(130, 30, 0, 0)');
+                            gradient.addColorStop(0, 'rgba(255, 118, 34, 0.95)');
+                            gradient.addColorStop(0.3, 'rgba(255, 86, 18, 0.88)');
+                            gradient.addColorStop(0.65, 'rgba(210, 28, 8, 0.62)');
+                            gradient.addColorStop(1, 'rgba(90, 5, 0, 0)');
                             ctx.fillStyle = gradient;
                             ctx.beginPath();
                             ctx.arc(0, 0, size, 0, Math.PI * 2);
@@ -33140,6 +33258,36 @@
                             ctx.restore();
                         };
                         break;
+                    case "dotDamage":
+                        effect.maxLife = opts.life ?? 0.55;
+                        effect.life = effect.maxLife;
+                        effect.text = opts.text || '';
+                        effect.color = opts.color || '#ffffff';
+                        effect.scale = opts.scale ?? 1;
+                        effect.vx = opts.driftX ?? 0;
+                        effect.vy = opts.riseSpeed ?? 42;
+                        effect.step = function (dt) {
+                            this.life -= dt;
+                            this.y -= this.vy * dt;
+                            this.x += this.vx * dt;
+                            this.vy = Math.max(14, this.vy - 60 * dt);
+                            this.vx *= 0.9;
+                            if (this.life <= 0) this.isActive = false;
+                        };
+                        effect.draw = function () {
+                            const remaining = Math.max(0, this.life / this.maxLife);
+                            ctx.save();
+                            ctx.globalAlpha = Math.pow(remaining, 0.8);
+                            ctx.fillStyle = this.color;
+                            ctx.font = `bold ${12 * this.scale}px Orbitron`;
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+                            ctx.shadowBlur = 6 * remaining;
+                            ctx.fillText(this.text, this.x, this.y);
+                            ctx.restore();
+                        };
+                        break;
                     case "critText":
                         effect.maxLife = 0.6;
                         effect.text = "CRITICAL!";
@@ -33284,6 +33432,39 @@
                         break;
                 }
                 return effect
+            }
+
+            function spawnDotDamageText(target, amount, options = {}) {
+                if (!target || !Number.isFinite(amount) || amount <= 0) return;
+                const opts = options || {};
+                const magnitude = Math.abs(amount);
+                let formatted;
+                if (magnitude >= 10) {
+                    formatted = Math.round(magnitude).toString();
+                } else if (magnitude >= 1) {
+                    formatted = magnitude.toFixed(1).replace(/\.0$/, '');
+                } else {
+                    formatted = magnitude.toFixed(2).replace(/0+$/, '').replace(/\.$/, '.0');
+                }
+                const text = `-${formatted}`;
+                const jitter = Number.isFinite(opts.jitter) ? opts.jitter : 8;
+                const riseSpeed = Number.isFinite(opts.riseSpeed) ? opts.riseSpeed : 38 + Math.random() * 12;
+                const driftX = Number.isFinite(opts.driftX) ? opts.driftX : (Math.random() - 0.5) * 22;
+                const scale = Number.isFinite(opts.scale) ? opts.scale : 1;
+                const life = Number.isFinite(opts.life) ? opts.life : 0.55;
+                const offsetX = (opts.offsetX || 0) + (Math.random() - 0.5) * jitter;
+                const offsetY = opts.offsetY || 0;
+                const color = opts.color || '#ffb347';
+                const baseX = (target.x ?? 0) + offsetX;
+                const baseY = (target.y ?? 0) - (target.r || 18) + offsetY;
+                store.activeEffects.push(createEffect('dotDamage', baseX, baseY, 0, {
+                    text,
+                    color,
+                    scale,
+                    riseSpeed,
+                    driftX,
+                    life
+                }));
             }
 
 
