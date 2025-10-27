@@ -3960,6 +3960,8 @@
                         pixiApp.canvas.style.zIndex = '2';
                         stage.appendChild(pixiApp.canvas);
 
+                        resizeGameSurfaces();
+
                         // Create containers for layering
                         particleContainer = new PIXI.Container();
                         bulletContainer = new PIXI.Container();
@@ -3988,6 +3990,177 @@
             cvs.style.zIndex = '1';
             document.querySelector('.stage').appendChild(cvs);
             const ctx = cvs.getContext('2d');
+            // High-DPI display management state
+            const stageElement = document.querySelector('.stage');
+            const MAX_DEVICE_SCALE = 3;
+            let cssScaleX = 1;
+            let cssScaleY = 1;
+            let canvasScaleX = 1;
+            let canvasScaleY = 1;
+            let shadowScaleX = 1;
+            let shadowScaleY = 1;
+            let shadowBlurScale = 1;
+            let storedShadowBlur = 0;
+            let storedShadowOffsetX = 0;
+            let storedShadowOffsetY = 0;
+
+            const contextProto = Object.getPrototypeOf(ctx);
+            const shadowBlurDescriptor = contextProto ? Object.getOwnPropertyDescriptor(contextProto, 'shadowBlur') : null;
+            const shadowOffsetXDescriptor = contextProto ? Object.getOwnPropertyDescriptor(contextProto, 'shadowOffsetX') : null;
+            const shadowOffsetYDescriptor = contextProto ? Object.getOwnPropertyDescriptor(contextProto, 'shadowOffsetY') : null;
+
+            let applyShadowScaling = () => {};
+            try {
+                // Intercept shadow properties so their magnitudes follow the CSS scaling ratio
+                if (shadowBlurDescriptor && shadowBlurDescriptor.configurable) {
+                    storedShadowBlur = shadowBlurDescriptor.get ? shadowBlurDescriptor.get.call(ctx) : 0;
+                    Object.defineProperty(ctx, 'shadowBlur', {
+                        get() { return storedShadowBlur; },
+                        set(value) {
+                            storedShadowBlur = Number.isFinite(value) ? value : 0;
+                            if (shadowBlurDescriptor.set) {
+                                shadowBlurDescriptor.set.call(ctx, storedShadowBlur * shadowBlurScale);
+                            }
+                        },
+                        configurable: true,
+                        enumerable: false
+                    });
+                }
+
+                if (shadowOffsetXDescriptor && shadowOffsetXDescriptor.configurable) {
+                    storedShadowOffsetX = shadowOffsetXDescriptor.get ? shadowOffsetXDescriptor.get.call(ctx) : 0;
+                    Object.defineProperty(ctx, 'shadowOffsetX', {
+                        get() { return storedShadowOffsetX; },
+                        set(value) {
+                            storedShadowOffsetX = Number.isFinite(value) ? value : 0;
+                            if (shadowOffsetXDescriptor.set) {
+                                shadowOffsetXDescriptor.set.call(ctx, storedShadowOffsetX * shadowScaleX);
+                            }
+                        },
+                        configurable: true,
+                        enumerable: false
+                    });
+                }
+
+                if (shadowOffsetYDescriptor && shadowOffsetYDescriptor.configurable) {
+                    storedShadowOffsetY = shadowOffsetYDescriptor.get ? shadowOffsetYDescriptor.get.call(ctx) : 0;
+                    Object.defineProperty(ctx, 'shadowOffsetY', {
+                        get() { return storedShadowOffsetY; },
+                        set(value) {
+                            storedShadowOffsetY = Number.isFinite(value) ? value : 0;
+                            if (shadowOffsetYDescriptor.set) {
+                                shadowOffsetYDescriptor.set.call(ctx, storedShadowOffsetY * shadowScaleY);
+                            }
+                        },
+                        configurable: true,
+                        enumerable: false
+                    });
+                }
+
+                applyShadowScaling = () => {
+                    if (shadowBlurDescriptor && shadowBlurDescriptor.set) {
+                        shadowBlurDescriptor.set.call(ctx, storedShadowBlur * shadowBlurScale);
+                    }
+                    if (shadowOffsetXDescriptor && shadowOffsetXDescriptor.set) {
+                        shadowOffsetXDescriptor.set.call(ctx, storedShadowOffsetX * shadowScaleX);
+                    }
+                    if (shadowOffsetYDescriptor && shadowOffsetYDescriptor.set) {
+                        shadowOffsetYDescriptor.set.call(ctx, storedShadowOffsetY * shadowScaleY);
+                    }
+                };
+            } catch (shadowHookError) {
+                applyShadowScaling = () => {};
+            }
+
+            const getEffectiveDevicePixelRatio = () => {
+                const raw = window.devicePixelRatio || 1;
+                return Math.min(MAX_DEVICE_SCALE, Math.max(1, raw));
+            };
+
+            // Scale the main canvas and Pixi renderer to match the viewport while preserving game coordinates
+            const resizeGameSurfaces = () => {
+                if (!stageElement) {
+                    cssScaleX = cssScaleY = canvasScaleX = canvasScaleY = 1;
+                    shadowScaleX = shadowScaleY = shadowBlurScale = 1;
+                    ctx.setTransform(1, 0, 0, 1, 0, 0);
+                    ctx.imageSmoothingEnabled = false;
+                    return;
+                }
+
+                const cssWidth = Math.max(1, stageElement.clientWidth || W);
+                const cssHeight = Math.max(1, stageElement.clientHeight || H);
+                const dpr = getEffectiveDevicePixelRatio();
+
+                cssScaleX = cssWidth / W;
+                cssScaleY = cssHeight / H;
+                canvasScaleX = Math.max(0.1, cssScaleX * dpr);
+                canvasScaleY = Math.max(0.1, cssScaleY * dpr);
+                shadowScaleX = Math.max(0.1, cssScaleX);
+                shadowScaleY = Math.max(0.1, cssScaleY);
+                shadowBlurScale = Math.sqrt(shadowScaleX * shadowScaleY);
+
+                const targetWidth = Math.round(W * canvasScaleX);
+                const targetHeight = Math.round(H * canvasScaleY);
+
+                if (cvs.width !== targetWidth || cvs.height !== targetHeight) {
+                    cvs.width = targetWidth;
+                    cvs.height = targetHeight;
+                }
+
+                cvs.style.width = `${cssWidth}px`;
+                cvs.style.height = `${cssHeight}px`;
+
+                ctx.setTransform(canvasScaleX, 0, 0, canvasScaleY, 0, 0);
+                ctx.imageSmoothingEnabled = false;
+                applyShadowScaling();
+
+                if (pixiApp && pixiApp.renderer) {
+                    const pixiResolution = Math.max(1, Math.max(cssScaleX, cssScaleY) * dpr);
+                    try {
+                        if (Math.abs((pixiApp.renderer.resolution || 1) - pixiResolution) > 0.01) {
+                            pixiApp.renderer.resolution = pixiResolution;
+                            if (typeof pixiApp.renderer.resize === 'function') {
+                                if (pixiApp.renderer.resize.length >= 2) {
+                                    pixiApp.renderer.resize(W, H);
+                                } else {
+                                    pixiApp.renderer.resize({ width: W, height: H });
+                                }
+                            }
+                        }
+                    } catch (pixiResolutionError) {
+                        // Ignore renderer resolution assignment errors
+                    }
+
+                    if (pixiApp.canvas) {
+                        pixiApp.canvas.style.width = `${cssWidth}px`;
+                        pixiApp.canvas.style.height = `${cssHeight}px`;
+                    }
+                }
+            };
+
+            // Re-evaluate scaling whenever the browser's device pixel ratio changes
+            resizeGameSurfaces();
+
+            // Poll for device pixel ratio changes that occur without resize/orientation events (multi-monitor setups)
+            let lastKnownDpr = getEffectiveDevicePixelRatio();
+            setInterval(() => {
+                const currentDpr = getEffectiveDevicePixelRatio();
+                if (Math.abs(currentDpr - lastKnownDpr) > 0.001) {
+                    lastKnownDpr = currentDpr;
+                    resizeGameSurfaces();
+                }
+            }, 750);
+
+            // Track stage element resizes that don't trigger window resize (e.g., UI overlays)
+            if (typeof ResizeObserver !== 'undefined' && stageElement) {
+                const stageObserver = new ResizeObserver(() => resizeGameSurfaces());
+                stageObserver.observe(stageElement);
+            }
+
+            // Fullscreen transitions adjust viewport metrics outside window resize events
+            document.addEventListener('fullscreenchange', resizeGameSurfaces);
+            // Device orientation flips can alter viewport metrics without a traditional resize
+            window.addEventListener('orientationchange', resizeGameSurfaces);
             
             // Mouse input tracking
             const mouse = { x: W / 2, y: H / 2 };
@@ -4075,41 +4248,58 @@
                 }
                 bulletTextures.fire = pixiApp.renderer.generateTexture(fireGraphics);
                 
-                // Lava blade (diamond/blade shape with gradient) - high res crisp version
+                // Lava blade (sharp cyberpunk electric blade) - high res crisp version
                 const lavaGraphics = new PIXI.Graphics();
-                const bladeHeight = 13.5; // Base size (will be scaled 1.5x for ~20px)
-                const bladeWidth = 6.8; // Base size
+                const bladeHeight = 16; // Longer and thinner for sharper look
+                const bladeWidth = 3.2; // Much thinner width
 
-                // Cyberpunk gradient: Plasma core → Neon magma → Miami haze
+                // Cyberpunk electric gradient: Neon cyan → Electric purple → Hot magenta → Bright white core
                 const gradient = new PIXI.FillGradient(0, -bladeHeight, 0, bladeHeight);
-                gradient.addColorStop(0, '#ff174f'); // Plasma core red
-                gradient.addColorStop(0.38, '#ff3f87'); // Neon magma pink
-                gradient.addColorStop(0.7, '#ff74d3'); // Miami haze blush
-                gradient.addColorStop(1, '#ffe3ff'); // Soft bloom
+                gradient.addColorStop(0, '#00ffff'); // Neon cyan tip
+                gradient.addColorStop(0.25, '#0ea5e9'); // Bright sky blue
+                gradient.addColorStop(0.5, '#a855f7'); // Electric purple center
+                gradient.addColorStop(0.75, '#ec4899'); // Hot magenta
+                gradient.addColorStop(1, '#fbbf24'); // Bright electric yellow
 
-                // Create blade shape
+                // Create sharp blade shape - elongated and thin
                 lavaGraphics.poly([
-                    { x: 0, y: -bladeHeight },
-                    { x: bladeWidth * 0.64, y: -bladeHeight * 0.06 },
-                    { x: 0, y: bladeHeight },
-                    { x: -bladeWidth * 0.64, y: -bladeHeight * 0.06 }
+                    { x: 0, y: -bladeHeight },           // Sharp tip
+                    { x: bladeWidth * 0.5, y: -bladeHeight * 0.15 },  // Right edge
+                    { x: bladeWidth * 0.4, y: bladeHeight * 0.3 },    // Right taper
+                    { x: 0, y: bladeHeight },            // Bottom point
+                    { x: -bladeWidth * 0.4, y: bladeHeight * 0.3 },   // Left taper
+                    { x: -bladeWidth * 0.5, y: -bladeHeight * 0.15 }  // Left edge
                 ]);
                 lavaGraphics.fill(gradient);
 
-                // Inner glow highlight for extra brightness
+                // Bright energy core - thin vertical line
+                const coreGradient = new PIXI.FillGradient(0, -bladeHeight * 0.8, 0, bladeHeight * 0.8);
+                coreGradient.addColorStop(0, '#ffffff'); // White hot core
+                coreGradient.addColorStop(0.5, '#00ffff'); // Cyan center
+                coreGradient.addColorStop(1, '#ffffff'); // White hot core
+                
                 lavaGraphics.poly([
-                    { x: 0, y: -bladeHeight * 0.72 },
-                    { x: bladeWidth * 0.32, y: -bladeHeight * 0.04 },
-                    { x: 0, y: bladeHeight * 0.78 },
-                    { x: -bladeWidth * 0.32, y: -bladeHeight * 0.04 }
+                    { x: 0, y: -bladeHeight * 0.85 },
+                    { x: bladeWidth * 0.12, y: -bladeHeight * 0.1 },
+                    { x: 0, y: bladeHeight * 0.85 },
+                    { x: -bladeWidth * 0.12, y: -bladeHeight * 0.1 }
                 ]);
-                lavaGraphics.fill({ color: 0xffc9ff, alpha: 0.55 });
+                lavaGraphics.fill(coreGradient);
 
-                // Outline strokes with neon accent and soft shadow
-                lavaGraphics.stroke({ width: 0.6, color: 'rgba(20, 0, 25, 0.55)' });
-                lavaGraphics.stroke({ width: 0.38, color: 'rgba(255, 80, 160, 0.85)' });
+                // Bright neon outline for cyberpunk glow
+                lavaGraphics.poly([
+                    { x: 0, y: -bladeHeight },
+                    { x: bladeWidth * 0.5, y: -bladeHeight * 0.15 },
+                    { x: bladeWidth * 0.4, y: bladeHeight * 0.3 },
+                    { x: 0, y: bladeHeight },
+                    { x: -bladeWidth * 0.4, y: bladeHeight * 0.3 },
+                    { x: -bladeWidth * 0.5, y: -bladeHeight * 0.15 },
+                    { x: 0, y: -bladeHeight }
+                ]);
+                lavaGraphics.stroke({ width: 1.2, color: '#00ffff', alpha: 0.9 }); // Bright cyan outline
+                lavaGraphics.stroke({ width: 0.5, color: '#ffffff', alpha: 0.7 }); // White glow edge
 
-                // Generate at higher resolution for crisp edges
+                // Generate at higher resolution for crisp sharp edges
                 bulletTextures.lavaBlade = pixiApp.renderer.generateTexture(lavaGraphics, {
                     resolution: 6,
                     scaleMode: PIXI.SCALE_MODES.LINEAR
@@ -4145,9 +4335,10 @@
                 
                 // Set texture based on bullet type
                 sprite.tint = 0xffffff;
+                sprite.alpha = 1.0; // Always reset alpha for all bullets
                 if (bullet.isLavaBlade && bulletTextures.lavaBlade) {
                     sprite.texture = bulletTextures.lavaBlade;
-                    sprite.scale.set(1.5); // Lava blades are bigger
+                    sprite.scale.set(1.2); // Smaller, sharper blades
                 } else if (bullet.element === 'ice' && bulletTextures.ice) {
                     sprite.texture = bulletTextures.ice;
                     sprite.scale.set(1);
@@ -4378,6 +4569,7 @@
 
             // Simple resize handling without bounds caching
             window.addEventListener('resize', () => {
+                resizeGameSurfaces();
                 // Mark joystick bounds for update too
                 if (typeof joystickState !== 'undefined') {
                     joystickState.boundsNeedUpdate = true;
@@ -18263,6 +18455,11 @@
                 frameCount++;
                 clearGradientCaches();
 
+                ctx.setTransform(canvasScaleX, 0, 0, canvasScaleY, 0, 0);
+                ctx.globalAlpha = 1;
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.imageSmoothingEnabled = false;
+
                 // Performance optimization: Use faster fill method and cache time calculation
                 ctx.fillStyle = '#050008';
                 ctx.fillRect(0, 0, W, H);
@@ -18459,8 +18656,11 @@
                                 alphaScale = 0.05;
                             }
                             
-                            sprite.scale.set(1.5 * sizeScale);
+                            sprite.scale.set(1.2 * sizeScale); // Smaller, sharper blades
                             sprite.alpha = alphaScale;
+                        } else {
+                            // Regular bullets: keep full alpha (no fade)
+                            sprite.alpha = 1.0;
                         }
                         
                         // Update particles
@@ -40292,7 +40492,7 @@
                 const desc = q('upgradePopupDesc');
                 const tier = q('upgradePopupTier');
                 
-                if (icon) icon.textContent = upgradeInfo.icon || '⚡';
+                if (icon) icon.innerHTML = upgradeInfo.icon || '⚡';
                 if (title) title.textContent = upgradeInfo.name || 'UPGRADE ACQUIRED';
                 if (desc) desc.textContent = upgradeInfo.desc || 'Enhancement applied to your systems.';
                 if (tier) {
