@@ -3269,10 +3269,181 @@
         input:checked+.slider:before {
             transform: translateX(22px);
         }
+
+        /* Loading Screen Styles */
+        #loadingScreen {
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            background: radial-gradient(ellipse at 50% 40%, #1a0033, #050008);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.5s ease-out;
+        }
+
+        #loadingScreen.loaded {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .loading-content {
+            text-align: center;
+            max-width: 600px;
+            padding: 20px;
+        }
+
+        .loading-logo {
+            font-family: 'Orbitron', 'Audiowide', ui-sans-serif;
+            font-size: clamp(32px, 6vw, 56px);
+            font-weight: 700;
+            color: #ff99cc;
+            text-shadow: 0 0 20px rgba(255, 153, 204, 0.6),
+                         0 0 40px rgba(178, 102, 255, 0.4);
+            margin-bottom: 40px;
+            animation: logoGlow 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes logoGlow {
+            from {
+                text-shadow: 0 0 20px rgba(255, 153, 204, 0.6),
+                             0 0 40px rgba(178, 102, 255, 0.4);
+            }
+            to {
+                text-shadow: 0 0 30px rgba(255, 153, 204, 0.9),
+                             0 0 60px rgba(178, 102, 255, 0.7),
+                             0 0 80px rgba(178, 102, 255, 0.5);
+            }
+        }
+
+        .loading-art-container {
+            width: 300px;
+            height: 300px;
+            margin: 0 auto 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .loading-art-placeholder {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, rgba(178, 102, 255, 0.3), rgba(255, 153, 204, 0.2));
+            border: 2px solid rgba(178, 102, 255, 0.5);
+            box-shadow: 0 0 40px rgba(178, 102, 255, 0.4),
+                        inset 0 0 40px rgba(178, 102, 255, 0.2);
+            animation: artPulse 3s ease-in-out infinite;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .loading-art-placeholder::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"%3E%3Cpath d="M100 40 L130 120 L70 120 Z" fill="rgba(255,153,204,0.3)" /%3E%3Ccircle cx="100" cy="100" r="20" fill="rgba(178,102,255,0.4)" /%3E%3C/svg%3E') center/contain no-repeat;
+            animation: artRotate 8s linear infinite;
+        }
+
+        @keyframes artPulse {
+            0%, 100% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.05); opacity: 1; }
+        }
+
+        @keyframes artRotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-progress {
+            width: 100%;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        .loading-bar-container {
+            height: 8px;
+            background: rgba(178, 102, 255, 0.2);
+            border: 1px solid rgba(178, 102, 255, 0.4);
+            border-radius: 999px;
+            overflow: hidden;
+            margin-bottom: 12px;
+            box-shadow: inset 0 0 10px rgba(178, 102, 255, 0.3);
+        }
+
+        .loading-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #b266ff, #ff99cc, #b266ff);
+            background-size: 200% 100%;
+            border-radius: 999px;
+            transition: width 0.3s ease-out;
+            animation: barShimmer 2s linear infinite;
+            box-shadow: 0 0 10px rgba(255, 153, 204, 0.6);
+        }
+
+        @keyframes barShimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        .loading-text {
+            font-family: 'Orbitron', 'Audiowide', ui-sans-serif;
+            font-size: 14px;
+            color: #c49cff;
+            letter-spacing: 0.1em;
+            margin-bottom: 8px;
+        }
+
+        .loading-details {
+            font-family: 'Orbitron', ui-sans-serif;
+            font-size: 11px;
+            color: rgba(196, 156, 255, 0.7);
+            letter-spacing: 0.05em;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(178, 102, 255, 0.3);
+            border-top-color: #ff99cc;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 
 <body>
+    <!-- Loading Screen -->
+    <div id="loadingScreen">
+        <div class="loading-content">
+            <div class="loading-logo">◢ VOID SKIES ◣</div>
+            
+            <div class="loading-art-container">
+                <!-- User can replace this with custom art image -->
+                <div class="loading-art-placeholder" id="loadingArt">
+                    <!-- Custom loading art goes here -->
+                </div>
+            </div>
+
+            <div class="loading-progress">
+                <div class="loading-text" id="loadingText">INITIALIZING SYSTEMS...</div>
+                <div class="loading-bar-container">
+                    <div class="loading-bar" id="loadingBar" style="width: 0%"></div>
+                </div>
+                <div class="loading-details" id="loadingDetails">0 / 0 assets loaded</div>
+            </div>
+        </div>
+    </div>
+
     <div id="wrap">
         <div>
             <div class="stage" id="stage">
@@ -4248,6 +4419,19 @@
                 }
                 bulletTextures.fire = pixiApp.renderer.generateTexture(fireGraphics);
                 
+                // Void bullet (inky orb with luminous violet edge)
+                const voidGraphics = new PIXI.Graphics();
+                const voidRadius = 4.5;
+                const voidGradient = new PIXI.FillGradient(0, -voidRadius, 0, voidRadius);
+                voidGradient.addColorStop(0, '#a98cff');
+                voidGradient.addColorStop(0.45, '#3b1a48');
+                voidGradient.addColorStop(1, '#050008');
+                voidGraphics.circle(0, 0, voidRadius);
+                voidGraphics.fill(voidGradient);
+                voidGraphics.stroke({ width: 1.2, color: '#cebfff', alpha: 0.6 });
+                voidGraphics.stroke({ width: 0.6, color: '#150a1f', alpha: 0.95 });
+                bulletTextures.void = pixiApp.renderer.generateTexture(voidGraphics);
+                
                 // Lava blade (sharp cyberpunk electric blade) - high res crisp version
                 const lavaGraphics = new PIXI.Graphics();
                 const bladeHeight = 16; // Longer and thinner for sharper look
@@ -4351,6 +4535,11 @@
                     sprite.texture = bulletTextures.fire;
                     sprite.scale.set(1);
                     sprite.tint = 0xffffff;
+                } else if (bullet.element === 'void' && bulletTextures.void) {
+                    sprite.texture = bulletTextures.void;
+                    sprite.scale.set(1);
+                    sprite.tint = 0xffffff;
+                    sprite.alpha = 0.92;
                 } else if (bulletTextures.normal) {
                     sprite.texture = bulletTextures.normal;
                     sprite.scale.set(1);
@@ -4400,6 +4589,9 @@
                         break;
                     case 'fire':
                         sprite.tint = 0xff7a3a;
+                        break;
+                    case 'void':
+                        sprite.tint = 0x8c66ff;
                         break;
                     default:
                         sprite.tint = 0xffffff;
@@ -5088,6 +5280,8 @@
 
             const bulletPool = new Pool(createBullet, resetBulletState);
             bulletPool.prefill(100);
+
+            const CORE_ELEMENT_KEYS = ['ice', 'poison', 'fire'];
 
             function ensureBulletElementState(player) {
                 if (!player) return;
@@ -6013,7 +6207,10 @@
                 } else {
                     const activeElements = getActiveBulletElements(player);
                     let elementMode = 'normal';
-                    if (activeElements.length === 1) {
+                    const hasAllCoreElements = CORE_ELEMENT_KEYS.every(el => activeElements.includes(el));
+                    if (hasAllCoreElements) {
+                        elementMode = 'void';
+                    } else if (activeElements.length === 1) {
                         elementMode = activeElements[0];
                     } else if (activeElements.length > 1) {
                         ensureBulletElementState(player);
@@ -6024,6 +6221,9 @@
                         }
                     }
                     bullet.element = elementMode;
+                }
+                if (bullet.element === 'void' && (!('col' in props) || props.col === undefined)) {
+                    bullet.col = '#231530';
                 }
                 if ('presetElement' in bullet) {
                     delete bullet.presetElement;
@@ -7003,6 +7203,7 @@
 
             function applyFireBulletBurn(enemy, totalDamage, options = {}) {
                 if (!enemy || enemy.dead || totalDamage <= 0) return;
+                recordStackElementHit(enemy, 'fire');
                 const duration = Number.isFinite(options.duration) ? Math.max(0.1, options.duration) : 5;
                 const lethalFloor = enemy === store.boss ? 0 : 1;
                 const burnEntry = {
@@ -7049,29 +7250,135 @@
                 return { amount, blocked: false };
             }
 
+            const ICE_SPEED_BY_STACK = [1, 0.55, 0.18, 0];
+
+            function getVoidProfileForBullet(bullet) {
+                if (!bullet || bullet.element !== 'void') return null;
+                if (bullet.voidProfile && typeof bullet.voidProfile === 'object') {
+                    return {
+                        fire: !!bullet.voidProfile.fire,
+                        ice: !!bullet.voidProfile.ice,
+                        poison: !!bullet.voidProfile.poison
+                    };
+                }
+                if (bullet.voidMode === 'random') {
+                    const pick = CORE_ELEMENT_KEYS[Math.floor(Math.random() * CORE_ELEMENT_KEYS.length)];
+                    return {
+                        fire: pick === 'fire',
+                        ice: pick === 'ice',
+                        poison: pick === 'poison'
+                    };
+                }
+                return { fire: true, ice: true, poison: true };
+            }
+
+            const VOID_PULSE_DAMAGE_SCALE = 0.55;
+            const VOID_PULSE_RADIUS_MULTIPLIER = 3.1;
+
+            function triggerVoidPulse(origin, baseDamage, bulletContext = {}) {
+                if (!origin || !store) return;
+                const originX = Number.isFinite(origin.x) ? origin.x : null;
+                const originY = Number.isFinite(origin.y) ? origin.y : null;
+                if (originX === null || originY === null) return;
+
+                const radius = Math.max(80, (origin.r || 18) * VOID_PULSE_RADIUS_MULTIPLIER);
+                const damageScale = Number.isFinite(bulletContext.voidPulseDamageScale) ? bulletContext.voidPulseDamageScale : VOID_PULSE_DAMAGE_SCALE;
+                const basePulseDamage = Math.max(0, baseDamage);
+                const pulseDamage = Math.max(basePulseDamage * damageScale, 5);
+
+                const targets = [];
+                if (Array.isArray(store.enemies)) {
+                    for (let i = 0; i < store.enemies.length; i++) {
+                        const enemy = store.enemies[i];
+                        if (enemy && enemy !== origin) targets.push(enemy);
+                    }
+                }
+                if (store.boss && store.boss !== origin && !store.boss.dead) {
+                    targets.push(store.boss);
+                }
+
+                let affected = 0;
+                const radiusSq = radius * radius;
+                for (const target of targets) {
+                    if (!target || target.dead || target.hp <= 0) continue;
+                    const dx = target.x - originX;
+                    const dy = target.y - originY;
+                    if (!Number.isFinite(dx) || !Number.isFinite(dy)) continue;
+                    if (dx * dx + dy * dy > radiusSq) continue;
+
+                    const pseudoBullet = {
+                        x: originX,
+                        y: originY,
+                        vx: 0,
+                        vy: 0,
+                        dmg: pulseDamage,
+                        element: 'void',
+                        pierce: 0,
+                        col: '#201028',
+                        voidMode: 'random',
+                        isVoidPulseChild: true,
+                        skipSplit: true,
+                        isChampionShot: bulletContext.isChampionShot || false,
+                        championLevel: bulletContext.championLevel,
+                        spawnTime: bulletContext.spawnTime,
+                        voidPulseDamageScale: damageScale
+                    };
+
+                    handleBulletImpact(pseudoBullet, target);
+                    affected++;
+                }
+
+                if (!store.activeEffects) {
+                    store.activeEffects = [];
+                }
+                store.activeEffects.push(createEffect('voidPulse', originX, originY, radius, {
+                    affected,
+                    baseDamage,
+                    pulseDamage
+                }));
+            }
+
             function handleBulletImpact(b, e) {
                 if (b.isFlame) e.slowTimer = 1.0;
 
+                const isVoidElement = b.element === 'void';
+                const voidProfile = isVoidElement ? getVoidProfileForBullet(b) : null;
+                const isIceElement = b.element === 'ice' || (isVoidElement && voidProfile?.ice);
+                const isPoisonElement = b.element === 'poison' || (isVoidElement && voidProfile?.poison);
+                const isFireElement = b.element === 'fire' || (isVoidElement && voidProfile?.fire);
+                const isVoidPulseChild = b.isVoidPulseChild === true;
+
                 // Handle ice bullets - slow enemy and increase damage taken
-                if (b.element === 'ice') {
-                    // Track ice stacks (max 3)
-                    e.iceStacks = Math.min(3, (e.iceStacks || 0) + 1);
-                    e.iceStackTimer = 3.0; // 3 second duration
-                    
-                    // Apply slow: 10% per stack (10%, 20%, 30%), but only 75% effective on bosses
-                    const bossReduction = e.isBoss ? 0.75 : 1.0;
-                    const slowAmount = 0.1 * e.iceStacks * bossReduction;
-                    e.speedMultiplier = Math.max(e.speedMultiplier || 1, 1 - slowAmount);
+                if (isIceElement) {
+                    const currentStacks = ensureFiniteNumber(e.iceStacks, 0);
+                    const nextStacks = (isVoidElement && voidProfile?.ice) ? 3 : Math.min(3, currentStacks + 1);
+                    e.iceStacks = nextStacks;
+                    const iceDuration = (isVoidElement && voidProfile?.ice) ? 4.5 : 3.0;
+                    e.iceStackTimer = Math.max(e.iceStackTimer || 0, iceDuration);
+
+                    const targetSpeed = ICE_SPEED_BY_STACK[nextStacks] ?? 0;
+                    if (nextStacks >= 3) {
+                        e.isFrozen = true;
+                        e.speedMultiplier = 0;
+                        e.freezeAppliedAt = performance.now();
+                    } else {
+                        const currentSpeed = e.speedMultiplier ?? 1;
+                        e.speedMultiplier = Math.min(currentSpeed, targetSpeed);
+                        if (e.isFrozen) {
+                            delete e.isFrozen;
+                        }
+                    }
                 }
 
                 // Handle poison bullets - damage over time with stacking
                 let pendingPoison = null;
-                if (b.element === 'poison') {
-                    // Track poison stacks (max 3)
-                    e.poisonStacks = Math.min(3, (e.poisonStacks || 0) + 1);
-                    e.poisonStackTimer = 3.0; // 3 second duration
-                    
-                    // Calculate total damage: 10% per stack over 3 seconds, but only 75% effective on bosses
+                if (isPoisonElement) {
+                    const currentPoisonStacks = ensureFiniteNumber(e.poisonStacks, 0);
+                    const nextPoisonStacks = (isVoidElement && voidProfile?.poison) ? 3 : Math.min(3, currentPoisonStacks + 1);
+                    e.poisonStacks = nextPoisonStacks;
+                    const poisonDuration = (isVoidElement && voidProfile?.poison) ? 4.5 : 3.0;
+                    e.poisonStackTimer = Math.max(e.poisonStackTimer || 0, poisonDuration);
+
                     const bossReduction = e.isBoss ? 0.75 : 1.0;
                     pendingPoison = {
                         bossReduction,
@@ -7079,6 +7386,23 @@
                     };
                     e.poisonTickInterval = 0.1;
                     e.poisonLastTick = 0;
+                }
+
+                if (isFireElement) {
+                    const currentFireStacks = ensureFiniteNumber(e.fireStacks, 0);
+                    const nextFireStacks = (isVoidElement && voidProfile?.fire) ? 3 : currentFireStacks;
+                    if (nextFireStacks !== currentFireStacks) {
+                        e.fireStacks = nextFireStacks;
+                    }
+                    if (nextFireStacks > 0 && (isVoidElement && voidProfile?.fire)) {
+                        const fireDuration = 4.5;
+                        e.fireStackTimer = Math.max(e.fireStackTimer || 0, fireDuration);
+                        if (nextFireStacks >= 3) {
+                            e.firePanicActive = true;
+                            e.firePanicTimer = Math.max(e.firePanicTimer || 0, 2.0);
+                            if (!e.firePanicPhase) e.firePanicPhase = 'burst';
+                        }
+                    }
                 }
 
                 if (e.isHeatDeath) {
@@ -7102,7 +7426,18 @@
                 }
 
                 let dmg = b.dmg || 15;
-                const isFireElement = b.element === 'fire';
+
+                if (isVoidElement) {
+                    if (voidProfile) {
+                        CORE_ELEMENT_KEYS.forEach(key => {
+                            if (voidProfile[key]) {
+                                recordStackElementHit(e, key);
+                            }
+                        });
+                    }
+                } else if (b.element) {
+                    recordStackElementHit(e, b.element);
+                }
                 
                 // Lava blades do more damage the closer the enemy is to the player
                 if (b.isLavaBlade && store.player) {
@@ -7250,6 +7585,14 @@
 
                 if (dmg > 0) {
                     const impactTime = performance.now();
+                    if (isVoidElement && !isVoidPulseChild && actualDamageApplied > 0) {
+                        triggerVoidPulse(e, actualDamageApplied, {
+                            isChampionShot: b.isChampionShot,
+                            championLevel: b.championLevel,
+                            spawnTime: b.spawnTime,
+                            voidPulseDamageScale: b.voidPulseDamageScale
+                        });
+                    }
                     if (e !== store.boss) {
                         e.hitCount = ensureFiniteNumber(e.hitCount, 0) + 1;
                         if (!e.firstDamageTime) {
@@ -7339,7 +7682,10 @@
                         }
                     }
 
+                    let deathElement = null;
                     if (e !== store.boss && e.hp <= 0 && !skipDefaultDeathHandling) {
+                        deathElement = getStackDeathType(e, { fallbackElement: b.element });
+                        e.deathElement = deathElement;
                         e.dead = true;
                         if (e.type === 'void_champion') {
                             store.enemies.forEach(minion => {
@@ -7366,7 +7712,16 @@
                             finalizeVoidReaperDefeat(e, { preemptive: !e.lungeStarted });
                         }
 
-                        if (!isVoidReaper) {
+                        if (!isVoidReaper && deathElement === 'ice') {
+                            spawnIceShards(e.x, e.y, {
+                                enemyRadius: e.r || 18
+                            });
+                        } else if (!isVoidReaper && deathElement === 'fire') {
+                            spawnFireWipeDeath(e.x, e.y, {
+                                enemyRadius: e.r || 18,
+                                baseColor: e.color
+                            });
+                        } else if (!isVoidReaper) {
                             spawnGibs(e.x, e.y, e.color);
                         }
                         const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
@@ -7472,6 +7827,34 @@
                         p.life -= dt;
                         p.x += p.vx * dt;
                         p.y += p.vy * dt;
+                        return p.life > 0;
+                    });
+                } else if (b.element === 'void') {
+                    b.particleSpawnT = (b.particleSpawnT || 0) - dt;
+                    if (b.particleSpawnT <= 0) {
+                        b.particleSpawnT = 0.02;
+                        const life = 0.24 + Math.random() * 0.22;
+                        const angle = Math.random() * Math.PI * 2;
+                        const speed = 18 + Math.random() * 26;
+                        if (!Array.isArray(b.particles)) b.particles = [];
+                        b.particles.push({
+                            x: 0,
+                            y: 0,
+                            vx: Math.cos(angle) * speed,
+                            vy: Math.sin(angle) * speed,
+                            life,
+                            maxLife: life,
+                            r: 1.4 + Math.random() * 1.4,
+                            spin: Math.random() * Math.PI * 2
+                        });
+                    }
+                    b.particles = b.particles.filter(p => {
+                        p.life -= dt;
+                        p.spin = (p.spin || 0) + dt * 6.5;
+                        p.vx *= 0.9;
+                        p.vy *= 0.9;
+                        p.x += p.vx * dt + Math.cos(p.spin) * 12 * dt;
+                        p.y += p.vy * dt + Math.sin(p.spin) * 12 * dt;
                         return p.life > 0;
                     });
                 } else if (b.element === 'fire') {
@@ -11558,6 +11941,7 @@
                     themeKey: def.key,
                     x: W / 2,
                     y: -80,
+                    isBoss: true,
                     hpMax: hp,
                     hp,
                     t: 0,
@@ -14623,6 +15007,9 @@
                             const lethalFloor = (e === store.boss) ? 0 : 1;
                             const appliedPoison = Math.min(poisonDamage, Math.max(0, e.hp - lethalFloor));
                             e.hp -= appliedPoison;
+                            if (appliedPoison > 0) {
+                                recordStackElementHit(e, 'poison');
+                            }
                             e.poisonLastTick = e.poisonTickInterval || 0.1;
                             spawnDotDamageText(e, appliedPoison, {
                                 color: '#48ff9a',
@@ -14642,6 +15029,9 @@
                             const lethalFloor = (e === store.boss) ? 0 : 1;
                             const appliedPoison = Math.min(poisonDamage, Math.max(0, e.hp - lethalFloor));
                             e.hp -= appliedPoison;
+                            if (appliedPoison > 0) {
+                                recordStackElementHit(e, 'poison');
+                            }
                             e.poisonDot.lastTick = e.poisonDot.tickInterval || 0.15;
                             spawnDotDamageText(e, appliedPoison, {
                                 color: '#48ff9a',
@@ -14718,6 +15108,7 @@
                                 delta = Math.min(delta, Math.max(0, e.hp - lethalFloor));
                                 if (delta > 0) {
                                     e.hp -= delta;
+                                    recordStackElementHit(e, 'fire');
                                     burn.appliedDamage += delta;
                                     spawnDotDamageText(e, delta, {
                                         color: '#ff7a45',
@@ -14773,6 +15164,18 @@
                                     appliedFlameDamage = flameResult.damageApplied || 0;
                                 } else {
                                     e.hp -= flame.damage;
+                                }
+
+                                // Track fire stacks for panicked behavior
+                                e.fireStacks = Math.min(3, (e.fireStacks || 0) + 1);
+                                e.fireStackTimer = 3; // 3 seconds duration
+                                recordStackElementHit(e, 'fire');
+                                
+                                // Trigger panic behavior at 3 stacks
+                                if (e.fireStacks >= 3 && !e.fireParnicActive) {
+                                    e.firePanicActive = true;
+                                    e.firePanicTimer = 1.5; // 1.5 second burst of panicked movement
+                                    e.firePanicPhase = 'burst'; // Start with burst phase
                                 }
 
                                 // Apply vampirism healing for flamethrower damage
@@ -14845,6 +15248,25 @@
                     } else {
                         let speedMultiplier = (e.slowTimer > 0) ? 0.3 : 1.0;
                         
+                        // Handle fire stack decay and panic behavior
+                        if (e.fireStackTimer && e.fireStackTimer > 0) {
+                            e.fireStackTimer -= dt;
+                            if (e.fireStackTimer <= 0) {
+                                e.fireStacks = 0;
+                                e.firePanicActive = false;
+                                e.firePanicTimer = 0;
+                            }
+                        }
+                        
+                        // Update fire panic timer
+                        if (e.firePanicActive && e.firePanicTimer > 0) {
+                            e.firePanicTimer -= dt;
+                            if (e.firePanicTimer <= 0) {
+                                e.firePanicActive = false;
+                                e.firePanicPhase = null;
+                            }
+                        }
+                        
                         // Apply ice bullet slow effect
                         if (e.speedMultiplier !== undefined && e.speedMultiplier < 1) {
                             speedMultiplier *= e.speedMultiplier;
@@ -14873,18 +15295,38 @@
                         
                         if (e.slowTimer > 0) e.slowTimer -= dt;
                         
-                        // Handle ice stacks - decay timer and apply damage reduction bonus
+                        // Handle ice stacks - decay timer and maintain freeze state
                         if (e.iceStacks && e.iceStacks > 0) {
                             e.iceStackTimer = Math.max(0, (e.iceStackTimer || 0) - dt);
                             if (e.iceStackTimer <= 0) {
                                 e.iceStacks = 0;
                                 delete e.iceStackTimer;
+                                delete e.speedMultiplier;
+                                delete e.iceDamageMultiplier;
+                                if (e.isFrozen) delete e.isFrozen;
                             } else {
-                                // Apply 10% damage reduction per stack to speedMultiplier
-                                const iceDamageMultiplier = 1 + (0.1 * e.iceStacks);
-                                // This will be used for damage calculation (when we apply damage in game)
+                                const activeStacks = Math.min(e.iceStacks, 3);
+                                const iceDamageMultiplier = 1 + (0.1 * activeStacks);
                                 e.iceDamageMultiplier = iceDamageMultiplier;
+
+                                const targetSpeed = ICE_SPEED_BY_STACK[activeStacks] ?? 0;
+                                if (e.speedMultiplier === undefined) {
+                                    e.speedMultiplier = targetSpeed;
+                                } else {
+                                    e.speedMultiplier = Math.min(e.speedMultiplier, targetSpeed);
+                                }
+
+                                if (activeStacks >= 3) {
+                                    e.isFrozen = true;
+                                    e.speedMultiplier = 0;
+                                } else if (e.isFrozen) {
+                                    delete e.isFrozen;
+                                }
                             }
+                        } else {
+                            if (e.isFrozen) delete e.isFrozen;
+                            if (e.speedMultiplier === 0) delete e.speedMultiplier;
+                            if (e.iceDamageMultiplier !== undefined) delete e.iceDamageMultiplier;
                         }
                         
                         if (e.phaseLockTimer > 0) {
@@ -14898,10 +15340,63 @@
                             speedMultiplier *= e.cubeBurglarSpeedMultiplier;
                         }
 
+                        const freezeLocked = e.isFrozen && e.iceStacks >= 3 && (e.iceStackTimer || 0) > 0;
+
                         // VERTICAL DESCENT REDUCTION: Slow down downward movement to give more time to engage
                         // Lateral movement remains at full speedMultiplier for dynamic gameplay
                         const horizontalSpeedMultiplier = speedMultiplier; // Full speed for X movement
                         const verticalSpeedMultiplier = speedMultiplier * 0.6; // 60% speed for Y movement (slower descent)
+
+                        // FIRE PANIC BEHAVIOR: 3 fire stacks = panicked run toward backline
+                        let firePanicMovement = null;
+                        if (e.firePanicActive && e.firePanicTimer > 0 && e.firePanicPhase === 'burst') {
+                            // Calculate backline direction (top of screen)
+                            const toBacklineX = e.x; // Keep same X position
+                            const toBacklineY = -50; // Run toward top (off-screen)
+                            const dx = toBacklineX - e.x;
+                            const dy = toBacklineY - e.y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            
+                            if (dist > 1) {
+                                // Erratic panicked movement - fast with random wobble
+                                e.t = (e.t || 0) + dt;
+                                const panicSpeed = (e.v || 100) * 2.5; // 2.5x speed burst
+                                const erraticWobble = Math.sin(e.t * 18) * 40 + Math.cos(e.t * 12) * 25; // Intense wobbling
+                                const perpX = -dy / dist;
+                                const perpY = dx / dist;
+                                
+                                firePanicMovement = {
+                                    x: ((dx / dist) * panicSpeed + perpX * erraticWobble) * dt,
+                                    y: ((dy / dist) * panicSpeed + perpY * erraticWobble) * dt
+                                };
+                            }
+                        }
+                        
+                        // POISON DRUNK BEHAVIOR: 3 poison stacks = drunken movement
+                        let poisonDrunkMovement = null;
+                        if (e.poisonStacks >= 3 && e.poisonStacks > 0) {
+                            e.t = (e.t || 0) + dt;
+                            // Drunken modifier: slow, erratic, wandering
+                            e.drunkWanderAngle = (e.drunkWanderAngle || 0) + (Math.random() - 0.5) * 8 * dt;
+                            const drunkSpeed = (e.v || 100) * 0.4; // Move at 40% speed
+                            const wobbleIntensity = 60;
+                            const wobbleX = Math.sin(e.t * 3 + e.drunkWanderAngle) * wobbleIntensity;
+                            const wobbleY = Math.cos(e.t * 2.5 + e.drunkWanderAngle * 0.7) * wobbleIntensity;
+                            
+                            poisonDrunkMovement = {
+                                x: wobbleX * dt,
+                                y: wobbleY * dt
+                            };
+                        }
+
+                        if (freezeLocked) {
+                            firePanicMovement = null;
+                            poisonDrunkMovement = null;
+                            e.vx = 0;
+                            e.vy = 0;
+                            if (e.dashVX) e.dashVX = 0;
+                            if (e.dashVY) e.dashVY = 0;
+                        }
 
                         // SWARM PROTOCOL: Fast homing enemies (construct_gold, avian_hatchling)
                         if (e.type === 'construct_gold' || e.type === 'avian_hatchling') {
@@ -14923,12 +15418,21 @@
                                 const dy = store.player.y - e.y;
                                 const dist = Math.sqrt(dx * dx + dy * dy);
                                 if (dist > 1) {
-                                    // Swarm enemies move directly toward player with slight randomness
-                                    const wobble = Math.sin(e.t * 8) * 15; // Add micro-dodges
-                                    const perpX = -dy / dist;
-                                    const perpY = dx / dist;
-                                    e.x += ((dx / dist) * e.v + perpX * wobble) * speedMultiplier * dt;
-                                    e.y += ((dy / dist) * e.v + perpY * wobble) * speedMultiplier * dt;
+                                    // Apply status effect movement overrides
+                                    if (firePanicMovement) {
+                                        e.x += firePanicMovement.x;
+                                        e.y += firePanicMovement.y;
+                                    } else if (poisonDrunkMovement) {
+                                        e.x += poisonDrunkMovement.x;
+                                        e.y += poisonDrunkMovement.y;
+                                    } else {
+                                        // Normal swarm movement: move directly toward player with slight randomness
+                                        const wobble = Math.sin(e.t * 8) * 15; // Add micro-dodges
+                                        const perpX = -dy / dist;
+                                        const perpY = dx / dist;
+                                        e.x += ((dx / dist) * e.v + perpX * wobble) * speedMultiplier * dt;
+                                        e.y += ((dy / dist) * e.v + perpY * wobble) * speedMultiplier * dt;
+                                    }
                                 }
                             }
                         } else if (e.movementBehavior) {
@@ -14948,11 +15452,20 @@
                             const distToPlayer = Math.sqrt(dx * dx + dy * dy);
                             
                             if (e.aiState === 'chase') {
-                                // Chase toward player
-                                const chaseSpeed = 0.4;
-                                if (distToPlayer > 10) {
-                                    e.x += (dx / distToPlayer) * e.v * chaseSpeed * speedMultiplier * dt;
-                                    e.y += (dy / distToPlayer) * e.v * chaseSpeed * speedMultiplier * dt;
+                                // Apply status effect movement overrides
+                                if (firePanicMovement) {
+                                    e.x += firePanicMovement.x;
+                                    e.y += firePanicMovement.y;
+                                } else if (poisonDrunkMovement) {
+                                    e.x += poisonDrunkMovement.x;
+                                    e.y += poisonDrunkMovement.y;
+                                } else {
+                                    // Normal chase toward player
+                                    const chaseSpeed = 0.4;
+                                    if (distToPlayer > 10) {
+                                        e.x += (dx / distToPlayer) * e.v * chaseSpeed * speedMultiplier * dt;
+                                        e.y += (dy / distToPlayer) * e.v * chaseSpeed * speedMultiplier * dt;
+                                    }
                                 }
                                 // Switch to attack when close enough or after 1.5 seconds
                                 if (distToPlayer < 180 || e.aiTimer > 1.5) {
@@ -14960,10 +15473,19 @@
                                     e.aiTimer = 0;
                                 }
                             } else if (e.aiState === 'attack') {
-                                // Stop and prepare to fire
-                                const stopDrift = 0.92;
-                                e.x += (dx / Math.max(1, distToPlayer)) * e.v * 0.1 * speedMultiplier * dt * stopDrift;
-                                e.y += e.v * 0.15 * verticalSpeedMultiplier * dt;
+                                // Apply status effect movement overrides
+                                if (firePanicMovement) {
+                                    e.x += firePanicMovement.x;
+                                    e.y += firePanicMovement.y;
+                                } else if (poisonDrunkMovement) {
+                                    e.x += poisonDrunkMovement.x;
+                                    e.y += poisonDrunkMovement.y;
+                                } else {
+                                    // Normal attack behavior: stop and prepare to fire
+                                    const stopDrift = 0.92;
+                                    e.x += (dx / Math.max(1, distToPlayer)) * e.v * 0.1 * speedMultiplier * dt * stopDrift;
+                                    e.y += e.v * 0.15 * verticalSpeedMultiplier * dt;
+                                }
                                 
                                 // Fire at player if cooldown allows
                                 if (e.fireT <= 0 && distToPlayer < 300) {
@@ -15014,10 +15536,19 @@
                                     const dy = store.player.y - e.y;
                                     const dist = Math.sqrt(dx * dx + dy * dy);
                                     if (dist > 1) {
-                                        // Hunters actively pursue with full 2D movement
-                                        const pursueFactor = 0.6; // 60% toward player, 40% downward
-                                        e.x += (dx / dist) * e.v * pursueFactor * speedMultiplier * dt;
-                                        e.y += ((dy / dist) * e.v * pursueFactor + e.v * (1 - pursueFactor)) * verticalSpeedMultiplier * dt;
+                                        // Apply status effect movement overrides
+                                        if (firePanicMovement) {
+                                            e.x += firePanicMovement.x;
+                                            e.y += firePanicMovement.y;
+                                        } else if (poisonDrunkMovement) {
+                                            e.x += poisonDrunkMovement.x;
+                                            e.y += poisonDrunkMovement.y;
+                                        } else {
+                                            // Normal hunters actively pursue with full 2D movement
+                                            const pursueFactor = 0.6; // 60% toward player, 40% downward
+                                            e.x += (dx / dist) * e.v * pursueFactor * speedMultiplier * dt;
+                                            e.y += ((dy / dist) * e.v * pursueFactor + e.v * (1 - pursueFactor)) * verticalSpeedMultiplier * dt;
+                                        }
                                     } else {
                                         e.y += e.v * verticalSpeedMultiplier * dt;
                                     }
@@ -15025,9 +15556,18 @@
                             }
                         } else if (e.type === 'angler') {
                             // TANK PROTOCOL: Slow, steady, horizontal tracking only
-                            const dx = store.player.x - e.x;
-                            if (Math.abs(dx) > 10) e.x += Math.sign(dx) * 30 * speedMultiplier * dt;
-                            e.y += e.v * verticalSpeedMultiplier * dt;
+                            // Apply status effect movement overrides
+                            if (firePanicMovement) {
+                                e.x += firePanicMovement.x;
+                                e.y += firePanicMovement.y;
+                            } else if (poisonDrunkMovement) {
+                                e.x += poisonDrunkMovement.x;
+                                e.y += poisonDrunkMovement.y;
+                            } else {
+                                const dx = store.player.x - e.x;
+                                if (Math.abs(dx) > 10) e.x += Math.sign(dx) * 30 * speedMultiplier * dt;
+                                e.y += e.v * verticalSpeedMultiplier * dt;
+                            }
                         } else if (e.type === 'phantom') {
                             // DYNAMIC PHASE-SHIFT PROTOCOL: Aggressive chase → Burst attack → Evasive weave
                             if (!e.aiState) {
@@ -15204,8 +15744,18 @@
                                 if (e.ramming && e.dashVY > 0) e.dashVY = -Math.abs(e.dashVY);
                             }
                         } else if (!e.isOrbiter) {
-                            e.x += (e.vx || 0) * speedMultiplier * dt;
-                            e.y += e.v * verticalSpeedMultiplier * dt;
+                            // Apply status effect movement overrides
+                            if (firePanicMovement) {
+                                e.x += firePanicMovement.x;
+                                e.y += firePanicMovement.y;
+                            } else if (poisonDrunkMovement) {
+                                e.x += poisonDrunkMovement.x;
+                                e.y += poisonDrunkMovement.y;
+                            } else {
+                                // Normal default movement
+                                e.x += (e.vx || 0) * speedMultiplier * dt;
+                                e.y += e.v * verticalSpeedMultiplier * dt;
+                            }
                         } else {
                             // Smooth following behavior for orbiters instead of rigid orbital motion
                             let orbitTarget = null;
@@ -18596,7 +19146,8 @@
                         normal: bulletTextures.normal?.width + 'x' + bulletTextures.normal?.height,
                         ice: bulletTextures.ice?.width + 'x' + bulletTextures.ice?.height,
                         poison: bulletTextures.poison?.width + 'x' + bulletTextures.poison?.height,
-                        fire: bulletTextures.fire?.width + 'x' + bulletTextures.fire?.height
+                        fire: bulletTextures.fire?.width + 'x' + bulletTextures.fire?.height,
+                        void: bulletTextures.void?.width + 'x' + bulletTextures.void?.height
                     });
                 }
                 
@@ -18845,6 +19396,50 @@
                                 ctx.beginPath();
                                 ctx.arc(p.x, p.y, particleR, 0, 2 * Math.PI);
                                 ctx.fill();
+                            });
+                        }
+
+                        ctx.restore();
+                        return;
+                    } else if (b.element === 'void') {
+                        ctx.strokeStyle = 'rgba(70, 40, 120, 0.9)';
+                        ctx.lineWidth = r * 0.85;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        const vx = b.vx || 0;
+                        const vy = b.vy || 1;
+                        const speed = Math.sqrt(vx * vx + vy * vy);
+                        const nx = speed > 0 ? vx / speed : 0;
+                        const ny = speed > 0 ? vy / speed : 1;
+                        const lineLength = r * 1.9;
+                        ctx.beginPath();
+                        ctx.moveTo(-nx * lineLength * 0.5, -ny * lineLength * 0.5);
+                        ctx.lineTo(nx * lineLength * 0.5, ny * lineLength * 0.5);
+                        ctx.stroke();
+
+                        const glowRadius = r * 1.6;
+                        const gradient = ctx.createRadialGradient(0, 0, glowRadius * 0.15, 0, 0, glowRadius);
+                        gradient.addColorStop(0, 'rgba(210, 195, 255, 0.55)');
+                        gradient.addColorStop(0.6, 'rgba(90, 55, 140, 0.4)');
+                        gradient.addColorStop(1, 'rgba(5, 0, 15, 0)');
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, glowRadius, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        if (b.particles && b.particles.length > 0) {
+                            b.particles.forEach(p => {
+                                const t = Math.max(0, Math.min(1, p.life / p.maxLife));
+                                const particleR = p.r * t;
+                                ctx.fillStyle = `rgba(150, 120, 230, ${0.45 * t})`;
+                                ctx.beginPath();
+                                ctx.arc(p.x, p.y, particleR, 0, Math.PI * 2);
+                                ctx.fill();
+                                ctx.strokeStyle = `rgba(20, 8, 35, ${0.35 * t})`;
+                                ctx.lineWidth = Math.max(0.4, particleR * 0.4);
+                                ctx.beginPath();
+                                ctx.arc(p.x, p.y, particleR * 1.6, 0, Math.PI * 2);
+                                ctx.stroke();
                             });
                         }
 
@@ -19848,12 +20443,18 @@
                 const {
                     allowRewards = true,
                     impactTime = performance.now(),
-                    cause = 'projectile'
+                    cause = 'projectile',
+                    fallbackElement = null
                 } = options;
+
+                const deathType = getStackDeathType(enemy, {
+                    fallbackElement: fallbackElement || enemy.lastStackHitElement || null
+                });
 
                 enemy.dead = true;
                 enemy.hp = 0;
                 enemy.deathProcessed = true;
+                enemy.deathElement = deathType;
                 if (cause === 'collision') {
                     enemy.killedByCollision = true;
                 }
@@ -19888,7 +20489,18 @@
                         suppressRewards: !allowRewards
                     });
                 } else {
-                    spawnGibs(enemy.x, enemy.y, enemy.color);
+                    if (deathType === 'ice') {
+                        spawnIceShards(enemy.x, enemy.y, {
+                            enemyRadius: enemy.r || 18
+                        });
+                    } else if (deathType === 'fire') {
+                        spawnFireWipeDeath(enemy.x, enemy.y, {
+                            enemyRadius: enemy.r || 18,
+                            baseColor: enemy.color
+                        });
+                    } else {
+                        spawnGibs(enemy.x, enemy.y, enemy.color);
+                    }
                 }
 
                 if (allowRewards) {
@@ -27615,24 +28227,76 @@
             function stepBoss(dt) {
                 const b = store.boss;
                 b.t += dt;
-                if (b.y < 100) { b.y += b.vy * dt; }
                 const dmgScale = Math.pow(1.065, store.world.wave - 1);
                 tickChampionBurn(b, dt);
                 tickChampionVoidMarks(b, dt);
 
-                if (b.slowTimer > 0) { b.slowTimer -= dt; dt *= 0.3; }
+                if (b.iceStacks && b.iceStacks > 0) {
+                    b.iceStackTimer = Math.max(0, (b.iceStackTimer || 0) - dt);
+                    if (b.iceStackTimer <= 0) {
+                        b.iceStacks = 0;
+                        delete b.iceStackTimer;
+                        delete b.speedMultiplier;
+                        delete b.iceDamageMultiplier;
+                        if (b.isFrozen) delete b.isFrozen;
+                    } else {
+                        const activeStacks = Math.min(b.iceStacks, 3);
+                        b.iceDamageMultiplier = 1 + (0.1 * activeStacks);
+                        const targetSpeed = ICE_SPEED_BY_STACK[activeStacks] ?? 0;
+                        if (b.speedMultiplier === undefined) {
+                            b.speedMultiplier = targetSpeed;
+                        } else {
+                            b.speedMultiplier = Math.min(b.speedMultiplier, targetSpeed);
+                        }
+
+                        if (activeStacks >= 3) {
+                            b.isFrozen = true;
+                            b.speedMultiplier = 0;
+                        } else if (b.isFrozen) {
+                            delete b.isFrozen;
+                        }
+                    }
+                } else {
+                    if (b.isFrozen) delete b.isFrozen;
+                    if (b.speedMultiplier === 0) delete b.speedMultiplier;
+                    if (b.iceDamageMultiplier !== undefined) delete b.iceDamageMultiplier;
+                }
+
+                const freezeLocked = b.isFrozen && b.iceStacks >= 3 && (b.iceStackTimer || 0) > 0;
+                let behaviourDt = dt;
+
+                if (b.slowTimer > 0) {
+                    b.slowTimer -= dt;
+                    behaviourDt *= 0.3;
+                }
+
+                if (!freezeLocked && b.speedMultiplier !== undefined && b.speedMultiplier >= 0 && b.speedMultiplier < 1) {
+                    behaviourDt *= b.speedMultiplier;
+                }
+
+                if (b.y < 100 && !freezeLocked) {
+                    b.y += b.vy * behaviourDt;
+                }
+
+                if (freezeLocked) {
+                    b.vx = 0;
+                    b.vy = 0;
+                    if (b.dashVX) b.dashVX = 0;
+                    if (b.dashVY) b.dashVY = 0;
+                    return;
+                }
 
                 switch (b.behavior) {
-                    case 'vibemaster': stepBossVibemaster(dt, b, dmgScale); break;
-                    case 'gemini': stepBossGemini(dt, b, dmgScale); break;
-                    case 'sentinel': stepBossOmegaSentinel(dt, b, dmgScale); break;
-                    case 'aegis_architect': stepBossCoreAegisArchitect(dt, b, dmgScale); break;
-                    case 'hex': stepBossTheHex(dt, b, dmgScale); break;
-                    case 'construct': stepBossGeometron(dt, b, dmgScale); break;
-                    case 'shadow_clone': stepBossShadowClone(dt, b, dmgScale); break;
-                    case 'avian': stepBossVoidRaven(dt, b, dmgScale); break;
-                    case 'broodlord': stepBossBroodlord(dt, b, dmgScale); break;
-                    case 'asynchronos': stepBossAsynchronos(dt, b, dmgScale); break;
+                    case 'vibemaster': stepBossVibemaster(behaviourDt, b, dmgScale); break;
+                    case 'gemini': stepBossGemini(behaviourDt, b, dmgScale); break;
+                    case 'sentinel': stepBossOmegaSentinel(behaviourDt, b, dmgScale); break;
+                    case 'aegis_architect': stepBossCoreAegisArchitect(behaviourDt, b, dmgScale); break;
+                    case 'hex': stepBossTheHex(behaviourDt, b, dmgScale); break;
+                    case 'construct': stepBossGeometron(behaviourDt, b, dmgScale); break;
+                    case 'shadow_clone': stepBossShadowClone(behaviourDt, b, dmgScale); break;
+                    case 'avian': stepBossVoidRaven(behaviourDt, b, dmgScale); break;
+                    case 'broodlord': stepBossBroodlord(behaviourDt, b, dmgScale); break;
+                    case 'asynchronos': stepBossAsynchronos(behaviourDt, b, dmgScale); break;
                 }
             }
             function drawMissile(m) {
@@ -30500,6 +31164,48 @@
                         ctx.stroke();
                     }
                     
+                    if (t.isFrozen && t.iceStacks >= 3) {
+                        ctx.globalAlpha = 0.82;
+                        const frostShell = ctx.createRadialGradient(0, 0, t.r * 0.15, 0, 0, t.r * 1.45);
+                        frostShell.addColorStop(0, 'rgba(12, 24, 82, 0.96)');
+                        frostShell.addColorStop(0.45, 'rgba(24, 64, 170, 0.85)');
+                        frostShell.addColorStop(0.78, 'rgba(40, 110, 230, 0.62)');
+                        frostShell.addColorStop(1, 'rgba(60, 145, 255, 0.28)');
+                        ctx.fillStyle = frostShell;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, t.r * 1.28, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        ctx.globalAlpha = 0.96;
+                        ctx.strokeStyle = '#f6fbff';
+                        ctx.lineWidth = Math.max(3, t.r * 0.1);
+                        ctx.beginPath();
+                        ctx.arc(0, 0, t.r * 1.2, 0, Math.PI * 2);
+                        ctx.stroke();
+
+                        ctx.globalAlpha = 0.88;
+                        ctx.strokeStyle = 'rgba(210, 230, 255, 0.95)';
+                        ctx.setLineDash([6, 7]);
+                        ctx.lineWidth = Math.max(2, t.r * 0.06);
+                        ctx.beginPath();
+                        ctx.arc(0, 0, t.r * 1.05, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+
+                        ctx.globalAlpha = 0.8;
+                        ctx.strokeStyle = 'rgba(220, 240, 255, 0.9)';
+                        const shardCount = 8;
+                        for (let i = 0; i < shardCount; i++) {
+                            const shardAngle = (Math.PI * 2 * i) / shardCount + time * 0.45;
+                            const innerRadius = t.r * 0.25;
+                            const outerRadius = t.r * 1.1;
+                            ctx.beginPath();
+                            ctx.moveTo(Math.cos(shardAngle) * innerRadius, Math.sin(shardAngle) * innerRadius);
+                            ctx.lineTo(Math.cos(shardAngle) * outerRadius, Math.sin(shardAngle) * outerRadius);
+                            ctx.stroke();
+                        }
+                    }
+
                     ctx.restore();
                 }
                 
@@ -32165,6 +32871,48 @@
                         ctx.stroke();
                     }
                     
+                    if (e.isFrozen && e.iceStacks >= 3) {
+                        ctx.globalAlpha = 0.84;
+                        const frostShell = ctx.createRadialGradient(0, 0, a * 0.12, 0, 0, a * 1.35);
+                        frostShell.addColorStop(0, 'rgba(10, 26, 88, 0.96)');
+                        frostShell.addColorStop(0.45, 'rgba(22, 70, 180, 0.86)');
+                        frostShell.addColorStop(0.78, 'rgba(42, 115, 235, 0.62)');
+                        frostShell.addColorStop(1, 'rgba(62, 150, 255, 0.3)');
+                        ctx.fillStyle = frostShell;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, a * 1.25, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        ctx.globalAlpha = 0.97;
+                        ctx.strokeStyle = '#f7fdff';
+                        ctx.lineWidth = Math.max(2, a * 0.12);
+                        ctx.beginPath();
+                        ctx.arc(0, 0, a * 1.18, 0, Math.PI * 2);
+                        ctx.stroke();
+
+                        ctx.globalAlpha = 0.88;
+                        ctx.strokeStyle = 'rgba(215, 235, 255, 0.95)';
+                        ctx.setLineDash([4, 5]);
+                        ctx.lineWidth = Math.max(1.5, a * 0.08);
+                        ctx.beginPath();
+                        ctx.arc(0, 0, a * 1.05, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+
+                        ctx.globalAlpha = 0.82;
+                        ctx.strokeStyle = 'rgba(225, 245, 255, 0.9)';
+                        const shardCount = 6;
+                        for (let i = 0; i < shardCount; i++) {
+                            const shardAngle = (Math.PI * 2 * i) / shardCount + time * 0.6;
+                            const innerRadius = a * 0.2;
+                            const outerRadius = a * 1.05;
+                            ctx.beginPath();
+                            ctx.moveTo(Math.cos(shardAngle) * innerRadius, Math.sin(shardAngle) * innerRadius);
+                            ctx.lineTo(Math.cos(shardAngle) * outerRadius, Math.sin(shardAngle) * outerRadius);
+                            ctx.stroke();
+                        }
+                    }
+
                     // Stack indicator text
                     if (e.iceStacks > 1) {
                         ctx.globalAlpha = iceAlpha;
@@ -32227,6 +32975,147 @@
                             ctx.beginPath();
                             ctx.arc(0, 0, size, 0, Math.PI * 2);
                             ctx.fill();
+                            ctx.restore();
+                        };
+                        break;
+                    case "voidPulse":
+                        effect.maxLife = opts.duration ?? 0.55;
+                        effect.life = effect.maxLife;
+                        effect.radius = radius || 90;
+                        effect.opts = opts;
+                        effect.step = function (dt) {
+                            this.life -= dt;
+                            if (this.life <= 0) this.isActive = false;
+                        };
+                        effect.draw = function () {
+                            const lifeRatio = this.life / this.maxLife;
+                            const fade = Math.max(0, lifeRatio);
+                            const progress = 1 - lifeRatio;
+                            const outerRadius = this.radius * (0.85 + progress * 0.35);
+                            const innerRadius = outerRadius * 0.32;
+                            ctx.save();
+                            ctx.translate(this.x, this.y);
+
+                            const gradient = ctx.createRadialGradient(0, 0, innerRadius, 0, 0, outerRadius);
+                            gradient.addColorStop(0, `rgba(18, 8, 32, ${0.55 * fade})`);
+                            gradient.addColorStop(0.55, `rgba(60, 20, 90, ${0.38 * fade})`);
+                            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+                            ctx.globalCompositeOperation = 'source-over';
+                            ctx.fillStyle = gradient;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, outerRadius, 0, Math.PI * 2);
+                            ctx.fill();
+
+                            ctx.globalCompositeOperation = 'lighter';
+                            ctx.strokeStyle = `rgba(190, 140, 255, ${0.42 * fade})`;
+                            ctx.lineWidth = Math.max(2, this.radius * 0.08 * fade);
+                            ctx.beginPath();
+                            ctx.arc(0, 0, outerRadius, 0, Math.PI * 2);
+                            ctx.stroke();
+
+                            ctx.strokeStyle = `rgba(90, 45, 150, ${0.3 * fade})`;
+                            ctx.lineWidth = Math.max(1, this.radius * 0.045 * fade);
+                            ctx.setLineDash([6, 18]);
+                            ctx.beginPath();
+                            ctx.arc(0, 0, outerRadius * 0.7, 0, Math.PI * 2);
+                            ctx.stroke();
+                            ctx.setLineDash([]);
+
+                            ctx.restore();
+                        };
+                        break;
+                    case "fireWipeDeath":
+                        effect.maxLife = opts.duration ?? 0.75;
+                        effect.life = effect.maxLife;
+                        effect.radius = radius || 18;
+                        effect.opts = {
+                            colorStops: Array.isArray(opts.colorStops) && opts.colorStops.length ? opts.colorStops : [
+                                [255, 238, 205],
+                                [255, 202, 85],
+                                [255, 124, 46]
+                            ],
+                            seed: opts.seed ?? Math.random() * Math.PI * 2
+                        };
+                        effect.step = function (dt) {
+                            this.life -= dt;
+                            if (this.life <= 0) this.isActive = false;
+                        };
+                        effect.draw = function () {
+                            const t = 1 - (this.life / this.maxLife);
+                            const visible = Math.max(0, 1 - t);
+                            if (visible <= 0) return;
+
+                            const baseRadius = this.radius * (1.05 + 0.08 * visible);
+                            const time = performance.now() / 1000;
+                            const seed = this.opts.seed || 0;
+                            const width = baseRadius * 2.6;
+                            const height = visible * baseRadius * 2.6;
+                            const bottom = baseRadius * 1.2;
+                            const top = bottom - height;
+
+                            ctx.save();
+                            ctx.translate(this.x, this.y);
+                            ctx.beginPath();
+                            ctx.rect(-width / 2, top, width, height);
+                            ctx.clip();
+
+                            ctx.globalCompositeOperation = 'lighter';
+
+                            const layers = 3;
+                            const colors = this.opts.colorStops || [[255, 238, 205], [255, 202, 85], [255, 124, 46]];
+                            for (let layer = 0; layer < layers; layer++) {
+                                const ratio = layer / (layers - 1 || 1);
+                                const layerOpacity = (1 - t) * (0.9 - ratio * 0.32);
+                                if (layerOpacity <= 0.02) continue;
+
+                                const base = baseRadius * (0.92 + ratio * 0.24);
+                                const amp = baseRadius * (0.08 + 0.05 * (1 - ratio) * (1 - t));
+                                const segments = 64;
+                                const color = colors[Math.min(layer, colors.length - 1)];
+                                const lineWidthBase = Math.max(1.7, baseRadius * 0.12 * (1 - ratio * 0.35));
+
+                                ctx.lineWidth = lineWidthBase * (0.85 + Math.sin(time * (6.5 + ratio * 1.8) + seed + ratio * 1.7) * 0.12);
+                                ctx.strokeStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${layerOpacity})`;
+                                ctx.beginPath();
+                                for (let i = 0; i <= segments; i++) {
+                                    const angle = (i / segments) * Math.PI * 2;
+                                    const wobble = Math.sin(angle * (3.8 + ratio * 0.8) + time * (9 + ratio * 2) + seed * 1.1) + Math.sin(angle * (7.6 + ratio * 1.2) - time * (6.1 + ratio) + seed * 2.3) * 0.5;
+                                    const r = base + wobble * amp;
+                                    const px = Math.cos(angle) * r;
+                                    const py = Math.sin(angle) * r;
+                                    if (i === 0) ctx.moveTo(px, py);
+                                    else ctx.lineTo(px, py);
+                                }
+                                ctx.closePath();
+                                ctx.stroke();
+                            }
+
+                            // Inner glow
+                            ctx.globalAlpha = (1 - t) * 0.45;
+                            const innerRadius = baseRadius * 0.65;
+                            const gradient = ctx.createRadialGradient(0, 0, innerRadius * 0.2, 0, 0, innerRadius);
+                            gradient.addColorStop(0, 'rgba(255, 210, 120, 0.78)');
+                            gradient.addColorStop(0.55, 'rgba(255, 140, 30, 0.54)');
+                            gradient.addColorStop(1, 'rgba(160, 30, 0, 0)');
+                            ctx.fillStyle = gradient;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, innerRadius, 0, Math.PI * 2);
+                            ctx.fill();
+
+                            ctx.restore();
+
+                            // Leading wipe spark line
+                            ctx.save();
+                            ctx.translate(this.x, this.y);
+                            ctx.globalCompositeOperation = 'lighter';
+                            ctx.globalAlpha = Math.max(0, 0.65 * (1 - t));
+                            const wipeY = top - baseRadius * 0.05;
+                            ctx.fillStyle = 'rgba(255, 220, 150, 0.7)';
+                            ctx.fillRect(-width / 2, wipeY - 1.5, width, 3);
+                            ctx.globalAlpha *= 0.6;
+                            ctx.fillStyle = 'rgba(255, 120, 20, 0.85)';
+                            ctx.fillRect(-width / 2, wipeY - 0.5, width, 1);
                             ctx.restore();
                         };
                         break;
@@ -32614,6 +33503,82 @@
                             ctx.beginPath();
                             ctx.arc(0, 0, ringRadius * 0.72, 0, Math.PI * 2);
                             ctx.stroke();
+                            ctx.restore();
+                        };
+                        break;
+                    case "iceShatter":
+                        effect.maxLife = opts.duration ?? 0.6;
+                        effect.life = effect.maxLife;
+                        effect.radius = radius || 24;
+                        effect.baseColor = opts.baseColor || '#c9f4ff';
+                        effect.edgeColor = opts.edgeColor || '#80d8ff';
+                        effect.shards = Array.from({ length: Math.max(6, opts.count ?? 16) }, () => ({
+                            angle: Math.random() * TAU,
+                            speed: randRange(150, 260),
+                            wobble: randRange(-0.4, 0.4),
+                            length: randRange(effect.radius * 0.9, effect.radius * 1.65),
+                            width: randRange(3, 5)
+                        }));
+                        effect.step = function (dt) {
+                            this.life -= dt;
+                            if (this.life <= 0) this.isActive = false;
+                        };
+                        effect.draw = function () {
+                            const progress = 1 - (this.life / this.maxLife);
+                            const fade = 1 - progress;
+
+                            ctx.save();
+                            ctx.translate(this.x, this.y);
+                            ctx.globalCompositeOperation = 'lighter';
+
+                            const coreRadius = this.radius * (0.55 + progress * 0.4);
+                            ctx.globalAlpha = 0.55 * fade;
+                            const coreGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, coreRadius);
+                            coreGradient.addColorStop(0, 'rgba(230, 250, 255, 0.95)');
+                            coreGradient.addColorStop(0.6, 'rgba(150, 210, 255, 0.45)');
+                            coreGradient.addColorStop(1, 'rgba(120, 180, 255, 0)');
+                            ctx.fillStyle = coreGradient;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, coreRadius, 0, TAU);
+                            ctx.fill();
+
+                            this.shards.forEach(shard => {
+                                const travel = shard.speed * progress;
+                                const px = Math.cos(shard.angle) * travel;
+                                const py = Math.sin(shard.angle) * travel;
+
+                                ctx.save();
+                                ctx.translate(px, py);
+                                ctx.rotate(shard.angle + shard.wobble * progress);
+
+                                const length = shard.length;
+                                const width = shard.width;
+
+                                ctx.globalAlpha = 0.8 * fade;
+                                ctx.fillStyle = this.edgeColor;
+                                ctx.beginPath();
+                                ctx.moveTo(-length * 0.5, -width * 0.5);
+                                ctx.lineTo(length * 0.55, 0);
+                                ctx.lineTo(-length * 0.5, width * 0.5);
+                                ctx.closePath();
+                                ctx.fill();
+
+                                ctx.globalAlpha = 0.65 * fade;
+                                ctx.fillStyle = this.baseColor;
+                                ctx.beginPath();
+                                ctx.moveTo(-length * 0.25, -width * 0.3);
+                                ctx.lineTo(length * 0.4, 0);
+                                ctx.lineTo(-length * 0.25, width * 0.3);
+                                ctx.closePath();
+                                ctx.fill();
+
+                                ctx.globalAlpha = 0.45 * fade;
+                                ctx.fillStyle = '#ffffff';
+                                ctx.fillRect(length * 0.1, -width * 0.18, length * 0.16, width * 0.36);
+
+                                ctx.restore();
+                            });
+
                             ctx.restore();
                         };
                         break;
@@ -40648,6 +41613,232 @@
 
             // Initialize the gibs array in your game's store
             store.gibs = [];
+            const MAX_GIBS = 150;
+
+            function isEnemyFrozenForShatter(enemy) {
+                if (!enemy || enemy.dead) return false;
+                if (enemy.cannotBeFrozen) return false;
+
+                const stacks = ensureFiniteNumber(enemy.iceStacks, 0);
+                if (stacks < 3) return false;
+
+                if (enemy.iceStackTimer !== undefined && enemy.iceStackTimer <= 0) {
+                    return false;
+                }
+
+                const speedMult = enemy.speedMultiplier;
+                if (speedMult !== undefined && Number.isFinite(speedMult) && speedMult > 0.08) {
+                    return false;
+                }
+
+                return true;
+            }
+
+            function spawnIceShards(x, y, options = {}) {
+                const {
+                    count = 18,
+                    baseColor = '#bceeff',
+                    accentColor = '#70d4ff',
+                    enemyRadius = 18,
+                    gravity = 120,
+                    minSpeed = 140,
+                    maxSpeed = 280,
+                    minLife = 0.55,
+                    maxLife = 1.05
+                } = options;
+
+                const minLength = options.minLength !== undefined ? options.minLength : Math.max(10, enemyRadius * 0.6);
+                const maxLength = options.maxLength !== undefined ? options.maxLength : Math.max(minLength + 6, enemyRadius * 1.8);
+                const minThickness = options.minThickness !== undefined ? options.minThickness : 2;
+                const maxThickness = options.maxThickness !== undefined ? options.maxThickness : 4.5;
+
+                const shardCount = Math.max(1, Math.floor(count));
+
+                if (store.gibs.length >= MAX_GIBS) {
+                    const excessCount = store.gibs.length - MAX_GIBS + shardCount;
+                    if (excessCount > 0) {
+                        store.gibs.splice(0, excessCount);
+                    }
+                }
+
+                for (let i = 0; i < shardCount; i++) {
+                    const angle = Math.random() * TAU;
+                    const speed = randRange(minSpeed, maxSpeed);
+                    const life = randRange(minLife, maxLife);
+                    const length = randRange(minLength, maxLength);
+                    const thickness = randRange(minThickness, maxThickness);
+
+                    store.gibs.push({
+                        type: 'iceShard',
+                        x,
+                        y,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        gravity,
+                        life,
+                        maxLife: life,
+                        color: baseColor,
+                        accentColor,
+                        length,
+                        thickness,
+                        rotation: Math.random() * TAU,
+                        rotationSpeed: randRange(-8, 8),
+                        sparkle: Math.random()
+                    });
+                }
+
+                if (!Array.isArray(store.activeEffects)) {
+                    store.activeEffects = [];
+                }
+
+                store.activeEffects.push(createEffect('iceShatter', x, y, enemyRadius, {
+                    count: shardCount,
+                    baseColor,
+                    edgeColor: accentColor
+                }));
+            }
+
+            function hexToRgb(hex) {
+                if (typeof hex !== 'string') return null;
+                const cleaned = hex.replace('#', '').trim();
+                if (cleaned.length === 3) {
+                    const r = parseInt(cleaned[0] + cleaned[0], 16);
+                    const g = parseInt(cleaned[1] + cleaned[1], 16);
+                    const b = parseInt(cleaned[2] + cleaned[2], 16);
+                    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return null;
+                    return { r, g, b };
+                }
+                if (cleaned.length === 6) {
+                    const r = parseInt(cleaned.slice(0, 2), 16);
+                    const g = parseInt(cleaned.slice(2, 4), 16);
+                    const b = parseInt(cleaned.slice(4, 6), 16);
+                    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return null;
+                    return { r, g, b };
+                }
+                return null;
+            }
+
+            function parseColorStop(color, fallbackRgb) {
+                const rgb = hexToRgb(color);
+                if (rgb) return [rgb.r, rgb.g, rgb.b];
+                if (Array.isArray(fallbackRgb) && fallbackRgb.length === 3) {
+                    return fallbackRgb;
+                }
+                return [255, 180, 80];
+            }
+
+            function normalizeElementKey(element) {
+                if (!element) return null;
+                const str = String(element).toLowerCase();
+                if (str.startsWith('fire')) return 'fire';
+                if (str.startsWith('ice')) return 'ice';
+                if (str.startsWith('pois')) return 'poison';
+                if (str === 'f') return 'fire';
+                if (str === 'i') return 'ice';
+                if (str === 'p') return 'poison';
+                return null;
+            }
+
+            function recordStackElementHit(enemy, element) {
+                if (!enemy) return;
+                const key = normalizeElementKey(element);
+                if (!key) return;
+                const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                enemy.lastStackHitElement = key;
+                enemy.lastStackHitTime = now;
+                switch (key) {
+                    case 'fire':
+                        enemy.lastFireStackTime = now;
+                        break;
+                    case 'ice':
+                        enemy.lastIceStackTime = now;
+                        break;
+                    case 'poison':
+                        enemy.lastPoisonStackTime = now;
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            function getStackDeathType(enemy, options = {}) {
+                if (!enemy) return null;
+
+                const candidates = [];
+
+                if (isEnemyFrozenForShatter(enemy)) {
+                    candidates.push('ice');
+                }
+
+                const fireStacks = ensureFiniteNumber(enemy.fireStacks, 0);
+                if (fireStacks >= 3 && (enemy.fireStackTimer || 0) > 0) {
+                    candidates.push('fire');
+                }
+
+                const poisonStacks = ensureFiniteNumber(enemy.poisonStacks, 0);
+                if (poisonStacks >= 3 && (enemy.poisonStackTimer || 0) > 0) {
+                    candidates.push('poison');
+                }
+
+                if (!candidates.length) return null;
+                if (candidates.length === 1) return candidates[0];
+
+                const fallback = normalizeElementKey(options.fallbackElement || enemy.lastStackHitElement || null);
+                if (fallback && candidates.includes(fallback)) {
+                    return fallback;
+                }
+
+                const lastElement = normalizeElementKey(enemy.lastStackHitElement);
+                if (lastElement && candidates.includes(lastElement)) {
+                    return lastElement;
+                }
+
+                const times = {
+                    fire: enemy.lastFireStackTime || 0,
+                    ice: enemy.lastIceStackTime || 0,
+                    poison: enemy.lastPoisonStackTime || 0
+                };
+
+                candidates.sort((a, b) => {
+                    const timeDiff = (times[b] || 0) - (times[a] || 0);
+                    if (timeDiff !== 0) return timeDiff;
+                    const stackDiff = ensureFiniteNumber(enemy[`${b}Stacks`], 0) - ensureFiniteNumber(enemy[`${a}Stacks`], 0);
+                    if (stackDiff !== 0) return stackDiff;
+                    const priority = { ice: 3, fire: 2, poison: 1 };
+                    return (priority[b] || 0) - (priority[a] || 0);
+                });
+
+                return candidates[0];
+            }
+
+            function spawnFireWipeDeath(x, y, options = {}) {
+                if (!store) return;
+                if (!Array.isArray(store.activeEffects)) {
+                    store.activeEffects = [];
+                }
+
+                const radius = Math.max(12, Number.isFinite(options.enemyRadius) ? options.enemyRadius : (options.radius || 18));
+                const baseColor = options.baseColor || '#ff7c2e';
+                const accentColor = options.accentColor || '#ffca55';
+                const outlineColor = options.outlineColor || '#ffeecd';
+                const duration = Math.max(0.45, options.duration || 0.75);
+                const colorStops = [
+                    parseColorStop(outlineColor, [255, 238, 205]),
+                    parseColorStop(accentColor, [255, 202, 85]),
+                    parseColorStop(baseColor, [255, 124, 46])
+                ];
+
+                store.activeEffects.push(createEffect('fireWipeDeath', x, y, radius, {
+                    duration,
+                    seed: Math.random() * Math.PI * 2,
+                    colorStops
+                }));
+
+                store.activeEffects.push(createEffect('fireBurn', x, y, radius * 0.9, {
+                    intensity: 0.8,
+                    duration: Math.min(duration * 0.6, 0.5)
+                }));
+            }
 
             /**
              * Spawns a cluster of gib particles at a specific location.
@@ -40658,9 +41849,6 @@
              * @param {number} [amount=15] - The number of gibs to create.
              */
             function spawnGibs(x, y, color, amount = 12) {
-                // Limit max gibs to prevent overdraw performance issues
-                const MAX_GIBS = 150;
-                
                 // If we're at max, remove oldest gibs first
                 if (store.gibs.length >= MAX_GIBS) {
                     const excessCount = store.gibs.length - MAX_GIBS + amount;
@@ -40697,13 +41885,19 @@
                 for (let i = store.gibs.length - 1; i >= 0; i--) {
                     const gib = store.gibs[i];
 
-                    // Apply physics
-                    gib.vy += gib.gravity * dt;
+                    const gravity = Number.isFinite(gib.gravity) ? gib.gravity : 300;
+                    gib.vy += gravity * dt;
+
+                    if (gib.type === 'iceShard') {
+                        gib.vx *= 0.985;
+                        gib.vy *= 0.985;
+                        gib.rotation = (gib.rotation || 0) + (gib.rotationSpeed || 0) * dt;
+                    }
+
                     gib.x += gib.vx * dt;
                     gib.y += gib.vy * dt;
                     gib.life -= dt;
 
-                    // Remove gibs that have expired
                     if (gib.life <= 0) {
                         store.gibs.splice(i, 1);
                     }
@@ -40724,10 +41918,47 @@
                         return;
                     }
                     
-                    const alpha = gib.life / gib.maxLife; // Fade out effect
+                    const alpha = Math.max(0, gib.life / gib.maxLife); // Fade out effect
+                    if (alpha <= 0) return;
+
+                    if (gib.type === 'iceShard') {
+                        const length = gib.length || 20;
+                        const thickness = gib.thickness || 3;
+                        const primaryColor = gib.color || '#bceeff';
+                        const highlightColor = gib.accentColor || '#e0f6ff';
+
+                        ctx.save();
+                        ctx.translate(gib.x, gib.y);
+                        ctx.rotate(gib.rotation || 0);
+                        ctx.globalCompositeOperation = 'lighter';
+                        ctx.globalAlpha = alpha * 0.9;
+
+                        ctx.fillStyle = primaryColor;
+                        ctx.beginPath();
+                        ctx.moveTo(-length * 0.5, -thickness * 0.55);
+                        ctx.lineTo(length * 0.55, 0);
+                        ctx.lineTo(-length * 0.5, thickness * 0.55);
+                        ctx.closePath();
+                        ctx.fill();
+
+                        ctx.globalAlpha = alpha * 0.55;
+                        ctx.fillStyle = highlightColor;
+                        ctx.beginPath();
+                        ctx.moveTo(-length * 0.2, -thickness * 0.25);
+                        ctx.lineTo(length * 0.35, 0);
+                        ctx.lineTo(-length * 0.2, thickness * 0.25);
+                        ctx.closePath();
+                        ctx.fill();
+
+                        ctx.globalAlpha = alpha * 0.4;
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(length * 0.1, -thickness * 0.18, length * 0.18, thickness * 0.36);
+                        ctx.restore();
+                        return;
+                    }
 
                     ctx.save();
-                    ctx.globalAlpha = Math.max(0, alpha);
+                    ctx.globalAlpha = alpha;
                     ctx.fillStyle = gib.color;
                     ctx.beginPath();
                     ctx.fillRect(gib.x - gib.r / 2, gib.y - gib.r / 2, gib.r, gib.r);
@@ -43871,20 +45102,213 @@
 
             }
 
-            // Game initialization moved to DOMContentLoaded event
-            // Game initialization runs immediately (like fghfgh.html working version)
-            try {
-                ensureName();
-                refreshScoreList();
-                requestAnimationFrame(frame);
-            } catch (error) {
+            // ===== ASSET PRELOADING SYSTEM =====
+            
+            function preloadAssets() {
+                return new Promise((resolve, reject) => {
+                    console.log('🎮 Starting asset preload...');
+                    
+                    const loadingScreen = document.getElementById('loadingScreen');
+                    const loadingBar = document.getElementById('loadingBar');
+                    const loadingText = document.getElementById('loadingText');
+                    const loadingDetails = document.getElementById('loadingDetails');
+
+                    // Collect all assets to preload
+                    const audioAssets = [
+                        'Explosion.m4a',
+                        'Horn.wav',
+                        'thunk.wav',
+                        'trap.m4a',
+                        'dogs.m4a',
+                        'charge.m4a',
+                        'beefcharge.m4a',
+                        'epichorntrimmed.m4a',
+                        'cluster.mp3',
+                        'thunder.mp3',
+                        'shao_kahn.m4a',
+                        'stargun.m4a'
+                    ];
+
+                    const imageAssets = [
+                        'cow.png',
+                        'rockyboy.png',
+                        'goggles.png',
+                        'marauder.png',
+                        'jug2.png',
+                        'phase.png',
+                        'storm.png',
+                        'storm4.png',
+                        'mar11.png',
+                        'mar2.png',
+                        'mar3.png',
+                        'mar4.png',
+                        'omega.png',
+                        'bshield.png',
+                        'clone.png',
+                        'jug1.png',
+                        'jug22.png',
+                        'jug33.png',
+                        'jug4.png'
+                    ];
+
+                    console.log(`📦 Total assets to load: ${audioAssets.length} audio, ${imageAssets.length} images`);
+
+                    let loadedCount = 0;
+                    const totalAssets = audioAssets.length + imageAssets.length;
+                    const errors = [];
+
+                    function updateProgress(assetName, success = true) {
+                        loadedCount++;
+                        const progress = (loadedCount / totalAssets) * 100;
+                        
+                        console.log(`${success ? '✅' : '❌'} [${loadedCount}/${totalAssets}] ${assetName}`);
+                        
+                        if (loadingBar) {
+                            loadingBar.style.width = `${progress}%`;
+                        }
+                        
+                        if (loadingDetails) {
+                            loadingDetails.textContent = `${loadedCount} / ${totalAssets} assets loaded`;
+                        }
+
+                        if (loadingText) {
+                            if (!success) {
+                                loadingText.textContent = `LOADING... (${assetName} missing - ok)`;
+                            } else if (loadedCount < totalAssets) {
+                                const shortName = assetName.replace(/\.(png|jpg|mp3|wav|m4a)$/i, '').toUpperCase();
+                                loadingText.textContent = `LOADING ${shortName}...`;
+                            } else {
+                                loadingText.textContent = 'SYSTEMS READY!';
+                            }
+                        }
+
+                        // Check if all assets are loaded
+                        if (loadedCount >= totalAssets) {
+                            console.log(`🎉 Asset loading complete! Loaded: ${totalAssets - errors.length}, Failed: ${errors.length}`);
+                            setTimeout(() => {
+                                if (loadingScreen) {
+                                    loadingScreen.classList.add('loaded');
+                                }
+                                setTimeout(() => {
+                                    if (errors.length > 0) {
+                                        console.warn('⚠️ Some assets failed to load (this is OK if files are missing):', errors.map(e => e.src));
+                                    }
+                                    resolve({ loaded: loadedCount, errors });
+                                }, 500); // Wait for fade-out animation
+                            }, 300); // Brief delay to show "SYSTEMS READY"
+                        }
+                    }
+
+                    // Preload audio files
+                    audioAssets.forEach(src => {
+                        const audio = new Audio();
+                        let resolved = false;
+                        
+                        audio.addEventListener('canplaythrough', () => {
+                            if (!resolved) {
+                                resolved = true;
+                                updateProgress(src, true);
+                            }
+                        }, { once: true });
+
+                        audio.addEventListener('error', (e) => {
+                            if (!resolved) {
+                                resolved = true;
+                                errors.push({ type: 'audio', src, error: e.type || 'load error' });
+                                updateProgress(src, false);
+                            }
+                        }, { once: true });
+
+                        // Set a timeout fallback in case the asset never loads
+                        setTimeout(() => {
+                            if (!resolved) {
+                                resolved = true;
+                                errors.push({ type: 'audio', src, error: 'timeout' });
+                                updateProgress(src, false);
+                            }
+                        }, 5000);
+
+                        audio.src = src;
+                        audio.load();
+                    });
+
+                    // Preload image files
+                    imageAssets.forEach(src => {
+                        const img = new Image();
+                        let resolved = false;
+                        
+                        img.addEventListener('load', () => {
+                            if (!resolved) {
+                                resolved = true;
+                                updateProgress(src, true);
+                            }
+                        }, { once: true });
+
+                        img.addEventListener('error', (e) => {
+                            if (!resolved) {
+                                resolved = true;
+                                errors.push({ type: 'image', src, error: e.type || 'load error' });
+                                updateProgress(src, false);
+                            }
+                        }, { once: true });
+
+                        // Set a timeout fallback
+                        setTimeout(() => {
+                            if (!resolved) {
+                                resolved = true;
+                                errors.push({ type: 'image', src, error: 'timeout' });
+                                updateProgress(src, false);
+                            }
+                        }, 5000);
+
+                        img.src = src;
+                    });
+
+                    // Fallback: if nothing loads after 10 seconds, proceed anyway
+                    setTimeout(() => {
+                        if (loadedCount === 0) {
+                            console.error('❌ Asset loading timeout - proceeding anyway');
+                            reject(new Error('Asset loading timeout'));
+                        }
+                    }, 10000);
+                });
+            }
+
+            // ===== GAME INITIALIZATION =====
+            
+            // Game initialization now waits for asset preloading
+            async function initializeGame() {
                 try {
-                    updateLeaderboard(null);
+                    // Wait for assets to load
+                    const result = await preloadAssets();
+                    console.log(`✅ Assets loaded: ${result.loaded} total`);
+                    if (result.errors.length > 0) {
+                        console.warn(`⚠️ ${result.errors.length} assets failed to load`);
+                    }
+
+                    // Initialize game after assets are ready
                     ensureName();
+                    refreshScoreList();
                     requestAnimationFrame(frame);
-                } catch (criticalError) {
-                    // Critical startup error silenced
+                } catch (error) {
+                    console.error('Asset preloading failed:', error);
+                    // Try to start game anyway
+                    try {
+                        updateLeaderboard(null);
+                        ensureName();
+                        requestAnimationFrame(frame);
+                    } catch (criticalError) {
+                        console.error('Critical startup error:', criticalError);
+                    }
                 }
+            }
+
+            // Start game initialization when DOM is ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initializeGame);
+            } else {
+                // DOM already loaded
+                initializeGame();
             }
 
             document.addEventListener('DOMContentLoaded', () => {
