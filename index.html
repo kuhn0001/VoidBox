@@ -4027,7 +4027,7 @@
             const W = 960, H = 540;
             const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
             const q = (id) => document.getElementById(id);
-            const CHAMPION_SYSTEM_ENABLED = true;
+            const CHAMPION_SYSTEM_ENABLED = false;
             const API_BASE = "https://jonathan-ecommerce-virginia-separation.trycloudflare.com/api";
             const withAlpha = (color, alpha) => {
                 if (!color) return `rgba(255,255,255,${alpha})`;
@@ -5643,7 +5643,7 @@
                 },
                 shadow_mirror: {
                     name: 'SHADOW MIRROR',
-                    baseHp: 7200,
+                    baseHp: 9600,
                     r: 58,
                     behavior: 'shadow_clone',
                     color: '#cbd4ff'
@@ -7201,6 +7201,33 @@
                 burn.lastApplied = performance.now();
             }
 
+            const FIRE_BURN_OFFSETS = Object.freeze([
+                { x: -0.45, y: -0.35 },
+                { x: 0.42, y: -0.3 },
+                { x: -0.28, y: 0.28 },
+                { x: 0.34, y: 0.32 },
+                { x: 0.05, y: -0.55 }
+            ]);
+
+            function spawnLocalizedFireBurn(enemy, intensity = 0, overrides = {}) {
+                if (!enemy || enemy.dead) return;
+                const baseRadius = enemy.r || 18;
+                const offsets = Array.isArray(overrides.offsets) && overrides.offsets.length ? overrides.offsets : FIRE_BURN_OFFSETS;
+                const template = offsets[Math.floor(Math.random() * offsets.length)] || { x: 0, y: -0.4 };
+                const offsetScale = overrides.offsetScale ?? 1;
+                const offsetX = template.x * baseRadius * offsetScale;
+                const offsetY = template.y * baseRadius * offsetScale;
+                const anchor = overrides.anchor ?? enemy;
+                const radiusScale = overrides.radiusScale ?? 0.6;
+                const visualRadius = Math.max(6, baseRadius * radiusScale);
+                store.activeEffects.push(createEffect('fireBurn', enemy.x + offsetX, enemy.y + offsetY, visualRadius, {
+                    intensity,
+                    anchor,
+                    offset: { x: offsetX, y: offsetY },
+                    follow: overrides.follow !== false
+                }));
+            }
+
             function applyFireBulletBurn(enemy, totalDamage, options = {}) {
                 if (!enemy || enemy.dead || totalDamage <= 0) return;
                 recordStackElementHit(enemy, 'fire');
@@ -7218,7 +7245,7 @@
                     enemy.fireBurns = [];
                 }
                 enemy.fireBurns.push(burnEntry);
-                store.activeEffects.push(createEffect('fireBurn', enemy.x, enemy.y, enemy.r || 18, { intensity: 0 }));
+                spawnLocalizedFireBurn(enemy, 0, options.fireEffect || {});
             }
 
             function applyBossDamage(boss, amount, options = {}) {
@@ -7273,7 +7300,6 @@
             }
 
             const VOID_PULSE_DAMAGE_SCALE = 0.55;
-            const VOID_PULSE_RADIUS_MULTIPLIER = 3.1;
 
             function triggerVoidPulse(origin, baseDamage, bulletContext = {}) {
                 if (!origin || !store) return;
@@ -7281,7 +7307,8 @@
                 const originY = Number.isFinite(origin.y) ? origin.y : null;
                 if (originX === null || originY === null) return;
 
-                const radius = Math.max(80, (origin.r || 18) * VOID_PULSE_RADIUS_MULTIPLIER);
+                const playerRadius = store?.player?.r;
+                const radius = Number.isFinite(playerRadius) ? playerRadius : 16;
                 const damageScale = Number.isFinite(bulletContext.voidPulseDamageScale) ? bulletContext.voidPulseDamageScale : VOID_PULSE_DAMAGE_SCALE;
                 const basePulseDamage = Math.max(0, baseDamage);
                 const pulseDamage = Math.max(basePulseDamage * damageScale, 5);
@@ -15144,6 +15171,10 @@
                             const lethalFloor = (e === store.boss) ? 0 : 1;
                             const appliedPoison = Math.min(poisonDamage, Math.max(0, e.hp - lethalFloor));
                             e.hp -= appliedPoison;
+                            if (!Array.isArray(store.activeEffects)) {
+                                store.activeEffects = [];
+                            }
+                            store.activeEffects.push(createEffect('poisonCloud', e.x, e.y, e.r || 16));
                             if (appliedPoison > 0) {
                                 recordStackElementHit(e, 'poison');
                             }
@@ -15166,6 +15197,10 @@
                             const lethalFloor = (e === store.boss) ? 0 : 1;
                             const appliedPoison = Math.min(poisonDamage, Math.max(0, e.hp - lethalFloor));
                             e.hp -= appliedPoison;
+                            if (!Array.isArray(store.activeEffects)) {
+                                store.activeEffects = [];
+                            }
+                            store.activeEffects.push(createEffect('poisonCloud', e.x, e.y, e.r || 16));
                             if (appliedPoison > 0) {
                                 recordStackElementHit(e, 'poison');
                             }
@@ -15212,6 +15247,10 @@
                                         other.poisonLastTick = 0.1;
                                         other.poisonTickInterval = 0.1;
                                         other.poisonDamagePerStack = e.poisonDamagePerStack || 2;
+                                        if (!Array.isArray(store.activeEffects)) {
+                                            store.activeEffects = [];
+                                        }
+                                        store.activeEffects.push(createEffect('poisonCloud', other.x, other.y, other.r || 16));
                                         
                                         // Set cooldown to prevent immediate re-spread
                                         e.poisonSpreadCooldown = 0.5;
@@ -15221,6 +15260,10 @@
                                         other.poisonStacks = Math.min(3, other.poisonStacks + 1);
                                         other.poisonStackTimer = e.poisonStackTimer || 4; // Refresh timer
                                         other.poisonDamagePerStack = e.poisonDamagePerStack || 2;
+                                        if (!Array.isArray(store.activeEffects)) {
+                                            store.activeEffects = [];
+                                        }
+                                        store.activeEffects.push(createEffect('poisonCloud', other.x, other.y, other.r || 16));
                                         
                                         e.poisonSpreadCooldown = 0.5;
                                         break;
@@ -15254,7 +15297,7 @@
                                         scale: 0.95
                                     });
                                     if (burn.effectTimer <= 0) {
-                                        store.activeEffects.push(createEffect('fireBurn', e.x, e.y, e.r || 18, { intensity: progress }));
+                                        spawnLocalizedFireBurn(e, progress);
                                         burn.effectTimer = 0.15;
                                     }
                                 }
@@ -33010,51 +33053,41 @@
                     ctx.restore();
                 }
                 
-                // Draw poison status effect (green mist)
                 if (e.poisonStacks && e.poisonStacks > 0) {
                     ctx.save();
-                    const time = performance.now() / 1000;
-                    const intensity = Math.min(e.poisonStacks / 3, 1);
-                    const phaseSeed = (e.id || 0) * 0.23;
-                    const pulse = 0.85 + 0.15 * Math.sin(time * 3.2 + phaseSeed);
-                    const mistRadius = a * (1.15 + intensity * 0.35);
+                    const poisonPulse = 0.6 + 0.4 * Math.cos(performance.now() / 400);
+                    const poisonAlpha = 0.5 * poisonPulse;
 
-                    ctx.globalCompositeOperation = 'lighter';
-                    ctx.globalAlpha = 0.3 + intensity * 0.4;
-                    const baseMist = ctx.createRadialGradient(0, 0, mistRadius * 0.25, 0, 0, mistRadius * 1.12);
-                    baseMist.addColorStop(0, 'rgba(150, 255, 200, 0.88)');
-                    baseMist.addColorStop(0.5, 'rgba(70, 235, 140, 0.55)');
-                    baseMist.addColorStop(1, 'rgba(15, 110, 45, 0)');
-                    ctx.fillStyle = baseMist;
+                    // Outer glow ring
+                    ctx.globalAlpha = poisonAlpha * 0.4;
+                    ctx.strokeStyle = '#00ff66';
+                    ctx.lineWidth = 2.5;
                     ctx.beginPath();
-                    ctx.arc(0, 0, mistRadius * (0.95 + 0.1 * pulse), 0, Math.PI * 2);
-                    ctx.fill();
+                    ctx.arc(0, 0, a * (1.3 + e.poisonStacks * 0.15), 0, Math.PI * 2);
+                    ctx.stroke();
 
-                    const swirlCount = 5 + Math.floor(intensity * 3);
-                    ctx.globalAlpha = 0.22 + intensity * 0.28;
-                    for (let i = 0; i < swirlCount; i++) {
-                        const swirlAngle = time * (1.25 + intensity * 0.55) + phaseSeed + i * (Math.PI * 2 / swirlCount);
-                        const offset = Math.sin(time * 1.8 + i + phaseSeed) * a * (0.24 + intensity * 0.1);
-                        ctx.save();
-                        ctx.rotate(swirlAngle);
-                        const swirlLength = mistRadius * (0.5 + Math.sin(time * 2.2 + i) * 0.14);
-                        const swirlWidth = mistRadius * (0.26 + intensity * 0.12);
-                        ctx.translate(offset, 0);
+                    // Inner glow ring
+                    ctx.globalAlpha = poisonAlpha * 0.7;
+                    ctx.strokeStyle = '#00ff66';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, a * (1.1 + e.poisonStacks * 0.1), 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    // Poison bubbles around enemy (without outline)
+                    ctx.globalAlpha = 0.6;
+                    const bubbleCount = 4 + (e.poisonStacks * 2);
+                    const time = performance.now() / 1000;
+                    for (let i = 0; i < bubbleCount; i++) {
+                        const angle = (i / bubbleCount) * Math.PI * 2 + time;
+                        const radius = a * (1.2 + Math.sin(time * 2 + i) * 0.3);
+                        const bubbleX = Math.cos(angle) * radius;
+                        const bubbleY = Math.sin(angle) * radius;
+                        const bubbleSize = 2 + Math.sin(time * 3 + i) * 1.5;
+                        ctx.fillStyle = '#00ff66';
                         ctx.beginPath();
-                        ctx.ellipse(0, 0, swirlLength, swirlWidth * 0.5, 0, 0, Math.PI * 2);
-                        ctx.fillStyle = 'rgba(75, 255, 150, 0.85)';
+                        ctx.arc(bubbleX, bubbleY, bubbleSize, 0, Math.PI * 2);
                         ctx.fill();
-                        ctx.restore();
-                    }
-
-                    if (e.poisonStacks > 1) {
-                        ctx.globalCompositeOperation = 'source-over';
-                        ctx.globalAlpha = 0.65 + intensity * 0.25;
-                        ctx.fillStyle = '#7dff9b';
-                        ctx.font = 'bold 10px Arial';
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        ctx.fillText(e.poisonStacks, 0, a + 12);
                     }
 
                     ctx.restore();
@@ -33177,31 +33210,49 @@
                     case "fireBurn":
                         effect.maxLife = opts.duration ?? 0.35;
                         effect.life = effect.maxLife;
-                        effect.radius = radius || 18;
+                        effect.radius = Math.max(6, radius || 18);
                         effect.opts = opts;
+                        effect.anchor = opts.anchor || null;
+                        effect.offset = opts.offset || { x: 0, y: 0 };
+                        effect.follow = opts.follow !== false;
                         effect.step = function (dt) {
+                            if (this.follow && this.anchor) {
+                                if (this.anchor.dead) {
+                                    this.follow = false;
+                                } else {
+                                    this.x = this.anchor.x + (this.offset?.x || 0);
+                                    this.y = this.anchor.y + (this.offset?.y || 0);
+                                }
+                            }
                             this.life -= dt;
                             if (this.life <= 0) this.isActive = false;
                         };
                         effect.draw = function () {
                             const progress = 1 - (this.life / this.maxLife);
                             const intensity = Math.min(1, Math.max(0, this.opts.intensity ?? 0));
-                            const baseAlpha = 0.38 + intensity * 0.37;
-                            const flicker = 0.75 + Math.sin(performance.now() / 80) * 0.25;
-                            const size = this.radius * (0.85 + progress * 0.4);
+                            const baseAlpha = 0.2 + intensity * 0.2;
+                            const flicker = 0.85 + Math.sin(performance.now() / 90 + this.life * 8) * 0.15;
+                            const size = this.radius * (0.65 + progress * 0.35);
                             ctx.save();
                             ctx.translate(this.x, this.y);
+                            ctx.globalAlpha = 1;
                             ctx.globalCompositeOperation = 'lighter';
                             ctx.globalAlpha = baseAlpha * flicker;
-                            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, size);
-                            gradient.addColorStop(0, 'rgba(255, 118, 34, 0.95)');
-                            gradient.addColorStop(0.3, 'rgba(255, 86, 18, 0.88)');
-                            gradient.addColorStop(0.65, 'rgba(210, 28, 8, 0.62)');
-                            gradient.addColorStop(1, 'rgba(90, 5, 0, 0)');
+                            const gradient = ctx.createRadialGradient(0, 0, size * 0.1, 0, 0, size);
+                            gradient.addColorStop(0, 'rgba(255, 176, 96, 0.8)');
+                            gradient.addColorStop(0.4, 'rgba(255, 110, 48, 0.42)');
+                            gradient.addColorStop(1, 'rgba(80, 18, 0, 0)');
                             ctx.fillStyle = gradient;
                             ctx.beginPath();
                             ctx.arc(0, 0, size, 0, Math.PI * 2);
                             ctx.fill();
+
+                            ctx.globalAlpha = baseAlpha * 0.6;
+                            ctx.strokeStyle = 'rgba(255, 210, 150, 0.4)';
+                            ctx.lineWidth = Math.max(1.2, size * 0.12);
+                            ctx.beginPath();
+                            ctx.arc(0, 0, size * 0.72, 0, Math.PI * 2);
+                            ctx.stroke();
                             ctx.restore();
                         };
                         break;
@@ -33218,34 +33269,35 @@
                             const lifeRatio = this.life / this.maxLife;
                             const fade = Math.max(0, lifeRatio);
                             const progress = 1 - lifeRatio;
-                            const outerRadius = this.radius * (0.85 + progress * 0.35);
-                            const innerRadius = outerRadius * 0.32;
+                            const outerRadius = this.radius * (0.9 + progress * 0.25);
+                            const innerRadius = outerRadius * 0.26;
                             ctx.save();
                             ctx.translate(this.x, this.y);
 
                             const gradient = ctx.createRadialGradient(0, 0, innerRadius, 0, 0, outerRadius);
-                            gradient.addColorStop(0, `rgba(18, 8, 32, ${0.55 * fade})`);
-                            gradient.addColorStop(0.55, `rgba(60, 20, 90, ${0.38 * fade})`);
+                            gradient.addColorStop(0, `rgba(18, 8, 32, ${0.32 * fade})`);
+                            gradient.addColorStop(0.55, `rgba(60, 20, 90, ${0.22 * fade})`);
                             gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
                             ctx.globalCompositeOperation = 'source-over';
+                            ctx.globalAlpha = 0.75;
                             ctx.fillStyle = gradient;
                             ctx.beginPath();
                             ctx.arc(0, 0, outerRadius, 0, Math.PI * 2);
                             ctx.fill();
 
                             ctx.globalCompositeOperation = 'lighter';
-                            ctx.strokeStyle = `rgba(190, 140, 255, ${0.42 * fade})`;
-                            ctx.lineWidth = Math.max(2, this.radius * 0.08 * fade);
+                            ctx.strokeStyle = `rgba(190, 140, 255, ${0.24 * fade})`;
+                            ctx.lineWidth = Math.max(1.2, this.radius * 0.05 * fade);
                             ctx.beginPath();
                             ctx.arc(0, 0, outerRadius, 0, Math.PI * 2);
                             ctx.stroke();
 
-                            ctx.strokeStyle = `rgba(90, 45, 150, ${0.3 * fade})`;
-                            ctx.lineWidth = Math.max(1, this.radius * 0.045 * fade);
-                            ctx.setLineDash([6, 18]);
+                            ctx.strokeStyle = `rgba(90, 45, 150, ${0.18 * fade})`;
+                            ctx.lineWidth = Math.max(0.8, this.radius * 0.03 * fade);
+                            ctx.setLineDash([5, 20]);
                             ctx.beginPath();
-                            ctx.arc(0, 0, outerRadius * 0.7, 0, Math.PI * 2);
+                            ctx.arc(0, 0, outerRadius * 0.65, 0, Math.PI * 2);
                             ctx.stroke();
                             ctx.setLineDash([]);
 
@@ -33396,157 +33448,54 @@
                             ctx.restore();
                         };
                         break;
-                    case "poisonDissolve":
-                        effect.maxLife = opts.duration ?? 0.9;
+                    case "poisonCloud":
+                        effect.maxLife = opts.duration ?? 0.75;
                         effect.life = effect.maxLife;
                         effect.radius = radius || 18;
-                        effect.baseColor = opts.baseColor || '#7B3FF2';
+                        effect.seed = opts.seed ?? Math.random() * Math.PI * 2;
+                        effect.particles = Array.from({ length: Math.max(4, Math.min(10, Math.floor((radius || 18) / 3))) }, () => ({
+                            angle: Math.random() * Math.PI * 2,
+                            dist: 0.45 + Math.random() * 0.4,
+                            size: 0.18 + Math.random() * 0.22,
+                            offset: Math.random() * Math.PI * 2
+                        }));
                         effect.step = function (dt) {
                             this.life -= dt;
                             if (this.life <= 0) this.isActive = false;
                         };
                         effect.draw = function () {
-                            const t = 1 - (this.life / this.maxLife);
-                            const visible = Math.max(0, 1 - t);
-                            if (visible <= 0) return;
+                            const lifeRatio = Math.max(0, this.life / this.maxLife);
+                            const pulse = 0.9 + Math.sin(performance.now() / 170 + this.seed) * 0.12;
+                            const baseRadius = this.radius * (0.85 + (1 - lifeRatio) * 0.2) * pulse;
 
                             ctx.save();
                             ctx.translate(this.x, this.y);
                             ctx.globalCompositeOperation = 'lighter';
 
-                            // Dissolving enemy silhouette - shrinks and fades down
-                            const dissolveScale = 1 - t * 0.6; // Shrink to 40% size
-                            const dissolveAlpha = visible * 0.7;
-                            const dissolveRadius = this.radius * dissolveScale;
-                            
-                            // Outer toxic glow
-                            const outerGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, dissolveRadius * 1.3);
-                            outerGlow.addColorStop(0, `rgba(123, 63, 242, ${dissolveAlpha * 0.6})`);
-                            outerGlow.addColorStop(0.5, `rgba(123, 63, 242, ${dissolveAlpha * 0.3})`);
-                            outerGlow.addColorStop(1, 'rgba(123, 63, 242, 0)');
-                            ctx.fillStyle = outerGlow;
+                            ctx.globalAlpha = 0.45 * lifeRatio;
+                            const gradient = ctx.createRadialGradient(0, 0, baseRadius * 0.15, 0, 0, baseRadius);
+                            gradient.addColorStop(0, 'rgba(120, 255, 150, 0.75)');
+                            gradient.addColorStop(0.55, 'rgba(40, 150, 90, 0.45)');
+                            gradient.addColorStop(1, 'rgba(12, 48, 26, 0)');
+                            ctx.fillStyle = gradient;
                             ctx.beginPath();
-                            ctx.arc(0, 0, dissolveRadius * 1.3, 0, Math.PI * 2);
+                            ctx.arc(0, 0, baseRadius, 0, Math.PI * 2);
                             ctx.fill();
 
-                            // Main dissolving body - drips downward
-                            const dripOffset = t * this.radius * 0.5;
-                            ctx.fillStyle = `rgba(123, 63, 242, ${dissolveAlpha})`;
-                            ctx.beginPath();
-                            ctx.ellipse(0, dripOffset, dissolveRadius, dissolveRadius * (1 + t * 0.3), 0, 0, Math.PI * 2);
-                            ctx.fill();
-
-                            // Toxic drips falling
-                            const dripCount = 5;
-                            for (let i = 0; i < dripCount; i++) {
-                                const dripT = Math.min(1, t * 1.5 + i * 0.15);
-                                if (dripT <= 0) continue;
-                                const angle = (i / dripCount) * Math.PI * 2;
-                                const dripX = Math.cos(angle) * dissolveRadius * 0.5;
-                                const dripY = dripT * this.radius * 1.2;
-                                const dripSize = this.radius * 0.15 * (1 - dripT);
-                                ctx.globalAlpha = (1 - dripT) * 0.6;
-                                ctx.fillStyle = '#9D5FFF';
+                            const time = performance.now() / 1000;
+                            ctx.globalAlpha = 0.35 * lifeRatio;
+                            ctx.fillStyle = 'rgba(120, 255, 170, 0.7)';
+                            this.particles.forEach((p, index) => {
+                                const swirl = time * 1.6 + this.seed * 0.3 + index * 0.7;
+                                const orbit = this.radius * p.dist * (0.9 + Math.sin(time * 1.1 + p.offset) * 0.08);
+                                const px = Math.cos(p.angle + swirl) * orbit;
+                                const py = Math.sin(p.angle + swirl) * orbit;
+                                const bubbleRadius = this.radius * p.size * (0.8 + Math.sin(time * 2.4 + p.offset) * 0.15);
                                 ctx.beginPath();
-                                ctx.arc(dripX, dripY, dripSize, 0, Math.PI * 2);
+                                ctx.arc(px, py, Math.max(1.2, bubbleRadius), 0, Math.PI * 2);
                                 ctx.fill();
-                            }
-
-                            ctx.restore();
-                        };
-                        break;
-                    case "poisonBubble":
-                        effect.maxLife = opts.duration ?? 0.7;
-                        effect.life = effect.maxLife;
-                        effect.radius = radius || 4;
-                        effect.riseSpeed = opts.riseSpeed ?? 50;
-                        effect.wobble = opts.wobble ?? 0;
-                        effect.startY = y;
-                        effect.step = function (dt) {
-                            this.life -= dt;
-                            this.y -= this.riseSpeed * dt;
-                            this.wobble += dt * 3;
-                            this.x += Math.sin(this.wobble) * 15 * dt;
-                            if (this.life <= 0) this.isActive = false;
-                        };
-                        effect.draw = function () {
-                            const alpha = Math.min(1, this.life / this.maxLife);
-                            if (alpha <= 0) return;
-
-                            ctx.save();
-                            ctx.globalCompositeOperation = 'lighter';
-                            ctx.globalAlpha = alpha * 0.7;
-                            
-                            // Outer bubble rim
-                            ctx.strokeStyle = `rgba(157, 95, 255, ${alpha})`;
-                            ctx.lineWidth = 1.5;
-                            ctx.beginPath();
-                            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                            ctx.stroke();
-
-                            // Inner bubble fill
-                            const bubbleGrad = ctx.createRadialGradient(
-                                this.x - this.radius * 0.3, this.y - this.radius * 0.3, 0,
-                                this.x, this.y, this.radius
-                            );
-                            bubbleGrad.addColorStop(0, `rgba(200, 150, 255, ${alpha * 0.4})`);
-                            bubbleGrad.addColorStop(0.7, `rgba(123, 63, 242, ${alpha * 0.2})`);
-                            bubbleGrad.addColorStop(1, 'rgba(123, 63, 242, 0)');
-                            ctx.fillStyle = bubbleGrad;
-                            ctx.beginPath();
-                            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                            ctx.fill();
-
-                            ctx.restore();
-                        };
-                        break;
-                    case "poisonSplash":
-                        effect.maxLife = opts.duration ?? 0.4;
-                        effect.life = effect.maxLife;
-                        effect.radius = radius || 20;
-                        effect.particleCount = opts.particleCount ?? 20;
-                        effect.particles = Array.from({ length: effect.particleCount }, () => {
-                            const angle = Math.random() * Math.PI * 2;
-                            const speed = 80 + Math.random() * 120;
-                            return {
-                                angle,
-                                vx: Math.cos(angle) * speed,
-                                vy: Math.sin(angle) * speed - 40,
-                                size: 2 + Math.random() * 3,
-                                life: 1
-                            };
-                        });
-                        effect.step = function (dt) {
-                            this.life -= dt;
-                            this.particles.forEach(p => {
-                                p.vx *= 0.95;
-                                p.vy += 300 * dt; // Gravity
-                                p.life -= dt / this.maxLife;
                             });
-                            if (this.life <= 0) this.isActive = false;
-                        };
-                        effect.draw = function () {
-                            const progress = 1 - (this.life / this.maxLife);
-                            ctx.save();
-                            ctx.globalCompositeOperation = 'lighter';
-                            
-                            this.particles.forEach(p => {
-                                if (p.life <= 0) return;
-                                const px = this.x + p.vx * progress * this.maxLife;
-                                const py = this.y + p.vy * progress * this.maxLife;
-                                const alpha = p.life * 0.8;
-                                
-                                ctx.fillStyle = `rgba(157, 95, 255, ${alpha})`;
-                                ctx.beginPath();
-                                ctx.arc(px, py, p.size * p.life, 0, Math.PI * 2);
-                                ctx.fill();
-                                
-                                // Trail
-                                ctx.globalAlpha = alpha * 0.3;
-                                ctx.fillStyle = '#7B3FF2';
-                                ctx.fillRect(px - 1, py, 2, p.size * 2);
-                            });
-                            
+
                             ctx.restore();
                         };
                         break;
@@ -42305,10 +42254,12 @@
                     colorStops
                 }));
 
-                store.activeEffects.push(createEffect('fireBurn', x, y, radius * 0.9, {
-                    intensity: 0.8,
-                    duration: Math.min(duration * 0.6, 0.5)
-                }));
+                const pseudoTarget = { x, y, r: radius, dead: false };
+                spawnLocalizedFireBurn(pseudoTarget, 0.8, {
+                    follow: false,
+                    radiusScale: 0.7,
+                    offsetScale: 0.9
+                });
             }
 
             function spawnPoisonDeath(x, y, options = {}) {
@@ -42318,35 +42269,19 @@
                 }
 
                 const radius = Math.max(12, Number.isFinite(options.enemyRadius) ? options.enemyRadius : (options.radius || 18));
-                const baseColor = options.baseColor || '#7B3FF2';
-                const duration = Math.max(0.6, options.duration || 0.9);
-
-                // Create toxic dissolve effect - enemy melts into poison puddle
-                store.activeEffects.push(createEffect('poisonDissolve', x, y, radius, {
-                    duration,
-                    baseColor
-                }));
-
-                // Spawn poison bubbles rising up
-                const bubbleCount = Math.floor(radius * 0.8);
-                for (let i = 0; i < bubbleCount; i++) {
-                    const angle = (i / bubbleCount) * Math.PI * 2;
-                    const spreadDist = Math.random() * radius * 0.5;
-                    const bubbleX = x + Math.cos(angle) * spreadDist;
-                    const bubbleY = y + Math.sin(angle) * spreadDist;
-                    
-                    store.activeEffects.push(createEffect('poisonBubble', bubbleX, bubbleY, 3 + Math.random() * 4, {
-                        duration: 0.5 + Math.random() * 0.4,
-                        riseSpeed: 40 + Math.random() * 60,
-                        wobble: Math.random() * Math.PI * 2
+                const duration = Math.max(0.5, options.duration || 0.85);
+                const cloudCount = Math.max(5, Math.min(18, Math.floor(radius * 0.6)));
+                for (let i = 0; i < cloudCount; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const spread = Math.random() * radius * 0.65;
+                    const cloudX = x + Math.cos(angle) * spread;
+                    const cloudY = y + Math.sin(angle) * spread;
+                    const cloudRadius = Math.max(8, radius * (0.35 + Math.random() * 0.4));
+                    store.activeEffects.push(createEffect('poisonCloud', cloudX, cloudY, cloudRadius, {
+                        duration: duration * (0.75 + Math.random() * 0.35),
+                        seed: Math.random() * Math.PI * 2
                     }));
                 }
-
-                // Create poison splash effect
-                store.activeEffects.push(createEffect('poisonSplash', x, y, radius * 1.2, {
-                    duration: 0.4,
-                    particleCount: Math.floor(radius * 1.5)
-                }));
             }
 
             /**
