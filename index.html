@@ -4604,10 +4604,10 @@
 
                 // Cyberpunk electric gradient: Neon cyan → Electric purple → Hot magenta → Bright white core
                 const gradient = new PIXI.FillGradient(0, -bladeHeight, 0, bladeHeight);
-                gradient.addColorStop(0, '#00ffff'); // Neon cyan tip
-                gradient.addColorStop(0.25, '#0ea5e9'); // Bright sky blue
+                gradient.addColorStop(0, '#ff3c1a'); // Neon cyan tip
+                gradient.addColorStop(0.25, '#ec4899'); // Bright sky blue
                 gradient.addColorStop(0.5, '#a855f7'); // Electric purple center
-                gradient.addColorStop(0.75, '#ec4899'); // Hot magenta
+                gradient.addColorStop(0.75, '#000000'); // Hot magenta
                 gradient.addColorStop(1, '#fbbf24'); // Bright electric yellow
 
                 // Create sharp blade shape - elongated and thin
@@ -4623,9 +4623,9 @@
 
                 // Bright energy core - thin vertical line
                 const coreGradient = new PIXI.FillGradient(0, -bladeHeight * 0.8, 0, bladeHeight * 0.8);
-                coreGradient.addColorStop(0, '#ffffff'); // White hot core
-                coreGradient.addColorStop(0.5, '#00ffff'); // Cyan center
-                coreGradient.addColorStop(1, '#ffffff'); // White hot core
+                coreGradient.addColorStop(0, '#a855f7'); // White hot core
+                coreGradient.addColorStop(0.5, '#ec4899'); // Cyan center ec4899
+                coreGradient.addColorStop(1, '#a855f7'); // White hot core
                 
                 lavaGraphics.poly([
                     { x: 0, y: -bladeHeight * 0.85 },
@@ -4645,8 +4645,8 @@
                     { x: -bladeWidth * 0.5, y: -bladeHeight * 0.15 },
                     { x: 0, y: -bladeHeight }
                 ]);
-                lavaGraphics.stroke({ width: 1.2, color: '#00ffff', alpha: 0.9 }); // Bright cyan outline
-                lavaGraphics.stroke({ width: 0.5, color: '#ffffff', alpha: 0.7 }); // White glow edge
+                lavaGraphics.stroke({ width: 1.2, color: '#ff1a5e', alpha: 0.9 }); // Reddish pink outline
+                lavaGraphics.stroke({ width: 0.5, color: '#ff6b9d', alpha: 0.7 }); // Pink glow edge
 
                 // Generate at higher resolution for crisp sharp edges
                 bulletTextures.lavaBlade = pixiApp.renderer.generateTexture(lavaGraphics, {
@@ -4656,6 +4656,36 @@
                 
             console.log('✅ Bullet textures created', bulletTextures);
             }
+
+            // Global function to reload textures (useful when changing colors)
+            window.reloadBulletTextures = function() {
+                console.log('🔄 Reloading bullet textures...');
+                
+                // Clear active sprites to prevent using destroyed textures
+                activeBulletSprites.forEach((sprite, bullet) => {
+                    if (sprite && sprite.parent) {
+                        sprite.parent.removeChild(sprite);
+                    }
+                });
+                activeBulletSprites.clear();
+                
+                // Return sprites to pool
+                while (bulletSpritePool.length > 0) {
+                    const sprite = bulletSpritePool.pop();
+                    if (sprite && sprite.parent) {
+                        sprite.parent.removeChild(sprite);
+                    }
+                }
+                
+                // Don't destroy textures, just clear the cache - let PixiJS handle cleanup
+                Object.keys(bulletTextures).forEach(key => delete bulletTextures[key]);
+                
+                // Regenerate all textures
+                createBulletTextures();
+                
+                console.log('✅ Bullet textures reloaded! New colors active.');
+                return 'Textures reloaded successfully!';
+            };
 
             // Particle texture factory
             function createParticleTexture() {
@@ -6199,6 +6229,7 @@
                 flamePulses: [], // Rocketman flame pulse rings
                 mechPuddles: [], // Hazardous puddles left by mech tank attacks
                 poisonPuddles: [],
+                tombstones: [], // Zombie spawning structures
                 goldenOrbs: [],
                 shadowEchoes: [],
                 temporalEchoes: [],
@@ -7957,6 +7988,7 @@
                         deathElement = getStackDeathType(e, { fallbackElement: b.element });
                         e.deathElement = deathElement;
                         e.dead = true;
+                        
                         if (e.type === 'void_champion') {
                             store.enemies.forEach(minion => {
                                 if (minion.orbitTargetId === e.id && !minion.dead) {
@@ -8245,6 +8277,32 @@
                             store.activeEffects.push(createEffect('spawnTeleport', shard.x, shard.y, 36, { color: '#9df7ff', duration: 0.32 }));
                             playSound('stargun');
                             store.timeShards.splice(si, 1);
+                        }
+
+                        consumeBulletPierce(b);
+                        break;
+                    }
+                }
+                
+                // Tombstone collision
+                if (!b.dead && store.tombstones && store.tombstones.length) {
+                    for (let ti = store.tombstones.length - 1; ti >= 0; ti--) {
+                        const tomb = store.tombstones[ti];
+                        if (!tomb || tomb.dead || tomb.hp <= 0) continue;
+                        const hitRadius = (tomb.r || 20) + (b.r || 3);
+                        const dx = b.x - tomb.x;
+                        const dy = b.y - tomb.y;
+                        if (dx * dx + dy * dy > hitRadius * hitRadius) continue;
+
+                        const damage = b.dmg || 12;
+                        tomb.hp -= damage;
+                        store.activeEffects.push(createEffect('hitSpark', tomb.x, tomb.y, (tomb.r || 20) * 1.2, { strength: 28 }));
+                        
+                        if (tomb.hp <= 0) {
+                            tomb.dead = true;
+                            spawnGibs(tomb.x, tomb.y, tomb.color);
+                            store.activeEffects.push(createEffect('enemyExplosion', tomb.x, tomb.y, tomb.r * 2));
+                            playSound('explosion');
                         }
 
                         consumeBulletPierce(b);
@@ -12029,6 +12087,73 @@
                 if (!window.spawnBossLoopChampions) {
                     window.spawnBossLoopChampions = spawnBossLoopChampions;
                 }
+                // Debug: Spawn zombie helper
+                if (!window.spawnZombie) {
+                    window.spawnZombie = function(x, y) {
+                        const zombie = spawnEnemy('zombie', { 
+                            x: x !== undefined ? x : store.player.x, 
+                            y: y !== undefined ? y : store.player.y - 100 
+                        });
+                        if (zombie) {
+                            store.enemies.push(zombie);
+                            console.log('🧟 Zombie spawned!', zombie);
+                        }
+                        return zombie;
+                    };
+                }
+                
+                // Debug: Spawn tombstone helper
+                if (!window.spawnTombstone) {
+                    window.spawnTombstone = function(x, y) {
+                        // If x/y not provided, spawn near edges at random position
+                        let spawnX, spawnY;
+                        if (x !== undefined && y !== undefined) {
+                            spawnX = x;
+                            spawnY = y;
+                        } else {
+                            // Choose random edge: 0=top, 1=right, 2=bottom, 3=left
+                            const edge = Math.floor(Math.random() * 4);
+                            const edgeMargin = 80; // Distance from edge
+                            const edgeVariation = 0.6; // Use 60% of screen dimension for placement
+                            
+                            switch(edge) {
+                                case 0: // Top edge
+                                    spawnX = W * (0.2 + Math.random() * edgeVariation);
+                                    spawnY = edgeMargin;
+                                    break;
+                                case 1: // Right edge
+                                    spawnX = W - edgeMargin;
+                                    spawnY = H * (0.2 + Math.random() * edgeVariation);
+                                    break;
+                                case 2: // Bottom edge
+                                    spawnX = W * (0.2 + Math.random() * edgeVariation);
+                                    spawnY = H - edgeMargin;
+                                    break;
+                                case 3: // Left edge
+                                    spawnX = edgeMargin;
+                                    spawnY = H * (0.2 + Math.random() * edgeVariation);
+                                    break;
+                            }
+                        }
+                        
+                        const tombstone = {
+                            id: Date.now() + Math.random(),
+                            x: spawnX,
+                            y: spawnY,
+                            r: 20,
+                            hp: 150,
+                            hpMax: 150,
+                            spawnTimer: 0,
+                            spawnInterval: 3.0, // Spawn zombie every 3 seconds
+                            color: '#8b4789',
+                            dead: false
+                        };
+                        store.tombstones.push(tombstone);
+                        console.log('🪦 Tombstone spawned!', tombstone);
+                        return tombstone;
+                    };
+                }
+
 
                 // Clear poison puddles at start of each wave for clean slate
                 if (store.poisonPuddles) {
@@ -12351,6 +12476,7 @@
                 const cfgs = {
                     drone: { r: 10, v: 80, vx: 0, hp: 30, color: '#C0C0C0', xp: 5, score: 50, gold: 2, fireRateChance: 0.004, contactDamage: 8 },
                     hunter: { r: 20, v: 100, vx: 0, hp: 26, color: '#DC143C', xp: 8, score: 80, gold: 3, fireRateChance: 0.005, contactDamage: 10 },
+                    zombie: { r: 12, v: 35, vx: 0, hp: 40, color: '#00ff88', xp: 3, score: 30, gold: 1, fireRateChance: 0, contactDamage: 8, tracksPlayer: true },
                     trap_king_add: { r: 6, v: 90, vx: 0, hp: 12, color: '#ffc83d', damage: 5, xp: 2, score: 10, gold: 1, contactDamage: 6 },
                     phantom: { r: 14, v: 90, vx: 0, hp: 48, color: '#FFFFFF', xp: 10, score: 100, gold: 3, fireRateChance: 0.006, fireCooldown: 1.5, contactDamage: 10 },
                     mech: { r: 18, v: 40, vx: 0, hp: 60, color: '#FF8500', xp: 15, score: 150, gold: 6, fireRateChance: 0.007, attackPhase: 0, contactDamage: 12 },
@@ -14932,6 +15058,28 @@
                         store.mechPuddles.splice(i, 1);
                     }
                 }
+                
+                // Update tombstones
+                if (!store.tombstones) store.tombstones = [];
+                for (let i = store.tombstones.length - 1; i >= 0; i--) {
+                    const tomb = store.tombstones[i];
+                    if (tomb.dead || tomb.hp <= 0) {
+                        store.tombstones.splice(i, 1);
+                        continue;
+                    }
+                    
+                    tomb.spawnTimer += dt;
+                    if (tomb.spawnTimer >= tomb.spawnInterval) {
+                        tomb.spawnTimer = 0;
+                        const zombie = spawnEnemy('zombie', {
+                            x: tomb.x + (Math.random() - 0.5) * 60,
+                            y: tomb.y + (Math.random() - 0.5) * 60
+                        });
+                        if (zombie) {
+                            store.enemies.push(zombie);
+                        }
+                    }
+                }
 
                 updateVoidStepSystems(store.enemies);
                 updateImpactSystem();
@@ -15835,8 +15983,20 @@
                             if (e.dashVY) e.dashVY = 0;
                         }
 
+                        // ZOMBIE PROTOCOL: Slow tracking toward player
+                        if (e.type === 'zombie' && e.tracksPlayer) {
+                            e.t = (e.t || 0) + dt;
+                            const dx = store.player.x - e.x;
+                            const dy = store.player.y - e.y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            if (dist > 1) {
+                                // Slow shambling movement directly toward player
+                                e.x += (dx / dist) * e.v * speedMultiplier * dt;
+                                e.y += (dy / dist) * e.v * speedMultiplier * dt;
+                            }
+                        }
                         // SWARM PROTOCOL: Fast homing enemies (construct_gold, avian_hatchling)
-                        if (e.type === 'construct_gold' || e.type === 'avian_hatchling') {
+                        else if (e.type === 'construct_gold' || e.type === 'avian_hatchling') {
                             e.t = (e.t || 0) + dt;
                             const overshootHandled = maybeHandleChaseOvershoot(e, dt, speedMultiplier, e.v * 1.25, {
                                 triggerRange: 240,
@@ -19541,6 +19701,7 @@
                 store.powerups.forEach(p => drawPowerup(p));
                 drawTimeShards();
                 drawGoldenOrbs();
+                if (store.tombstones) store.tombstones.forEach(t => drawTombstone(t));
                 store.missiles.forEach(m => drawMissile(m));
                 store.lightningBolts.forEach(l => drawLightningBolt(l));
                 store.hunterLightningChains.forEach(c => drawHunterLightningChain(c));
@@ -28865,6 +29026,89 @@
 
                 ctx.restore();
             }
+            
+            function drawTombstone(t) {
+                if (t.dead || t.hp <= 0) return;
+                
+                ctx.save();
+                ctx.translate(t.x, t.y);
+                
+                const time = performance.now() / 1000;
+                const pulse = 0.9 + 0.1 * Math.sin(time * 2);
+                
+                // Shadow
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                ctx.beginPath();
+                ctx.ellipse(0, t.r * 1.2, t.r * 0.9, t.r * 0.3, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Tombstone base/pedestal
+                ctx.fillStyle = '#3a2f4a';
+                ctx.strokeStyle = '#2a1f3a';
+                ctx.lineWidth = 2;
+                ctx.fillRect(-t.r * 0.9, t.r * 0.7, t.r * 1.8, t.r * 0.4);
+                ctx.strokeRect(-t.r * 0.9, t.r * 0.7, t.r * 1.8, t.r * 0.4);
+                
+                // Main tombstone shape
+                const grad = ctx.createLinearGradient(0, -t.r * 1.2, 0, t.r * 0.7);
+                grad.addColorStop(0, '#5a4a6a');
+                grad.addColorStop(0.6, t.color);
+                grad.addColorStop(1, '#3a2a4a');
+                ctx.fillStyle = grad;
+                ctx.strokeStyle = '#2a1a3a';
+                ctx.lineWidth = 2;
+                
+                ctx.beginPath();
+                ctx.moveTo(-t.r * 0.8, t.r * 0.7);
+                ctx.lineTo(-t.r * 0.8, -t.r * 0.5);
+                ctx.quadraticCurveTo(-t.r * 0.8, -t.r * 1.1, 0, -t.r * 1.2);
+                ctx.quadraticCurveTo(t.r * 0.8, -t.r * 1.1, t.r * 0.8, -t.r * 0.5);
+                ctx.lineTo(t.r * 0.8, t.r * 0.7);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                
+                // Cracks
+                ctx.strokeStyle = '#2a1a2a';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(-t.r * 0.3, -t.r * 0.8);
+                ctx.lineTo(-t.r * 0.5, -t.r * 0.3);
+                ctx.moveTo(t.r * 0.4, -t.r * 0.6);
+                ctx.lineTo(t.r * 0.2, 0);
+                ctx.stroke();
+                
+                // Glowing runes/symbols
+                ctx.save();
+                ctx.globalAlpha = 0.6 + 0.4 * pulse;
+                ctx.shadowColor = '#00ff88';
+                ctx.shadowBlur = 8;
+                ctx.fillStyle = '#00ff88';
+                ctx.font = 'bold 14px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('☠', 0, -t.r * 0.3);
+                ctx.restore();
+                
+                // Health bar
+                const barWidth = t.r * 1.6;
+                const barHeight = 4;
+                const barY = -t.r * 1.5;
+                const hpRatio = t.hp / t.hpMax;
+                
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                ctx.fillRect(-barWidth / 2, barY, barWidth, barHeight);
+                
+                ctx.fillStyle = hpRatio > 0.5 ? '#00ff88' : (hpRatio > 0.25 ? '#ffaa00' : '#ff4444');
+                ctx.fillRect(-barWidth / 2, barY, barWidth * hpRatio, barHeight);
+                
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(-barWidth / 2, barY, barWidth, barHeight);
+                
+                ctx.restore();
+            }
+            
             function drawPowerup(p) {
                 const cfg = POWERUP_TYPES[p.type];
                 ctx.save();
@@ -31519,8 +31763,8 @@
 
                 } else { const time = performance.now() / 1000; ctx.fillStyle = '#2c2c54'; ctx.strokeStyle = '#40407a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, t.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#706fd3'; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.8, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#f0932b'; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.3, 0, Math.PI * 2); ctx.fill(); for (let i = 0; i < 6; i++) { ctx.save(); ctx.rotate(i * Math.PI / 3 + time * 0.3); ctx.translate(t.r * 0.6, 0); ctx.fillStyle = '#ff6348'; ctx.strokeStyle = '#2f3542'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, t.r * 0.15, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore(); } const eyeSize = t.r * 0.12; ctx.fillStyle = '#ff3838'; ctx.beginPath(); ctx.arc(-t.r * 0.2, -t.r * 0.15, eyeSize, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(t.r * 0.2, -t.r * 0.15, eyeSize, 0, Math.PI * 2); ctx.fill(); for (let i = 0; i < 4; i++) { ctx.save(); ctx.rotate(i * Math.PI / 2 + time * -0.5); ctx.translate(t.r * 0.9, 0); ctx.fillStyle = '#3c6382'; ctx.strokeStyle = '#40407a'; ctx.lineWidth = 2; ctx.fillRect(-t.r * 0.08, -t.r * 0.06, t.r * 0.16, t.r * 0.12); ctx.strokeRect(-t.r * 0.08, -t.r * 0.06, t.r * 0.16, t.r * 0.12); ctx.restore(); } }
                 
-                // Draw poison status effect (sickly tint + wobble + bubbles)
-                if (t.poisonStacks && t.poisonStacks > 0) {
+                // Draw poison status effect (sickly tint + wobble + bubbles) - DISABLED FOR BOSSES
+                if (t.poisonStacks && t.poisonStacks > 0 && !t.isBoss) {
                     ctx.save();
                     const time = performance.now() / 1000;
                     const intensity = Math.min(t.poisonStacks / 3, 1);
@@ -31615,18 +31859,18 @@
                     const icePulse = 0.6 + 0.4 * Math.cos(performance.now() / 350);
                     const iceAlpha = 0.5 * icePulse;
                     
-                    // Outer glow ring
+                    // Outer glow ring - THINNED
                     ctx.globalAlpha = iceAlpha * 0.4;
                     ctx.strokeStyle = '#0033ff';
-                    ctx.lineWidth = 2.5;
+                    ctx.lineWidth = 1; // Reduced from 2.5
                     ctx.beginPath();
                     ctx.arc(0, 0, t.r * (1.3 + t.iceStacks * 0.15), 0, Math.PI * 2);
                     ctx.stroke();
                     
-                    // Inner glow ring
+                    // Inner glow ring - THINNED
                     ctx.globalAlpha = iceAlpha * 0.7;
                     ctx.strokeStyle = '#0088ff';
-                    ctx.lineWidth = 1.5;
+                    ctx.lineWidth = 0.8; // Reduced from 1.5
                     ctx.beginPath();
                     ctx.arc(0, 0, t.r * (1.1 + t.iceStacks * 0.1), 0, Math.PI * 2);
                     ctx.stroke();
@@ -31654,35 +31898,71 @@
                     }
                     
                     if (t.isFrozen && t.iceStacks >= 3) {
-                        // BOSS FROZEN VISUAL - Reduced opacity so boss is more visible
-                        // Bright blue ice shell with lower opacity
-                        ctx.globalAlpha = 0.45;
-                        const frostShell = ctx.createRadialGradient(0, 0, t.r * 0.15, 0, 0, t.r * 1.55);
-                        frostShell.addColorStop(0, 'rgba(180, 220, 255, 0.6)');  // Bright light blue center
-                        frostShell.addColorStop(0.3, 'rgba(120, 190, 255, 0.5)'); // Medium blue
-                        frostShell.addColorStop(0.65, 'rgba(60, 140, 240, 0.4)'); // Darker blue edge
-                        frostShell.addColorStop(1, 'rgba(30, 100, 200, 0.25)');     // Transparent outer
+                        // FROZEN VISUAL - Ice crystal encasement
+                        // Subtle blue-white ice shell (more transparent)
+                        ctx.globalAlpha = 0.25;
+                        const frostShell = ctx.createRadialGradient(0, 0, t.r * 0.15, 0, 0, t.r * 1.5);
+                        frostShell.addColorStop(0, 'rgba(220, 240, 255, 0.4)');  // Very light center
+                        frostShell.addColorStop(0.4, 'rgba(180, 220, 255, 0.3)'); // Light blue
+                        frostShell.addColorStop(0.7, 'rgba(140, 200, 255, 0.2)'); // Fading blue
+                        frostShell.addColorStop(1, 'rgba(100, 180, 240, 0)');     // Transparent edge
                         ctx.fillStyle = frostShell;
                         ctx.beginPath();
-                        ctx.arc(0, 0, t.r * 1.5, 0, Math.PI * 2);
+                        ctx.arc(0, 0, t.r * 1.45, 0, Math.PI * 2);
                         ctx.fill();
 
-                        // Bright white frost border (thick and visible)
-                        ctx.globalAlpha = 0.75;
-                        ctx.strokeStyle = '#ffffff';
-                        ctx.lineWidth = Math.max(5, t.r * 0.15);
+                        // Thin crisp ice border (much thinner)
+                        ctx.globalAlpha = 0.8;
+                        ctx.strokeStyle = '#d0e8ff';
+                        ctx.lineWidth = 1.5; // Much thinner than before (was 5+)
                         ctx.beginPath();
                         ctx.arc(0, 0, t.r * 1.35, 0, Math.PI * 2);
                         ctx.stroke();
 
-                        // Secondary pulsing frost ring
+                        // Inner frost details - hexagonal ice pattern
+                        ctx.globalAlpha = 0.4;
+                        ctx.strokeStyle = '#b0d0ff';
+                        ctx.lineWidth = 0.8;
+                        for (let i = 0; i < 6; i++) {
+                            const angle = (i / 6) * Math.PI * 2;
+                            const x1 = Math.cos(angle) * t.r * 0.6;
+                            const y1 = Math.sin(angle) * t.r * 0.6;
+                            const x2 = Math.cos(angle) * t.r * 1.2;
+                            const y2 = Math.sin(angle) * t.r * 1.2;
+                            ctx.beginPath();
+                            ctx.moveTo(x1, y1);
+                            ctx.lineTo(x2, y2);
+                            ctx.stroke();
+                        }
+
+                        // Icicle shards protruding from edges
                         const frostPulse = 0.85 + 0.15 * Math.sin(time * 3);
                         ctx.globalAlpha = 0.6 * frostPulse;
-                        ctx.strokeStyle = '#c0e0ff';
-                        ctx.lineWidth = Math.max(3, t.r * 0.1);
-                        ctx.beginPath();
-                        ctx.arc(0, 0, t.r * 1.45, 0, Math.PI * 2);
-                        ctx.stroke();
+                        const icicleCount = 8;
+                        for (let i = 0; i < icicleCount; i++) {
+                            const angle = (i / icicleCount) * Math.PI * 2 + time * 0.5;
+                            const baseX = Math.cos(angle) * t.r * 1.3;
+                            const baseY = Math.sin(angle) * t.r * 1.3;
+                            const tipX = Math.cos(angle) * t.r * 1.6;
+                            const tipY = Math.sin(angle) * t.r * 1.6;
+                            const perpAngle = angle + Math.PI / 2;
+                            const width = t.r * 0.08;
+                            
+                            // Draw icicle as triangle
+                            ctx.fillStyle = 'rgba(200, 230, 255, 0.7)';
+                            ctx.beginPath();
+                            ctx.moveTo(tipX, tipY);
+                            ctx.lineTo(baseX + Math.cos(perpAngle) * width, baseY + Math.sin(perpAngle) * width);
+                            ctx.lineTo(baseX - Math.cos(perpAngle) * width, baseY - Math.sin(perpAngle) * width);
+                            ctx.closePath();
+                            ctx.fill();
+                            
+                            // Bright tip highlight
+                            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                            ctx.beginPath();
+                            ctx.arc(tipX, tipY, width * 0.5, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
                     }
 
                     ctx.restore();
@@ -32421,6 +32701,110 @@
                         ctx.lineTo(headX, headY + a * 0.4);
                         ctx.stroke();
 
+                        break;
+                    }
+                    case "zombie": {
+                        // Cyberpunk zombie with glowing neon effects
+                        const time = performance.now() / 1000;
+                        const shamble = Math.sin(c * 3) * 0.15; // Shambling animation
+                        
+                        // Glowing aura
+                        ctx.save();
+                        ctx.globalAlpha = 0.3 + 0.2 * Math.sin(time * 4);
+                        const auraGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, a * 1.4);
+                        auraGrad.addColorStop(0, '#00ff88');
+                        auraGrad.addColorStop(1, 'rgba(0, 255, 136, 0)');
+                        ctx.fillStyle = auraGrad;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, a * 1.4, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                        
+                        // Body - rounded rectangle with decay
+                        ctx.fillStyle = '#1a4d3a';
+                        ctx.strokeStyle = n;
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.roundRect(-a * 0.7, -a * 0.4, a * 1.4, a * 1.6, a * 0.2);
+                        ctx.fill();
+                        ctx.stroke();
+                        
+                        // Cybernetic implants/circuits
+                        ctx.strokeStyle = n;
+                        ctx.lineWidth = 1.5;
+                        ctx.beginPath();
+                        ctx.moveTo(-a * 0.5, -a * 0.2);
+                        ctx.lineTo(a * 0.5, -a * 0.2);
+                        ctx.moveTo(-a * 0.3, 0);
+                        ctx.lineTo(a * 0.3, 0);
+                        ctx.moveTo(-a * 0.4, a * 0.3);
+                        ctx.lineTo(a * 0.4, a * 0.3);
+                        ctx.stroke();
+                        
+                        // Head - slightly offset from shambling
+                        ctx.save();
+                        ctx.translate(shamble * a * 0.3, -a * 0.8);
+                        
+                        ctx.fillStyle = '#2a5d4a';
+                        ctx.strokeStyle = n;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, a * 0.5, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.stroke();
+                        
+                        // Glowing cyber-eyes
+                        ctx.fillStyle = n;
+                        ctx.shadowColor = n;
+                        ctx.shadowBlur = 8;
+                        ctx.beginPath();
+                        ctx.arc(-a * 0.2, -a * 0.1, a * 0.12, 0, Math.PI * 2);
+                        ctx.arc(a * 0.2, -a * 0.1, a * 0.12, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.shadowBlur = 0;
+                        
+                        // Stitched mouth
+                        ctx.strokeStyle = n;
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(-a * 0.25, a * 0.2);
+                        ctx.lineTo(a * 0.25, a * 0.2);
+                        ctx.stroke();
+                        
+                        // Stitches
+                        ctx.lineWidth = 1;
+                        for (let i = -2; i <= 2; i++) {
+                            ctx.beginPath();
+                            ctx.moveTo(i * a * 0.1, a * 0.15);
+                            ctx.lineTo(i * a * 0.1, a * 0.25);
+                            ctx.stroke();
+                        }
+                        
+                        ctx.restore();
+                        
+                        // Shambling arms
+                        ctx.strokeStyle = n;
+                        ctx.lineWidth = 3;
+                        
+                        // Left arm
+                        ctx.save();
+                        ctx.translate(-a * 0.7, -a * 0.2);
+                        ctx.rotate(shamble + 0.3);
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        ctx.lineTo(0, a * 0.9);
+                        ctx.stroke();
+                        ctx.restore();
+                        
+                        // Right arm
+                        ctx.save();
+                        ctx.translate(a * 0.7, -a * 0.2);
+                        ctx.rotate(-shamble - 0.3);
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        ctx.lineTo(0, a * 0.9);
+                        ctx.stroke();
+                        ctx.restore();
+                        
                         break;
                     }
                     case "phantom":
