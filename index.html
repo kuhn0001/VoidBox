@@ -4143,11 +4143,126 @@
                         pixiApp.stage.addChild(cubeBurglarContainer);
 
                         console.log('✅ PixiJS initialized for bullet rendering');
+                        
+                        // Set up WebGL context loss/restore handlers
+                        setupWebGLContextHandlers();
                     });
                 } catch (err) {
                     console.error('❌ Failed to initialize PixiJS:', err);
                 }
             })();
+
+            // WebGL Context Loss Recovery System
+            let webglContextLost = false;
+            let webglRecoveryAttempts = 0;
+            const MAX_RECOVERY_ATTEMPTS = 3;
+            
+            // Expose for diagnostics
+            window.webglContextLost = webglContextLost;
+            window.webglRecoveryAttempts = webglRecoveryAttempts;
+
+            function setupWebGLContextHandlers() {
+                if (!pixiApp || !pixiApp.canvas) {
+                    console.warn('⚠️ Cannot set up WebGL handlers - no canvas');
+                    return;
+                }
+
+                const canvas = pixiApp.canvas;
+
+                // Handle context loss
+                canvas.addEventListener('webglcontextlost', (event) => {
+                    event.preventDefault();
+                    webglContextLost = true;
+                    window.webglContextLost = true;
+                    console.error('🔴 WebGL context lost! Pausing game...');
+                    
+                    // Auto-pause to prevent further rendering issues
+                    if (!store.isPaused && !store.isGameOver) {
+                        store.isPaused = true;
+                        const pauseBtn = document.getElementById('pauseBtn');
+                        if (pauseBtn) pauseBtn.textContent = 'RESUME';
+                    }
+                    
+                    // Track in diagnostics
+                    window._lastBackgroundEvent = 'WebGL Context Lost';
+                    window._lastBackgroundTime = Date.now();
+                    
+                    announce('⚠️ GRAPHICS RESET - RESUMING...', 3000);
+                }, false);
+
+                // Handle context restoration
+                canvas.addEventListener('webglcontextrestored', async (event) => {
+                    console.log('🟢 WebGL context restored! Rebuilding renderer...');
+                    webglContextLost = false;
+                    window.webglContextLost = false;
+                    webglRecoveryAttempts++;
+                    window.webglRecoveryAttempts = webglRecoveryAttempts;
+                    
+                    window._lastBackgroundEvent = `WebGL Context Restored (Attempt ${webglRecoveryAttempts})`;
+                    window._lastBackgroundTime = Date.now();
+                    
+                    if (webglRecoveryAttempts <= MAX_RECOVERY_ATTEMPTS) {
+                        try {
+                            await rebuildPixiRenderer();
+                            announce('✅ GRAPHICS RESTORED', 2000);
+                        } catch (err) {
+                            console.error('❌ Failed to rebuild renderer:', err);
+                            announce('❌ GRAPHICS ERROR - CHECK DIAGNOSTICS', 4000);
+                        }
+                    } else {
+                        console.error('❌ Too many recovery attempts - manual restart required');
+                        announce('❌ GRAPHICS FAILURE - RESTART REQUIRED', 5000);
+                    }
+                }, false);
+
+                console.log('✅ WebGL context handlers registered');
+            }
+
+            async function rebuildPixiRenderer() {
+                console.log('🔄 Rebuilding PixiJS renderer...');
+                
+                try {
+                    // Clear sprite pools
+                    activeBulletSprites.clear();
+                    activeParticleSprites.clear();
+                    bulletSpritePool.length = 0;
+                    particleSpritePool.length = 0;
+                    
+                    // Recreate bullet textures
+                    if (typeof createBulletTextures === 'function') {
+                        createBulletTextures();
+                        console.log('✅ Bullet textures recreated');
+                    }
+                    
+                    // Recreate particle texture
+                    if (typeof createParticleTexture === 'function') {
+                        createParticleTexture();
+                        console.log('✅ Particle textures recreated');
+                    }
+                    
+                    // Trigger a resize to ensure proper scaling
+                    resizeGameSurfaces();
+                    
+                    // Reset time reference to prevent time jump
+                    store.last = performance.now();
+                    
+                    console.log('✅ PixiJS renderer rebuilt successfully');
+                    
+                    // Auto-resume after a brief delay if we were auto-paused
+                    setTimeout(() => {
+                        if (store.isPaused && !store.isGameOver) {
+                            store.isPaused = false;
+                            const pauseBtn = document.getElementById('pauseBtn');
+                            if (pauseBtn) pauseBtn.textContent = 'PAUSE';
+                            console.log('▶️ Game resumed after WebGL recovery');
+                        }
+                    }, 500);
+                    
+                } catch (error) {
+                    console.error('❌ Error during renderer rebuild:', error);
+                    throw error;
+                }
+            }
 
             // --- MAIN CANVAS SETUP ---
             const cvs = document.createElement('canvas');
@@ -4668,6 +4783,42 @@
                     createParticleTexture();
                 }
             }, 100);
+            
+            // Global double-click prevention to avoid WebGL context loss
+            let lastClickTime = 0;
+            const MIN_CLICK_INTERVAL = 200; // ms between clicks
+            
+            document.addEventListener('click', (event) => {
+                const now = performance.now();
+                const timeSinceLastClick = now - lastClickTime;
+                
+                if (timeSinceLastClick < MIN_CLICK_INTERVAL) {
+                    console.log(`⚠️ Rapid click blocked (${timeSinceLastClick.toFixed(0)}ms interval)`);
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.stopImmediatePropagation();
+                    return false;
+                }
+                
+                lastClickTime = now;
+            }, true); // Use capture phase to catch early
+            
+            // Additional touch event protection for mobile
+            let lastTouchTime = 0;
+            document.addEventListener('touchstart', (event) => {
+                const now = performance.now();
+                const timeSinceLastTouch = now - lastTouchTime;
+                
+                if (timeSinceLastTouch < MIN_CLICK_INTERVAL) {
+                    console.log(`⚠️ Rapid touch blocked (${timeSinceLastTouch.toFixed(0)}ms interval)`);
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return false;
+                }
+                
+                lastTouchTime = now;
+            }, { passive: false, capture: true });
+            
             // ============================================================================
 
             const trackedPanelIds = [
@@ -35966,10 +36117,29 @@
                     grid.innerHTML = sections.filter(Boolean).join('');
                 }
                 grid.querySelectorAll(".shop-item").forEach(item => {
-                    item.addEventListener("click", () => {
+                    let isProcessing = false;
+                    item.addEventListener("click", async () => {
+                        // Prevent double-clicks that can cause WebGL context loss
+                        if (isProcessing) {
+                            console.log('⚠️ Purchase already in progress, ignoring double-click');
+                            return;
+                        }
+                        
                         if (item.classList.contains('disabled') || item.classList.contains('unlocked')) return;
-                        const key = item.dataset.key;
-                        attemptPurchaseUpgrade(key);
+                        
+                        isProcessing = true;
+                        item.style.pointerEvents = 'none'; // Disable temporarily
+                        
+                        try {
+                            const key = item.dataset.key;
+                            attemptPurchaseUpgrade(key);
+                        } finally {
+                            // Re-enable after a short delay
+                            setTimeout(() => {
+                                isProcessing = false;
+                                item.style.pointerEvents = '';
+                            }, 300);
+                        }
                     })
                 });
 
@@ -36309,6 +36479,19 @@
                     const activeBulletSprites = window.activeBulletSprites?.size || 0;
                     const bulletSpritePoolSize = window.bulletSpritePool?.length || 0;
                     
+                    // WebGL context state
+                    const webglLost = window.webglContextLost ? 'YES ⚠️' : 'NO';
+                    const webglRecoveries = window.webglRecoveryAttempts || 0;
+                    let webglContextStatus = 'Unknown';
+                    if (window.pixiApp && window.pixiApp.renderer && window.pixiApp.renderer.gl) {
+                        const gl = window.pixiApp.renderer.gl;
+                        if (gl.isContextLost && gl.isContextLost()) {
+                            webglContextStatus = 'LOST ⚠️';
+                        } else {
+                            webglContextStatus = 'HEALTHY ✓';
+                        }
+                    }
+                    
                     // Mobile-specific diagnostics
                     const isVisible = !document.hidden ? 'YES' : 'NO';
                     const devicePixelRatio = (window.devicePixelRatio || 1).toFixed(2);
@@ -36350,6 +36533,11 @@
                             key: 'PixiJS Renderer',
                             value: pixiActive,
                             detail: `Bullet Sprites: ${activeBulletSprites} active | ${bulletSpritePoolSize} pooled`
+                        },
+                        {
+                            key: 'WebGL Context',
+                            value: webglContextStatus,
+                            detail: `Context Lost: ${webglLost} | Recovery Attempts: ${webglRecoveries}`
                         },
                         {
                             key: 'Last Event',
