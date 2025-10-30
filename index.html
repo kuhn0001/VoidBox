@@ -4819,6 +4819,14 @@
             const MIN_CLICK_INTERVAL = 200; // ms between clicks
             
             document.addEventListener('click', (event) => {
+                // Skip throttle for UI elements to prevent menu crash on double-click
+                const target = event.target;
+                const isUIElement = target.closest('.panel, button, .card, .shop-card, .upgrade-card, .forge-menu-btn, [role="button"]');
+                
+                if (isUIElement) {
+                    return; // Let UI clicks through immediately
+                }
+                
                 const now = performance.now();
                 const timeSinceLastClick = now - lastClickTime;
                 
@@ -12372,6 +12380,24 @@
                         jitter: spawnTempo * 0.6
                     });
 
+                    // Spawn tombstones naturally in waves (starting wave 10)
+                    if (store.world.wave >= 10 && store.world.wave % 5 !== 0) { // Not on boss waves
+                        const tombstoneChance = Math.min(0.65, 0.15 + (store.world.wave - 10) * 0.02); // 15% base, +2% per wave
+                        const maxTombstones = Math.min(3, 1 + Math.floor((store.world.wave - 10) / 10)); // 1-3 tombstones
+                        
+                        if (Math.random() < tombstoneChance) {
+                            const tombstoneCount = Math.random() < 0.7 ? 1 : maxTombstones; // 70% chance for 1, 30% for max
+                            
+                            for (let t = 0; t < tombstoneCount; t++) {
+                                // Spawn with delay to stagger them
+                                setTimeout(() => {
+                                    if (!window.spawnTombstone) return;
+                                    spawnTombstone(); // Uses random edge position
+                                }, 2000 + t * 1500); // Spawn at 2s, 3.5s, 5s intervals
+                            }
+                        }
+                    }
+
                     const cooldownReady = !store.world.voidReaperCooldown || store.world.voidReaperCooldown <= 0;
                     const recentWaveGap = store.world.lastVoidReaperWave ? (store.world.wave - store.world.lastVoidReaperWave) : Infinity;
                     const eligibleForVoidReaper = store.world.wave >= 12 && cooldownReady && recentWaveGap >= (VOID_REAPER_CONFIG.minWaveGap || 3) && !store.world.voidReaperSpawnedThisWave;
@@ -17545,7 +17571,7 @@
                     const upgrade = LEVEL_UPGRADES.find(s => s.id === id);
                     if (upgrade) upgrade.apply();
                     panel.classList.add('hide');
-                    resumeGame();
+                    resumeGame(true);  // Force resume to avoid panel visibility race condition
                     // Clean up event listeners to prevent UI freeze
                     cards.forEach(c => c.removeEventListener('click', clickHandler));
                 };
@@ -42558,8 +42584,9 @@
                 }
             }
 
-            function resumeGame() {
-                if (!isAnyPanelOpen()) {
+            function resumeGame(force = false) {
+                // Force resume when closing specific panels, otherwise check if all panels are closed
+                if (force || !isAnyPanelOpen()) {
                     clearPanelStack();
                     store.isPaused = false;
                     q('pauseBtn').classList.remove('hide');
@@ -42623,7 +42650,7 @@
                     updateAbilityButtonIcon();
 
                     // Resume game for all genomes (removed teleport tutorial popup)
-                    resumeGame();
+                    resumeGame(true);  // Force resume to avoid panel visibility race condition
                     cards.forEach(c => c.removeEventListener('click', clickHandler));
                 };
 
@@ -42641,7 +42668,7 @@
                 const closeHandler = () => {
                     panel.classList.add('hide');
                     closeBtn.removeEventListener('click', closeHandler);
-                    resumeGame();
+                    resumeGame(true);  // Force resume to avoid panel visibility race condition
                 };
 
                 closeBtn.addEventListener('click', closeHandler);
@@ -43356,7 +43383,7 @@
 
                         panel.classList.add('hide');
                         exitPanel('subclassPanel');
-                        resumeGame();
+                        resumeGame(true);  // Force resume to avoid panel visibility race condition
                     }, { once: true });
                 });
 
@@ -44306,7 +44333,7 @@
                 panel.classList.remove('skill-tree-active');
                 panel.classList.remove('panel-floating-close');
                 exitPanel('subclassPanel');
-                resumeGame();
+                resumeGame(true);  // Force resume to avoid panel visibility race condition
             }
 
             function isSkillTreeFullyCapped() {
@@ -45061,7 +45088,7 @@
                         const specId = card.dataset.spec;
                         applySpecBonus(specId);
                         panel.classList.add('hide');
-                        resumeGame();
+                        resumeGame(true);  // Force resume to avoid panel visibility race condition
                         document.querySelector('#subclassPanel h2').textContent = 'CHOOSE SPECIALIZATION'; // Reset title
                     }, { once: true });
                 });
@@ -45161,7 +45188,7 @@
 
             q("restartBtn").addEventListener("click", resetGame);
 
-            q("saveName").addEventListener("click", () => { const t = (q("nameInput").value || "").slice(0, 16).trim(); if (t) { store.name = t; q("namePanel").classList.add("hide"); if (store.player.pilotGenome === null) { initWave(); resumeGame(); } else { resumeGame(); } } });
+            q("saveName").addEventListener("click", () => { const t = (q("nameInput").value || "").slice(0, 16).trim(); if (t) { store.name = t; q("namePanel").classList.add("hide"); if (store.player.pilotGenome === null) { initWave(); resumeGame(true); } else { resumeGame(true); } } });
 
             const closeShopLogic = () => {
                 const panel = q("shopPanel");
@@ -45181,7 +45208,7 @@
                     clearTimeout(store.world.mechForgePulseTimeout);
                     store.world.mechForgePulseTimeout = null;
                 }
-                resumeGame();
+                resumeGame(true);  // Force resume to avoid panel visibility race condition
             };
             q("closeShopTopBtn").addEventListener("click", closeShopLogic);
             q("closeShop").addEventListener("click", closeShopLogic);
@@ -45210,7 +45237,7 @@
                 }
             });
 
-            const closeScoresLogic = () => { q('scorePanel').classList.add('hide'); resumeGame(); };
+            const closeScoresLogic = () => { q('scorePanel').classList.add('hide'); resumeGame(true); };  // Force resume
             // q("closeScores").addEventListener("click", closeScoresLogic); // Button hidden via CSS
 
             // Upgrade Hangar menu event listeners
@@ -45218,13 +45245,13 @@
                 const panel = q("mechForgeMenuPanel");
                 panel.classList.add("hide");
                 exitPanel('mechForgeMenuPanel');
-                resumeGame();
+                resumeGame(true);  // Force resume to avoid panel visibility race condition
             });
             q("closeMechForgeMenuBtn").addEventListener("click", () => {
                 const panel = q("mechForgeMenuPanel");
                 panel.classList.add("hide");
                 exitPanel('mechForgeMenuPanel');
-                resumeGame();
+                resumeGame(true);  // Force resume to avoid panel visibility race condition
             });
             const openPrimordialLabBtn = q("openPrimordialLabFromMenu");
             if (openPrimordialLabBtn) {
@@ -45263,13 +45290,13 @@
                 const panel = q("characterSheetPanel");
                 panel.classList.add("hide");
                 exitPanel('characterSheetPanel');
-                resumeGame();
+                resumeGame(true);  // Force resume to avoid panel visibility race condition
             });
             q("closeCharacterSheetBtn").addEventListener("click", () => {
                 const panel = q("characterSheetPanel");
                 panel.classList.add("hide");
                 exitPanel('characterSheetPanel');
-                resumeGame();
+                resumeGame(true);  // Force resume to avoid panel visibility race condition
             });
 
             // Primordial Soldier Laboratory event listeners
@@ -45290,7 +45317,7 @@
                         const panel = q('championDressingRoom');
                         panel.classList.add('hide');
                         exitPanel('championDressingRoom');
-                        resumeGame();
+                        resumeGame(true);  // Force resume to avoid panel visibility race condition
                     });
                 }
 
@@ -45300,7 +45327,7 @@
                         const panel = q('championDressingRoom');
                         panel.classList.add('hide');
                         exitPanel('championDressingRoom');
-                        resumeGame();
+                        resumeGame(true);  // Force resume to avoid panel visibility race condition
                     });
                 }
 
@@ -46496,7 +46523,8 @@
                         const panel = document.getElementById('upgradePopupPanel');
                         if (panel) {
                             panel.classList.add('hide');
-                            resumeGame();
+                            // Force resume to avoid race condition where panel visibility check happens before CSS update
+                            resumeGame(true);
                         }
                     });
                 }
