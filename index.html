@@ -3997,6 +3997,12 @@
     <audio id="audioThunder" src="thunder.mp3" preload="auto"></audio>
     <audio id="audioShaoKahn" src="shao_kahn.m4a" preload="auto"></audio>
     <audio id="audioStarGun" src="stargun.m4a" preload="auto"></audio>
+    <audio id="audioCoin" src="coin.mp3" preload="auto"></audio>
+    <audio id="audioBloop" src="bloop.mp3" preload="auto"></audio>
+    <audio id="audioVoidPulse" src="voidpulse.m4a" preload="auto"></audio>
+    <audio id="audioIceBreak1" src="icebreak1.m4a" preload="auto"></audio>
+    <audio id="audioIceBreak2" src="icebreak2.m4a" preload="auto"></audio>
+    <audio id="audioPower" src="power.m4a" preload="auto"></audio>
 
     <button id="fsEnterBtn" class="fixed-btn" type="button">FULLSCREEN</button>
     <div id="bottom-right-controls">
@@ -5320,15 +5326,23 @@
                 cluster: q('audioCluster'),
                 thunder: q('audioThunder'),
                 shao_kahn: q('audioShaoKahn'),
-                stargun: q('audioStarGun')
+                stargun: q('audioStarGun'),
+                coin: q('audioCoin'),
+                bloop: q('audioBloop'),
+                voidpulse: q('audioVoidPulse'),
+                icebreak1: q('audioIceBreak1'),
+                icebreak2: q('audioIceBreak2'),
+                power: q('audioPower')
             };
             let lastExplosionSoundTime = 0;
             let lastBossHitSoundTime = 0;
             let lastClusterSoundTime = 0;
             let lastChampionThunderTime = 0;
+            let iceBreakSoundToggle = false; // Toggle for alternating ice break sounds
             const SOUND_COOLDOWNS = {
                 thunder: 1500,
-                epicHorn: 2500
+                epicHorn: 2500,
+                voidpulse: 300 // Limit void pulse spam to once per 300ms
             };
             const soundLastPlayTime = {};
 
@@ -7552,6 +7566,9 @@
                 const damageScale = Number.isFinite(bulletContext.voidPulseDamageScale) ? bulletContext.voidPulseDamageScale : VOID_PULSE_DAMAGE_SCALE;
                 const basePulseDamage = Math.max(0, baseDamage);
                 const pulseDamage = Math.max(basePulseDamage * damageScale, 5);
+                
+                // Play void pulse sound with cooldown limiting
+                playSound('voidpulse');
 
                 const targets = [];
                 if (Array.isArray(store.enemies)) {
@@ -8031,6 +8048,11 @@
                             spawnIceShards(e.x, e.y, {
                                 enemyRadius: e.r || 18
                             });
+                            // Play ice break sound every other enemy
+                            if (iceBreakSoundToggle) {
+                                playSound(Math.random() < 0.5 ? 'icebreak1' : 'icebreak2');
+                            }
+                            iceBreakSoundToggle = !iceBreakSoundToggle;
                         } else if (!isVoidReaper && deathElement === 'fire') {
                             spawnFireWipeDeath(e.x, e.y, {
                                 enemyRadius: e.r || 18,
@@ -10021,6 +10043,7 @@
                     if (goldAmount > 0) {
                         addWorldGold(goldAmount);
                         announce(`💰 CASH INFUSION +${goldAmount} GOLD! 💰`);
+                        playSound('coin');
                     }
                     return;
                 }
@@ -41815,6 +41838,17 @@
 
                             p.voidLaserTarget.hp -= damage;
                             store.world.totalDamage += damage;
+                            
+                            // Play power sound when hitting significant targets (boss, champion, cube burglar)
+                            const isSignificantTarget = p.voidLaserTarget.isBoss || 
+                                                       p.voidLaserTarget.isChampion || 
+                                                       p.voidLaserTarget.type === 'cube_burglar';
+                            if (isSignificantTarget && !p.voidLaserPowerSoundPlayed) {
+                                playSound('power');
+                                p.voidLaserPowerSoundPlayed = true;
+                                // Reset flag after 1 second to allow sound again
+                                setTimeout(() => { p.voidLaserPowerSoundPlayed = false; }, 1000);
+                            }
 
                             // Apply vampirism healing for laser damage
                             if (store.player.vampirism > 0) {
