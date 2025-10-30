@@ -12465,11 +12465,14 @@
             function createBoss(scale) {
                 const cycleRaw = Math.floor((store.world.wave - 5) / 5);
                 const def = getBossDefinitionByCycle(cycleRaw) || BOSS_DEFINITIONS[0];
-                let hp = def.baseHp * scale * store.world.bossHealthBonus;
                 
-                // Only apply collar scaling AFTER 2nd boss is defeated (bosses > 2 means 3rd boss and beyond)
+                // Only apply bossHealthBonus and collar scaling AFTER 2nd boss is defeated
+                let hp = def.baseHp * scale;
                 let collarBonus = 1;
-                if (store.world.bosses > 2) {
+                if (store.world.bosses >= 2) {
+                    // Apply both the adaptation bonus AND collar bonus for 3rd boss onward
+                    const adaptationBonus = store.world.bossHealthBonus || 1;
+                    hp *= adaptationBonus;
                     collarBonus = calculateCollarBonus(sanitizeCollarStacks());
                     hp *= collarBonus;
                 }
