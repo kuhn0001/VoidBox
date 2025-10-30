@@ -5338,11 +5338,17 @@
             let lastBossHitSoundTime = 0;
             let lastClusterSoundTime = 0;
             let lastChampionThunderTime = 0;
-            let iceBreakSoundToggle = false; // Toggle for alternating ice break sounds
+            let iceBreakSoundIndex = 0; // 0 for icebreak1, 1 for icebreak2 - strict alternation
+            let lastIceBreakTime = 0;
+            let lastVoidPulseTime = 0;
+            let lastPowerSoundTime = 0;
             const SOUND_COOLDOWNS = {
                 thunder: 1500,
                 epicHorn: 2500,
-                voidpulse: 300 // Limit void pulse spam to once per 300ms
+                voidpulse: 2500, // Allow sound to fully play + pause - adjust if you shorten the sound file
+                icebreak1: 800, // Cooldown for ice break sounds
+                icebreak2: 800,
+                power: 2000 // Limit power sound to once every 2 seconds
             };
             const soundLastPlayTime = {};
 
@@ -8048,11 +8054,14 @@
                             spawnIceShards(e.x, e.y, {
                                 enemyRadius: e.r || 18
                             });
-                            // Play ice break sound every other enemy
-                            if (iceBreakSoundToggle) {
-                                playSound(Math.random() < 0.5 ? 'icebreak1' : 'icebreak2');
+                            // Play ice break sound every other enemy with proper alternation
+                            const now = performance.now();
+                            if (now - lastIceBreakTime >= 800) { // Only play if cooldown has passed
+                                const soundName = iceBreakSoundIndex === 0 ? 'icebreak1' : 'icebreak2';
+                                playSound(soundName);
+                                iceBreakSoundIndex = 1 - iceBreakSoundIndex; // Toggle between 0 and 1
+                                lastIceBreakTime = now;
                             }
-                            iceBreakSoundToggle = !iceBreakSoundToggle;
                         } else if (!isVoidReaper && deathElement === 'fire') {
                             spawnFireWipeDeath(e.x, e.y, {
                                 enemyRadius: e.r || 18,
@@ -41843,11 +41852,12 @@
                             const isSignificantTarget = p.voidLaserTarget.isBoss || 
                                                        p.voidLaserTarget.isChampion || 
                                                        p.voidLaserTarget.type === 'cube_burglar';
-                            if (isSignificantTarget && !p.voidLaserPowerSoundPlayed) {
-                                playSound('power');
-                                p.voidLaserPowerSoundPlayed = true;
-                                // Reset flag after 1 second to allow sound again
-                                setTimeout(() => { p.voidLaserPowerSoundPlayed = false; }, 1000);
+                            if (isSignificantTarget) {
+                                const now = performance.now();
+                                if (now - lastPowerSoundTime >= 2000) {
+                                    playSound('power');
+                                    lastPowerSoundTime = now;
+                                }
                             }
 
                             // Apply vampirism healing for laser damage
