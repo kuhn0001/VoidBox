@@ -7730,6 +7730,11 @@
 
                 let dmg = b.dmg || 15;
 
+                // Void bullets should deal at least 3x damage (equivalent to 3 separate element shots)
+                if (isVoidElement) {
+                    dmg *= 3;
+                }
+
                 if (isVoidElement) {
                     if (voidProfile) {
                         CORE_ELEMENT_KEYS.forEach(key => {
@@ -8030,6 +8035,23 @@
                             spawnFireWipeDeath(e.x, e.y, {
                                 enemyRadius: e.r || 18,
                                 baseColor: e.color
+                            });
+                            // Fire is contagious - spread to nearby enemies (including from void bullets)
+                            const spreadRadius = 120;
+                            const spreadDamage = (e.poisonDamagePerStack || 10) * 0.8; // 80% of poison tick damage as fire spread
+                            store.enemies.forEach(nearbyEnemy => {
+                                if (nearbyEnemy === e || nearbyEnemy.dead) return;
+                                const dx = nearbyEnemy.x - e.x;
+                                const dy = nearbyEnemy.y - e.y;
+                                const dist = Math.sqrt(dx * dx + dy * dy);
+                                if (dist <= spreadRadius) {
+                                    // Ignite nearby enemy with fire stacks
+                                    nearbyEnemy.fireStacks = 3;
+                                    nearbyEnemy.fireStackTimer = 3.0;
+                                    if (spreadDamage > 0) {
+                                        applyFireBulletBurn(nearbyEnemy, spreadDamage, { duration: 3 });
+                                    }
+                                }
                             });
                         } else if (!isVoidReaper) {
                             spawnGibs(e.x, e.y, e.color);
@@ -9380,7 +9402,7 @@
                 'ice_bullets': { 
                     name: "ICE BULLETS", 
                     icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="1em" height="1em" fill="currentColor"><path opacity=".4" d="M36.8 388.3C43.5 384.1 48 376.6 48 368l0-112C48 141.1 141.1 48 256 48s208 93.1 208 208c0 50.5-18 96.9-48 132.9l0 66.9c-14.8 11.8-30.8 22-48 30.4l0-78.8c19.1-11.1 32-31.7 32-55.4 0-35.3-28.7-64-64-64l-160 0c-35.3 0-64 28.7-64 64s28.7 64 64 64l64 0 0 40c0 13.3 10.7 24 24 24s24-10.7 24-24l0-40 32 0 0 72c0 5.5 1.8 10.6 5 14.6-21.9 6.1-45.1 9.4-69 9.4-14 0-27.7-1.1-41-3.3-14.3-13.5-23-32.1-23-52.7l0-2c-38.4-12.4-71.9-35.7-97-66.2-2.9 17.4-12 32.7-25.3 43.9-12.4-13.2-23.5-27.7-32.9-43.3zM144 208a32 32 0 1 0 64 0 32 32 0 1 0 -64 0zm160 0a32 32 0 1 0 64 0 32 32 0 1 0 -64 0z"/><path d="M48 256C48 141.1 141.1 48 256 48s208 93.1 208 208c0 50.5-18 96.9-48 132.9l0 66.9c18.2-14.6 34.4-31.6 48-50.6l0 50.7c0 13.3 10.7 24 24 24s24-10.7 24-24l0-200C512 114.6 397.4 0 256 0S0 114.6 0 256L0 368c0 13.3 10.7 24 24 24s24-10.7 24-24l0-112zM95 387.8c-2.9 17.6-12.1 33-25.3 43.9 37.8 40.1 88.4 68 145.2 77.1-14.1-13.1-23-31.9-23-52.7l0-2c-38.4-12.4-71.9-35.7-97-66.2zM152 352c0-11.9 8.6-21.8 20-23.7l0 47.3c-11.4-1.9-20-11.8-20-23.7zm84 24l-24 0 0-48 24 0 0 48zm64-48l0 48-24 0 0-48 24 0zm40 .3c11.4 1.9 20 11.8 20 23.7s-8.6 21.8-20 23.7l0-47.3zM176 288c-35.3 0-64 28.7-64 64s28.7 64 64 64l64 0 0 40c0 13.3 10.7 24 24 24s24-10.7 24-24l0-40 32 0 0 72c0 13.3 10.7 24 24 24s24-10.7 24-24l0-80.6c19.1-11.1 32-31.7 32-55.4 0-35.3-28.7-64-64-64l-160 0zm0-48a32 32 0 1 0 0-64 32 32 0 1 0 0 64zm192-32a32 32 0 1 0 -64 0 32 32 0 1 0 64 0z"/></svg>', 
-                    cost: 1000, 
+                    cost: 250, 
                     isPremium: true, 
                     isUnlock: true, 
                     category: 'attack', 
@@ -9399,7 +9421,7 @@
                 'poison_bullets': { 
                     name: "POISON BULLETS", 
                     icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" width="1em" height="1em" fill="currentColor"><path opacity=".4" d="M48 320c0 79.5 64.5 144 144 144s144-64.5 144-144c0-57.4-33.6-107-82.3-130.2-8.4-4-13.7-12.4-13.7-21.7l0-120.2-96 0 0 120.2c0 9.3-5.3 17.7-13.7 21.7-48.7 23.1-82.3 72.7-82.3 130.2zm32-8c0-48.6 50.1-88 112-88s112 39.4 112 88c0 29.9-19 56.3-48 72.2l0 15.8c0 17.7-14.3 32-32 32l-64 0c-17.7 0-32-14.3-32-32l0-15.8C99 368.3 80 341.9 80 312z"/><path d="M88 48l8 0 0 105.7C38.6 186.9 0 248.9 0 320 0 426 86 512 192 512s192-86 192-192c0-71.1-38.6-133.1-96-166.3l0-105.7 8 0c13.3 0 24-10.7 24-24S309.3 0 296 0L88 0C74.7 0 64 10.7 64 24S74.7 48 88 48zm56 120.2l0-120.2 96 0 0 120.2c0 9.3 5.3 17.7 13.7 21.7 48.7 23.1 82.3 72.7 82.3 130.2 0 79.5-64.5 144-144 144S48 399.5 48 320c0-57.4 33.6-107 82.3-130.2 8.4-4 13.7-12.4 13.7-21.7zM304 312c0-48.6-50.1-88-112-88S80 263.4 80 312c0 29.9 19 56.3 48 72.2l0 15.8c0 17.7 14.3 32 32 32l64 0c17.7 0 32-14.3 32-32l0-15.8c29-15.9 48-42.3 48-72.2zM152 288a24 24 0 1 1 0 48 24 24 0 1 1 0-48zm56 24a24 24 0 1 1 48 0 24 24 0 1 1 -48 0z"/></svg>', 
-                    cost: 1000, 
+                    cost: 250,
                     isPremium: true, 
                     isUnlock: true, 
                     category: 'attack', 
@@ -9418,7 +9440,7 @@
                 'fire_bullets': {
                     name: "FIRE BULLETS",
                     icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" width="1em" height="1em" fill="currentColor"><path d="M216 0c-8.8 0-16 7.2-16 16 0 35.3-28.7 64-64 64-44.2 0-80 35.8-80 80 0 11 9 20 20 20 30.9 0 56 25.1 56 56 0 11 9 20 20 20 30.9 0 56 25.1 56 56 0 27.6-20.1 50.5-46.5 55.3C141.2 373.4 96 424.7 96 488c0 13.3 10.7 24 24 24h144c52.9 0 96-43.1 96-96 0-44.9-31-82.6-72.3-93.2C310 301.5 320 276.6 320 248c0-65.2-47.9-119.2-110.9-127.2 5.8-9.6 9.3-20.8 9.3-32.8 0-8.8-7.2-16-16-16z"/></svg>',
-                    cost: 1200,
+                    cost: 500,
                     isPremium: true,
                     isUnlock: true,
                     category: 'attack',
@@ -12149,8 +12171,8 @@
                             x: spawnX,
                             y: spawnY,
                             r: 20,
-                            hp: 150,
-                            hpMax: 150,
+                            hp: 300,
+                            hpMax: 300,
                             spawnTimer: 0,
                             spawnInterval: 3.0, // Spawn zombie every 3 seconds
                             color: '#8b4789',
@@ -12502,7 +12524,7 @@
                 const cfgs = {
                     drone: { r: 10, v: 80, vx: 0, hp: 30, color: '#C0C0C0', xp: 5, score: 50, gold: 2, fireRateChance: 0.004, contactDamage: 8 },
                     hunter: { r: 20, v: 100, vx: 0, hp: 26, color: '#DC143C', xp: 8, score: 80, gold: 3, fireRateChance: 0.005, contactDamage: 10 },
-                    zombie: { r: 12, v: 35, vx: 0, hp: 40, color: '#00ff88', xp: 3, score: 30, gold: 1, fireRateChance: 0, contactDamage: 8, tracksPlayer: true },
+                    zombie: { r: 12, v: 35, vx: 0, hp: 50, color: '#00ff88', xp: 3, score: 30, gold: 1, fireRateChance: 0, contactDamage: 8, tracksPlayer: true },
                     trap_king_add: { r: 6, v: 90, vx: 0, hp: 12, color: '#ffc83d', damage: 5, xp: 2, score: 10, gold: 1, contactDamage: 6 },
                     phantom: { r: 14, v: 90, vx: 0, hp: 48, color: '#FFFFFF', xp: 10, score: 100, gold: 3, fireRateChance: 0.006, fireCooldown: 1.5, contactDamage: 10 },
                     mech: { r: 18, v: 40, vx: 0, hp: 60, color: '#FF8500', xp: 15, score: 150, gold: 6, fireRateChance: 0.007, attackPhase: 0, contactDamage: 12 },
@@ -31994,6 +32016,26 @@
                     ctx.restore();
                 }
                 
+                // Add poison bubble orbit effect to bosses (green circles)
+                if (t.poisonStacks && t.poisonStacks > 0) {
+                    ctx.save();
+                    ctx.globalAlpha = 0.6;
+                    const bubbleCount = 4 + (t.poisonStacks * 2);
+                    const time = performance.now() / 1000;
+                    for (let i = 0; i < bubbleCount; i++) {
+                        const angle = (i / bubbleCount) * Math.PI * 2 + time;
+                        const radius = t.r * (1.2 + Math.sin(time * 2 + i) * 0.3);
+                        const bubbleX = Math.cos(angle) * radius;
+                        const bubbleY = Math.sin(angle) * radius;
+                        const bubbleSize = 2 + Math.sin(time * 3 + i) * 1.5;
+                        ctx.fillStyle = '#00ff66';
+                        ctx.beginPath();
+                        ctx.arc(bubbleX, bubbleY, bubbleSize, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    ctx.restore();
+                }
+                
                 ctx.restore();
             }
 
@@ -36472,9 +36514,17 @@
                          info.reason.includes('Already unlocked') || 
                          info.reason.includes('fully upgraded'));
                     
-                    const costText = isMaxed 
-                        ? '<span class="unlocked-label">UNLOCKED</span>'
-                        : (Number.isFinite(costValue) ? costValue : '---');
+                    // Special display for bullet types with sale price
+                    const isBulletType = key === 'ice_bullets' || key === 'poison_bullets' || key === 'fire_bullets';
+                    let costText;
+                    if (isMaxed) {
+                        costText = '<span class="unlocked-label">UNLOCKED</span>';
+                    } else if (isBulletType && Number.isFinite(costValue)) {
+                        const originalPrice = costValue * 2;
+                        costText = `<span style="text-decoration: line-through; opacity: 0.6; font-size: 0.9em;">${originalPrice}</span> <span style="color: #4ade80; font-weight: bold; display: block;">50% OFF!</span> ${costValue}`;
+                    } else {
+                        costText = Number.isFinite(costValue) ? costValue : '---';
+                    }
                     
                     const available = info ? !!info.available : (Number.isFinite(costValue) && (store.world?.gold ?? 0) >= costValue);
                     const isDisabled = !available;
