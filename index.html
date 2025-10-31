@@ -5342,6 +5342,7 @@
             let lastIceBreakTime = 0;
             let lastVoidPulseTime = 0;
             let lastPowerSoundTime = 0;
+            const powerSoundPlayedTargets = new Set(); // Track which enemies have had power sound played
             const SOUND_COOLDOWNS = {
                 thunder: 1500,
                 epicHorn: 2500,
@@ -17736,6 +17737,7 @@
                 store.lightningBolts = []; store.empNovas = []; store.flamePulses = []; store.poisonPuddles = []; store.goldenOrbs = []; store.shadowEchoes = [];
                 store.championMinions = [];
                 store.pendingChampionUpgrade = null;
+                powerSoundPlayedTargets.clear(); // Clear power sound tracking for new wave
                 store.empCharges = [];
                 store.knockbackCharges = [];
                 store.empGlobalCooldown = 0;
@@ -41795,6 +41797,17 @@
                     if (highestPriorityTarget !== p.voidLaserLastTarget) {
                         p.voidLaserRampTime = 0;
                         p.voidLaserLastTarget = highestPriorityTarget;
+                        
+                        // Play power sound once when locking onto a NEW significant target
+                        if (highestPriorityTarget) {
+                            const isSignificantTarget = highestPriorityTarget.isBoss || 
+                                                       highestPriorityTarget.isChampion || 
+                                                       highestPriorityTarget.type === 'cube_burglar';
+                            if (isSignificantTarget && !powerSoundPlayedTargets.has(highestPriorityTarget)) {
+                                playSound('power');
+                                powerSoundPlayedTargets.add(highestPriorityTarget);
+                            }
+                        }
                     }
 
                     p.voidLaserTarget = highestPriorityTarget;
@@ -41847,18 +41860,6 @@
 
                             p.voidLaserTarget.hp -= damage;
                             store.world.totalDamage += damage;
-                            
-                            // Play power sound when hitting significant targets (boss, champion, cube burglar)
-                            const isSignificantTarget = p.voidLaserTarget.isBoss || 
-                                                       p.voidLaserTarget.isChampion || 
-                                                       p.voidLaserTarget.type === 'cube_burglar';
-                            if (isSignificantTarget) {
-                                const now = performance.now();
-                                if (now - lastPowerSoundTime >= 2000) {
-                                    playSound('power');
-                                    lastPowerSoundTime = now;
-                                }
-                            }
 
                             // Apply vampirism healing for laser damage
                             if (store.player.vampirism > 0) {
