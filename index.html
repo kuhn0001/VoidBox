@@ -5347,8 +5347,8 @@
                 thunder: 1500,
                 epicHorn: 2500,
                 voidpulse: 2500, // Allow sound to fully play + pause - adjust if you shorten the sound file
-                icebreak1: 800, // Cooldown for ice break sounds
-                icebreak2: 800,
+                icebreak1: 1000, // One second cooldown for ice break sounds
+                icebreak2: 1000,
                 power: 2000 // Limit power sound to once every 2 seconds
             };
             const soundLastPlayTime = {};
@@ -5369,7 +5369,7 @@
                     lastClusterSoundTime = now;
                 }
                 if (name === 'hit') {
-                    if (now - lastBossHitSoundTime < 100) return;
+                    if (now - lastBossHitSoundTime < 500) return; // Twice per second max
                     lastBossHitSoundTime = now;
                 }
                 const cooldown = SOUND_COOLDOWNS[name];
@@ -8057,7 +8057,7 @@
                             });
                             // Play ice break sound every other enemy with proper alternation
                             const now = performance.now();
-                            if (now - lastIceBreakTime >= 800) { // Only play if cooldown has passed
+                            if (now - lastIceBreakTime >= 1000) { // One second cooldown
                                 const soundName = iceBreakSoundIndex === 0 ? 'icebreak1' : 'icebreak2';
                                 playSound(soundName);
                                 iceBreakSoundIndex = 1 - iceBreakSoundIndex; // Toggle between 0 and 1
