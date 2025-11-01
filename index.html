@@ -4182,6 +4182,56 @@
                     window.webglContextLost = true;
                     console.error('🔴 WebGL context lost! Pausing game...');
                     
+                    // ========== DIAGNOSTIC LOGGING ==========
+                    const contextLossInfo = {
+                        timestamp: new Date().toISOString(),
+                        eventType: event.type,
+                        eventTimeStamp: event.timeStamp,
+                        renderState: {
+                            pixiApp: !!pixiApp,
+                            renderer: pixiApp?.renderer ? {
+                                type: pixiApp.renderer.constructor.name,
+                                width: pixiApp.renderer.width,
+                                height: pixiApp.renderer.height,
+                                resolution: pixiApp.renderer.resolution,
+                                gl: pixiApp.renderer.gl ? 'exists' : 'null',
+                                glState: pixiApp.renderer.gl ? {
+                                    isContextLost: pixiApp.renderer.gl.isContextLost(),
+                                    drawingBufferWidth: pixiApp.renderer.gl.drawingBufferWidth,
+                                    drawingBufferHeight: pixiApp.renderer.gl.drawingBufferHeight
+                                } : null
+                            } : null,
+                            bulletTextures: {
+                                normal: !!bulletTextures.normal,
+                                ice: !!bulletTextures.ice,
+                                poison: !!bulletTextures.poison,
+                                fire: !!bulletTextures.fire,
+                                void: !!bulletTextures.void,
+                                lavaBlade: !!bulletTextures.lavaBlade
+                            },
+                            spritePoolStats: {
+                                activeBulletSprites: activeBulletSprites.size,
+                                bulletSpritePool: bulletSpritePool.length,
+                                activeParticleSprites: activeParticleSprites.size,
+                                particleSpritePool: particleSpritePool.length
+                            }
+                        },
+                        gameState: {
+                            isPaused: store.isPaused,
+                            isGameOver: store.isGameOver,
+                            waveNumber: store.wave,
+                            bulletCount: store.bullets.length,
+                            enemyCount: store.enemies.length,
+                            playerHp: store.player?.hp
+                        },
+                        recoveryAttempts: webglRecoveryAttempts,
+                        maxAttempts: MAX_RECOVERY_ATTEMPTS
+                    };
+                    
+                    console.log('📊 CONTEXT LOSS DIAGNOSTICS:', JSON.stringify(contextLossInfo, null, 2));
+                    window._lastWebGLContextLossInfo = contextLossInfo;
+                    // ========== END DIAGNOSTIC LOGGING ==========
+                    
                     // Auto-pause to prevent further rendering issues
                     if (!store.isPaused && !store.isGameOver) {
                         store.isPaused = true;
@@ -4204,16 +4254,54 @@
                     webglRecoveryAttempts++;
                     window.webglRecoveryAttempts = webglRecoveryAttempts;
                     
+                    // ========== DIAGNOSTIC LOGGING ==========
+                    const contextRestoredInfo = {
+                        timestamp: new Date().toISOString(),
+                        eventType: event.type,
+                        eventTimeStamp: event.timeStamp,
+                        recoveryAttempt: webglRecoveryAttempts,
+                        maxAttempts: MAX_RECOVERY_ATTEMPTS,
+                        renderState: {
+                            gl: pixiApp?.renderer?.gl ? {
+                                isContextLost: pixiApp.renderer.gl.isContextLost(),
+                                extensions: pixiApp.renderer.gl.getSupportedExtensions ? 
+                                    pixiApp.renderer.gl.getSupportedExtensions().slice(0, 10) : 'unknown',
+                                drawingBufferWidth: pixiApp.renderer.gl.drawingBufferWidth,
+                                drawingBufferHeight: pixiApp.renderer.gl.drawingBufferHeight
+                            } : null,
+                            pixiRenderer: pixiApp?.renderer ? {
+                                type: pixiApp.renderer.constructor.name,
+                                width: pixiApp.renderer.width,
+                                height: pixiApp.renderer.height
+                            } : null,
+                            texturesStillPresent: {
+                                normal: !!bulletTextures.normal,
+                                ice: !!bulletTextures.ice
+                            }
+                        }
+                    };
+                    
+                    console.log('📊 CONTEXT RESTORED INFO:', JSON.stringify(contextRestoredInfo, null, 2));
+                    window._lastWebGLContextRestoredInfo = contextRestoredInfo;
+                    // ========== END DIAGNOSTIC LOGGING ==========
+                    
                     window._lastBackgroundEvent = `WebGL Context Restored (Attempt ${webglRecoveryAttempts})`;
                     window._lastBackgroundTime = Date.now();
                     
                     if (webglRecoveryAttempts <= MAX_RECOVERY_ATTEMPTS) {
                         try {
+                            console.log('🔄 Starting rebuild with recovered context...');
                             await rebuildPixiRenderer();
                             announce('✅ GRAPHICS RESTORED', 2000);
                         } catch (err) {
                             console.error('❌ Failed to rebuild renderer:', err);
+                            console.error('Stack:', err.stack);
                             announce('❌ GRAPHICS ERROR - CHECK DIAGNOSTICS', 4000);
+                            window._lastPixiRebuildError = {
+                                message: err.message,
+                                stack: err.stack,
+                                timestamp: new Date().toISOString()
+                            };
                         }
                     } else {
                         console.error('❌ Too many recovery attempts - manual restart required');
@@ -4227,32 +4315,84 @@
             async function rebuildPixiRenderer() {
                 console.log('🔄 Rebuilding PixiJS renderer...');
                 
+                const rebuildStartTime = performance.now();
+                const rebuildLog = {
+                    startTime: new Date().toISOString(),
+                    steps: []
+                };
+                
                 try {
                     // Clear sprite pools
+                    console.log('   Step 1: Clearing sprite pools...');
                     activeBulletSprites.clear();
                     activeParticleSprites.clear();
                     bulletSpritePool.length = 0;
                     particleSpritePool.length = 0;
+                    rebuildLog.steps.push({ step: 'clear_pools', success: true });
                     
                     // Recreate bullet textures
+                    console.log('   Step 2: Recreating bullet textures...');
                     if (typeof createBulletTextures === 'function') {
-                        createBulletTextures();
-                        console.log('✅ Bullet textures recreated');
+                        try {
+                            createBulletTextures();
+                            console.log('✅ Bullet textures recreated');
+                            rebuildLog.steps.push({ step: 'recreate_bullet_textures', success: true, textures: Object.keys(bulletTextures) });
+                        } catch (e) {
+                            console.error('❌ Bullet texture recreation failed:', e);
+                            rebuildLog.steps.push({ step: 'recreate_bullet_textures', success: false, error: e.message });
+                            throw e;
+                        }
+                    } else {
+                        console.warn('⚠️ createBulletTextures not available');
+                        rebuildLog.steps.push({ step: 'recreate_bullet_textures', success: false, error: 'function not available' });
                     }
                     
                     // Recreate particle texture
+                    console.log('   Step 3: Recreating particle texture...');
                     if (typeof createParticleTexture === 'function') {
-                        createParticleTexture();
-                        console.log('✅ Particle textures recreated');
+                        try {
+                            createParticleTexture();
+                            console.log('✅ Particle textures recreated');
+                            rebuildLog.steps.push({ step: 'recreate_particle_texture', success: true });
+                        } catch (e) {
+                            console.error('❌ Particle texture recreation failed:', e);
+                            rebuildLog.steps.push({ step: 'recreate_particle_texture', success: false, error: e.message });
+                            throw e;
+                        }
+                    } else {
+                        console.warn('⚠️ createParticleTexture not available');
+                        rebuildLog.steps.push({ step: 'recreate_particle_texture', success: false, error: 'function not available' });
                     }
                     
                     // Trigger a resize to ensure proper scaling
-                    resizeGameSurfaces();
+                    console.log('   Step 4: Resizing game surfaces...');
+                    try {
+                        resizeGameSurfaces();
+                        rebuildLog.steps.push({ step: 'resize_surfaces', success: true });
+                    } catch (e) {
+                        console.error('❌ Resize failed:', e);
+                        rebuildLog.steps.push({ step: 'resize_surfaces', success: false, error: e.message });
+                        throw e;
+                    }
                     
                     // Reset time reference to prevent time jump
                     store.last = performance.now();
+                    rebuildLog.steps.push({ step: 'reset_time', success: true });
                     
-                    console.log('✅ PixiJS renderer rebuilt successfully');
+                    const rebuildDuration = performance.now() - rebuildStartTime;
+                    console.log(`✅ PixiJS renderer rebuilt successfully (${rebuildDuration.toFixed(2)}ms)`);
+                    rebuildLog.endTime = new Date().toISOString();
+                    rebuildLog.duration = rebuildDuration;
+                    rebuildLog.finalState = {
+                        pixiApp: !!pixiApp,
+                        renderer: !!pixiApp?.renderer,
+                        gl: !!pixiApp?.renderer?.gl,
+                        bulletTextures: Object.keys(bulletTextures).length,
+                        spritePoolSize: bulletSpritePool.length + particleSpritePool.length
+                    };
+                    
+                    console.log('📊 REBUILD LOG:', JSON.stringify(rebuildLog, null, 2));
+                    window._lastPixiRebuildLog = rebuildLog;
                     
                     // Auto-resume after a brief delay if we were auto-paused
                     setTimeout(() => {
@@ -7646,7 +7786,7 @@
                     // Cube Burglar requires 9 stacks to freeze, regular enemies need 3
                     const isCubeBurglar = e.type === 'cube_burglar';
                     const freezeThreshold = isCubeBurglar ? 9 : 3;
-                    const maxStacks = isCubeBurglar ? 9 : 3;
+                    const maxStacks = isCubeBurglar ? 9 : 5; // Increased to 5 for regular enemies
                     
                     const nextStacks = (isVoidElement && voidProfile?.ice) ? freezeThreshold : Math.min(maxStacks, currentStacks + 1);
                     e.iceStacks = nextStacks;
@@ -7701,7 +7841,7 @@
                 let pendingPoison = null;
                 if (isPoisonElement) {
                     const currentPoisonStacks = ensureFiniteNumber(e.poisonStacks, 0);
-                    const nextPoisonStacks = (isVoidElement && voidProfile?.poison) ? 3 : Math.min(3, currentPoisonStacks + 1);
+                    const nextPoisonStacks = (isVoidElement && voidProfile?.poison) ? 5 : Math.min(5, currentPoisonStacks + 1); // Increased to 5 stacks
                     e.poisonStacks = nextPoisonStacks;
                     const poisonDuration = (isVoidElement && voidProfile?.poison) ? 4.5 : 3.0;
                     e.poisonStackTimer = Math.max(e.poisonStackTimer || 0, poisonDuration);
@@ -7717,14 +7857,14 @@
 
                 if (isFireElement) {
                     const currentFireStacks = ensureFiniteNumber(e.fireStacks, 0);
-                    const nextFireStacks = (isVoidElement && voidProfile?.fire) ? 3 : currentFireStacks;
+                    const nextFireStacks = (isVoidElement && voidProfile?.fire) ? 5 : currentFireStacks; // Increased to 5 for void
                     if (nextFireStacks !== currentFireStacks) {
                         e.fireStacks = nextFireStacks;
                     }
                     if (nextFireStacks > 0 && (isVoidElement && voidProfile?.fire)) {
                         const fireDuration = 4.5;
                         e.fireStackTimer = Math.max(e.fireStackTimer || 0, fireDuration);
-                        if (nextFireStacks >= 3) {
+                        if (nextFireStacks >= 5) { // Increased to 5
                             e.firePanicActive = true;
                             e.firePanicTimer = Math.max(e.firePanicTimer || 0, 2.0);
                             if (!e.firePanicPhase) e.firePanicPhase = 'burst';
@@ -8078,7 +8218,7 @@
                                 const dist = Math.sqrt(dx * dx + dy * dy);
                                 if (dist <= spreadRadius) {
                                     // Ignite nearby enemy with fire stacks
-                                    nearbyEnemy.fireStacks = 3;
+                                    nearbyEnemy.fireStacks = 5; // Increased to 5
                                     nearbyEnemy.fireStackTimer = 3.0;
                                     if (spreadDamage > 0) {
                                         applyFireBulletBurn(nearbyEnemy, spreadDamage, { duration: 3 });
@@ -9441,14 +9581,15 @@
                     apply: () => { 
                         if (!store.player.hasIceBullets) {
                             store.player.hasIceBullets = true;
+                            store.player.dmgMult *= 1.1; // +10% base damage
                             activateBulletElementIfNone(store.player, 'ice');
-                            announce('❄️ Ice bullets unlocked! Slow enemies on impact.');
+                            announce('❄️ Ice bullets unlocked! +10% damage. Slow enemies and increase damage taken.');
                             playSound('powerup');
                             return true; 
                         } 
                         return false;
                     }, 
-                    desc: () => 'Unlock ice bullets. Slow enemies on impact.' 
+                    desc: () => 'Unlock ice bullets. +10% damage. Slow enemies and increase damage taken up to 30%.' 
                 },
                 'poison_bullets': { 
                     name: "POISON BULLETS", 
@@ -9460,14 +9601,15 @@
                     apply: () => { 
                         if (!store.player.hasPoisonBullets) {
                             store.player.hasPoisonBullets = true;
+                            store.player.dmgMult *= 1.1; // +10% base damage
                             activateBulletElementIfNone(store.player, 'poison');
-                            announce('☠️ Poison bullets unlocked! Damage enemies over time.');
+                            announce('☠️ Poison bullets unlocked! +10% damage. Stack poison DoT on enemies.');
                             playSound('powerup');
                             return true; 
                         } 
                         return false;
                     }, 
-                    desc: () => 'Unlock poison bullets. Damage enemies over time.' 
+                    desc: () => 'Unlock poison bullets. +10% damage. Stack poison DoT (10% per stack, up to 50% total).' 
                 },
                 'fire_bullets': {
                     name: "FIRE BULLETS",
@@ -9479,14 +9621,15 @@
                     apply: () => {
                         if (!store.player.hasFireBullets) {
                             store.player.hasFireBullets = true;
+                            store.player.dmgMult *= 1.15; // +15% base damage
                             activateBulletElementIfNone(store.player, 'fire');
-                            announce('🔥 Fire bullets unlocked! Ignite enemies with escalating burn.');
+                            announce('🔥 Fire bullets unlocked! +15% damage. Spreading fire ignites everything.');
                             playSound('powerup');
                             return true;
                         }
                         return false;
                     },
-                    desc: () => 'Unlock fire bullets. Ignite enemies with ramping burn damage.'
+                    desc: () => 'Unlock fire bullets. +15% damage. Burn spreads and escalates automatically.'
                 }
             };
 
@@ -15650,17 +15793,17 @@
                         }
                     }
 
-                    // Poison spreading mechanic - poisoned enemies spread poison on collision
-                    if (e.poisonStacks && e.poisonStacks > 0) {
-                        // Initialize poison spread cooldown if not present
-                        if (!e.poisonSpreadCooldown) {
-                            e.poisonSpreadCooldown = 0;
+                    // Fire spreading mechanic - burning enemies spread fire on contact
+                    if (e.fireStacks && e.fireStacks > 0) {
+                        // Initialize fire spread cooldown if not present
+                        if (!e.fireSpreadCooldown) {
+                            e.fireSpreadCooldown = 0;
                         }
                         
-                        e.poisonSpreadCooldown -= dt;
+                        e.fireSpreadCooldown -= dt;
                         
-                        // Check for nearby enemies to spread poison to
-                        if (e.poisonSpreadCooldown <= 0) {
+                        // Check for nearby enemies to spread fire to
+                        if (e.fireSpreadCooldown <= 0) {
                             const spreadRadius = (e.r || 16) * 2.5; // Detection radius for spreading
                             
                             for (const other of store.enemies) {
@@ -15672,34 +15815,19 @@
                                 const maxDistSq = spreadRadius * spreadRadius;
                                 
                                 if (distSq < maxDistSq) {
-                                    // Enemies are touching - spread poison
-                                    if (!other.poisonStacks || other.poisonStacks === 0) {
-                                        // Transfer 1 stack to unpoisoned enemy
-                                        other.poisonStacks = 1;
-                                        other.poisonStackTimer = e.poisonStackTimer || 4;
-                                        other.poisonLastTick = 0.1;
-                                        other.poisonTickInterval = 0.1;
-                                        other.poisonDamagePerStack = e.poisonDamagePerStack || 2;
+                                    // Enemies are touching - spread fire (1 stack)
+                                    if (!other.fireStacks || other.fireStacks === 0) {
+                                        other.fireStacks = 1;
+                                        other.fireStackTimer = 3.0;
+                                        other.fireAutoStackTimer = 0;
                                         if (!Array.isArray(store.activeEffects)) {
                                             store.activeEffects = [];
                                         }
-                                        store.activeEffects.push(createEffect('poisonCloud', other.x, other.y, other.r || 16));
+                                        store.activeEffects.push(createEffect('fireSpread', other.x, other.y, other.r || 16));
                                         
                                         // Set cooldown to prevent immediate re-spread
-                                        e.poisonSpreadCooldown = 0.5;
+                                        e.fireSpreadCooldown = 0.5;
                                         break; // Only spread to one enemy per check
-                                    } else {
-                                        // Add 1 stack and refresh timer
-                                        other.poisonStacks = Math.min(3, other.poisonStacks + 1);
-                                        other.poisonStackTimer = e.poisonStackTimer || 4; // Refresh timer
-                                        other.poisonDamagePerStack = e.poisonDamagePerStack || 2;
-                                        if (!Array.isArray(store.activeEffects)) {
-                                            store.activeEffects = [];
-                                        }
-                                        store.activeEffects.push(createEffect('poisonCloud', other.x, other.y, other.r || 16));
-                                        
-                                        e.poisonSpreadCooldown = 0.5;
-                                        break;
                                     }
                                 }
                             }
@@ -15731,7 +15859,7 @@
                                     });
                                     if (burn.effectTimer <= 0) {
                                         spawnLocalizedFireBurn(e, progress);
-                                        burn.effectTimer = 0.15;
+                                        burn.effectTimer = 0.4; // Increased from 0.15 to 0.4 for more readable damage numbers
                                     }
                                 }
                             }
@@ -15780,12 +15908,12 @@
                                 }
 
                                 // Track fire stacks for panicked behavior
-                                e.fireStacks = Math.min(3, (e.fireStacks || 0) + 1);
+                                e.fireStacks = Math.min(5, (e.fireStacks || 0) + 1); // Increased to 5 stacks max
                                 e.fireStackTimer = 3; // 3 seconds duration
                                 recordStackElementHit(e, 'fire');
                                 
-                                // Trigger panic behavior at 3 stacks
-                                if (e.fireStacks >= 3 && !e.fireParnicActive) {
+                                // Trigger panic behavior at 5 stacks
+                                if (e.fireStacks >= 5 && !e.fireParnicActive) {
                                     e.firePanicActive = true;
                                     e.firePanicTimer = 1.5; // 1.5 second burst of panicked movement
                                     e.firePanicPhase = 'burst'; // Start with burst phase
@@ -15864,10 +15992,22 @@
                         // Handle fire stack decay and panic behavior
                         if (e.fireStackTimer && e.fireStackTimer > 0) {
                             e.fireStackTimer -= dt;
+                            
+                            // Auto-escalation: enemies with at least 1 fire stack gain 1 additional stack per second
+                            if (e.fireStacks && e.fireStacks > 0 && e.fireStacks < 5) {
+                                e.fireAutoStackTimer = (e.fireAutoStackTimer || 0) + dt;
+                                if (e.fireAutoStackTimer >= 1.0) {
+                                    e.fireStacks = Math.min(5, e.fireStacks + 1);
+                                    e.fireAutoStackTimer = 0;
+                                    e.fireStackTimer = 3.0; // Refresh timer
+                                }
+                            }
+                            
                             if (e.fireStackTimer <= 0) {
                                 e.fireStacks = 0;
                                 e.firePanicActive = false;
                                 e.firePanicTimer = 0;
+                                delete e.fireAutoStackTimer;
                             }
                         }
                         
@@ -15939,8 +16079,8 @@
                                 const freezeThreshold = isCubeBurglar ? 9 : 3;
                                 const activeStacks = isBoss ? Math.min(3, e.iceStacks) : Math.min(freezeThreshold, e.iceStacks);
                                 
-                                // Damage multiplier only uses first 3 stacks
-                                const damageStacks = Math.min(3, activeStacks);
+                                // Damage multiplier only uses first 3 stacks (10% per stack = 30% max at 3+ stacks)
+                                const damageStacks = Math.min(3, e.iceStacks);
                                 const iceDamageMultiplier = 1 + (0.1 * damageStacks);
                                 e.iceDamageMultiplier = iceDamageMultiplier;
 
@@ -43028,12 +43168,12 @@
                 }
 
                 const fireStacks = ensureFiniteNumber(enemy.fireStacks, 0);
-                if (fireStacks >= 3 && (enemy.fireStackTimer || 0) > 0) {
+                if (fireStacks >= 5 && (enemy.fireStackTimer || 0) > 0) { // Increased to 5
                     candidates.push('fire');
                 }
 
                 const poisonStacks = ensureFiniteNumber(enemy.poisonStacks, 0);
-                if (poisonStacks >= 3 && (enemy.poisonStackTimer || 0) > 0) {
+                if (poisonStacks >= 5 && (enemy.poisonStackTimer || 0) > 0) { // Increased to 5
                     candidates.push('poison');
                 }
 
@@ -46612,6 +46752,69 @@
                 // DOM already loaded
                 initializeGame();
             }
+
+            // ========== GLOBAL DIAGNOSTIC HELPERS ==========
+            window.getPixiDiagnostics = function() {
+                return {
+                    currentTime: new Date().toISOString(),
+                    webgl: {
+                        contextLost: window.webglContextLost,
+                        recoveryAttempts: window.webglRecoveryAttempts,
+                        lastContextLossInfo: window._lastWebGLContextLossInfo || 'Never occurred',
+                        lastContextRestoredInfo: window._lastWebGLContextRestoredInfo || 'Never occurred',
+                        lastRebuildError: window._lastPixiRebuildError || 'No errors',
+                        lastRebuildLog: window._lastPixiRebuildLog || 'No build log'
+                    },
+                    pixi: {
+                        appExists: !!pixiApp,
+                        rendererExists: !!pixiApp?.renderer,
+                        hasGL: !!pixiApp?.renderer?.gl,
+                        bulletTexturesGenerated: Object.keys(bulletTextures || {}).length,
+                        spritePoolsActive: {
+                            activeBulletSprites: activeBulletSprites?.size || 0,
+                            bulletSpritePool: bulletSpritePool?.length || 0,
+                            activeParticleSprites: activeParticleSprites?.size || 0,
+                            particleSpritePool: particleSpritePool?.length || 0
+                        }
+                    },
+                    canvas: {
+                        cvs: !!cvs,
+                        ctx: !!ctx,
+                        canvasScaleX,
+                        canvasScaleY,
+                        width: cvs?.width,
+                        height: cvs?.height,
+                        cssWidth: cvs?.style.width,
+                        cssHeight: cvs?.style.height
+                    },
+                    game: {
+                        isPaused: store?.isPaused,
+                        isGameOver: store?.isGameOver,
+                        wave: store?.wave,
+                        bulletCount: store?.bullets?.length || 0,
+                        enemyCount: store?.enemies?.length || 0,
+                        playerHp: store?.player?.hp,
+                        playerMaxHp: store?.player?.hpMax
+                    }
+                };
+            };
+
+            window.exportPixiDiagnostics = function() {
+                const diagnostics = window.getPixiDiagnostics();
+                const jsonStr = JSON.stringify(diagnostics, null, 2);
+                console.log('='.repeat(60));
+                console.log('PIXI DIAGNOSTICS EXPORT');
+                console.log('='.repeat(60));
+                console.log(jsonStr);
+                console.log('='.repeat(60));
+                console.log('Copy the above diagnostics and share with developer');
+                return jsonStr;
+            };
+
+            // Log diagnostic helper availability
+            console.log('📊 Type window.getPixiDiagnostics() to see current Pixi state');
+            console.log('📊 Type window.exportPixiDiagnostics() to export all diagnostics');
+            // ========== END DIAGNOSTIC HELPERS ==========
 
             document.addEventListener('DOMContentLoaded', () => {
                 // Set up upgrade popup OK button
