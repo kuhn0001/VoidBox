@@ -3439,7 +3439,19 @@
                 <div class="loading-bar-container">
                     <div class="loading-bar" id="loadingBar" style="width: 0%"></div>
                 </div>
-                <div class="loading-details" id="loadingDetails">0 / 0 assets loaded</div>
+                <div class="loading-details" id="loadingDetails">
+                    <div style="margin-top: 20px; font-size: 14px; line-height: 1.6; max-width: 500px; margin-left: auto; margin-right: auto;">
+                        <div style="color: #ffeb3b; font-weight: bold; margin-bottom: 12px;">⚡ HOW TO PLAY ⚡</div>
+                        <div style="font-size: 12px; color: #b8d4ff;">
+                            <div>• <strong>WASD</strong> or <strong>Arrow Keys</strong> to move</div>
+                            <div>• Auto-fire weapons destroy incoming threats</div>
+                            <div>• Collect <span style="color: #FFD700;">💰 Gold</span> to upgrade your ship</div>
+                            <div>• Level up and unlock powerful abilities</div>
+                            <div>• Survive waves and defeat bosses</div>
+                            <div style="margin-top: 8px; color: #9a66ff;">Press <strong>SPACE</strong> to activate special abilities</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -4006,6 +4018,17 @@
     <audio id="audioLightningCrit" src="lightningcrit.m4a" preload="auto"></audio>
     <audio id="audioLightningPower" src="lightningpower.mp3" preload="auto"></audio>
     <audio id="audioLightningCrack" src="thundercrack.m4a" preload="auto"></audio>
+    <audio id="audioFireWhoosh" src="fire_whoosh.wav" preload="auto"></audio>
+    <audio id="audioSizzle" src="sizzle.wav" preload="auto"></audio>
+    <audio id="audioUpgradePurchase" src="upgrade_purchase.wav" preload="auto"></audio>
+    <audio id="audioVoidPulseAlt" src="void_pulse.wav" preload="auto"></audio>
+    <audio id="audioRocketHit" src="rocket_hit.wav" preload="auto"></audio>
+    <audio id="audioCoinPickup" src="coin_pickup.wav" preload="auto"></audio>
+    <audio id="audioPoisonSplash" src="poison_splash.wav" preload="auto"></audio>
+    <audio id="audioSnakeHiss" src="snake_hiss_high.wav" preload="auto"></audio>
+    <audio id="audioBugSqueal" src="bug_squeal_redo.wav" preload="auto"></audio>
+    <audio id="audioFarExplosion" src="far_explosion.wav" preload="auto"></audio>
+    <audio id="audioRobotCrumble" src="robot_crumble.wav" preload="auto"></audio>
 
     <button id="fsEnterBtn" class="fixed-btn" type="button">FULLSCREEN</button>
     <div id="bottom-right-controls">
@@ -5478,7 +5501,18 @@
                 power: q('audioPower'),
                 lightningCrit: q('audioLightningCrit'),
                 lightningPower: q('audioLightningPower'),
-                lightningCrack: q('audioLightningCrack')
+                lightningCrack: q('audioLightningCrack'),
+                fireWhoosh: q('audioFireWhoosh'),
+                sizzle: q('audioSizzle'),
+                upgradePurchase: q('audioUpgradePurchase'),
+                voidPulseAlt: q('audioVoidPulseAlt'),
+                rocketHit: q('audioRocketHit'),
+                coinPickup: q('audioCoinPickup'),
+                poisonSplash: q('audioPoisonSplash'),
+                snakeHiss: q('audioSnakeHiss'),
+                bugSqueal: q('audioBugSqueal'),
+                farExplosion: q('audioFarExplosion'),
+                robotCrumble: q('audioRobotCrumble')
             };
             let lastExplosionSoundTime = 0;
             let lastBossHitSoundTime = 0;
@@ -7257,6 +7291,7 @@
                             jitter: 6,
                             scale: 0.95
                         });
+                        playSound('sizzle'); // Play sizzle sound on burn tick
                     } else {
                         break;
                     }
@@ -8195,6 +8230,17 @@
                         e.deathElement = deathElement;
                         e.dead = true;
                         
+                        // Play enemy-specific death sounds
+                        if (e.type === 'mech' || e.type === 'mech_elite') {
+                            playSound('robotCrumble'); // Mechanical enemies
+                        } else if (e.type === 'angler' || e.type === 'manta') {
+                            playSound('snakeHiss'); // Aquatic/serpentine enemies
+                        } else if (e.type === 'avian_hatchling' || e.type === 'trap_king_add') {
+                            playSound('bugSqueal'); // Small bug-like enemies
+                        } else {
+                            playSound('farExplosion'); // General enemy death
+                        }
+                        
                         if (e.type === 'void_champion') {
                             store.enemies.forEach(minion => {
                                 if (minion.orbitTargetId === e.id && !minion.dead) {
@@ -8761,6 +8807,7 @@
 
             function spawnFlamePulse(x, y, radius = 90, damage = 40, context = {}) {
                 store.activeEffects.push(createEffect('delayedFlamePulse', x, y, radius));
+                playSound('fireWhoosh'); // Play fire whoosh sound
                 const targets = store.boss ? [...store.enemies, store.boss] : store.enemies;
                 targets.forEach(enemy => {
                     if (!enemy || enemy.dead) return;
@@ -10266,7 +10313,7 @@
                     if (goldAmount > 0) {
                         addWorldGold(goldAmount);
                         announce(`💰 CASH INFUSION +${goldAmount} GOLD! 💰`);
-                        playSound('coin');
+                        playSound('coinPickup'); // Play the new coin_pickup.wav
                     }
                     return;
                 }
@@ -14453,6 +14500,8 @@
                 if (m.playSound) {
                     playSound('cluster');
                 }
+                // Play rocket hit sound on detonation
+                playSound('rocketHit');
 
                 const baseRadius = 70; // Halved from 80
                 const explosionRadius = store.player.enhancedClusters ? 120 : baseRadius;
@@ -15823,6 +15872,7 @@
                             store.activeEffects.push(createEffect('poisonCloud', e.x, e.y, e.r || 16));
                             if (appliedPoison > 0) {
                                 recordStackElementHit(e, 'poison');
+                                playSound('poisonSplash'); // Play poison splash sound on damage tick
                             }
                             e.poisonLastTick = e.poisonTickInterval || 0.1;
                             spawnDotDamageText(e, appliedPoison, {
@@ -36312,6 +36362,10 @@
                     if (!options.silent) {
                         requestAnimationFrame(() => showShop());
                     }
+                    // Play upgrade purchase sound
+                    if (!options.silent) {
+                        playSound('upgradePurchase');
+                    }
                     if (typeof options.onSuccess === 'function') {
                         options.onSuccess({ key, upgrade, cost });
                     }
@@ -46827,7 +46881,18 @@
                         'stargun.m4a',
                         'lightningcrit.m4a',
                         'lightningpower.mp3',
-                        'thundercrack.m4a'
+                        'thundercrack.m4a',
+                        'fire_whoosh.wav',
+                        'sizzle.wav',
+                        'upgrade_purchase.wav',
+                        'void_pulse.wav',
+                        'rocket_hit.wav',
+                        'coin_pickup.wav',
+                        'poison_splash.wav',
+                        'snake_hiss_high.wav',
+                        'bug_squeal_redo.wav',
+                        'far_explosion.wav',
+                        'robot_crumble.wav'
                     ];
 
                     const imageAssets = [
