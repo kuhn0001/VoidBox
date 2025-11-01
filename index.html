@@ -4003,6 +4003,9 @@
     <audio id="audioIceBreak1" src="icebreak1.m4a" preload="auto"></audio>
     <audio id="audioIceBreak2" src="icebreak2.m4a" preload="auto"></audio>
     <audio id="audioPower" src="power.m4a" preload="auto"></audio>
+    <audio id="audioLightningCrit" src="lightningcrit.m4a" preload="auto"></audio>
+    <audio id="audioLightningPower" src="lightningpower.mp3" preload="auto"></audio>
+    <audio id="audioLightningCrack" src="lightningcrack.m4a" preload="auto"></audio>
 
     <button id="fsEnterBtn" class="fixed-btn" type="button">FULLSCREEN</button>
     <div id="bottom-right-controls">
@@ -5472,7 +5475,10 @@
                 voidpulse: q('audioVoidPulse'),
                 icebreak1: q('audioIceBreak1'),
                 icebreak2: q('audioIceBreak2'),
-                power: q('audioPower')
+                power: q('audioPower'),
+                lightningCrit: q('audioLightningCrit'),
+                lightningPower: q('audioLightningPower'),
+                lightningCrack: q('audioLightningCrack')
             };
             let lastExplosionSoundTime = 0;
             let lastBossHitSoundTime = 0;
@@ -5482,14 +5488,22 @@
             let lastIceBreakTime = 0;
             let lastVoidPulseTime = 0;
             let lastPowerSoundTime = 0;
+            let lastLightningCritTime = 0;
+            let lastLightningCrackTime = 0;
             const powerSoundPlayedTargets = new Set(); // Track which enemies have had power sound played
+            let consecutiveLightningHits = 0; // Track lightning chain hits for lightningCrack sound
+            let consecutiveLightningCrits = 0; // Track crits on lightning hits for lightning crack detection
+            let lastLightningHitTime = 0; // Track when last lightning hit occurred (reset after 0.8s gap)
             const SOUND_COOLDOWNS = {
                 thunder: 1500,
                 epicHorn: 2500,
                 voidpulse: 2500, // Allow sound to fully play + pause - adjust if you shorten the sound file
                 icebreak1: 1000, // One second cooldown for ice break sounds
                 icebreak2: 1000,
-                power: 2000 // Limit power sound to once every 2 seconds
+                power: 2000, // Limit power sound to once every 2 seconds
+                lightningCrit: 400, // Cooldown for lightning crit sound (adjusts based on hit upgrade)
+                lightningPower: 1200, // Cooldown for lightning power upgrade sound
+                lightningCrack: 2000 // Cooldown for huge multi-kill streak sound
             };
             const soundLastPlayTime = {};
 
@@ -7943,6 +7957,21 @@
                     didCrit = true;
                     store.activeEffects.push(createEffect('critText', e.x, e.y));
                     if (Math.random() < 0.05) spawnPowerup(e.x, e.y);
+                    
+                    // LIGHTNING CRIT SOUND - for arc_cannon and stormbringer/chain lightning
+                    if ((b.championAttackModule === 'arc_cannon' || b.championAttackModule === 'storm_grid' || 
+                         store.player.subclass === 'stormbringer') && 
+                        store.player.upgradeLevels.hit > 0) {
+                        const now = performance.now();
+                        const crackCooldown = SOUND_COOLDOWNS.lightningCrit;
+                        // Reduce cooldown based on hit upgrades (more upgrades = more frequent crits can sound)
+                        const adjustedCooldown = Math.max(200, crackCooldown - (store.player.upgradeLevels.hit * 30));
+                        if (now - lastLightningCritTime >= adjustedCooldown) {
+                            playSound('lightningCrit');
+                            lastLightningCritTime = now;
+                            consecutiveLightningCrits++;
+                        }
+                    }
                 }
 
                 if (e === store.boss) playSound('hit');
@@ -42271,6 +42300,8 @@
                 let currentDamage = 95 * p.dmgMult * damageMultiplier * (p.chainLightningDamage || 1.0);
                 const targetsHit = new Set();
                 const chainPoints = [startPoint];
+                let chainKillCount = 0;
+                const now = performance.now();
 
                 for (let i = 0; i < maxJumps && currentTarget; i++) {
                     targetsHit.add(currentTarget);
@@ -42291,12 +42322,21 @@
                     });
                     dmg = lightningResult.damage;
                     let applied = dmg;
+                    const prevHp = currentTarget.hp;
                     if (hittingBoss) {
                         const result = applyBossDamage(store.boss, dmg, { point: { x: currentTarget.x, y: currentTarget.y } });
                         applied = result.amount;
                     } else {
                         currentTarget.hp -= dmg;
                         store.world.totalDamage += dmg;
+                    }
+                    
+                    // Track kills from lightning chain for lightning crack sound
+                    if (!hittingBoss && currentTarget.hp <= 0 && prevHp > 0) {
+                        chainKillCount++;
+                        consecutiveLightningHits++;
+                    } else if (currentTarget.hp > 0) {
+                        consecutiveLightningHits++;
                     }
 
                     // Apply vampirism healing for chain lightning damage
@@ -42330,6 +42370,16 @@
 
                     currentTarget = nextTarget;
                     currentDamage *= 0.85; // Slightly less decay since we have probabilistic limiting
+                }
+                
+                // LIGHTNING CRACK SOUND - huge multi-hit kill streak
+                // Trigger when: 3+ hits in a chain OR 2+ kills in a chain
+                if ((consecutiveLightningHits >= 3 || chainKillCount >= 2) && 
+                    now - lastLightningCrackTime >= SOUND_COOLDOWNS.lightningCrack) {
+                    playSound('lightningCrack');
+                    lastLightningCrackTime = now;
+                    // Reset the hit counter after sound
+                    consecutiveLightningHits = 0;
                 }
 
                 if (chainPoints.length > 1) {
@@ -44674,6 +44724,11 @@
 
                 p.lightningAlternate = false;
                 p.lightningCycleIndex = 0;
+
+                // Play lightning power sound when lightning ability is first upgraded or enhanced
+                if (!hadLightning) {
+                    playSound('lightningPower');
+                }
 
                 return (unlock && !wasUnlocked) || (!hadLightning);
             }
