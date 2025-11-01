@@ -5567,7 +5567,7 @@
                 afterburnerParticleTimer: 0,
                 starCannonLevel: 0, starCannonTimer: 0, starCannonIcemanSupport: false, starCannonNextSide: 'left',
                 juggernautCloneActive: false,
-                luckBoost: 0, luckQuality: 0, luckQuantity: 0, luckUpgradeCount: 0, magnetRadius: 0, hasIceman: false, icemanFireT: 0, hasBeefClone: false, critChance: 0.02, critDamage: 1.85,
+                luckBoost: 0, luckQuality: 0, luckQuantity: 0, luckUpgradeCount: 0, magnetRadius: 0, hasIceman: false, icemanFireT: 0, hasBeefClone: false, critChance: 0, critDamage: 1.75,
                 pilotGenome: null, missileVolley: 2,
                 hasRearGuard: false, rearGuardCooldown: 0, rearGuardReady: true,
                 rearMultishot: 0, maxRearMultishot: 0, addFrontNext: true,
@@ -9012,7 +9012,48 @@
                     }
                 },
                 'dmg': { name: "DAMAGE", icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="1em" height="1em" fill="currentColor"><path opacity=".4" d="M32 296c0-25.6 17.2-47.2 40.7-53.9L96 235.5 96 168c0-30.9 25.1-56 56-56l40 0c32.7 0 60-8.2 78.2-27.7 18.1-19.5 21.1-43.9 19.7-62.6-.2-3-.5-6-1-8.9 20.1 12.4 31 32.1 31 51.2 0 3.8-.3 7.2-.9 10.2l-7 37.8 47.8 0c30.9 0 56 25.1 56 56l0 67.5 23.3 6.6c23.5 6.7 40.7 28.3 40.7 53.9l0 56-80 0 0-32-51 0 25.2-112-111.2 0c-55.6 48-111.2 96-166.7 144l-64.2 0 0-56z"/><path d="M350.6 48.4c-6.4-35-34.2-63.6-72.7-75-11.7-3.5-24.4-5.4-37.9-5.4 0 0 8.2 14.4 13.6 32.8 9.7 33 10.3 79.2-61.6 79.2l-40 0c-48.6 0-88 39.4-88 88l0 43.3C27.1 221.8 0 255.7 0 296l0 88 80 0 0-18 16.2-14-64.2 0 0-56c0-25.6 17.2-47.2 40.7-53.9L96 235.5 96 168c0-30.9 25.1-56 56-56l40 0c32.7 0 60-8.2 78.2-27.7 18.1-19.5 21.1-43.9 19.7-62.6-.2-3-.5-6-1-8.9 20.1 12.4 31 32.1 31 51.2 0 3.8-.3 7.2-.9 10.2l-7 37.8 47.8 0c30.9 0 56 25.1 56 56l0 67.5 23.3 6.6c23.5 6.7 40.7 28.3 40.7 53.9l0 56-80 0 0 32 112 0 0-88c0-40.3-27.1-74.2-64-84.7l0-43.3c0-40.8-27.8-75.1-65.4-85.1-7.2-1.9-14.8-2.9-22.6-2.9l-9.4 0c.9-5 1.4-10.4 1.4-16 0-5.3-.5-10.5-1.4-15.6zM128 387.9l0 44.1 63 0-25.2 112 33.4 0 152.8-131.9 0-44.1-63 0 25.2-112-33.4 0-152.8 131.9zM230.9 400l-67.9 0 106.8-92.2-20.7 92.2 67.9 0-106.8 92.2 20.7-92.2z"/></svg>', baseCost: 50, scale: 1.5, maxLevel: 10, category: 'attack', effect: () => store.player.dmgMult *= 1.06, desc: level => `+6% Damage (Lvl ${level + 1})` },
-                'crit_chance': { name: "SHINOBI REFLEXES", icon: '🥷', baseCost: 40, increment: 24, maxLevel: 10, category: 'attack', effect: () => { store.player.critChance *= 1.5; store.player.critDamage *= 1.5; }, desc: level => `+50% Crit Chance & Dmg (Lvl ${level + 1})` },
+                'crit_chance': { 
+                    name: "SHINOBI REFLEXES", 
+                    icon: '🥷', 
+                    baseCost: 50,
+                    scale: 1.5, // Starting multiplier, decreases by 0.05 each level
+                    maxLevel: 10, 
+                    category: 'attack',
+                    cost: function(level) {
+                        if (level === 0) return this.baseCost;
+                        let cost = this.baseCost;
+                        for (let i = 1; i <= level; i++) {
+                            const multiplier = this.scale - (i - 1) * 0.05;
+                            cost *= multiplier;
+                        }
+                        return cost;
+                    },
+                    effect: () => { 
+                        const level = store.player.upgradeLevels.crit_chance;
+                        // Tier 1: 10% base crit chance
+                        // Odd tiers (1, 3, 5, 7, 9): +5% crit chance
+                        // Even tiers (2, 4, 6, 8, 10): +5% crit damage (additive, so +0.05 to multiplier)
+                        if (level === 0) {
+                            // First tier grants 10% crit chance
+                            store.player.critChance = 0.10;
+                        } else if (level % 2 === 1) {
+                            // Odd levels: +5% crit chance
+                            store.player.critChance += 0.05;
+                        } else {
+                            // Even levels: +5% crit damage (0.05 to the multiplier)
+                            store.player.critDamage += 0.05;
+                        }
+                    }, 
+                    desc: level => {
+                        if (level === 0) {
+                            return `10% Crit Chance (Lvl 1)`;
+                        } else if (level % 2 === 0) {
+                            return `+5% Crit Chance (Lvl ${level + 1})`;
+                        } else {
+                            return `+5% Crit Damage (Lvl ${level + 1})`;
+                        }
+                    }
+                },
                 'speed': { name: "SPEED", icon: '🚀', baseCost: 40, scale: 1.6, maxLevel: 8, category: 'utility', effect: () => store.player.speed *= 1.10, desc: level => `+10% Speed (Lvl ${level + 1})` },
                 'grenade': { 
                     name: "SHIELD PULSE", 
@@ -14071,7 +14112,7 @@
                             } else if (p.stormstrikerLevel >= 2) {
                                 p.chainLightningCooldown = 0.75; // Alternating bolts: double fire rate
                             } else {
-                                p.chainLightningCooldown = 1.5; // Single bolt: normal rate
+                                p.chainLightningCooldown = 3.0; // Single bolt: slow powerful rate (half speed, 2.25x damage)
                             }
                         }
                     }
@@ -41403,9 +41444,40 @@
                 if (t <= 0) return;
 
                 ctx.save();
+                
+                // Draw ambient energy glow that persists longer (fades slower at the end)
+                const glowT = Math.min(1, t * 1.5); // Glow fades 50% slower
+                if (glowT > 0) {
+                    ctx.lineWidth = 14 * glowT;
+                    ctx.strokeStyle = `rgba(180, 200, 255, ${0.15 * glowT})`;
+                    ctx.shadowColor = '#b8d4ff';
+                    ctx.shadowBlur = 40 * glowT;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(points[0].x, points[0].y);
+                    for (let i = 1; i < points.length; i++) {
+                        ctx.lineTo(points[i].x, points[i].y);
+                    }
+                    ctx.stroke();
+                }
+                
+                // Draw secondary outer glow
+                ctx.lineWidth = 8 * t;
+                ctx.strokeStyle = `rgba(200, 220, 255, ${0.3 * t})`;
+                ctx.shadowColor = '#9a66ff';
+                ctx.shadowBlur = 25 * t;
+                
+                ctx.beginPath();
+                ctx.moveTo(points[0].x, points[0].y);
+                for (let i = 1; i < points.length; i++) {
+                    ctx.lineTo(points[i].x, points[i].y);
+                }
+                ctx.stroke();
+
+                // Draw main bright lightning bolt
                 ctx.lineWidth = 4 * t;
                 ctx.strokeStyle = `rgba(255, 255, 255, ${0.9 * t})`;
-                ctx.shadowColor = '#9a66ff';
+                ctx.shadowColor = '#d0e8ff';
                 ctx.shadowBlur = 20 * t;
 
                 ctx.beginPath();
@@ -41415,8 +41487,9 @@
                 }
                 ctx.stroke();
 
+                // Draw bright core
                 ctx.lineWidth = 1.5 * t;
-                ctx.strokeStyle = `rgba(200, 220, 255, ${t})`;
+                ctx.strokeStyle = `rgba(255, 255, 255, ${t})`;
                 ctx.shadowBlur = 10 * t;
                 ctx.stroke();
 
@@ -42381,17 +42454,18 @@
                         fireChainLightningBolt(1.0, pos);
                     });
                 } else if (p.stormstrikerLevel >= 2) {
-                    // Level 2: Fire simultaneous twin lightning from both wing guns
+                    // Level 2: Alternate between left and right wing guns
                     const leftWing = { x: p.x - 18, y: p.y - 8 };
                     const rightWing = { x: p.x + 18, y: p.y - 8 };
-                    fireChainLightningBolt(1.0, leftWing);
-                    fireChainLightningBolt(1.0, rightWing);
+                    const position = p.lightningAlternate ? rightWing : leftWing;
+                    p.lightningAlternate = !p.lightningAlternate; // Toggle for next shot
+                    fireChainLightningBolt(1.0, position);
                 } else if (p.hasHybridVoid) {
                     // Fire single lightning bolt (reduced power for hybrid)
                     fireChainLightningBolt(0.7); // 70% damage for hybrid mode
                 } else {
                     // Standard single chain lightning from ship center (default stormbringer)
-                    fireChainLightningBolt();
+                    fireChainLightningBolt(2.25); // 125% increased damage (1.0 + 1.25 = 2.25x)
                 }
             }
 
@@ -42512,8 +42586,8 @@
                 if (chainPoints.length > 1) {
                     store.lightningBolts.push({
                         points: chainPoints,
-                        life: 0.4,
-                        maxLife: 0.4,
+                        life: 0.6, // Increased from 0.4 to let ambient glow persist longer
+                        maxLife: 0.6,
                         dead: false
                     });
                 }
