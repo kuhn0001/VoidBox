@@ -5707,17 +5707,23 @@
                 artHit: 198, // Artillery hit sound cooldown to prevent spam
                 snakeHiss: 288, // Rate limit snake death sounds to prevent spam when many hunters die at once
                 robotCrumble: 1740, // Rate limit mech death sounds - increased to prevent spam
-                zombieChoking: 438, // Rate limit zombie death sounds
+                zombieChoking: 100, // Rate limit zombie death sounds - REDUCED for testing
                 bugSqueal: 263 // Rate limit bug death sounds
             };
             const soundLastPlayTime = {};
 
             function playSound(name) {
                 // Check if audio is muted
-                if (store.settings.audioMuted) return;
+                if (store.settings.audioMuted) {
+                    console.log(`[SOUND] Blocked (muted): ${name}`);
+                    return;
+                }
 
                 const audio = sounds[name];
-                if (!audio) return;
+                if (!audio) {
+                    console.log(`[SOUND] Not found: ${name}`);
+                    return;
+                }
                 const now = performance.now();
                 if (name === 'explosion') {
                     if (now - lastExplosionSoundTime < 50) return;
@@ -5734,11 +5740,17 @@
                 const cooldown = SOUND_COOLDOWNS[name];
                 if (cooldown) {
                     const lastTime = soundLastPlayTime[name] || 0;
-                    if (now - lastTime < cooldown) return;
+                    if (now - lastTime < cooldown) {
+                        console.log(`[SOUND] Cooldown blocked: ${name} (${Math.round(now - lastTime)}ms < ${cooldown}ms)`);
+                        return;
+                    }
                     soundLastPlayTime[name] = now;
                 }
+                console.log(`[SOUND] Playing: ${name}`);
                 audio.currentTime = 0;
-                audio.play().catch(e => { });
+                audio.play().catch(e => { 
+                    console.error(`[SOUND] Play error for ${name}:`, e);
+                });
             }
 
 
@@ -8441,6 +8453,7 @@
                         } else if (e.type === 'hunter') {
                             playSound('snakeHiss'); // Hunter snakes
                         } else if (e.type === 'zombie') {
+                            console.log('[DEBUG] Zombie died - attempting zombieChoking');
                             playSound('zombieChoking'); // Zombie enemies
                         } else if (e.type === 'avian_hatchling' || e.type === 'trap_king_add') {
                             playSound('bugSqueal'); // Small bug-like enemies
@@ -9788,6 +9801,7 @@
                                 level: 1 
                             }; 
                             announce('❄️ Iceman is your wingman!');
+                            console.log('[DEBUG] Attempting to play icemanSummon sound');
                             playSound('icemanSummon');
                         } else {
                             // Upgrade existing iceman
@@ -15052,6 +15066,7 @@
                     if (enemy.type === 'zombie') {
                         if (!store.world.firstZombieSpawned) {
                             store.world.firstZombieSpawned = true;
+                            console.log('[DEBUG] First zombie spawned - attempting zombieSpawnCry');
                             playSound('zombieSpawnCry');
                         }
                     }
@@ -18362,6 +18377,7 @@
                                     e.isDashing = true;
                                     e.dashTimer = 0.6; // 0.6s dash duration
                                     e.dashTargetY = e.y + (150 + Math.random() * 100); // Dash 150-250px forward
+                                    console.log('[DEBUG] Zombie dashing - attempting zombieGargleAttack');
                                     playSound('zombieGargleAttack'); // Zombie cry when dashing
                                 }
                                 
