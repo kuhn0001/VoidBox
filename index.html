@@ -5567,7 +5567,7 @@
             let consecutiveLightningHits = 0; // Track lightning chain hits for lightningCrack sound
             let consecutiveLightningCrits = 0; // Track crits on lightning hits for lightning crack detection
             let lastLightningHitTime = 0; // Track when last lightning hit occurred (reset after 0.8s gap)
-            let artilleryClusterSoundIndex = 0; // Cycle through the 3 cluster landing sounds
+            let artilleryClusterSoundIndex = 0; // Cycle through all 4 cluster landing sounds
             const SOUND_COOLDOWNS = {
                 thunder: 1500,
                 epicHorn: 2500,
@@ -5578,7 +5578,11 @@
                 lightningCrit: 400, // Cooldown for lightning crit sound (adjusts based on hit upgrade)
                 lightningPower: 1200, // Cooldown for lightning power upgrade sound
                 lightningCrack: 2000, // Cooldown for huge multi-kill streak sound
-                artHit: 150 // Artillery hit sound cooldown to prevent spam
+                artHit: 150, // Artillery hit sound cooldown to prevent spam
+                snakeHiss: 350, // Rate limit snake death sounds to prevent spam when many hunters die at once
+                robotCrumble: 350, // Rate limit mech death sounds
+                zombieChoking: 350, // Rate limit zombie death sounds
+                bugSqueal: 350 // Rate limit bug death sounds
             };
             const soundLastPlayTime = {};
 
@@ -5697,7 +5701,10 @@
                 hasPoisonBullets: false,
                 hasFireBullets: false,
                 bulletElementToggles: { ice: false, poison: false, fire: false },
-                bulletElementCycleIndex: 0
+                bulletElementCycleIndex: 0,
+                iceLevel: 0,
+                poisonLevel: 0,
+                fireLevel: 0
             };
 
             class Pool {
@@ -7333,6 +7340,14 @@
                             scale: 0.95
                         });
                         playSound('sizzle'); // Play sizzle sound on burn tick
+                        
+                        // Apply health steal from DoT damage
+                        if (store.player && store.player.vampirism > 0) {
+                            let healAmount = tickDamage * store.player.vampirism;
+                            if (healAmount > 0) {
+                                store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                            }
+                        }
                     } else {
                         break;
                     }
@@ -7883,6 +7898,12 @@
                     const iceDuration = (isVoidElement && voidProfile?.ice) ? 4.5 : 3.0;
                     e.iceStackTimer = Math.max(e.iceStackTimer || 0, iceDuration);
 
+                    // Spawn splash effect at level 2+
+                    const player = store.player;
+                    if (player && player.iceLevel >= 2) {
+                        spawnElementSplash(e.x, e.y, 'ice', player.iceLevel);
+                    }
+
                     // Bosses can be slowed but never frozen
                     const isBoss = e === store.boss || e.isBoss;
                     
@@ -7943,6 +7964,12 @@
                     };
                     e.poisonTickInterval = 0.1;
                     e.poisonLastTick = 0;
+
+                    // Spawn splash effect at level 2+
+                    const player = store.player;
+                    if (player && player.poisonLevel >= 2) {
+                        spawnElementSplash(e.x, e.y, 'poison', player.poisonLevel);
+                    }
                 }
 
                 if (isFireElement) {
@@ -7959,6 +7986,16 @@
                             e.firePanicTimer = Math.max(e.firePanicTimer || 0, 2.0);
                             if (!e.firePanicPhase) e.firePanicPhase = 'burst';
                         }
+                    }
+
+                    // Spawn splash effect at level 2+ (fire applies stacks directly from regular bullets)
+                    const player = store.player;
+                    if (player && player.fireLevel >= 2 && !isVoidElement) {
+                        // Apply immediate fire stack
+                        const currentFire = ensureFiniteNumber(e.fireStacks, 0);
+                        e.fireStacks = Math.min(5, currentFire + 1);
+                        e.fireStackTimer = Math.max(e.fireStackTimer || 0, 3.0);
+                        spawnElementSplash(e.x, e.y, 'fire', player.fireLevel);
                     }
                 }
 
@@ -8376,6 +8413,175 @@
                 consumeBulletPierce(b);
             }
 
+            // Element Splash Effect System
+            if (!store.elementSplashEffects) store.elementSplashEffects = [];
+
+            function spawnElementSplash(x, y, element, level) {
+                // Base radius: 5px (half of drone size which is ~10px)
+                const baseRadius = 5;
+                const radius = baseRadius * (1 + level * 0.3); // Grows with level
+                
+                const splash = {
+                    x, y, element, level, radius,
+                    lifetime: 0,
+                    maxLifetime: 0.4, // Quick splash effect
+                    opacity: 1,
+                    particles: []
+                };
+
+                // Create particles based on element type
+                const particleCount = 8 + level * 4; // More particles at higher levels
+                for (let i = 0; i < particleCount; i++) {
+                    const angle = (Math.PI * 2 * i) / particleCount + (Math.random() - 0.5) * 0.3;
+                    const speed = 30 + Math.random() * 40;
+                    const size = 2 + Math.random() * 2;
+                    
+                    let color, fadeSpeed;
+                    switch (element) {
+                        case 'poison':
+                            color = `rgba(100, 255, 100, ${0.8 + Math.random() * 0.2})`;
+                            fadeSpeed = 2.5;
+                            break;
+                        case 'ice':
+                            color = `rgba(102, 170, 255, ${0.8 + Math.random() * 0.2})`;
+                            fadeSpeed = 3;
+                            break;
+                        case 'fire':
+                            color = `rgba(255, 80, 40, ${0.8 + Math.random() * 0.2})`;
+                            fadeSpeed = 3.5;
+                            break;
+                        default:
+                            color = 'rgba(255, 255, 255, 0.8)';
+                            fadeSpeed = 2;
+                    }
+                    
+                    splash.particles.push({
+                        x: 0, y: 0,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        size, color, opacity: 1, fadeSpeed
+                    });
+                }
+                
+                store.elementSplashEffects.push(splash);
+                
+                // Apply splash damage/effects to nearby enemies
+                applyElementSplashEffects(x, y, radius, element, level);
+            }
+
+            function applyElementSplashEffects(x, y, radius, element, level) {
+                const radiusSq = radius * radius;
+                store.enemies.forEach(enemy => {
+                    if (enemy.dead) return;
+                    const dx = enemy.x - x;
+                    const dy = enemy.y - y;
+                    const distSq = dx * dx + dy * dy;
+                    
+                    if (distSq <= radiusSq) {
+                        // Apply element effect based on type
+                        switch (element) {
+                            case 'ice':
+                                const currentStacks = ensureFiniteNumber(enemy.iceStacks, 0);
+                                enemy.iceStacks = Math.min(5, currentStacks + (level >= 3 ? 2 : 1));
+                                enemy.iceStackTimer = Math.max(enemy.iceStackTimer || 0, 2.0);
+                                if (enemy.iceStacks >= 3 && !enemy.isBoss) {
+                                    enemy.isFrozen = true;
+                                    enemy.speedMultiplier = 0;
+                                }
+                                break;
+                            case 'poison':
+                                const currentPoison = ensureFiniteNumber(enemy.poisonStacks, 0);
+                                enemy.poisonStacks = Math.min(5, currentPoison + (level >= 3 ? 2 : 1));
+                                enemy.poisonStackTimer = Math.max(enemy.poisonStackTimer || 0, 2.0);
+                                break;
+                            case 'fire':
+                                const currentFire = ensureFiniteNumber(enemy.fireStacks, 0);
+                                enemy.fireStacks = Math.min(5, currentFire + (level >= 3 ? 2 : 1));
+                                enemy.fireStackTimer = Math.max(enemy.fireStackTimer || 0, 2.0);
+                                break;
+                        }
+                    }
+                });
+            }
+
+            function updateElementSplashEffects(dt) {
+                if (!store.elementSplashEffects) return;
+                
+                for (let i = store.elementSplashEffects.length - 1; i >= 0; i--) {
+                    const splash = store.elementSplashEffects[i];
+                    splash.lifetime += dt;
+                    
+                    // Update particles
+                    for (const p of splash.particles) {
+                        p.x += p.vx * dt;
+                        p.y += p.vy * dt;
+                        p.opacity -= p.fadeSpeed * dt;
+                    }
+                    
+                    // Remove dead splashes
+                    if (splash.lifetime >= splash.maxLifetime) {
+                        store.elementSplashEffects.splice(i, 1);
+                    }
+                }
+            }
+
+            function renderElementSplashEffects(ctx) {
+                if (!store.elementSplashEffects) return;
+                
+                store.elementSplashEffects.forEach(splash => {
+                    ctx.save();
+                    ctx.globalAlpha = Math.max(0, 1 - splash.lifetime / splash.maxLifetime);
+                    
+                    // Draw central glow
+                    const gradient = ctx.createRadialGradient(splash.x, splash.y, 0, splash.x, splash.y, splash.radius);
+                    switch (splash.element) {
+                        case 'poison':
+                            gradient.addColorStop(0, 'rgba(100, 255, 100, 0.4)');
+                            gradient.addColorStop(1, 'rgba(100, 255, 100, 0)');
+                            break;
+                        case 'ice':
+                            gradient.addColorStop(0, 'rgba(102, 170, 255, 0.4)');
+                            gradient.addColorStop(1, 'rgba(102, 170, 255, 0)');
+                            break;
+                        case 'fire':
+                            gradient.addColorStop(0, 'rgba(255, 80, 40, 0.5)');
+                            gradient.addColorStop(1, 'rgba(255, 80, 40, 0)');
+                            break;
+                    }
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(splash.x, splash.y, splash.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Draw particles
+                    splash.particles.forEach(p => {
+                        if (p.opacity <= 0) return;
+                        ctx.globalAlpha = p.opacity;
+                        ctx.fillStyle = p.color;
+                        ctx.beginPath();
+                        ctx.arc(splash.x + p.x, splash.y + p.y, p.size, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Ice: Add snowflake symbol
+                        if (splash.element === 'ice' && p.size > 2) {
+                            ctx.strokeStyle = p.color;
+                            ctx.lineWidth = 1;
+                            const cx = splash.x + p.x;
+                            const cy = splash.y + p.y;
+                            const r = p.size;
+                            ctx.beginPath();
+                            ctx.moveTo(cx - r, cy);
+                            ctx.lineTo(cx + r, cy);
+                            ctx.moveTo(cx, cy - r);
+                            ctx.lineTo(cx, cy + r);
+                            ctx.stroke();
+                        }
+                    });
+                    
+                    ctx.restore();
+                });
+            }
+
             function updatePlayerProjectile(b, dt, bossTarget, state) {
                 if (!b) return;
 
@@ -8575,6 +8781,32 @@
                         handleBulletImpact(b, enemy);
                         return b.dead && !b.pierce;
                     });
+                }
+
+                // Check hallucination collisions
+                if (!b.dead && bossTarget && bossTarget.behavior === 'shadow_clone' && bossTarget.hallucinations) {
+                    for (let hi = bossTarget.hallucinations.length - 1; hi >= 0; hi--) {
+                        const hal = bossTarget.hallucinations[hi];
+                        if (!hal || hal.dead || hal.dissolveTimer > 0) continue;
+                        
+                        const dx = b.x - hal.x;
+                        const dy = b.y - hal.y;
+                        const hitRadius = (hal.r || 30) + (b.r || 3);
+                        
+                        if (dx * dx + dy * dy <= hitRadius * hitRadius) {
+                            const damage = b.dmg || 12;
+                            hal.hp -= damage;
+                            
+                            // Hit spark effect
+                            store.activeEffects.push(createEffect('hitSpark', hal.x, hal.y, hal.r * 1.4, { 
+                                strength: 28,
+                                color: '#5a88ff'
+                            }));
+                            
+                            consumeBulletPierce(b);
+                            if (b.dead || !b.pierce) break;
+                        }
+                    }
                 }
 
                 if (!b.dead && store.timeShards && store.timeShards.length) {
@@ -9785,6 +10017,7 @@
                     apply: () => { 
                         if (!store.player.hasIceBullets) {
                             store.player.hasIceBullets = true;
+                            store.player.iceLevel = 1;
                             store.player.dmgMult *= 1.1; // +10% base damage
                             activateBulletElementIfNone(store.player, 'ice');
                             announce('❄️ Ice bullets unlocked! +10% damage. Slow enemies and increase damage taken.');
@@ -9805,6 +10038,7 @@
                     apply: () => { 
                         if (!store.player.hasPoisonBullets) {
                             store.player.hasPoisonBullets = true;
+                            store.player.poisonLevel = 1;
                             store.player.dmgMult *= 1.1; // +10% base damage
                             activateBulletElementIfNone(store.player, 'poison');
                             announce('☠️ Poison bullets unlocked! +10% damage. Stack poison DoT on enemies.');
@@ -9825,6 +10059,7 @@
                     apply: () => {
                         if (!store.player.hasFireBullets) {
                             store.player.hasFireBullets = true;
+                            store.player.fireLevel = 1;
                             store.player.dmgMult *= 1.15; // +15% base damage
                             activateBulletElementIfNone(store.player, 'fire');
                             announce('🔥 Fire bullets unlocked! +15% damage. Spreading fire ignites everything.');
@@ -9834,6 +10069,87 @@
                         return false;
                     },
                     desc: () => 'Unlock fire bullets. +15% damage. Burn spreads and escalates automatically.'
+                },
+                'ice_upgrade': {
+                    name: "ICE MASTERY",
+                    icon: '❄️',
+                    baseCost: 400,
+                    scale: 1.5,
+                    maxLevel: 3,
+                    category: 'attack',
+                    isVisible: () => store.player && store.player.hasIceBullets,
+                    effect: (level) => {
+                        if (!store.player.hasIceBullets) return;
+                        store.player.iceLevel = Math.min(3, (store.player.iceLevel || 0) + 1);
+                        if (store.player.iceLevel === 2) {
+                            announce('❄️ Ice Mastery II: Bullets now create splash freeze zones!');
+                        } else if (store.player.iceLevel === 3) {
+                            announce('❄️ Ice Mastery III: Larger freeze zones, instant freeze effect!');
+                        }
+                    },
+                    desc: level => {
+                        const p = store.player;
+                        if (!p.hasIceBullets) return 'Requires: Ice Bullets';
+                        const current = p.iceLevel || 0;
+                        if (current >= 3) return 'Max Level: Powerful splash freeze zones';
+                        if (current === 0) return 'Level 1: Small AOE freeze splash';
+                        if (current === 1) return 'Level 2: Larger freeze zones';
+                        return 'Level 3: Massive freeze zones';
+                    }
+                },
+                'poison_upgrade': {
+                    name: "TOXIN MASTERY",
+                    icon: '☠️',
+                    baseCost: 400,
+                    scale: 1.5,
+                    maxLevel: 3,
+                    category: 'attack',
+                    isVisible: () => store.player && store.player.hasPoisonBullets,
+                    effect: (level) => {
+                        if (!store.player.hasPoisonBullets) return;
+                        store.player.poisonLevel = Math.min(3, (store.player.poisonLevel || 0) + 1);
+                        if (store.player.poisonLevel === 2) {
+                            announce('☠️ Toxin Mastery II: Bullets now create poison splash zones!');
+                        } else if (store.player.poisonLevel === 3) {
+                            announce('☠️ Toxin Mastery III: Larger poison clouds, instant stack!');
+                        }
+                    },
+                    desc: level => {
+                        const p = store.player;
+                        if (!p.hasPoisonBullets) return 'Requires: Poison Bullets';
+                        const current = p.poisonLevel || 0;
+                        if (current >= 3) return 'Max Level: Powerful splash poison clouds';
+                        if (current === 0) return 'Level 1: Small AOE poison splash';
+                        if (current === 1) return 'Level 2: Larger poison clouds';
+                        return 'Level 3: Massive poison clouds';
+                    }
+                },
+                'fire_upgrade': {
+                    name: "INFERNO MASTERY",
+                    icon: '🔥',
+                    baseCost: 400,
+                    scale: 1.5,
+                    maxLevel: 3,
+                    category: 'attack',
+                    isVisible: () => store.player && store.player.hasFireBullets,
+                    effect: (level) => {
+                        if (!store.player.hasFireBullets) return;
+                        store.player.fireLevel = Math.min(3, (store.player.fireLevel || 0) + 1);
+                        if (store.player.fireLevel === 2) {
+                            announce('🔥 Inferno Mastery II: Bullets now create explosive fire zones!');
+                        } else if (store.player.fireLevel === 3) {
+                            announce('🔥 Inferno Mastery III: Larger explosions, instant ignite!');
+                        }
+                    },
+                    desc: level => {
+                        const p = store.player;
+                        if (!p.hasFireBullets) return 'Requires: Fire Bullets';
+                        const current = p.fireLevel || 0;
+                        if (current >= 3) return 'Max Level: Powerful splash explosions';
+                        if (current === 0) return 'Level 1: Small AOE fire blast';
+                        if (current === 1) return 'Level 2: Larger explosions';
+                        return 'Level 3: Massive explosions';
+                    }
                 }
             };
 
@@ -9853,8 +10169,11 @@
                 'knockback_shield',
                 'fragment_blast',
                 'ice_bullets',
+                'ice_upgrade',
                 'poison_bullets',
+                'poison_upgrade',
                 'fire_bullets',
+                'fire_upgrade',
                 'ricochet',
                 'launcher',
                 'star_cannon',
@@ -10007,11 +10326,11 @@
                     angle,
                     centerX,
                     centerY,
-                    volleyIndex: 0, // Which volley (0, 1, or 2)
-                    volleyCount: 3, // 3 volleys total
-                    volleyTimer: 0,
-                    volleyDelay: 0.5, // 0.5 seconds between volleys
-                    volleySpawned: false
+                    clusterIndex: 0, // Which cluster is spawning (0-11)
+                    clusterCount: 12, // 12 clusters total along the line (increased density)
+                    clusterTimer: 0,
+                    clusterDelay: 0.22, // Faster sequential impacts for more intense barrage
+                    clusterSpawned: false
                 };
                 
                 if (!store.asteroidBombardments) {
@@ -10024,14 +10343,14 @@
             function updateAsteroidTargeting(mouseX, mouseY) {
                 if (!asteroidTargeting.active) return;
                 
-                // Update position - targeting path follows cursor in both X and Y
-                asteroidTargeting.centerX = Math.max(100, Math.min(W - 100, mouseX));
-                asteroidTargeting.centerY = Math.max(100, Math.min(H - 100, mouseY));
+                // Update position - targeting path follows cursor across entire game field (no borders)
+                asteroidTargeting.centerX = mouseX;
+                asteroidTargeting.centerY = mouseY;
                 
                 // Calculate angle based on horizontal offset from screen center (vertical bisection)
                 const screenCenterX = W / 2;
                 const offsetX = mouseX - screenCenterX;
-                const maxOffset = W / 2 - 100; // Account for margins
+                const maxOffset = W / 2; // Full screen width
                 const normalizedOffset = Math.max(-1, Math.min(1, offsetX / maxOffset));
                 
                 // Angle range: 0 to 90 degrees based on horizontal position
@@ -10046,19 +10365,24 @@
                 
                 ctx.save();
                 
-                // Draw targeting path - horizontal (parallel to edges), movable up/down
+                // Draw targeting path extending across entire screen
                 const centerX = asteroidTargeting.centerX;
                 const centerY = asteroidTargeting.centerY;
-                const pathLength = 450; // Realistic strike zone - matches actual impact area
-                const pathWidth = 80; // Vertical width
+                
+                // Calculate path length to extend beyond screen bounds
+                const diagonal = Math.sqrt(W * W + H * H); // Screen diagonal
+                const pathLength = diagonal * 1.5; // Extend well beyond screen
+                const pathWidth = 80; // Vertical width of targeting zone
                 
                 ctx.translate(centerX, centerY);
                 ctx.rotate(asteroidTargeting.angle); // Rotation based on left/right mouse
                 
-                // Infrared/green gradient path (now horizontal)
+                // Infrared/green gradient path extending full screen
                 const gradient = ctx.createLinearGradient(-pathLength / 2, 0, pathLength / 2, 0);
                 gradient.addColorStop(0, 'rgba(0, 255, 100, 0.1)');
+                gradient.addColorStop(0.3, 'rgba(0, 255, 100, 0.3)');
                 gradient.addColorStop(0.5, 'rgba(0, 255, 100, 0.4)');
+                gradient.addColorStop(0.7, 'rgba(0, 255, 100, 0.3)');
                 gradient.addColorStop(1, 'rgba(0, 255, 100, 0.1)');
                 
                 ctx.fillStyle = gradient;
@@ -10068,13 +10392,13 @@
                 ctx.strokeStyle = 'rgba(0, 255, 100, 0.8)';
                 ctx.lineWidth = 2;
                 
-                // Center line (horizontal)
+                // Center line (extends full length)
                 ctx.beginPath();
                 ctx.moveTo(-pathLength / 2, 0);
                 ctx.lineTo(pathLength / 2, 0);
                 ctx.stroke();
                 
-                // Edge lines (horizontal)
+                // Edge lines (extends full length)
                 ctx.beginPath();
                 ctx.moveTo(-pathLength / 2, -pathWidth / 2);
                 ctx.lineTo(pathLength / 2, -pathWidth / 2);
@@ -10084,7 +10408,9 @@
                 
                 // Hash marks (ruler style - vertical marks along horizontal path)
                 ctx.lineWidth = 1;
-                for (let i = -pathLength / 2; i < pathLength / 2; i += 40) {
+                const visibleStart = -Math.min(pathLength / 2, W + 200);
+                const visibleEnd = Math.min(pathLength / 2, W + 200);
+                for (let i = visibleStart; i < visibleEnd; i += 40) {
                     ctx.beginPath();
                     ctx.moveTo(i, -pathWidth / 2);
                     ctx.lineTo(i, -pathWidth / 2 - 8);
@@ -10128,103 +10454,107 @@
                 for (let i = store.asteroidBombardments.length - 1; i >= 0; i--) {
                     const bomb = store.asteroidBombardments[i];
                     
-                    // Spawn volley at start
-                    if (!bomb.volleySpawned && bomb.volleyIndex < bomb.volleyCount) {
-                        spawnAsteroidVolley(bomb, bomb.volleyIndex);
-                        bomb.volleySpawned = true;
-                        bomb.volleyTimer = 0;
+                    // Spawn cluster at start
+                    if (!bomb.clusterSpawned && bomb.clusterIndex < bomb.clusterCount) {
+                        spawnAsteroidCluster(bomb, bomb.clusterIndex);
+                        bomb.clusterSpawned = true;
+                        bomb.clusterTimer = 0;
                     }
                     
-                    // Update volley timer
-                    bomb.volleyTimer += dt;
+                    // Update cluster timer
+                    bomb.clusterTimer += dt;
                     
-                    // Check if ready for next volley
-                    if (bomb.volleyTimer >= bomb.volleyDelay) {
-                        bomb.volleyIndex++;
-                        bomb.volleySpawned = false;
-                        bomb.volleyTimer = 0;
+                    // Check if ready for next cluster
+                    if (bomb.clusterTimer >= bomb.clusterDelay) {
+                        bomb.clusterIndex++;
+                        bomb.clusterSpawned = false;
+                        bomb.clusterTimer = 0;
                     }
                     
-                    // Remove if all volleys complete
-                    if (bomb.volleyIndex >= bomb.volleyCount) {
+                    // Remove if all clusters complete
+                    if (bomb.clusterIndex >= bomb.clusterCount) {
                         store.asteroidBombardments.splice(i, 1);
                     }
                 }
             }
 
-            function spawnAsteroidVolley(bombardment, volleyIndex) {
+            function spawnAsteroidCluster(bombardment, clusterIndex) {
                 const centerX = bombardment.centerX;
                 const centerY = bombardment.centerY;
                 
-                // Cycle through the 3 cluster landing sounds
+                // Cycle through all 3 cluster landing sounds
                 const clusterSounds = ['artilleryClusterInitial', 'artilleryCluster2nd', 'artilleryCluster3rd'];
+                
+                // Play sound immediately - the faster cluster delay (0.22s) ensures sounds don't overlap
                 playSound(clusterSounds[artilleryClusterSoundIndex]);
                 artilleryClusterSoundIndex = (artilleryClusterSoundIndex + 1) % 3; // Cycle 0, 1, 2, 0, 1, 2...
                 
-                // Spawn 5 clusters spread evenly along the targeting path
-                const pathLength = 450; // Full targeting zone length
+                // Calculate position along the targeting path for this cluster
+                // Use screen diagonal to ensure full coverage
+                const diagonal = Math.sqrt(W * W + H * H);
+                const pathLength = diagonal * 1.2; // Extend beyond screen bounds
                 const cos = Math.cos(bombardment.angle);
                 const sin = Math.sin(bombardment.angle);
                 
-                for (let clusterIdx = 0; clusterIdx < 5; clusterIdx++) {
-                    // Spread clusters evenly along the path
-                    // Position from -pathLength/2 to +pathLength/2
-                    const spacing = pathLength / 4; // 4 gaps for 5 clusters
-                    const distAlongPath = -pathLength / 2 + clusterIdx * spacing;
+                // Progress from start to end across entire screen
+                // Position from -pathLength/2 (start) to +pathLength/2 (end)
+                const spacing = pathLength / (bombardment.clusterCount - 1); // Even distribution
+                const distAlongPath = -pathLength / 2 + clusterIndex * spacing;
+                
+                // Increased radial variation for realistic artillery spread
+                const pathVariation = (Math.random() - 0.5) * 80; // Doubled from 40
+                const lateralOffset = (Math.random() - 0.5) * 100; // Doubled from 50
+                
+                // Calculate cluster center in world space
+                const localX = distAlongPath + pathVariation;
+                const localY = lateralOffset;
+                
+                const clusterCenterX = centerX + localX * cos - localY * sin;
+                const clusterCenterY = centerY + localX * sin + localY * cos;
+                
+                // Spawn 5-7 asteroids per cluster (increased density)
+                const asteroidsPerCluster = 5 + Math.floor(Math.random() * 3);
+                const clusterSpread = 55; // Wider spread for more realistic artillery scatter
+                
+                for (let i = 0; i < asteroidsPerCluster; i++) {
+                    const offsetAngle = (i / asteroidsPerCluster) * Math.PI * 2 + Math.random() * 0.4;
+                    const offsetDist = Math.random() * clusterSpread;
                     
-                    // Small random variation to avoid perfect grid
-                    const pathVariation = (Math.random() - 0.5) * 40;
-                    const lateralOffset = (Math.random() - 0.5) * 50; // Perpendicular spread
+                    const targetX = clusterCenterX + Math.cos(offsetAngle) * offsetDist;
+                    const targetY = clusterCenterY + Math.sin(offsetAngle) * offsetDist;
                     
-                    // Calculate cluster center in world space
-                    const localX = distAlongPath + pathVariation;
-                    const localY = lateralOffset;
+                    // Spawn from top-right
+                    const startX = targetX + 400 + Math.random() * 100;
+                    const startY = -100 - Math.random() * 50;
                     
-                    const clusterCenterX = centerX + localX * cos - localY * sin;
-                    const clusterCenterY = centerY + localX * sin + localY * cos;
+                    const dx = targetX - startX;
+                    const dy = targetY - startY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const speed = 1200 + Math.random() * 300; // Fast impact
+                    const travelTime = distance / speed;
                     
-                    // Spawn 3 asteroids per cluster (tightly packed)
-                    const clusterSpread = 35; // Tight grouping for impact
+                    const asteroid = {
+                        x: startX,
+                        y: startY,
+                        targetX: targetX,
+                        targetY: targetY,
+                        vx: dx / travelTime,
+                        vy: dy / travelTime,
+                        r: 4 + Math.random() * 3, // Smaller asteroids
+                        rotation: Math.random() * Math.PI * 2,
+                        rotationSpeed: (Math.random() - 0.5) * 12,
+                        damage: 100 + Math.random() * 50,
+                        impacted: false,
+                        life: travelTime + 0.5,
+                        shadowAlpha: 0,
+                        bombardmentAngle: bombardment.angle // Store angle for line-based damage
+                    };
                     
-                    for (let i = 0; i < 3; i++) {
-                        const offsetAngle = (i / 3) * Math.PI * 2 + Math.random() * 0.4;
-                        const offsetDist = Math.random() * clusterSpread;
-                        
-                        const targetX = clusterCenterX + Math.cos(offsetAngle) * offsetDist;
-                        const targetY = clusterCenterY + Math.sin(offsetAngle) * offsetDist;
-                        
-                        // Spawn from top-right
-                        const startX = targetX + 400 + Math.random() * 100;
-                        const startY = -100 - Math.random() * 50;
-                        
-                        const dx = targetX - startX;
-                        const dy = targetY - startY;
-                        const distance = Math.sqrt(dx * dx + dy * dy);
-                        const speed = 1200 + Math.random() * 300; // Faster
-                        const travelTime = distance / speed;
-                        
-                        const asteroid = {
-                            x: startX,
-                            y: startY,
-                            targetX: targetX,
-                            targetY: targetY,
-                            vx: dx / travelTime,
-                            vy: dy / travelTime,
-                            r: 4 + Math.random() * 3, // Smaller asteroids
-                            rotation: Math.random() * Math.PI * 2,
-                            rotationSpeed: (Math.random() - 0.5) * 12,
-                            damage: 100 + Math.random() * 50,
-                            impacted: false,
-                            life: travelTime + 0.5,
-                            shadowAlpha: 0
-                        };
-                        
-                        if (!store.asteroidProjectiles) {
-                            store.asteroidProjectiles = [];
-                        }
-                        
-                        store.asteroidProjectiles.push(asteroid);
+                    if (!store.asteroidProjectiles) {
+                        store.asteroidProjectiles = [];
                     }
+                    
+                    store.asteroidProjectiles.push(asteroid);
                 }
             }
 
@@ -10258,13 +10588,15 @@
             }
 
             function createImpactCrater(asteroid) {
-                // Create impact crater with primary impact zone and blast wave
+                // Create impact crater with LINE-BASED damage zone extending across screen
                 const crater = {
                     x: asteroid.targetX,
                     y: asteroid.targetY,
-                    primaryRadius: 17.5, // 30% smaller - Small direct hit zone - instant kill
+                    angle: asteroid.bombardmentAngle || 0, // Store the bombardment angle
+                    primaryRadius: 17.5, // Direct hit zone around impact point
                     secondaryRadius: 0,
-                    maxSecondaryRadius: 84, // 30% smaller - Wide blast wave - 50% damage
+                    maxSecondaryRadius: 84, // Expanding blast wave width
+                    lineHalfWidth: 40, // Width of the damage line (perpendicular to angle)
                     damage: asteroid.damage,
                     expandSpeed: 700, // Faster expansion
                     duration: 0.3, // Much shorter - just a flash
@@ -10330,16 +10662,42 @@
             }
 
             function processPrimaryImpact(crater) {
-                // Direct hit zone - instant kill for non-bosses
+                // Direct hit zone - instant kill for non-bosses along the entire bombardment line
                 let hitCount = 0;
+                
+                // Calculate line direction from angle
+                const cos = Math.cos(crater.angle);
+                const sin = Math.sin(crater.angle);
+                
                 store.enemies.forEach(enemy => {
                     if (enemy.dead) return;
                     
+                    // Calculate perpendicular distance from enemy to the infinite line
                     const dx = enemy.x - crater.x;
                     const dy = enemy.y - crater.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
                     
-                    if (dist < crater.primaryRadius + enemy.r) {
+                    // Distance along the line (projection)
+                    const alongLine = dx * cos + dy * sin;
+                    
+                    // Perpendicular distance to line
+                    const perpDist = Math.abs(-dx * sin + dy * cos);
+                    
+                    // Check if enemy is within the damage zone (infinite line, width defined by primaryRadius)
+                    if (perpDist < crater.primaryRadius + enemy.r) {
+                        // Massive knockback and stun on direct hit
+                        if (!enemy.cannotBeKnocked) {
+                            if (!enemy.knockback) enemy.knockback = {};
+                            const perpAngle = crater.angle + Math.PI / 2 * Math.sign(-dx * sin + dy * cos);
+                            enemy.knockback.vx = Math.cos(perpAngle) * 900; // Massive knockback
+                            enemy.knockback.vy = Math.sin(perpAngle) * 900;
+                            enemy.knockback.timer = 0;
+                            enemy.knockback.duration = 0.7;
+                            enemy.knockback.type = 'artillery_direct';
+                        }
+                        
+                        // Heavy stun
+                        enemy.stunTimer = Math.max(enemy.stunTimer || 0, 0.6);
+                        
                         // Direct hit - instant kill
                         enemy.hp = 0;
                         enemy.dead = true;
@@ -10347,7 +10705,11 @@
                         
                         spawnGibs(enemy.x, enemy.y, enemy.color);
                         spawnDotDamageText(enemy, 999999, { color: '#ff0000' });
-                        registerEnemyHit(enemy);
+                        registerEnemyHit(enemy, {
+                            knockbackStrength: 900,
+                            shakeIntensity: 12,
+                            duration: 0.4
+                        });
                         
                         const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
                         const scoreGain = Math.floor((enemy.score || 0) * collarBonus);
@@ -10365,13 +10727,13 @@
                     playSound('artHit');
                 }
                 
-                // Boss takes heavy damage from direct hit
+                // Boss takes heavy damage from direct hit (line-based)
                 if (store.boss && !store.boss.dead) {
                     const dx = store.boss.x - crater.x;
                     const dy = store.boss.y - crater.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const perpDist = Math.abs(-dx * sin + dy * cos);
                     
-                    if (dist < crater.primaryRadius + store.boss.r) {
+                    if (perpDist < crater.primaryRadius + store.boss.r) {
                         const directDamage = crater.damage * 2; // Heavy damage to boss
                         applyBossDamage(store.boss, directDamage);
                         spawnDotDamageText(store.boss, directDamage, { color: '#ff0000' });
@@ -10429,18 +10791,25 @@
                         }
                     });
                     
-                    // Blast wave damage - 50% of enemy's max HP (one-time on entry)
+                    // Blast wave damage - 50% of enemy's max HP (one-time on entry) - LINE-BASED
                     if (crater.secondaryRadius > crater.primaryRadius) {
                         let blastHitCount = 0;
+                        
+                        // Calculate line direction from angle
+                        const cos = Math.cos(crater.angle);
+                        const sin = Math.sin(crater.angle);
+                        
                         store.enemies.forEach(enemy => {
                             if (enemy.dead || enemy.hitByCrater === crater) return;
                             
                             const dx = enemy.x - crater.x;
                             const dy = enemy.y - crater.y;
-                            const dist = Math.sqrt(dx * dx + dy * dy);
                             
-                            // Check if enemy is in blast wave but outside primary zone
-                            if (dist > crater.primaryRadius && dist < crater.secondaryRadius + enemy.r) {
+                            // Perpendicular distance to the infinite line
+                            const perpDist = Math.abs(-dx * sin + dy * cos);
+                            
+                            // Check if enemy is in expanding blast wave (infinite line width expansion)
+                            if (perpDist > crater.primaryRadius && perpDist < crater.secondaryRadius + enemy.r) {
                                 // Mark enemy as hit by this crater
                                 if (!enemy.hitByCrater) enemy.hitByCrater = crater;
                                 else if (enemy.hitByCrater !== crater) return;
@@ -10450,16 +10819,26 @@
                                 enemy.hp -= blastDamage;
                                 blastHitCount++;
                                 
-                                // Knockback
-                                if (!enemy.knockback) enemy.knockback = {};
-                                const angle = Math.atan2(dy, dx);
-                                enemy.knockback.vx = Math.cos(angle) * 400;
-                                enemy.knockback.vy = Math.sin(angle) * 400;
-                                enemy.knockback.timer = 0.3;
-                                enemy.knockback.duration = 0.3;
+                                // Powerful knockback perpendicular to the line + stun
+                                if (!enemy.cannotBeKnocked) {
+                                    if (!enemy.knockback) enemy.knockback = {};
+                                    const perpAngle = crater.angle + Math.PI / 2 * Math.sign(-dx * sin + dy * cos);
+                                    enemy.knockback.vx = Math.cos(perpAngle) * 600; // Increased from 400
+                                    enemy.knockback.vy = Math.sin(perpAngle) * 600;
+                                    enemy.knockback.timer = 0;
+                                    enemy.knockback.duration = 0.5; // Increased from 0.3
+                                    enemy.knockback.type = 'artillery';
+                                }
+                                
+                                // Apply stun effect
+                                enemy.stunTimer = Math.max(enemy.stunTimer || 0, 0.4); // 0.4 second stun
                                 
                                 spawnDotDamageText(enemy, blastDamage, { color: '#ffa500' });
-                                registerEnemyHit(enemy);
+                                registerEnemyHit(enemy, {
+                                    knockbackStrength: 600,
+                                    shakeIntensity: 8,
+                                    duration: 0.3
+                                });
                                 
                                 // Check for death
                                 if (enemy.hp <= 0 && !enemy.dead) {
@@ -10482,13 +10861,13 @@
                             playSound('artHit');
                         }
                         
-                        // Boss takes blast wave damage
+                        // Boss takes blast wave damage - LINE-BASED
                         if (store.boss && !store.boss.dead && !store.boss.hitByCrater) {
                             const dx = store.boss.x - crater.x;
                             const dy = store.boss.y - crater.y;
-                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            const perpDist = Math.abs(-dx * sin + dy * cos);
                             
-                            if (dist > crater.primaryRadius && dist < crater.secondaryRadius + store.boss.r) {
+                            if (perpDist > crater.primaryRadius && perpDist < crater.secondaryRadius + store.boss.r) {
                                 store.boss.hitByCrater = crater;
                                 const blastDamage = store.boss.hpMax * 0.05; // 5% max HP to boss
                                 applyBossDamage(store.boss, blastDamage);
@@ -16366,6 +16745,7 @@
                 stepHunterLightningChains(dt);
                 stepEmpNovas(dt);
                 stepFlamePulses(dt);
+                updateElementSplashEffects(dt);
                 cleanupDeadGangMembers();
                 processWaveSpawnQueue(dt);
                 processVulnerabilityEvents(dt);
@@ -16881,6 +17261,12 @@
                                 riseSpeed: 30,
                                 scale: 0.9
                             });
+                            
+                            // Apply health steal from Juggernaut burn damage
+                            if (store.player && store.player.vampirism > 0 && appliedBurn > 0) {
+                                let healAmount = appliedBurn * store.player.vampirism;
+                                store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                            }
                         }
                     }
 
@@ -16917,6 +17303,12 @@
                                 riseSpeed: 26,
                                 scale: 0.85
                             });
+                            
+                            // Apply health steal from poison DoT damage
+                            if (store.player && store.player.vampirism > 0 && appliedPoison > 0) {
+                                let healAmount = appliedPoison * store.player.vampirism;
+                                store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                            }
                         }
                     }
 
@@ -16943,6 +17335,12 @@
                                 riseSpeed: 24,
                                 scale: 0.8
                             });
+                            
+                            // Apply health steal from old poison DoT damage
+                            if (store.player && store.player.vampirism > 0 && appliedPoison > 0) {
+                                let healAmount = appliedPoison * store.player.vampirism;
+                                store.player.hp = Math.min(store.player.hpMax, store.player.hp + healAmount);
+                            }
                         }
                         if (e.poisonDot.duration <= 0) {
                             delete e.poisonDot;
@@ -21733,7 +22131,13 @@
                 drawShadowEchoes();
                 drawTemporalBeam();
                 drawGeminiSlowFields();
-                if (store.boss && store.boss.visible !== false) drawBoss(store.boss);
+                if (store.boss && store.boss.visible !== false) {
+                    drawBoss(store.boss);
+                    // Draw hallucinations after boss if it's shadow clone
+                    if (store.boss.behavior === 'shadow_clone') {
+                        renderShadowHallucinations(ctx, store.boss);
+                    }
+                }
                 store.flameParticles.forEach(p => {
                     if (p.draw) p.draw(ctx);
                     else if (p.color) {
@@ -22381,6 +22785,9 @@
                 
                 // Draw asteroid artillery projectiles
                 renderAsteroidProjectiles(ctx);
+                
+                // Draw element splash effects
+                renderElementSplashEffects(ctx);
                 
                 // Draw asteroid artillery targeting overlay (drawn on top of everything)
                 renderAsteroidTargeting(ctx);
@@ -24529,7 +24936,179 @@
                 b.shadowChargeHit = false;
                 b.shadowTelegraph = null;
                 b.shadowTelegraphTarget = null;
+                
+                // Hallucination system
+                b.hallucinationTimer = 8 + Math.random() * 4; // Spawn hallucination every 8-12 seconds
+                b.hallucinations = [];
+                
                 spawnShadowChampionEscort(b);
+            }
+
+            // ═══════════════════════════════════════════════════════════════════════
+            // SHADOW MIRROR HALLUCINATION SYSTEM
+            // ═══════════════════════════════════════════════════════════════════════
+            
+            function spawnShadowHallucination(boss) {
+                if (!boss || !store || !store.enemies) return;
+                
+                // Spawn position - offset from boss
+                const offsetAngle = Math.random() * Math.PI * 2;
+                const offsetDist = 120 + Math.random() * 80;
+                const spawnX = clamp(boss.x + Math.cos(offsetAngle) * offsetDist, 80, W - 80);
+                const spawnY = clamp(boss.y + Math.sin(offsetAngle) * offsetDist * 0.6, 80, H * 0.6);
+                
+                const hallucination = {
+                    id: Date.now() + Math.random(),
+                    x: spawnX,
+                    y: spawnY,
+                    r: boss.r,
+                    hp: 30, // Dies in a few hits
+                    hpMax: 30,
+                    color: boss.color,
+                    isHallucination: true,
+                    bossRef: boss,
+                    alpha: 0.85, // Slightly transparent
+                    pulsePhase: Math.random() * Math.PI * 2,
+                    moveT: Math.random() * 100,
+                    multishotTimer: 0.6 + Math.random() * 0.4,
+                    life: 12 + Math.random() * 6, // Lives 12-18 seconds
+                    dead: false,
+                    dissolveDuration: 0.8,
+                    dissolveTimer: 0
+                };
+                
+                boss.hallucinations.push(hallucination);
+                
+                // Spawn visual effect
+                store.activeEffects.push(createEffect('spawnTeleport', spawnX, spawnY, boss.r, {
+                    duration: 0.6,
+                    color: '#5a88ff',
+                    clusterIndex: -1
+                }));
+            }
+            
+            function updateShadowHallucinations(boss, dt, dmgScale) {
+                if (!boss.hallucinations) return;
+                
+                for (let i = boss.hallucinations.length - 1; i >= 0; i--) {
+                    const hal = boss.hallucinations[i];
+                    
+                    if (hal.dissolveTimer > 0) {
+                        // Dissolving into blue cloud
+                        hal.dissolveTimer -= dt;
+                        hal.alpha = (hal.dissolveTimer / hal.dissolveDuration) * 0.85;
+                        
+                        // Spawn blue cloud particles
+                        if (Math.random() < 0.3) {
+                            const angle = Math.random() * Math.PI * 2;
+                            const speed = 20 + Math.random() * 40;
+                            const particle = getEBulletFromPool({
+                                x: hal.x + (Math.random() - 0.5) * hal.r,
+                                y: hal.y + (Math.random() - 0.5) * hal.r,
+                                vx: Math.cos(angle) * speed,
+                                vy: Math.sin(angle) * speed - 30,
+                                r: 3 + Math.random() * 4,
+                                col: '#4da6ff',
+                                dmg: 0, // No damage
+                                life: 0.8 + Math.random() * 0.4
+                            });
+                            store.eBullets.push(particle);
+                        }
+                        
+                        if (hal.dissolveTimer <= 0) {
+                            boss.hallucinations.splice(i, 1);
+                        }
+                        continue;
+                    }
+                    
+                    // Check for death
+                    if (hal.hp <= 0 || hal.life <= 0) {
+                        hal.dissolveTimer = hal.dissolveDuration;
+                        hal.dead = true;
+                        playSound('power');
+                        continue;
+                    }
+                    
+                    hal.life -= dt;
+                    hal.pulsePhase += dt * 3;
+                    
+                    // Mimic boss movement
+                    hal.moveT += dt;
+                    const follow = clamp(store.player.x, hal.r + 40, W - hal.r - 40);
+                    const strafe = Math.sin(hal.moveT * 1.2) * 120;
+                    const desiredX = clamp(follow + strafe * 0.25, hal.r, W - hal.r);
+                    hal.x += (desiredX - hal.x) * dt * 2.8;
+                    const targetY = 160 + Math.sin(hal.moveT * 0.8) * 20;
+                    hal.y += (targetY - hal.y) * dt * 2.2;
+                    
+                    // Fire fake multishots (no damage)
+                    hal.multishotTimer -= dt;
+                    if (hal.multishotTimer <= 0) {
+                        hal.multishotTimer = 0.7 + Math.random() * 0.3;
+                        
+                        // Fire 3 fake bullets
+                        const angleToPlayer = Math.atan2(store.player.y - hal.y, store.player.x - hal.x);
+                        for (let j = -1; j <= 1; j++) {
+                            const spreadAngle = angleToPlayer + (j * 0.18);
+                            const bullet = getEBulletFromPool({
+                                x: hal.x,
+                                y: hal.y,
+                                vx: Math.cos(spreadAngle) * 280,
+                                vy: Math.sin(spreadAngle) * 280,
+                                r: 5,
+                                col: '#8fa6ff',
+                                dmg: 0, // NO DAMAGE - it's a hallucination!
+                                life: 4,
+                                isHallucinationBullet: true
+                            });
+                            store.eBullets.push(bullet);
+                        }
+                    }
+                }
+            }
+            
+            function renderShadowHallucinations(ctx, boss) {
+                if (!boss.hallucinations) return;
+                
+                boss.hallucinations.forEach(hal => {
+                    if (hal.dead && hal.dissolveTimer <= 0) return;
+                    
+                    ctx.save();
+                    ctx.globalAlpha = hal.alpha;
+                    
+                    // Pulsing blue glow
+                    const pulse = 0.7 + Math.sin(hal.pulsePhase) * 0.3;
+                    const glowSize = hal.r * (1.4 + pulse * 0.3);
+                    const glowGradient = ctx.createRadialGradient(hal.x, hal.y, 0, hal.x, hal.y, glowSize);
+                    glowGradient.addColorStop(0, 'rgba(90, 140, 255, 0.4)');
+                    glowGradient.addColorStop(0.5, 'rgba(70, 120, 255, 0.2)');
+                    glowGradient.addColorStop(1, 'rgba(50, 100, 255, 0)');
+                    ctx.fillStyle = glowGradient;
+                    ctx.beginPath();
+                    ctx.arc(hal.x, hal.y, glowSize, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Draw hallucination body (looks like boss)
+                    ctx.fillStyle = hal.color;
+                    ctx.beginPath();
+                    ctx.arc(hal.x, hal.y, hal.r, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Blue overlay to distinguish from real boss
+                    ctx.fillStyle = `rgba(90, 150, 255, ${0.3 * pulse})`;
+                    ctx.beginPath();
+                    ctx.arc(hal.x, hal.y, hal.r, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Shimmer effect
+                    ctx.strokeStyle = `rgba(150, 200, 255, ${0.6 * pulse})`;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(hal.x, hal.y, hal.r, 0, Math.PI * 2);
+                    ctx.stroke();
+                    
+                    ctx.restore();
+                });
             }
 
             function getActiveShadowChampion() {
@@ -28659,6 +29238,18 @@
                     playSound('horn');
                     announce('THE SHADOW MIRROR UNLEASHES ITS POWER!');
                 }
+
+                // Update hallucination spawn timer
+                if (b.hallucinationTimer !== undefined) {
+                    b.hallucinationTimer -= dt;
+                    if (b.hallucinationTimer <= 0) {
+                        spawnShadowHallucination(b);
+                        b.hallucinationTimer = (b.isEnraged ? 6 : 8) + Math.random() * 4;
+                    }
+                }
+
+                // Update existing hallucinations
+                updateShadowHallucinations(b, dt, dmgScale);
 
                 for (const key in b.shadowAbilityTimers) {
                     if (Object.prototype.hasOwnProperty.call(b.shadowAbilityTimers, key)) {
@@ -35254,28 +35845,41 @@
                     
                     // Snow particles around enemy (increases with stacks)
                     ctx.globalAlpha = 0.5;
-                    const snowCount = 5 + (e.iceStacks * 2); // 5, 7, 9 snowflakes for stacks 1, 2, 3
+                    // INCREASED DENSITY: More snowflakes per stack (8, 12, 16, 20, 24 for stacks 1-5)
+                    const snowCount = 8 + (e.iceStacks * 4);
                     const time = performance.now() / 1000;
-                    for (let i = 0; i < snowCount; i++) {
-                        const angle = (i / snowCount) * Math.PI * 2 + time * 0.5;
-                        const radius = a * (1.3 + Math.sin(time * 1.5 + i) * 0.4);
-                        const snowX = Math.cos(angle) * radius;
-                        const snowY = Math.sin(angle) * radius;
-                        const snowSize = 1.5 + Math.sin(time * 2.5 + i) * 1;
+                    
+                    // Draw multiple rings of snowflakes for denser effect
+                    const ringCount = 1 + Math.floor(e.iceStacks / 2); // 1-3 rings based on stacks
+                    for (let ring = 0; ring < ringCount; ring++) {
+                        const ringProgress = (ring + 1) / ringCount;
+                        const snowsInRing = Math.floor(snowCount * ringProgress);
                         
-                        // Draw snowflake as cross/star pattern
-                        ctx.strokeStyle = 'rgba(200, 230, 255, 0.8)';
-                        ctx.lineWidth = 0.8;
-                        ctx.beginPath();
-                        ctx.moveTo(snowX - snowSize, snowY);
-                        ctx.lineTo(snowX + snowSize, snowY);
-                        ctx.moveTo(snowX, snowY - snowSize);
-                        ctx.lineTo(snowX, snowY + snowSize);
-                        ctx.moveTo(snowX - snowSize * 0.7, snowY - snowSize * 0.7);
-                        ctx.lineTo(snowX + snowSize * 0.7, snowY + snowSize * 0.7);
-                        ctx.moveTo(snowX + snowSize * 0.7, snowY - snowSize * 0.7);
-                        ctx.lineTo(snowX - snowSize * 0.7, snowY + snowSize * 0.7);
-                        ctx.stroke();
+                        for (let i = 0; i < snowsInRing; i++) {
+                            const angle = (i / snowsInRing) * Math.PI * 2 + time * (0.5 - ring * 0.1) + ring * 0.5;
+                            const baseRadius = a * (1.1 + ring * 0.3);
+                            const radius = baseRadius + Math.sin(time * 1.5 + i + ring * 2) * 0.3 * a;
+                            const snowX = Math.cos(angle) * radius;
+                            const snowY = Math.sin(angle) * radius;
+                            const snowSize = (1.5 + Math.sin(time * 2.5 + i) * 0.8) * (1 + ring * 0.2);
+                            
+                            // Vary alpha for depth effect
+                            const snowAlpha = 0.6 + (ring * 0.15) + Math.sin(time * 3 + i) * 0.2;
+                            
+                            // Draw snowflake as cross/star pattern
+                            ctx.strokeStyle = `rgba(200, 230, 255, ${snowAlpha})`;
+                            ctx.lineWidth = 0.8 + (ring * 0.2);
+                            ctx.beginPath();
+                            ctx.moveTo(snowX - snowSize, snowY);
+                            ctx.lineTo(snowX + snowSize, snowY);
+                            ctx.moveTo(snowX, snowY - snowSize);
+                            ctx.lineTo(snowX, snowY + snowSize);
+                            ctx.moveTo(snowX - snowSize * 0.7, snowY - snowSize * 0.7);
+                            ctx.lineTo(snowX + snowSize * 0.7, snowY + snowSize * 0.7);
+                            ctx.moveTo(snowX + snowSize * 0.7, snowY - snowSize * 0.7);
+                            ctx.lineTo(snowX - snowSize * 0.7, snowY + snowSize * 0.7);
+                            ctx.stroke();
+                        }
                     }
                     
                     if (e.isFrozen && e.iceStacks >= 3) {
@@ -48135,24 +48739,60 @@
                     ];
 
                     const imageAssets = [
+                        // Pilot/Class selection icons
                         'cow.png',
                         'rockyboy.png',
                         'goggles.png',
+                        
+                        // Subclass selection icons
                         'marauder.png',
                         'jug2.png',
                         'phase.png',
                         'storm.png',
-                        'storm4.png',
+                        'rail.png',
+                        'demo.png',
+                        
+                        // Marauder upgrade icons
                         'mar11.png',
                         'mar2.png',
                         'mar3.png',
                         'mar4.png',
-                        'bshield.png',
-                        'clone.png',
+                        
+                        // Juggernaut upgrade icons
                         'jug1.png',
                         'jug22.png',
                         'jug33.png',
-                        'jug4.png'
+                        'jug4.png',
+                        
+                        // Railgunner upgrade icons
+                        'one.png',
+                        'two.png',
+                        'three.png',
+                        'four.png',
+                        
+                        // Demolitioner upgrade icons
+                        'demo1.png',
+                        'demo2.png',
+                        'demo3.png',
+                        'demo4.png',
+                        
+                        // Phase Striker upgrade icons
+                        'ps1.png',
+                        'ps2.png',
+                        'ps3.png',
+                        'ps4.png',
+                        
+                        // Stormbringer upgrade icons
+                        'storm1.png',
+                        'storm2.png',
+                        'storm3.png',
+                        'storm4.png',
+                        
+                        // Shared/Ultimate ability icons
+                        'omega.png',
+                        'clone.png',
+                        'badass.png',
+                        'bshield.png'
                     ];
 
                     console.log(`📦 Total assets to load: ${audioAssets.length} audio, ${imageAssets.length} images`);
