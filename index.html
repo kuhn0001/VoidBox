@@ -23255,6 +23255,7 @@
                 const angleSpread = 10; // Match player's angle spread
                 
                 // Fire regular bullets - matches player count exactly
+                const icemanElements = getActiveBulletElements(p);
                 for (let i = 0; i < totalMultishot; i++) {
                     const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180;
                     spawnBullet({
@@ -23267,6 +23268,7 @@
                         dmg: 15 * p.dmgMult * icemanDamageCoefficient * icemanDamageMult,
                         pierce: p.piercing || false,
                         explosive: p.explosive || false,
+                        presetElement: icemanElements.length > 0 ? icemanElements[i % icemanElements.length] : undefined,
                         isIceman: true,
                         isSwirl: p.swirlShots || false
                     });
@@ -23306,6 +23308,7 @@
                     });
                 }
                 if (p.hasBeefClone && store.beefClone && store.beefClone.mode !== 'juggernaut_bomber') {
+                    const beefCloneElements = getActiveBulletElements(p);
                     for (let i = 0; i < totalMultishot; i++) {
                         const angle = (i - (totalMultishot - 1) / 2) * angleSpread * Math.PI / 180;
                         spawnBullet({
@@ -23318,6 +23321,7 @@
                             dmg: 15 * p.dmgMult * 0.35,
                             pierce: p.piercing,
                             explosive: p.explosive,
+                            presetElement: beefCloneElements.length > 0 ? beefCloneElements[i % beefCloneElements.length] : undefined,
                             isBeefClone: true,
                             isSwirl: p.swirlShots
                         });
@@ -23325,6 +23329,7 @@
                 }
                 const rearMultishotCount = Math.max(0, Number.isFinite(p.rearMultishot) ? p.rearMultishot : 0);
                 if (rearMultishotCount > 0) {
+                    const rearElements = getActiveBulletElements(p);
                     const rearAngleSpread = 15;
                     for (let i = 0; i < rearMultishotCount; i++) {
                         const angle = (i - (rearMultishotCount - 1) / 2) * rearAngleSpread;
@@ -23338,11 +23343,13 @@
                             col: "#ffddff",
                             dmg: 11.25 * p.dmgMult,
                             pierce: p.piercing > 0 ? p.piercing - 1 : 0,
+                            presetElement: rearElements.length > 0 ? rearElements[i % rearElements.length] : undefined,
                             isSwirl: p.swirlShots
                         });
                     }
                 }
-                store.drones.forEach(drone => spawnBullet({
+                const droneElements = getActiveBulletElements(p);
+                store.drones.forEach((drone, droneIdx) => spawnBullet({
                     x: p.x + drone.offset,
                     y: p.y + 20,
                     vx: 0,
@@ -23350,6 +23357,7 @@
                     r: 3,
                     col: "#66aaff",
                     dmg: 15 * p.dmgMult * 0.4,
+                    presetElement: droneElements.length > 0 ? droneElements[droneIdx % droneElements.length] : undefined,
                     isDrone: true,
                     isSwirl: p.swirlShots
                 }));
@@ -23358,18 +23366,20 @@
                     const isMini = p.miniAbilities && p.miniAbilities.has('launcher');
                     const fragmentRadius = isMini ? 2.5 : 4; // Mini fragments are smaller
                     const numPairs = store.player.upgradeLevels.launcher || 1;
+                    const launcherElements = getActiveBulletElements(p);
                     for (let i = 0; i < numPairs; i++) {
                         const spread = 15 + i * 10;
                         const vx_offset = 50 + i * 20;
-                        spawnBullet({ x: p.x - spread, y: p.y, vx: -vx_offset, vy: -speed, r: fragmentRadius, col: '#ffaa00', dmg: 2 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true });
-                        spawnBullet({ x: p.x + spread, y: p.y, vx: vx_offset, vy: -speed, r: fragmentRadius, col: '#ffaa00', dmg: 2 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true });
+                        const elementForPair = launcherElements.length > 0 ? launcherElements[i % launcherElements.length] : undefined;
+                        spawnBullet({ x: p.x - spread, y: p.y, vx: -vx_offset, vy: -speed, r: fragmentRadius, col: '#ffaa00', dmg: 2 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true, presetElement: elementForPair });
+                        spawnBullet({ x: p.x + spread, y: p.y, vx: vx_offset, vy: -speed, r: fragmentRadius, col: '#ffaa00', dmg: 2 * p.dmgMult, explosive: true, pierce: false, life: 0, isSwirl: true, presetElement: elementForPair });
                         if (p.hasIceman && store.iceman) {
-                            spawnBullet({ x: store.iceman.x - spread, y: store.iceman.y, vx: -vx_offset, vy: -speed, r: fragmentRadius, col: '#66aaff', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true });
-                            spawnBullet({ x: store.iceman.x + spread, y: store.iceman.y, vx: vx_offset, vy: -speed, r: fragmentRadius, col: '#66aaff', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true });
+                            spawnBullet({ x: store.iceman.x - spread, y: store.iceman.y, vx: -vx_offset, vy: -speed, r: fragmentRadius, col: '#66aaff', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true, presetElement: elementForPair });
+                            spawnBullet({ x: store.iceman.x + spread, y: store.iceman.y, vx: vx_offset, vy: -speed, r: fragmentRadius, col: '#66aaff', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isIceman: true, presetElement: elementForPair });
                         }
                         if (p.hasBeefClone && store.beefClone && store.beefClone.mode !== 'juggernaut_bomber') {
-                            spawnBullet({ x: store.beefClone.x - spread, y: store.beefClone.y, vx: -vx_offset, vy: -speed, r: fragmentRadius, col: '#66ff66', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isBeefClone: true });
-                            spawnBullet({ x: store.beefClone.x + spread, y: store.beefClone.y, vx: vx_offset, vy: -speed, r: 4, col: '#66ff66', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isBeefClone: true });
+                            spawnBullet({ x: store.beefClone.x - spread, y: store.beefClone.y, vx: -vx_offset, vy: -speed, r: fragmentRadius, col: '#66ff66', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isBeefClone: true, presetElement: elementForPair });
+                            spawnBullet({ x: store.beefClone.x + spread, y: store.beefClone.y, vx: vx_offset, vy: -speed, r: 4, col: '#66ff66', dmg: 2 * p.dmgMult * 0.35, explosive: true, pierce: false, life: 0, isSwirl: true, isBeefClone: true, presetElement: elementForPair });
                         }
                     }
                 }
@@ -23413,6 +23423,7 @@
                 }
 
                 if (p.hasIceman && store.iceman) {
+                    const icemanFlameElements = getActiveBulletElements(p);
                     for (let i = 0; i < numFlames; i++) {
                         const angle = (Math.random() - 0.5) * angleRange * Math.PI / 180;
                         const currentSpeed = speed + Math.random() * 40;
@@ -23428,6 +23439,7 @@
                             col: `rgba(250, ${40 + Math.random() * 40}, 255, 0.9)`,
                             dmg: 2 * p.dmgMult * 0.35,
                             life,
+                            presetElement: icemanFlameElements.length > 0 ? icemanFlameElements[i % icemanFlameElements.length] : undefined,
                             isFlame: true,
                             isIceman: true,
                             isLavaBlade: true,
