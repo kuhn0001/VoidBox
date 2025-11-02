@@ -12390,9 +12390,9 @@
                     let spawned = 0;
                     for (let i = 0; i < championsToSpawn; i++) {
                         const champion = spawnVoidChampion({
-                            hpScale: bossHpScale * 0.6, // 60% of boss HP scaling (reduced from 100%)
-                            damageMult: bossHpScale * 0.5, // 50% of boss damage scaling (reduced from 100%)
-                            lateGameScaling: bossHpScale * 0.6,
+                            hpScale: bossHpScale * 0.35, // 35% of boss HP scaling (reduced from 60% - champion gets additional wave/collar/player scaling)
+                            damageMult: bossHpScale * 0.30, // 30% of boss damage scaling (reduced from 50% - champion damage multiplies contact damage)
+                            lateGameScaling: bossHpScale * 0.35,
                             entryTargetYBase: 100,
                             entryYOffset: i * 40
                         });
@@ -12968,10 +12968,11 @@
                         const fireRateFactor = Math.min(2.5, Math.max(1, fireRateBaseline / Math.max(pStats.fireRate || 0.45, 0.18)));
                         const shieldFactor = Math.pow(Math.max(1, (pStats.shieldMax || 0) / 60), 0.2);
                         const healthFactor = Math.pow(Math.max(1, (pStats.hpMax || 100) / 120), 0.2);
-                        const playerScaling = Math.min(3.5, Math.max(1, dmgFactor * multishotFactor * fireRateFactor * Math.max(shieldFactor, healthFactor)));
-                        e.hp *= playerScaling;
-                        e.hpMax *= playerScaling;
-                        e.damageMult *= playerScaling;
+                        const playerScaling = Math.min(2.0, Math.max(1, dmgFactor * multishotFactor * fireRateFactor * Math.max(shieldFactor, healthFactor)));
+                        // Reduced effectiveness - champion already gets bossHpScale multipliers
+                        e.hp *= Math.sqrt(playerScaling); // Square root to soften the scaling (2.0x becomes 1.41x)
+                        e.hpMax *= Math.sqrt(playerScaling);
+                        e.damageMult *= Math.sqrt(playerScaling);
                         e.contactDamage = e.baseContactDamage * e.damageMult;
                         e.playerScaling = playerScaling;
                     }
