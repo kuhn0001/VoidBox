@@ -4027,6 +4027,13 @@
     <audio id="audioBugSqueal" src="bug_squeal_redo.wav" preload="auto"></audio>
     <audio id="audioFarExplosion" src="far_explosion.wav" preload="auto"></audio>
     <audio id="audioRobotCrumble" src="robot_crumble.wav" preload="auto"></audio>
+    <audio id="audioArtilleryClusterInitial" src="artillery_cluster_initial.m4a" preload="auto"></audio>
+    <audio id="audioArtilleryCluster2nd" src="artillery_cluster_2nd.m4a" preload="auto"></audio>
+    <audio id="audioArtilleryCluster3rd" src="artillery_cluster_3rd.m4a" preload="auto"></audio>
+    <audio id="audioArtHit" src="art_hit.mp3" preload="auto"></audio>
+    <audio id="audioZombieChoking" src="zombie_choking.m4a" preload="auto"></audio>
+    <audio id="audioZombieSpawnCry" src="zombie_spawn_cry.m4a" preload="auto"></audio>
+    <audio id="audioZombieGargleAttack" src="zombie_gargle_attack.wav" preload="auto"></audio>
 
     <button id="fsEnterBtn" class="fixed-btn" type="button">FULLSCREEN</button>
     <div id="bottom-right-controls">
@@ -4989,6 +4996,13 @@
             const MIN_CLICK_INTERVAL = 200; // ms between clicks
             
             document.addEventListener('click', (event) => {
+                // Handle asteroid targeting confirmation
+                if (asteroidTargeting.active && event.target === cvs) {
+                    confirmAsteroidTargeting();
+                    event.preventDefault();
+                    return false;
+                }
+                
                 // Skip throttle for UI elements to prevent menu crash on double-click
                 const target = event.target;
                 const isUIElement = target.closest('.panel, button, .card, .shop-card, .upgrade-card, .forge-menu-btn, [role="button"]');
@@ -5010,6 +5024,18 @@
                 
                 lastClickTime = now;
             }, true); // Use capture phase to catch early
+            
+            // Add mouse move listener for asteroid targeting
+            document.addEventListener('mousemove', (event) => {
+                if (asteroidTargeting.active && cvs) {
+                    const rect = cvs.getBoundingClientRect();
+                    const scaleX = W / rect.width;
+                    const scaleY = H / rect.height;
+                    const mouseX = (event.clientX - rect.left) * scaleX;
+                    const mouseY = (event.clientY - rect.top) * scaleY;
+                    updateAsteroidTargeting(mouseX, mouseY);
+                }
+            });
             
             // Additional touch event protection for mobile
             let lastTouchTime = 0;
@@ -5510,7 +5536,14 @@
                 snakeHiss: q('audioSnakeHiss'),
                 bugSqueal: q('audioBugSqueal'),
                 farExplosion: q('audioFarExplosion'),
-                robotCrumble: q('audioRobotCrumble')
+                robotCrumble: q('audioRobotCrumble'),
+                artilleryClusterInitial: q('audioArtilleryClusterInitial'),
+                artilleryCluster2nd: q('audioArtilleryCluster2nd'),
+                artilleryCluster3rd: q('audioArtilleryCluster3rd'),
+                artHit: q('audioArtHit'),
+                zombieChoking: q('audioZombieChoking'),
+                zombieSpawnCry: q('audioZombieSpawnCry'),
+                zombieGargleAttack: q('audioZombieGargleAttack')
             };
             let lastExplosionSoundTime = 0;
             let lastBossHitSoundTime = 0;
@@ -5535,7 +5568,8 @@
                 power: 2000, // Limit power sound to once every 2 seconds
                 lightningCrit: 400, // Cooldown for lightning crit sound (adjusts based on hit upgrade)
                 lightningPower: 1200, // Cooldown for lightning power upgrade sound
-                lightningCrack: 2000 // Cooldown for huge multi-kill streak sound
+                lightningCrack: 2000, // Cooldown for huge multi-kill streak sound
+                artHit: 150 // Artillery hit sound cooldown to prevent spam
             };
             const soundLastPlayTime = {};
 
@@ -8233,6 +8267,8 @@
                             playSound('robotCrumble'); // Mechanical enemies
                         } else if (e.type === 'hunter') {
                             playSound('snakeHiss'); // Hunter snakes
+                        } else if (e.type === 'zombie') {
+                            playSound('zombieChoking'); // Zombie enemies
                         } else if (e.type === 'angler' || e.type === 'manta') {
                             playSound('farExplosion'); // Aquatic enemies
                         } else if (e.type === 'avian_hatchling' || e.type === 'trap_king_add') {
@@ -9379,6 +9415,50 @@
                 'lazarus_beam': { name: "LORD LAZARUS", icon: '☢️☄️☢️', baseCost: 200, scale: 3, maxLevel: 2, category: 'attack', effect: (level) => { if (level === 0) { store.player.hasLazarusBeam = true; store.player.lazarusBeamCooldown = 15; } }, desc: level => { if (level === 0) return 'Summon Lord Lazarus who fires devastating energy beams across the battlefield.'; if (level === 1) return 'Lazarus fires twice as often and launches dual beams.'; return 'Max Level'; } },
                 'magnet_pull': { name: "GRAV-PULSE", icon: '🧲', cost: 90, isPremium: true, isUnlock: true, category: 'utility', apply: () => { if (store.player.magnetRadius <= 0) { store.player.magnetRadius = 150; return true; } return false; }, desc: () => `Pulls in nearby powerups.` },
                 'gravity_well': { name: "GRAVITY WELL", icon: '🕳️', baseCost: 300, scale: 2, maxLevel: 2, category: 'attack', effect: (level) => { if (level === 0) { store.player.hasVoidBeam = true; store.player.voidBeamCooldown = 15; } }, desc: level => { if (level === 0) return 'Unleash a singularity that traps and crushes foes.'; if (level === 1) return 'Summon a second, smaller singularity.'; return 'Max Level'; } },
+                'asteroid_artillery': {
+                    name: "ASTEROID ARTILLERY",
+                    icon: '☄️🎯',
+                    cost: () => {
+                        // 25 gold at wave 1, +10% per wave
+                        const wave = store.world.wave;
+                        const baseCost = 25;
+                        const waveMultiplier = Math.pow(1.10, wave - 1);
+                        return Math.floor(baseCost * waveMultiplier);
+                    },
+                    isPremium: true,
+                    category: 'attack',
+                    apply: (info) => {
+                        const wave = store.world.wave;
+                        const baseCost = 25;
+                        const waveMultiplier = Math.pow(1.10, wave - 1);
+                        const cost = Math.floor(baseCost * waveMultiplier);
+                        
+                        if (getWorldGold() >= cost) {
+                            // Deduct gold immediately (no refund needed)
+                            addWorldGold(-cost);
+                            
+                            // Add to queue
+                            asteroidTargeting.queue.push({ cost });
+                            
+                            // Play confirmation sound
+                            playSound('powerup');
+                            
+                            // Show queue count
+                            const queueCount = asteroidTargeting.queue.length;
+                            announce(`☄️🎯 Artillery strike ${queueCount} queued! Close shop to begin targeting.`);
+                            
+                            return true; // Return true to signal success
+                        }
+                        return false;
+                    },
+                    desc: () => {
+                        const wave = store.world.wave;
+                        const baseCost = 25;
+                        const waveMultiplier = Math.pow(1.10, wave - 1);
+                        const cost = Math.floor(baseCost * waveMultiplier);
+                        return `Skillshot: Target a path for devastating asteroid bombardment. 3 waves of destruction! Cost: ${cost} gold`;
+                    }
+                },
                 'ghost_hounds': {
                     name: "GHOST HOUNDS",
                     icon: '👻🐺',
@@ -9775,6 +9855,7 @@
                 'iceman',
                 'lazarus_beam',
                 'gravity_well',
+                'asteroid_artillery',
                 'champion_attack_module',
                 'champion_cadence',
                 'champion_protocol',
@@ -9783,6 +9864,779 @@
 
             const SPLIT_SHOT_ICON_SVG = `<svg class="powerup-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path fill="#ff2f6f" d="M10.8 3 5.4 12l5.4 9h-2.6L2.8 12 8.2 3z"/><path fill="#ff7ad6" d="M13.2 3 18.6 12l-5.4 9h2.6L21.2 12 15.8 3z"/></svg>`;
             const PIERCE_SHOT_ICON_SVG = `<svg class="powerup-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="#2a0129" stroke="#ff4f98" stroke-width="2"/><path fill="#ff90d8" d="M6.5 12h8.2l-2.8-2.8 1.4-1.4L19.5 12l-6.2 6.2-1.4-1.4 2.8-2.8H6.5z"/></svg>`;
+
+            // ═══════════════════════════════════════════════════════════════════════
+            // ASTEROID ARTILLERY TARGETING SYSTEM
+            // ═══════════════════════════════════════════════════════════════════════
+            
+            const asteroidTargeting = {
+                active: false,
+                cost: 0,
+                angle: 0,
+                centerX: 0,
+                centerY: 0,
+                confirmed: false,
+                queue: [] // Queue of pending artillery strikes {cost}
+            };
+
+            function processNextArtilleryInQueue() {
+                if (asteroidTargeting.queue.length === 0) {
+                    // Queue is empty, resume game
+                    resumeGame(true);
+                    return;
+                }
+                
+                // Get next artillery strike from queue
+                const next = asteroidTargeting.queue.shift();
+                initiateAsteroidTargeting(next.cost);
+            }
+
+            function initiateAsteroidTargeting(cost) {
+                asteroidTargeting.active = true;
+                asteroidTargeting.cost = cost;
+                asteroidTargeting.angle = 0;
+                asteroidTargeting.centerX = W / 2;
+                asteroidTargeting.centerY = H / 2;
+                asteroidTargeting.confirmed = false;
+                
+                // Pause game (should already be paused from shop, but ensure it)
+                store.isPaused = true;
+                
+                // Hide pause button during targeting
+                const pauseBtn = q('pauseBtn');
+                if (pauseBtn) pauseBtn.style.display = 'none';
+                
+                // Show cancel button
+                const cancelBtn = document.getElementById('asteroidCancelBtn');
+                if (!cancelBtn) {
+                    const btn = document.createElement('button');
+                    btn.id = 'asteroidCancelBtn';
+                    btn.className = 'btn';
+                    btn.textContent = 'CANCEL';
+                    btn.style.cssText = 'position: fixed; bottom: 20px; right: 20px; z-index: 10000; padding: 12px 24px;';
+                    btn.onclick = cancelAsteroidTargeting;
+                    document.body.appendChild(btn);
+                } else {
+                    cancelBtn.style.display = 'block';
+                }
+                
+                // Change cursor
+                document.body.style.cursor = 'crosshair';
+                
+                // Show queue count if any
+                const queueMsg = asteroidTargeting.queue.length > 0 
+                    ? ` (${asteroidTargeting.queue.length} more queued)` 
+                    : '';
+                announce(`🎯 ASTEROID ARTILLERY: Position targeting path and click to confirm${queueMsg}`);
+            }
+
+            function cancelAsteroidTargeting() {
+                asteroidTargeting.active = false;
+                document.body.style.cursor = 'default';
+                
+                // Refund gold for current targeting
+                addWorldGold(asteroidTargeting.cost);
+                
+                // Refund gold for all remaining queued artillery
+                asteroidTargeting.queue.forEach(item => {
+                    addWorldGold(item.cost);
+                });
+                
+                const totalRefunded = asteroidTargeting.cost + asteroidTargeting.queue.reduce((sum, item) => sum + item.cost, 0);
+                
+                // Clear the queue
+                asteroidTargeting.queue = [];
+                
+                const cancelBtn = document.getElementById('asteroidCancelBtn');
+                if (cancelBtn) cancelBtn.style.display = 'none';
+                
+                // Restore pause button
+                const pauseBtn = q('pauseBtn');
+                if (pauseBtn) pauseBtn.style.display = '';
+                
+                announce(`Artillery strikes cancelled. ${totalRefunded} gold refunded.`);
+                
+                // Resume game since queue is cleared
+                resumeGame(true);
+            }
+
+            function confirmAsteroidTargeting() {
+                if (!asteroidTargeting.active || asteroidTargeting.confirmed) return;
+                
+                // Deduct gold
+                addWorldGold(-asteroidTargeting.cost);
+                
+                asteroidTargeting.confirmed = true;
+                asteroidTargeting.active = false;
+                document.body.style.cursor = 'default';
+                
+                // Start bombardment
+                startAsteroidBombardment(asteroidTargeting.angle, asteroidTargeting.centerX, asteroidTargeting.centerY);
+                
+                announce('☄️ ASTEROID BOMBARDMENT INCOMING!');
+                playSound('powerup');
+                
+                // Check if more artillery strikes are queued
+                if (asteroidTargeting.queue.length > 0) {
+                    // Process next in queue after a short delay
+                    setTimeout(() => {
+                        processNextArtilleryInQueue();
+                    }, 100);
+                } else {
+                    // No more in queue, hide cancel button and restore pause button
+                    const cancelBtn = document.getElementById('asteroidCancelBtn');
+                    if (cancelBtn) cancelBtn.style.display = 'none';
+                    
+                    const pauseBtn = q('pauseBtn');
+                    if (pauseBtn) pauseBtn.style.display = '';
+                    
+                    // Resume game
+                    resumeGame(true);
+                }
+            }
+
+            function startAsteroidBombardment(angle, centerX, centerY) {
+                const bombardment = {
+                    angle,
+                    centerX,
+                    centerY,
+                    sequenceIndex: 0, // Which sequence (0 or 1)
+                    sequenceCount: 2, // 2 sequences total
+                    waveIndex: 0, // Which wave in sequence (0, 1, or 2)
+                    waveCount: 3, // 3 waves per sequence (more clusters!)
+                    waveTimer: 0,
+                    waveDelay: 0.4, // 0.4 seconds between waves (tighter cadence)
+                    sequenceTimer: 0,
+                    sequenceDelay: 2.5, // 2.5 seconds between sequences
+                    waveSpawned: false
+                };
+                
+                if (!store.asteroidBombardments) {
+                    store.asteroidBombardments = [];
+                }
+                
+                store.asteroidBombardments.push(bombardment);
+            }
+
+            function updateAsteroidTargeting(mouseX, mouseY) {
+                if (!asteroidTargeting.active) return;
+                
+                // Update position - targeting path follows cursor in both X and Y
+                asteroidTargeting.centerX = Math.max(100, Math.min(W - 100, mouseX));
+                asteroidTargeting.centerY = Math.max(100, Math.min(H - 100, mouseY));
+                
+                // Calculate angle based on horizontal offset from screen center (vertical bisection)
+                const screenCenterX = W / 2;
+                const offsetX = mouseX - screenCenterX;
+                const maxOffset = W / 2 - 100; // Account for margins
+                const normalizedOffset = Math.max(-1, Math.min(1, offsetX / maxOffset));
+                
+                // Angle range: 0 to 90 degrees based on horizontal position
+                // Center = 0° (horizontal, parallel to top/bottom)
+                // Right edge = -90° (vertical, counter-clockwise rotation, parallel to right edge)
+                // Left edge = +90° (vertical, clockwise rotation, parallel to left edge)
+                asteroidTargeting.angle = normalizedOffset * (Math.PI / 2); // 90 degrees max
+            }
+
+            function renderAsteroidTargeting(ctx) {
+                if (!asteroidTargeting.active) return;
+                
+                ctx.save();
+                
+                // Draw targeting path - horizontal (parallel to edges), movable up/down
+                const centerX = asteroidTargeting.centerX;
+                const centerY = asteroidTargeting.centerY;
+                const pathLength = 450; // Realistic strike zone - matches actual impact area
+                const pathWidth = 80; // Vertical width
+                
+                ctx.translate(centerX, centerY);
+                ctx.rotate(asteroidTargeting.angle); // Rotation based on left/right mouse
+                
+                // Infrared/green gradient path (now horizontal)
+                const gradient = ctx.createLinearGradient(-pathLength / 2, 0, pathLength / 2, 0);
+                gradient.addColorStop(0, 'rgba(0, 255, 100, 0.1)');
+                gradient.addColorStop(0.5, 'rgba(0, 255, 100, 0.4)');
+                gradient.addColorStop(1, 'rgba(0, 255, 100, 0.1)');
+                
+                ctx.fillStyle = gradient;
+                ctx.fillRect(-pathLength / 2, -pathWidth / 2, pathLength, pathWidth);
+                
+                // Ruler markings
+                ctx.strokeStyle = 'rgba(0, 255, 100, 0.8)';
+                ctx.lineWidth = 2;
+                
+                // Center line (horizontal)
+                ctx.beginPath();
+                ctx.moveTo(-pathLength / 2, 0);
+                ctx.lineTo(pathLength / 2, 0);
+                ctx.stroke();
+                
+                // Edge lines (horizontal)
+                ctx.beginPath();
+                ctx.moveTo(-pathLength / 2, -pathWidth / 2);
+                ctx.lineTo(pathLength / 2, -pathWidth / 2);
+                ctx.moveTo(-pathLength / 2, pathWidth / 2);
+                ctx.lineTo(pathLength / 2, pathWidth / 2);
+                ctx.stroke();
+                
+                // Hash marks (ruler style - vertical marks along horizontal path)
+                ctx.lineWidth = 1;
+                for (let i = -pathLength / 2; i < pathLength / 2; i += 40) {
+                    ctx.beginPath();
+                    ctx.moveTo(i, -pathWidth / 2);
+                    ctx.lineTo(i, -pathWidth / 2 - 8);
+                    ctx.moveTo(i, pathWidth / 2);
+                    ctx.lineTo(i, pathWidth / 2 + 8);
+                    ctx.stroke();
+                }
+                
+                // Crosshair at center
+                ctx.strokeStyle = 'rgba(0, 255, 100, 1)';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(0, 0, 20, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(-30, 0);
+                ctx.lineTo(-20, 0);
+                ctx.moveTo(20, 0);
+                ctx.lineTo(30, 0);
+                ctx.moveTo(0, -30);
+                ctx.lineTo(0, -20);
+                ctx.moveTo(0, 20);
+                ctx.lineTo(0, 30);
+                ctx.stroke();
+                
+                ctx.restore();
+                
+                // Draw "CLICK TO CONFIRM" text
+                ctx.save();
+                ctx.fillStyle = 'rgba(0, 255, 100, 1)';
+                ctx.font = 'bold 24px Orbitron, Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('CLICK TO CONFIRM TARGET', W / 2, H - 80);
+                ctx.restore();
+            }
+
+            function updateAsteroidBombardments(dt) {
+                if (!store.asteroidBombardments || store.asteroidBombardments.length === 0) return;
+                
+                for (let i = store.asteroidBombardments.length - 1; i >= 0; i--) {
+                    const bomb = store.asteroidBombardments[i];
+                    
+                    // Spawn wave at start
+                    if (!bomb.waveSpawned && bomb.sequenceIndex < bomb.sequenceCount) {
+                        spawnAsteroidWave(bomb, bomb.waveIndex);
+                        bomb.waveSpawned = true;
+                        bomb.waveTimer = 0;
+                    }
+                    
+                    // Update wave timer
+                    bomb.waveTimer += dt;
+                    
+                    // Check if wave is complete
+                    if (bomb.waveTimer >= bomb.waveDelay) {
+                        bomb.waveIndex++;
+                        bomb.waveSpawned = false;
+                        
+                        // Check if sequence is complete (3 waves done)
+                        if (bomb.waveIndex >= bomb.waveCount) {
+                            bomb.waveIndex = 0;
+                            bomb.sequenceIndex++;
+                            bomb.sequenceTimer = 0;
+                            bomb.waveTimer = 0;
+                            
+                            // If more sequences, wait longer
+                            if (bomb.sequenceIndex < bomb.sequenceCount) {
+                                bomb.waveDelay = bomb.sequenceDelay; // 2.5 second wait
+                                bomb.waveSpawned = false;
+                            }
+                        } else {
+                            bomb.waveDelay = 0.4; // Tight 0.4s between waves
+                        }
+                    }
+                    
+                    // Remove if all sequences complete
+                    if (bomb.sequenceIndex >= bomb.sequenceCount) {
+                        store.asteroidBombardments.splice(i, 1);
+                    }
+                }
+            }
+
+            function spawnAsteroidWave(bombardment, waveOffset) {
+                const centerX = bombardment.centerX;
+                const centerY = bombardment.centerY;
+                
+                // Play appropriate cluster sound based on sequence and wave
+                const sequenceIndex = bombardment.sequenceIndex;
+                const totalWavesSoFar = sequenceIndex * bombardment.waveCount + waveOffset;
+                
+                if (totalWavesSoFar === 0) {
+                    playSound('artilleryClusterInitial'); // First cluster volley
+                } else if (totalWavesSoFar === 3) {
+                    playSound('artilleryCluster2nd'); // Second sequence first wave
+                } else if (totalWavesSoFar === 1 || totalWavesSoFar === 2) {
+                    playSound('artilleryCluster2nd'); // 2nd and 3rd wave of first sequence
+                } else {
+                    playSound('artilleryCluster3rd'); // Remaining waves
+                }
+                
+                // Calculate wave center position along the targeting path
+                // Path starts horizontal, rotates based on bombardment.angle
+                // Add slight variation between waves in the same sequence
+                const pathLength = 400; // Realistic strike zone length
+                const distAlongPath = (Math.random() - 0.5) * pathLength + (waveOffset * 50);
+                const lateralOffset = (Math.random() - 0.5) * 35; // Small perpendicular variation
+                
+                // Calculate world position considering rotation
+                // For a horizontal path at 0°:
+                // - distAlongPath moves along X axis (left-right)
+                // - lateralOffset moves along Y axis (perpendicular to path)
+                const cos = Math.cos(bombardment.angle);
+                const sin = Math.sin(bombardment.angle);
+                
+                const localX = distAlongPath; // Distance along the path
+                const localY = lateralOffset; // Distance perpendicular to path
+                
+                const waveCenterX = centerX + localX * cos - localY * sin;
+                const waveCenterY = centerY + localX * sin + localY * cos;
+                
+                // Spawn 3 tightly packed asteroids per wave
+                const waveSpread = 30; // Tight grouping
+                
+                for (let i = 0; i < 3; i++) {
+                    const offsetAngle = (i / 3) * Math.PI * 2 + Math.random() * 0.4;
+                    const offsetDist = Math.random() * waveSpread;
+                    
+                    const targetX = waveCenterX + Math.cos(offsetAngle) * offsetDist;
+                    const targetY = waveCenterY + Math.sin(offsetAngle) * offsetDist;
+                    
+                    // Spawn from top-right
+                    const startX = targetX + 400 + Math.random() * 100;
+                    const startY = -100 - Math.random() * 50;
+                    
+                    const dx = targetX - startX;
+                    const dy = targetY - startY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const speed = 1200 + Math.random() * 300; // Faster
+                    const travelTime = distance / speed;
+                    
+                    const asteroid = {
+                        x: startX,
+                        y: startY,
+                        targetX: targetX,
+                        targetY: targetY,
+                        vx: dx / travelTime,
+                        vy: dy / travelTime,
+                        r: 4 + Math.random() * 3, // Smaller asteroids
+                        rotation: Math.random() * Math.PI * 2,
+                        rotationSpeed: (Math.random() - 0.5) * 12,
+                        damage: 100 + Math.random() * 50,
+                        impacted: false,
+                        life: travelTime + 0.5,
+                        shadowAlpha: 0
+                    };
+                    
+                    if (!store.asteroidProjectiles) {
+                        store.asteroidProjectiles = [];
+                    }
+                    
+                    store.asteroidProjectiles.push(asteroid);
+                }
+            }
+
+            function updateAsteroidProjectiles(dt) {
+                if (!store.asteroidProjectiles || store.asteroidProjectiles.length === 0) return;
+                
+                for (let i = store.asteroidProjectiles.length - 1; i >= 0; i--) {
+                    const ast = store.asteroidProjectiles[i];
+                    
+                    ast.x += ast.vx * dt;
+                    ast.y += ast.vy * dt;
+                    ast.rotation += ast.rotationSpeed * dt;
+                    ast.life -= dt;
+                    
+                    // Update shadow alpha based on proximity to ground
+                    const distToTarget = ast.targetY - ast.y;
+                    const maxDist = 600;
+                    ast.shadowAlpha = Math.max(0, Math.min(1, 1 - (distToTarget / maxDist)));
+                    
+                    // Check for impact
+                    if (!ast.impacted && ast.y >= ast.targetY) {
+                        ast.impacted = true;
+                        createImpactCrater(ast);
+                    }
+                    
+                    // Remove if life expired or off screen
+                    if (ast.life <= 0 || ast.y > H + 100) {
+                        store.asteroidProjectiles.splice(i, 1);
+                    }
+                }
+            }
+
+            function createImpactCrater(asteroid) {
+                // Create impact crater with primary impact zone and blast wave
+                const crater = {
+                    x: asteroid.targetX,
+                    y: asteroid.targetY,
+                    primaryRadius: 25, // Small direct hit zone - instant kill
+                    secondaryRadius: 0,
+                    maxSecondaryRadius: 120, // Wide blast wave - 50% damage
+                    damage: asteroid.damage,
+                    expandSpeed: 500,
+                    duration: 0.8,
+                    timer: 0,
+                    primaryProcessed: false,
+                    rings: []
+                };
+                
+                // Create expanding shockwave rings
+                for (let i = 0; i < 3; i++) {
+                    crater.rings.push({
+                        delay: i * 0.08,
+                        timer: 0,
+                        radius: 0
+                    });
+                }
+                
+                if (!store.impactCraters) {
+                    store.impactCraters = [];
+                }
+                
+                store.impactCraters.push(crater);
+                
+                // Process primary impact immediately
+                processPrimaryImpact(crater);
+                
+                // Screen shake
+                if (store.camera) {
+                    store.camera.shakeIntensity = (store.camera.shakeIntensity || 0) + 10;
+                }
+                
+                playSound('explosion');
+            }
+
+            function processPrimaryImpact(crater) {
+                // Direct hit zone - instant kill for non-bosses
+                let hitCount = 0;
+                store.enemies.forEach(enemy => {
+                    if (enemy.dead) return;
+                    
+                    const dx = enemy.x - crater.x;
+                    const dy = enemy.y - crater.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist < crater.primaryRadius + enemy.r) {
+                        // Direct hit - instant kill
+                        enemy.hp = 0;
+                        enemy.dead = true;
+                        hitCount++;
+                        
+                        spawnGibs(enemy.x, enemy.y, enemy.color);
+                        spawnDotDamageText(enemy, 999999, { color: '#ff0000' });
+                        registerEnemyHit(enemy);
+                        
+                        const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
+                        const scoreGain = Math.floor((enemy.score || 0) * collarBonus);
+                        const goldGain = Math.floor((enemy.gold || 0) * collarBonus);
+                        const xpGain = Math.floor((enemy.xp || 0) * collarBonus);
+                        if (scoreGain) store.world.score += scoreGain;
+                        if (goldGain) addWorldGold(goldGain);
+                        if (xpGain) awardXp(xpGain);
+                        store.world.kills++;
+                    }
+                });
+                
+                // Play hit sound if any enemies were hit (cooldown prevents spam)
+                if (hitCount > 0) {
+                    playSound('artHit');
+                }
+                
+                // Boss takes heavy damage from direct hit
+                if (store.boss && !store.boss.dead) {
+                    const dx = store.boss.x - crater.x;
+                    const dy = store.boss.y - crater.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist < crater.primaryRadius + store.boss.r) {
+                        const directDamage = crater.damage * 2; // Heavy damage to boss
+                        applyBossDamage(store.boss, directDamage);
+                        spawnDotDamageText(store.boss, directDamage, { color: '#ff0000' });
+                    }
+                }
+                
+                crater.primaryProcessed = true;
+            }
+
+            function updateImpactCraters(dt) {
+                if (!store.impactCraters || store.impactCraters.length === 0) return;
+                
+                for (let i = store.impactCraters.length - 1; i >= 0; i--) {
+                    const crater = store.impactCraters[i];
+                    crater.timer += dt;
+                    
+                    // Expand secondary blast wave
+                    if (crater.secondaryRadius < crater.maxSecondaryRadius) {
+                        crater.secondaryRadius = Math.min(crater.maxSecondaryRadius, crater.secondaryRadius + crater.expandSpeed * dt);
+                    }
+                    
+                    // Update shockwave rings
+                    crater.rings.forEach(ring => {
+                        ring.timer += dt;
+                        if (ring.timer > ring.delay) {
+                            ring.radius = Math.min(crater.maxSecondaryRadius * 1.3, ring.radius + 700 * dt);
+                        }
+                    });
+                    
+                    // Blast wave damage - 50% of enemy's max HP (one-time on entry)
+                    if (crater.secondaryRadius > crater.primaryRadius) {
+                        let blastHitCount = 0;
+                        store.enemies.forEach(enemy => {
+                            if (enemy.dead || enemy.hitByCrater === crater) return;
+                            
+                            const dx = enemy.x - crater.x;
+                            const dy = enemy.y - crater.y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            
+                            // Check if enemy is in blast wave but outside primary zone
+                            if (dist > crater.primaryRadius && dist < crater.secondaryRadius + enemy.r) {
+                                // Mark enemy as hit by this crater
+                                if (!enemy.hitByCrater) enemy.hitByCrater = crater;
+                                else if (enemy.hitByCrater !== crater) return;
+                                
+                                // Deal 50% of enemy's current HP
+                                const blastDamage = enemy.hp * 0.5;
+                                enemy.hp -= blastDamage;
+                                blastHitCount++;
+                                
+                                // Knockback
+                                if (!enemy.knockback) enemy.knockback = {};
+                                const angle = Math.atan2(dy, dx);
+                                enemy.knockback.vx = Math.cos(angle) * 400;
+                                enemy.knockback.vy = Math.sin(angle) * 400;
+                                enemy.knockback.timer = 0.3;
+                                enemy.knockback.duration = 0.3;
+                                
+                                spawnDotDamageText(enemy, blastDamage, { color: '#ffa500' });
+                                registerEnemyHit(enemy);
+                                
+                                // Check for death
+                                if (enemy.hp <= 0 && !enemy.dead) {
+                                    enemy.dead = true;
+                                    spawnGibs(enemy.x, enemy.y, enemy.color);
+                                    const collarBonus = calculateCollarBonus(sanitizeCollarStacks());
+                                    const scoreGain = Math.floor((enemy.score || 0) * collarBonus);
+                                    const goldGain = Math.floor((enemy.gold || 0) * collarBonus);
+                                    const xpGain = Math.floor((enemy.xp || 0) * collarBonus);
+                                    if (scoreGain) store.world.score += scoreGain;
+                                    if (goldGain) addWorldGold(goldGain);
+                                    if (xpGain) awardXp(xpGain);
+                                    store.world.kills++;
+                                }
+                            }
+                        });
+                        
+                        // Play hit sound if blast wave hit enemies
+                        if (blastHitCount > 0) {
+                            playSound('artHit');
+                        }
+                        
+                        // Boss takes blast wave damage
+                        if (store.boss && !store.boss.dead && !store.boss.hitByCrater) {
+                            const dx = store.boss.x - crater.x;
+                            const dy = store.boss.y - crater.y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            
+                            if (dist > crater.primaryRadius && dist < crater.secondaryRadius + store.boss.r) {
+                                store.boss.hitByCrater = crater;
+                                const blastDamage = store.boss.hpMax * 0.05; // 5% max HP to boss
+                                applyBossDamage(store.boss, blastDamage);
+                                spawnDotDamageText(store.boss, blastDamage, { color: '#ffa500' });
+                            }
+                        }
+                    }
+                    
+                    // Remove expired craters
+                    if (crater.timer >= crater.duration + 0.5) {
+                        store.impactCraters.splice(i, 1);
+                    }
+                }
+            }
+
+            function renderAsteroidProjectiles(ctx) {
+                if (!store.asteroidProjectiles || store.asteroidProjectiles.length === 0) return;
+                
+                // First pass: Draw shadows on the ground
+                store.asteroidProjectiles.forEach(ast => {
+                    if (ast.shadowAlpha > 0 && !ast.impacted) {
+                        ctx.save();
+                        ctx.globalAlpha = ast.shadowAlpha * 0.6;
+                        
+                        // Shadow grows as asteroid approaches
+                        const shadowSize = ast.r * 3 * (0.5 + ast.shadowAlpha * 0.5);
+                        const gradient = ctx.createRadialGradient(ast.targetX, ast.targetY, 0, ast.targetX, ast.targetY, shadowSize);
+                        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.8)');
+                        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                        
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(ast.targetX, ast.targetY, shadowSize, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                    }
+                });
+                
+                // Second pass: Draw asteroids
+                store.asteroidProjectiles.forEach(ast => {
+                    if (ast.impacted) return;
+                    
+                    ctx.save();
+                    ctx.translate(ast.x, ast.y);
+                    ctx.rotate(ast.rotation);
+                    
+                    // Fiery trail
+                    const trailLength = ast.r * 4;
+                    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, trailLength);
+                    gradient.addColorStop(0, 'rgba(255, 200, 100, 0.9)');
+                    gradient.addColorStop(0.5, 'rgba(255, 100, 0, 0.6)');
+                    gradient.addColorStop(1, 'rgba(255, 50, 0, 0)');
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, trailLength, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Draw small asteroid core
+                    ctx.fillStyle = '#8B4513';
+                    ctx.strokeStyle = '#FF6600';
+                    ctx.lineWidth = 1;
+                    
+                    ctx.beginPath();
+                    ctx.arc(0, 0, ast.r, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Hot glow
+                    ctx.fillStyle = 'rgba(255, 150, 0, 0.8)';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, ast.r * 0.6, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.restore();
+                });
+            }
+
+            function renderImpactCraters(ctx) {
+                if (!store.impactCraters || store.impactCraters.length === 0) return;
+                
+                store.impactCraters.forEach(crater => {
+                    ctx.save();
+                    
+                    const alpha = Math.max(0, 1 - (crater.timer / (crater.duration + 0.5)));
+                    
+                    // Draw secondary blast wave (large circle)
+                    if (crater.secondaryRadius > 0) {
+                        ctx.save();
+                        ctx.globalAlpha = alpha * 0.4;
+                        const blastGradient = ctx.createRadialGradient(crater.x, crater.y, 0, crater.x, crater.y, crater.secondaryRadius);
+                        blastGradient.addColorStop(0, 'rgba(139, 69, 19, 0.3)');
+                        blastGradient.addColorStop(0.7, 'rgba(100, 70, 40, 0.2)');
+                        blastGradient.addColorStop(1, 'rgba(139, 99, 69, 0)');
+                        ctx.fillStyle = blastGradient;
+                        ctx.beginPath();
+                        ctx.arc(crater.x, crater.y, crater.secondaryRadius, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                        
+                        // Blast wave edge
+                        ctx.save();
+                        ctx.globalAlpha = alpha * 0.6;
+                        ctx.strokeStyle = 'rgba(200, 140, 80, 0.8)';
+                        ctx.lineWidth = 3;
+                        ctx.beginPath();
+                        ctx.arc(crater.x, crater.y, crater.secondaryRadius, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                    
+                    // Draw earthquake shockwave rings
+                    crater.rings.forEach(ring => {
+                        if (ring.timer > ring.delay && ring.radius > 0) {
+                            const age = ring.timer - ring.delay;
+                            const ringAlpha = Math.max(0, 1 - age * 2);
+                            
+                            ctx.strokeStyle = `rgba(180, 120, 60, ${ringAlpha * 0.7})`;
+                            ctx.lineWidth = 4;
+                            ctx.beginPath();
+                            ctx.arc(crater.x, crater.y, ring.radius, 0, Math.PI * 2);
+                            ctx.stroke();
+                        }
+                    });
+                    
+                    // Draw primary impact crater (small circle - red/orange)
+                    ctx.save();
+                    ctx.globalAlpha = alpha;
+                    const primaryGradient = ctx.createRadialGradient(crater.x, crater.y, 0, crater.x, crater.y, crater.primaryRadius);
+                    primaryGradient.addColorStop(0, 'rgba(255, 80, 0, 0.9)');
+                    primaryGradient.addColorStop(0.5, 'rgba(200, 60, 0, 0.7)');
+                    primaryGradient.addColorStop(1, 'rgba(139, 40, 0, 0.3)');
+                    ctx.fillStyle = primaryGradient;
+                    ctx.beginPath();
+                    ctx.arc(crater.x, crater.y, crater.primaryRadius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                    
+                    // Primary impact edge - bright
+                    ctx.save();
+                    ctx.globalAlpha = alpha * 0.9;
+                    ctx.strokeStyle = 'rgba(255, 100, 0, 1)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(crater.x, crater.y, crater.primaryRadius, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                    
+                    // Rumbling debris particles around primary
+                    if (crater.timer < crater.duration) {
+                        ctx.save();
+                        ctx.globalAlpha = alpha * 0.7;
+                        for (let i = 0; i < 12; i++) {
+                            const angle = (crater.timer * 4 + i) * Math.PI / 6;
+                            const dist = crater.primaryRadius + 5 + Math.sin(crater.timer * 12 + i) * 10;
+                            const x = crater.x + Math.cos(angle) * dist;
+                            const y = crater.y + Math.sin(angle) * dist;
+                            
+                            ctx.fillStyle = '#FF6600';
+                            ctx.beginPath();
+                            ctx.arc(x, y, 2 + Math.random() * 1.5, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                        ctx.restore();
+                    }
+                    
+                    // Cracks radiating from center
+                    if (crater.timer < 0.4) {
+                        ctx.save();
+                        ctx.globalAlpha = alpha * 0.8;
+                        ctx.strokeStyle = 'rgba(100, 40, 0, 0.7)';
+                        ctx.lineWidth = 2;
+                        for (let i = 0; i < 16; i++) {
+                            const angle = (i / 16) * Math.PI * 2;
+                            const crackLength = crater.primaryRadius * 2.5;
+                            ctx.beginPath();
+                            ctx.moveTo(crater.x, crater.y);
+                            ctx.lineTo(
+                                crater.x + Math.cos(angle) * crackLength,
+                                crater.y + Math.sin(angle) * crackLength
+                            );
+                            ctx.stroke();
+                        }
+                        ctx.restore();
+                    }
+                    
+                    ctx.restore();
+                });
+            }
 
             // Powerup quality ranking system (1-10 scale, 10 being highest value)
             const POWERUP_QUALITY = {
@@ -12850,7 +13704,7 @@
                 const cfgs = {
                     drone: { r: 10, v: 80, vx: 0, hp: 30, color: '#C0C0C0', xp: 5, score: 50, gold: 2, fireRateChance: 0.004, contactDamage: 8 },
                     hunter: { r: 20, v: 100, vx: 0, hp: 26, color: '#DC143C', xp: 8, score: 80, gold: 3, fireRateChance: 0.005, contactDamage: 10 }, ///SNAKE GUY
-                    zombie: { r: 12, v: 35, vx: 0, hp: 50, color: '#00ff88', xp: 3, score: 30, gold: 1, fireRateChance: 0, contactDamage: 8, tracksPlayer: true },
+                    zombie: { r: 14, v: 35, vx: 0, hp: 50, color: '#1a3d2e', color2: '#2d5a42', eyeColor: '#ff3333', xp: 3, score: 30, gold: 1, fireRateChance: 0, contactDamage: 8, tracksPlayer: true },
                     trap_king_add: { r: 6, v: 90, vx: 0, hp: 12, color: '#ffc83d', damage: 5, xp: 2, score: 10, gold: 1, contactDamage: 6 },
                     phantom: { r: 14, v: 90, vx: 0, hp: 48, color: '#FFFFFF', xp: 10, score: 100, gold: 3, fireRateChance: 0.006, fireCooldown: 1.5, contactDamage: 10 },
                     mech: { r: 18, v: 40, vx: 0, hp: 60, color: '#FF8500', xp: 15, score: 150, gold: 6, fireRateChance: 0.007, attackPhase: 0, contactDamage: 12 },
@@ -12970,6 +13824,13 @@
                     e.contactDamage = e.baseContactDamage * e.damageMult;
                 }
 
+                if (e.type === 'zombie') {
+                    e.dashCooldown = 2 + Math.random() * 1.5; // Random initial cooldown
+                    e.dashTimer = 0;
+                    e.isDashing = false;
+                    e.dashTargetY = 0;
+                    e.eyeGlowPhase = Math.random() * Math.PI * 2;
+                }
                 if (e.type === 'manta') {
                     e.startX = e.x;
                     e.amplitude = 150 + Math.random() * 100;
@@ -13389,6 +14250,14 @@
                     store.enemies.push(enemy);
                     store.world.lastSpawnCount = (store.world.lastSpawnCount || 0) + 1;
                     spawnedThisCluster++;
+                    
+                    // Play zombie spawn sound for first zombie only (tombstone spawn)
+                    if (enemy.type === 'zombie') {
+                        if (!store.world.firstZombieSpawned) {
+                            store.world.firstZombieSpawned = true;
+                            playSound('zombieSpawnCry');
+                        }
+                    }
 
                     store.activeEffects.push(createEffect('spawnTeleport', enemy.x, enemy.spawnTargetY ?? enemy.y, enemy.r || 18, {
                         duration: (enemy.spawnDuration || 0.6) + 0.25,
@@ -15378,6 +16247,11 @@
                 cleanupDeadGangMembers();
                 processWaveSpawnQueue(dt);
                 processVulnerabilityEvents(dt);
+                
+                // Asteroid artillery systems
+                updateAsteroidBombardments(dt);
+                updateAsteroidProjectiles(dt);
+                updateImpactCraters(dt);
 
                 if (store.world.cubeBurglarCooldown > 0) {
                     store.world.cubeBurglarCooldown = Math.max(0, store.world.cubeBurglarCooldown - dt);
@@ -16651,6 +17525,56 @@
                                 e.x += Math.sign(dx) * trackSpeed * speedMultiplier * dt;
                             }
                             e.y += e.v * verticalSpeedMultiplier * dt;
+                        } else if (e.type === 'zombie') {
+                            // Zombie dash mechanic
+                            if (e.isDashing) {
+                                // Continue dashing toward target
+                                e.dashTimer -= dt;
+                                e.y += 180 * speedMultiplier * dt; // Fast dash speed
+                                
+                                if (e.dashTimer <= 0 || e.y >= e.dashTargetY) {
+                                    e.isDashing = false;
+                                    e.dashCooldown = 3 + Math.random() * 2; // 3-5s cooldown
+                                }
+                            } else {
+                                // Normal slow movement
+                                e.y += e.v * verticalSpeedMultiplier * dt;
+                                
+                                // Check if should dash
+                                e.dashCooldown -= dt;
+                                if (e.dashCooldown <= 0 && e.y < store.player.y - 100) {
+                                    // Dash forward but not all the way to player
+                                    e.isDashing = true;
+                                    e.dashTimer = 0.6; // 0.6s dash duration
+                                    e.dashTargetY = e.y + (150 + Math.random() * 100); // Dash 150-250px forward
+                                }
+                                
+                                // Track player horizontally when not dashing
+                                if (e.tracksPlayer && store.player) {
+                                    const dx = store.player.x - e.x;
+                                    const trackSpeed = 40;
+                                    e.x += Math.sign(dx) * Math.min(Math.abs(dx), trackSpeed * dt);
+                                }
+                            }
+                            
+                            // Update eye glow animation
+                            e.eyeGlowPhase += dt * 3;
+                            
+                            // Create dash trail effect
+                            if (e.isDashing) {
+                                store.activeEffects.push(createEffect('zombieDashTrail', e.x, e.y, e.r, {
+                                    color: e.color2 || '#2d5a42',
+                                    alpha: 0.6
+                                }));
+                            }
+                            
+                            // Play gargle attack sound when close to player (no cooldown/spam cap)
+                            if (store.player) {
+                                const distToPlayer = Math.hypot(e.x - store.player.x, e.y - store.player.y);
+                                if (distToPlayer < 80) { // Within 80px proximity
+                                    playSound('zombieGargleAttack');
+                                }
+                            }
                         } else if (e.type === 'manta') {
                             e.t += dt;
 
@@ -21330,6 +22254,15 @@
                 renderVoidStepSystems(ctx);
                 renderImpactSystem(ctx);
 
+                // Draw asteroid artillery impact craters (on ground)
+                renderImpactCraters(ctx);
+                
+                // Draw asteroid artillery projectiles
+                renderAsteroidProjectiles(ctx);
+                
+                // Draw asteroid artillery targeting overlay (drawn on top of everything)
+                renderAsteroidTargeting(ctx);
+
                 // Draw element toggle orb
                 drawBulletElementToggle();
 
@@ -21595,8 +22528,9 @@
                     }
                 }
 
-                explode(enemy.x, enemy.y);
-
+                // Don't call explode() here - it plays duplicate explosion sound
+                // Enemy death sounds are already played in the bullet collision code
+                
                 applyRapidEnemyAdaptation(enemy, impactTime);
             }
 
@@ -33135,86 +34069,137 @@
                         break;
                     }
                     case "zombie": {
-                        // Cyberpunk zombie with glowing neon effects
+                        // Menacing undead horror with dark palette and glowing eyes
                         const time = performance.now() / 1000;
-                        const shamble = Math.sin(c * 3) * 0.15; // Shambling animation
+                        const shamble = Math.sin(c * 3) * 0.2; // Shambling animation
+                        const breathe = Math.sin(time * 2) * 0.08; // Breathing effect
                         
-                        // Glowing aura
+                        // Dark ominous aura
                         ctx.save();
-                        ctx.globalAlpha = 0.3 + 0.2 * Math.sin(time * 4);
-                        const auraGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, a * 1.4);
-                        auraGrad.addColorStop(0, '#00ff88');
-                        auraGrad.addColorStop(1, 'rgba(0, 255, 136, 0)');
+                        ctx.globalAlpha = 0.4 + 0.2 * Math.sin(time * 3);
+                        const auraGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, a * 1.6);
+                        auraGrad.addColorStop(0, 'rgba(26, 61, 46, 0.8)');
+                        auraGrad.addColorStop(0.5, 'rgba(45, 90, 66, 0.4)');
+                        auraGrad.addColorStop(1, 'rgba(26, 61, 46, 0)');
                         ctx.fillStyle = auraGrad;
                         ctx.beginPath();
-                        ctx.arc(0, 0, a * 1.4, 0, Math.PI * 2);
+                        ctx.arc(0, 0, a * 1.6, 0, Math.PI * 2);
                         ctx.fill();
                         ctx.restore();
                         
-                        // Body - rounded rectangle with decay
-                        ctx.fillStyle = '#1a4d3a';
-                        ctx.strokeStyle = n;
+                        // Body - decayed, ragged form with uneven edges
+                        ctx.fillStyle = n; // Dark greenish body (#1a3d2e)
+                        ctx.strokeStyle = e.color2 || '#2d5a42';
+                        ctx.lineWidth = 2.5;
+                        ctx.beginPath();
+                        
+                        // Irregular, menacing body shape
+                        const bodyPoints = [];
+                        const numPoints = 12;
+                        for (let i = 0; i < numPoints; i++) {
+                            const angle = (i / numPoints) * Math.PI * 2;
+                            const radiusVariation = 0.85 + Math.sin(angle * 3 + time * 2) * 0.15;
+                            const px = Math.cos(angle) * a * 0.9 * radiusVariation;
+                            const py = Math.sin(angle) * a * 1.1 * radiusVariation + breathe * a;
+                            bodyPoints.push({ x: px, y: py });
+                        }
+                        
+                        ctx.moveTo(bodyPoints[0].x, bodyPoints[0].y);
+                        for (let i = 1; i < bodyPoints.length; i++) {
+                            ctx.lineTo(bodyPoints[i].x, bodyPoints[i].y);
+                        }
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.stroke();
+                        
+                        // Dark veins/rot patterns
+                        ctx.strokeStyle = '#0d2217';
+                        ctx.lineWidth = 1.5;
+                        ctx.globalAlpha = 0.6;
+                        for (let i = 0; i < 5; i++) {
+                            const angle = (i / 5) * Math.PI * 2;
+                            ctx.beginPath();
+                            ctx.moveTo(0, 0);
+                            ctx.lineTo(Math.cos(angle) * a * 0.7, Math.sin(angle) * a * 0.8);
+                            ctx.stroke();
+                        }
+                        ctx.globalAlpha = 1;
+                        
+                        // Head - slightly offset from shambling, decayed
+                        ctx.save();
+                        ctx.translate(shamble * a * 0.4, -a * 0.9);
+                        
+                        // Decayed skull-like head
+                        ctx.fillStyle = e.color2 || '#2d5a42';
+                        ctx.strokeStyle = '#0d2217';
                         ctx.lineWidth = 2;
                         ctx.beginPath();
-                        ctx.roundRect(-a * 0.7, -a * 0.4, a * 1.4, a * 1.6, a * 0.2);
+                        
+                        // Irregular head shape with jagged edges
+                        const headPoints = 8;
+                        for (let i = 0; i < headPoints; i++) {
+                            const angle = (i / headPoints) * Math.PI * 2;
+                            const rad = a * 0.55 * (0.9 + Math.sin(angle * 4) * 0.1);
+                            const px = Math.cos(angle) * rad;
+                            const py = Math.sin(angle) * rad;
+                            if (i === 0) ctx.moveTo(px, py);
+                            else ctx.lineTo(px, py);
+                        }
+                        ctx.closePath();
                         ctx.fill();
                         ctx.stroke();
                         
-                        // Cybernetic implants/circuits
-                        ctx.strokeStyle = n;
-                        ctx.lineWidth = 1.5;
-                        ctx.beginPath();
-                        ctx.moveTo(-a * 0.5, -a * 0.2);
-                        ctx.lineTo(a * 0.5, -a * 0.2);
-                        ctx.moveTo(-a * 0.3, 0);
-                        ctx.lineTo(a * 0.3, 0);
-                        ctx.moveTo(-a * 0.4, a * 0.3);
-                        ctx.lineTo(a * 0.4, a * 0.3);
-                        ctx.stroke();
+                        // Menacing glowing red eyes
+                        const eyeGlow = 0.7 + 0.3 * Math.sin(e.eyeGlowPhase || time * 5);
+                        ctx.fillStyle = e.eyeColor || '#ff3333';
+                        ctx.shadowColor = e.eyeColor || '#ff3333';
+                        ctx.shadowBlur = 12 * eyeGlow;
                         
-                        // Head - slightly offset from shambling
-                        ctx.save();
-                        ctx.translate(shamble * a * 0.3, -a * 0.8);
-                        
-                        ctx.fillStyle = '#2a5d4a';
-                        ctx.strokeStyle = n;
+                        // Left eye - larger, more menacing
                         ctx.beginPath();
-                        ctx.arc(0, 0, a * 0.5, 0, Math.PI * 2);
+                        ctx.ellipse(-a * 0.22, -a * 0.08, a * 0.15, a * 0.18, 0, 0, Math.PI * 2);
                         ctx.fill();
-                        ctx.stroke();
                         
-                        // Glowing cyber-eyes
-                        ctx.fillStyle = n;
-                        ctx.shadowColor = n;
-                        ctx.shadowBlur = 8;
+                        // Right eye
                         ctx.beginPath();
-                        ctx.arc(-a * 0.2, -a * 0.1, a * 0.12, 0, Math.PI * 2);
-                        ctx.arc(a * 0.2, -a * 0.1, a * 0.12, 0, Math.PI * 2);
+                        ctx.ellipse(a * 0.22, -a * 0.08, a * 0.15, a * 0.18, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Bright eye centers
+                        ctx.shadowBlur = 16 * eyeGlow;
+                        ctx.fillStyle = '#ff6666';
+                        ctx.beginPath();
+                        ctx.arc(-a * 0.22, -a * 0.1, a * 0.08, 0, Math.PI * 2);
+                        ctx.arc(a * 0.22, -a * 0.1, a * 0.08, 0, Math.PI * 2);
                         ctx.fill();
                         ctx.shadowBlur = 0;
                         
-                        // Stitched mouth
-                        ctx.strokeStyle = n;
-                        ctx.lineWidth = 2;
+                        // Gaping, jagged mouth
+                        ctx.fillStyle = '#0d2217';
                         ctx.beginPath();
-                        ctx.moveTo(-a * 0.25, a * 0.2);
-                        ctx.lineTo(a * 0.25, a * 0.2);
-                        ctx.stroke();
+                        ctx.moveTo(-a * 0.3, a * 0.18);
+                        ctx.quadraticCurveTo(0, a * 0.35, a * 0.3, a * 0.18);
+                        ctx.lineTo(a * 0.25, a * 0.22);
+                        ctx.quadraticCurveTo(0, a * 0.28, -a * 0.25, a * 0.22);
+                        ctx.closePath();
+                        ctx.fill();
                         
-                        // Stitches
-                        ctx.lineWidth = 1;
+                        // Jagged teeth
+                        ctx.fillStyle = '#d4d4d4';
                         for (let i = -2; i <= 2; i++) {
                             ctx.beginPath();
-                            ctx.moveTo(i * a * 0.1, a * 0.15);
-                            ctx.lineTo(i * a * 0.1, a * 0.25);
-                            ctx.stroke();
+                            ctx.moveTo(i * a * 0.12, a * 0.18);
+                            ctx.lineTo(i * a * 0.12 - a * 0.04, a * 0.26);
+                            ctx.lineTo(i * a * 0.12 + a * 0.04, a * 0.26);
+                            ctx.closePath();
+                            ctx.fill();
                         }
                         
                         ctx.restore();
                         
-                        // Shambling arms
-                        ctx.strokeStyle = n;
-                        ctx.lineWidth = 3;
+                        // Menacing clawed arms reaching forward
+                        ctx.strokeStyle = e.color2 || '#2d5a42';
+                        ctx.lineWidth = 4;
                         
                         // Left arm
                         ctx.save();
@@ -34621,6 +35606,29 @@
                                 ctx.lineTo(sx, sy);
                                 ctx.stroke();
                             });
+                            ctx.restore();
+                        };
+                        break;
+                    case "zombieDashTrail":
+                        effect.maxLife = 0.3;
+                        effect.life = effect.maxLife;
+                        effect.radius = radius || 14;
+                        effect.color = opts.color || '#2d5a42';
+                        effect.alpha = opts.alpha || 0.6;
+                        effect.step = function (dt) {
+                            this.life -= dt;
+                            if (this.life <= 0) this.isActive = false;
+                        };
+                        effect.draw = function () {
+                            const t = 1 - (this.life / this.maxLife);
+                            const fadeAlpha = this.alpha * (1 - t);
+                            ctx.save();
+                            ctx.translate(this.x, this.y);
+                            ctx.globalAlpha = fadeAlpha;
+                            ctx.fillStyle = this.color;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, this.radius * (1 - t * 0.3), 0, Math.PI * 2);
+                            ctx.fill();
                             ctx.restore();
                         };
                         break;
@@ -36336,6 +37344,12 @@
                             ? upgrade.baseCost + (currentLevel * upgrade.increment)
                             : Math.floor(upgrade.baseCost * Math.pow(upgrade.scale, currentLevel));
                         return { cost, available: availableGold >= cost, premium: true, level: currentLevel };
+                    }
+                    
+                    // Handle items with dynamic cost function (e.g., asteroid_artillery)
+                    if (typeof upgrade.cost === 'function') {
+                        const cost = upgrade.cost();
+                        return { cost, available: Number.isFinite(cost) && availableGold >= cost, premium: true };
                     }
                     
                     return { cost: upgrade.cost, available: availableGold >= upgrade.cost, premium: true };
@@ -43194,6 +44208,12 @@
             }
 
             function resumeGame(force = false) {
+                // Don't resume if namePanel is still open (player hasn't entered their name yet)
+                const namePanel = q('namePanel');
+                if (namePanel && !namePanel.classList.contains('hide')) {
+                    return; // Keep game paused until name is entered
+                }
+                
                 // Force resume when closing specific panels, otherwise check if all panels are closed
                 if (force || !isAnyPanelOpen()) {
                     clearPanelStack();
@@ -45822,7 +46842,14 @@
                     clearTimeout(store.world.mechForgePulseTimeout);
                     store.world.mechForgePulseTimeout = null;
                 }
-                resumeGame(true);  // Force resume to avoid panel visibility race condition
+                
+                // Check if artillery strikes are queued
+                if (asteroidTargeting.queue.length > 0) {
+                    // Start processing artillery queue instead of resuming game
+                    processNextArtilleryInQueue();
+                } else {
+                    resumeGame(true);  // Force resume to avoid panel visibility race condition
+                }
             };
             q("closeShopTopBtn").addEventListener("click", closeShopLogic);
             q("closeShop").addEventListener("click", closeShopLogic);
@@ -46151,7 +47178,15 @@
             q("fsEnterBtn").addEventListener('click', () => { const r = document.documentElement; if (!document.fullscreenElement) { if (r.requestFullscreen) r.requestFullscreen(); else if (r.webkitRequestFullscreen) r.webkitRequestFullscreen(); else if (r.msRequestFullscreen) r.msRequestFullscreen() } else { if (document.exitFullscreen) document.exitFullscreen() } });
 
             q('pauseBtn').addEventListener('click', () => {
-                if (store.isGameOver || isAnyPanelOpen()) return;
+                if (store.isGameOver) return;
+                
+                // Don't allow unpausing if panels are open
+                if (!store.isPaused && isAnyPanelOpen()) return;
+                if (store.isPaused && isAnyPanelOpen()) return;
+                
+                // Don't allow pausing/unpausing during asteroid targeting
+                if (asteroidTargeting.active) return;
+                
                 store.isPaused = !store.isPaused;
                 q('pauseBtn').textContent = store.isPaused ? 'RESUME' : 'PAUSE';
             });
