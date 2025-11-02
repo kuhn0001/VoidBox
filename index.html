@@ -21302,7 +21302,9 @@
                         const glowRadius = b.r * 2;
                         const gradient = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, glowRadius);
                         gradient.addColorStop(0.3, b.col);
-                        gradient.addColorStop(1, b.col + '00');
+                        // Handle both hex (#RRGGBB) and rgb() format colors
+                        const transparentColor = b.col.startsWith('#') ? b.col + '00' : b.col.replace('rgb(', 'rgba(').replace(')', ', 0)');
+                        gradient.addColorStop(1, transparentColor);
                         ctx.fillStyle = gradient;
                         ctx.beginPath();
                         ctx.arc(b.x, b.y, glowRadius, 0, Math.PI * 2);
