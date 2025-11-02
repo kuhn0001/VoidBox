@@ -4142,13 +4142,14 @@
             }
 
             // --- PIXI SETUP ---
-            let pixiApp, particleContainer, bulletContainer, cubeBurglarContainer;
+            let pixiApp, particleContainer, bulletContainer, cubeBurglarContainer, bossContainer;
             const bulletTextures = {};
             let particleTexture;
             const bulletSpritePool = [];
             const particleSpritePool = [];
             const activeBulletSprites = new Map();
             const activeParticleSprites = new Map();
+            let hiveBossGraphics = null; // Reusable graphics for Hive Sovereign
             (() => {
                 try {
                     const stage = document.querySelector('.stage');
@@ -4176,10 +4177,12 @@
                         particleContainer = new PIXI.Container();
                         bulletContainer = new PIXI.Container();
                         cubeBurglarContainer = new PIXI.Container();
+                        bossContainer = new PIXI.Container();
                         
                         pixiApp.stage.addChild(particleContainer);
                         pixiApp.stage.addChild(bulletContainer);
                         pixiApp.stage.addChild(cubeBurglarContainer);
+                        pixiApp.stage.addChild(bossContainer);
 
                         console.log('✅ PixiJS initialized for bullet rendering');
                         
@@ -4615,6 +4618,112 @@
                     resizeGameSurfaces();
                 }
             }, 750);
+
+            // ═══════════════════════════════════════════════════════════════════════
+            // PIXI BOSS RENDERING - High Performance Hive Sovereign
+            // ═══════════════════════════════════════════════════════════════════════
+            function renderHiveBossWithPixi(boss) {
+                if (!pixiApp || !bossContainer || boss.behavior !== 'broodlord') return false;
+                
+                try {
+                    // Create graphics object once and reuse it
+                    if (!hiveBossGraphics) {
+                        hiveBossGraphics = new PIXI.Graphics();
+                        bossContainer.addChild(hiveBossGraphics);
+                    }
+                    
+                    const time = performance.now() / 1000;
+                    const pulseFactor = 1 + 0.08 * Math.sin(time * 3);
+                    
+                    hiveBossGraphics.clear();
+                    hiveBossGraphics.x = boss.x;
+                    hiveBossGraphics.y = boss.y;
+                    
+                    // Main carapace body with gradient approximation
+                    const bodyColors = [0xFF6B35, 0xFF8E53, 0x8B4A9C, 0x2D1B69];
+                    hiveBossGraphics.ellipse(0, 0, boss.r * 1.2 * pulseFactor, boss.r * 0.8);
+                    hiveBossGraphics.fill({ color: bodyColors[1], alpha: 1 });
+                    
+                    // Border glow
+                    hiveBossGraphics.ellipse(0, 0, boss.r * 1.2 * pulseFactor, boss.r * 0.8);
+                    hiveBossGraphics.stroke({ width: 3, color: 0xFF6B35, alpha: 1 });
+                    
+                    // Segmented armor plating - simplified
+                    for (let i = -2; i <= 2; i++) {
+                        const segmentPulse = 0.9 + 0.1 * Math.sin(time * 4 + i * 0.5);
+                        hiveBossGraphics.ellipse(0, i * boss.r * 0.25, boss.r * 1.1 * pulseFactor * segmentPulse, boss.r * 0.15);
+                    }
+                    hiveBossGraphics.stroke({ width: 2, color: 0xFF8E53, alpha: 0.8 });
+                    
+                    // Energy claws - simplified (fewer iterations)
+                    for (let side = -1; side <= 1; side += 2) {
+                        for (let i = 0; i < 3; i++) {
+                            const angle = side * (Math.PI / 6 + i * Math.PI / 12) + Math.sin(time * 2 + i) * 0.15;
+                            const clawX = Math.cos(angle) * boss.r * 0.7;
+                            const clawY = (i - 1) * boss.r * 0.4 + Math.sin(angle) * boss.r * 0.5;
+                            
+                            hiveBossGraphics.moveTo(side * boss.r * 0.8, clawY);
+                            hiveBossGraphics.lineTo(side * boss.r * 0.8 + clawX, clawY);
+                        }
+                    }
+                    hiveBossGraphics.stroke({ width: 3, color: 0xFF8E53, alpha: 1 });
+                    
+                    // Energy eyes - simplified
+                    const eyeGlow = 0.6 + 0.4 * Math.sin(time * 5);
+                    for (let side = -1; side <= 1; side += 2) {
+                        // Outer glow
+                        hiveBossGraphics.circle(side * boss.r * 0.4, -boss.r * 0.3, boss.r * 0.18 * eyeGlow);
+                        hiveBossGraphics.fill({ color: 0xFF6B35, alpha: eyeGlow * 0.5 });
+                        
+                        // Main eye
+                        hiveBossGraphics.circle(side * boss.r * 0.4, -boss.r * 0.3, boss.r * 0.12);
+                        hiveBossGraphics.fill({ color: 0xFFFFFF, alpha: 1 });
+                        
+                        // Pupil
+                        hiveBossGraphics.circle(side * boss.r * 0.4, -boss.r * 0.3, boss.r * 0.06);
+                        hiveBossGraphics.fill({ color: 0x2D1B69, alpha: 1 });
+                    }
+                    
+                    // Mandibles - simplified
+                    const mandibleOffset = Math.sin(time * 3) * 0.12;
+                    for (let side = -1; side <= 1; side += 2) {
+                        const angle = side * (Math.PI / 8 + mandibleOffset);
+                        const mandibleX = side * boss.r * 0.2 + Math.cos(angle) * boss.r * 0.35;
+                        const mandibleY = boss.r * 0.2 + Math.sin(angle) * boss.r * 0.35;
+                        
+                        hiveBossGraphics.moveTo(side * boss.r * 0.2, boss.r * 0.2);
+                        hiveBossGraphics.lineTo(mandibleX, mandibleY);
+                    }
+                    hiveBossGraphics.stroke({ width: 2, color: 0xFF8E53, alpha: 1 });
+                    
+                    // HP Bar rendering
+                    const hpRatio = Math.max(0, boss.hp / boss.hpMax);
+                    const barWidth = boss.r * 2.2;
+                    const barHeight = 8;
+                    const barY = -boss.r - 25;
+                    
+                    // Background
+                    hiveBossGraphics.rect(-barWidth / 2, barY, barWidth, barHeight);
+                    hiveBossGraphics.fill({ color: 0x000000, alpha: 0.6 });
+                    
+                    // HP fill with color gradient based on health
+                    let hpColor = 0x00ff00; // Green
+                    if (hpRatio < 0.5) hpColor = 0xffaa00; // Orange
+                    if (hpRatio < 0.25) hpColor = 0xff0000; // Red
+                    
+                    hiveBossGraphics.rect(-barWidth / 2, barY, barWidth * hpRatio, barHeight);
+                    hiveBossGraphics.fill({ color: hpColor, alpha: 0.9 });
+                    
+                    // Border
+                    hiveBossGraphics.rect(-barWidth / 2, barY, barWidth, barHeight);
+                    hiveBossGraphics.stroke({ width: 2, color: 0xffffff, alpha: 0.8 });
+                    
+                    return true; // Successfully rendered with PixiJS
+                } catch (err) {
+                    console.error('❌ Hive Boss PixiJS render error:', err);
+                    return false; // Fall back to canvas rendering
+                }
+            }
 
             // Track stage element resizes that don't trigger window resize (e.g., UI overlays)
             if (typeof ResizeObserver !== 'undefined' && stageElement) {
@@ -13861,6 +13970,136 @@
                         return tombstone;
                     };
                 }
+                
+                // Debug: Spawn HIVE SOVEREIGN boss (4th boss - broodlord)
+                if (!window.spawnHiveBoss) {
+                    window.spawnHiveBoss = function(hpScale = 1) {
+                        // Clear existing boss if any
+                        if (store.boss) {
+                            console.log('⚠️ Removing existing boss first');
+                            store.boss = null;
+                            if (bossContainer && hiveBossGraphics) {
+                                bossContainer.removeChild(hiveBossGraphics);
+                                hiveBossGraphics.destroy();
+                                hiveBossGraphics = null;
+                            }
+                        }
+                        
+                        // Create Hive Sovereign boss (4th boss in rotation)
+                        const bossDef = {
+                            name: 'HIVE SOVEREIGN',
+                            baseHp: 8500,
+                            r: 85,
+                            behavior: 'broodlord',
+                            color: '#2d5016',
+                            key: 'hive_sovereign'
+                        };
+                        
+                        const hp = bossDef.baseHp * hpScale;
+                        const boss = {
+                            ...bossDef,
+                            x: W / 2,
+                            y: 100,
+                            vx: 0,
+                            vy: 80,
+                            hp: hp,
+                            hpMax: hp,
+                            t: 0,
+                            fireT: 0,
+                            attackPhase: 0,
+                            moveT: 0,
+                            instanceId: `debug-hive-${Date.now()}`,
+                            spawnWave: store.world ? store.world.wave : 20,
+                            spawnedAt: performance.now()
+                        };
+                        
+                        store.boss = boss;
+                        if (!store.poisonPuddles) store.poisonPuddles = [];
+                        
+                        console.log('🕷️ HIVE SOVEREIGN spawned! (4th boss - broodlord behavior)', boss);
+                        console.log('💡 PixiJS rendering enabled for performance boost');
+                        announce('🕷️ DEBUG: HIVE SOVEREIGN SPAWNED');
+                        return boss;
+                    };
+                }
+                
+                // Debug: Spawn SHADOW MIRROR CLONE boss (5th boss - shadow_clone)
+                if (!window.spawnCloneBoss) {
+                    window.spawnCloneBoss = function(hpScale = 1) {
+                        // Clear existing boss if any
+                        if (store.boss) {
+                            console.log('⚠️ Removing existing boss first');
+                            store.boss = null;
+                            if (bossContainer && hiveBossGraphics) {
+                                bossContainer.removeChild(hiveBossGraphics);
+                                hiveBossGraphics.destroy();
+                                hiveBossGraphics = null;
+                            }
+                        }
+                        
+                        // Create Shadow Mirror Clone boss (5th boss in rotation)
+                        const bossDef = {
+                            name: 'SHADOW MIRROR',
+                            baseHp: 9600,
+                            r: 58,
+                            behavior: 'shadow_clone',
+                            color: '#cbd4ff',
+                            key: 'shadow_mirror'
+                        };
+                        
+                        const hp = bossDef.baseHp * hpScale;
+                        const boss = {
+                            ...bossDef,
+                            x: W / 2,
+                            y: 100,
+                            vx: 0,
+                            vy: 80,
+                            hp: hp,
+                            hpMax: hp,
+                            t: 0,
+                            fireT: 0,
+                            moveT: 0,
+                            dashTimer: 0,
+                            dashVX: 0,
+                            dashVY: 0,
+                            hallucinationTimer: 8 + Math.random() * 4,
+                            hallucinations: [],
+                            instanceId: `debug-clone-${Date.now()}`,
+                            spawnWave: store.world ? store.world.wave : 25,
+                            spawnedAt: performance.now()
+                        };
+                        
+                        store.boss = boss;
+                        
+                        console.log('👤 SHADOW MIRROR CLONE spawned! (5th boss - shadow_clone behavior)', boss);
+                        console.log('💡 Features: Hallucinations, multishot attacks, dash ability');
+                        announce('👤 DEBUG: SHADOW MIRROR SPAWNED');
+                        return boss;
+                    };
+                }
+                
+                // Debug: Enable ice bullets for testing
+                if (!window.enableIceBullets) {
+                    window.enableIceBullets = () => {
+                        const player = store.player;
+                        if (!player) {
+                            console.error('❌ Player not initialized');
+                            return;
+                        }
+                        player.hasIceBullets = true;
+                        player.iceLevel = 3; // Max level for testing
+                        player.dmgMult = (player.dmgMult || 1) * 1.1;
+                        if (!player.bulletElementToggles) {
+                            player.bulletElementToggles = { ice: true, poison: false, fire: false };
+                        } else {
+                            player.bulletElementToggles.ice = true;
+                        }
+                        console.log('❄️ Ice bullets enabled and toggled ON!');
+                        console.log('Ice Level:', player.iceLevel);
+                        console.log('Toggles:', player.bulletElementToggles);
+                        announce('❄️ DEBUG: ICE BULLETS ENABLED');
+                    };
+                }
 
 
                 // Clear poison puddles at start of each wave for clean slate
@@ -19156,6 +19395,14 @@
                 });
 
                 store.boss = null;
+                
+                // Clean up PixiJS boss graphics
+                if (bossContainer && hiveBossGraphics) {
+                    bossContainer.removeChild(hiveBossGraphics);
+                    hiveBossGraphics.destroy();
+                    hiveBossGraphics = null;
+                }
+                
                 announce('⚡ GUARDIAN DEFEATED ⚡');
                 explode(bossX, bossY, true);
 
@@ -19501,6 +19748,13 @@
                 store.boss = null; store.bullets = []; store.fragmentProjectiles = []; store.eBullets = []; store.enemies = []; store.powerups = []; store.starProjectiles = []; store.pendingStarSalvos = []; store.pendingStarClones = []; store.juggernautBombs = [];
                 store.lastBossSnapshot = null;
                 store.lastBossDefeatId = null;
+                
+                // Clean up PixiJS boss graphics on reset
+                if (bossContainer && hiveBossGraphics) {
+                    bossContainer.removeChild(hiveBossGraphics);
+                    hiveBossGraphics.destroy();
+                    hiveBossGraphics = null;
+                }
                 store.drones = []; store.hounds = []; store.shadowHounds = []; store.voidRifts = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
                 store.lightningBolts = []; store.empNovas = []; store.flamePulses = []; store.poisonPuddles = []; store.goldenOrbs = []; store.shadowEchoes = [];
                 store.championMinions = [];
@@ -20975,11 +21229,12 @@
                 graphics.fill({ color: chassisGradientColors[0], alpha: 0.3 });
                 
                 // Armor plating lines
-                graphics.lineStyle(1, metalColor);
+                graphics.setStrokeStyle({ width: 1, color: metalColor });
                 for (let i = -2; i <= 2; i++) {
                     graphics.moveTo(i * r * 0.2, -r * 0.8);
                     graphics.lineTo(i * r * 0.15, r * 0.4);
                 }
+                graphics.stroke();
                 
                 // Rivets
                 const rivetColor = isElite ? 0xff0088 : 0x5f9ea0;
@@ -32997,6 +33252,15 @@
             }
 
             function drawBoss(t) {
+                // DISABLED: PixiJS rendering causes layering issues - boss renders above particles/effects
+                // The Canvas2D rendering works better for proper visual layering
+                // if (t.behavior === "broodlord") {
+                //     const pixiRendered = renderHiveBossWithPixi(t);
+                //     if (pixiRendered) {
+                //         return;
+                //     }
+                // }
+                
                 // Special rendering for Heat Death of the Universe
                 if (t.isHeatDeath) {
                     // Darken the top half of screen with haze effect
@@ -33333,6 +33597,7 @@
                     ctx.shadowBlur = 0;
 
                 } else if (t.behavior === "broodlord") {
+                    // Canvas fallback rendering for HIVE SOVEREIGN (PixiJS already tried at function start)
                     // Draw cyberpunk HIVE SOVEREIGN - sleek and menacing
                     const time = performance.now() / 1000;
                     const pulseFactor = 1 + 0.08 * Math.sin(time * 3);
