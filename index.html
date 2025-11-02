@@ -10280,23 +10280,53 @@
                 const crater = {
                     x: asteroid.targetX,
                     y: asteroid.targetY,
-                    primaryRadius: 25, // Small direct hit zone - instant kill
+                    primaryRadius: 17.5, // 30% smaller - Small direct hit zone - instant kill
                     secondaryRadius: 0,
-                    maxSecondaryRadius: 120, // Wide blast wave - 50% damage
+                    maxSecondaryRadius: 84, // 30% smaller - Wide blast wave - 50% damage
                     damage: asteroid.damage,
-                    expandSpeed: 500,
-                    duration: 0.8,
+                    expandSpeed: 700, // Faster expansion
+                    duration: 0.3, // Much shorter - just a flash
                     timer: 0,
                     primaryProcessed: false,
-                    rings: []
+                    rings: [],
+                    smokeParticles: [],
+                    fireParticles: []
                 };
                 
                 // Create expanding shockwave rings
-                for (let i = 0; i < 3; i++) {
+                for (let i = 0; i < 2; i++) {
                     crater.rings.push({
-                        delay: i * 0.08,
+                        delay: i * 0.05,
                         timer: 0,
                         radius: 0
+                    });
+                }
+                
+                // Create smoke particles
+                for (let i = 0; i < 12; i++) {
+                    const angle = (i / 12) * Math.PI * 2 + Math.random() * 0.5;
+                    crater.smokeParticles.push({
+                        x: crater.x + Math.cos(angle) * (Math.random() * 15),
+                        y: crater.y + Math.sin(angle) * (Math.random() * 15),
+                        vx: Math.cos(angle) * (20 + Math.random() * 30),
+                        vy: Math.sin(angle) * (20 + Math.random() * 30) - 40,
+                        size: 4 + Math.random() * 8,
+                        life: Math.random() * 0.3 + 0.2,
+                        maxLife: Math.random() * 0.3 + 0.2
+                    });
+                }
+                
+                // Create fire particles
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2 + Math.random() * 0.5;
+                    crater.fireParticles.push({
+                        x: crater.x + Math.cos(angle) * (Math.random() * 10),
+                        y: crater.y + Math.sin(angle) * (Math.random() * 10),
+                        vx: Math.cos(angle) * (30 + Math.random() * 20),
+                        vy: Math.sin(angle) * (30 + Math.random() * 20) - 20,
+                        size: 3 + Math.random() * 5,
+                        life: Math.random() * 0.2 + 0.1,
+                        maxLife: Math.random() * 0.2 + 0.1
                     });
                 }
                 
@@ -10376,16 +10406,44 @@
                     const crater = store.impactCraters[i];
                     crater.timer += dt;
                     
-                    // Expand secondary blast wave
+                    // Update smoke particles
+                    if (crater.smokeParticles) {
+                        crater.smokeParticles.forEach(particle => {
+                            if (particle.life > 0) {
+                                particle.x += particle.vx * dt;
+                                particle.y += particle.vy * dt;
+                                particle.vy += 30 * dt; // Rising smoke slows down
+                                particle.vx *= 0.95; // Air resistance
+                                particle.size += 8 * dt; // Smoke expands
+                                particle.life -= dt;
+                            }
+                        });
+                    }
+                    
+                    // Update fire particles
+                    if (crater.fireParticles) {
+                        crater.fireParticles.forEach(particle => {
+                            if (particle.life > 0) {
+                                particle.x += particle.vx * dt;
+                                particle.y += particle.vy * dt;
+                                particle.vy += 80 * dt; // Gravity on fire
+                                particle.vx *= 0.92;
+                                particle.size -= 6 * dt; // Fire shrinks
+                                particle.life -= dt;
+                            }
+                        });
+                    }
+                    
+                    // Expand secondary blast wave faster
                     if (crater.secondaryRadius < crater.maxSecondaryRadius) {
                         crater.secondaryRadius = Math.min(crater.maxSecondaryRadius, crater.secondaryRadius + crater.expandSpeed * dt);
                     }
                     
-                    // Update shockwave rings
+                    // Update shockwave rings faster
                     crater.rings.forEach(ring => {
                         ring.timer += dt;
                         if (ring.timer > ring.delay) {
-                            ring.radius = Math.min(crater.maxSecondaryRadius * 1.3, ring.radius + 700 * dt);
+                            ring.radius = Math.min(crater.maxSecondaryRadius * 1.3, ring.radius + 1000 * dt);
                         }
                     });
                     
@@ -10467,6 +10525,8 @@
             function renderAsteroidProjectiles(ctx) {
                 if (!store.asteroidProjectiles || store.asteroidProjectiles.length === 0) return;
                 
+                const time = performance.now() / 1000;
+                
                 // First pass: Draw shadows on the ground
                 store.asteroidProjectiles.forEach(ast => {
                     if (ast.shadowAlpha > 0 && !ast.impacted) {
@@ -10487,39 +10547,110 @@
                     }
                 });
                 
-                // Second pass: Draw asteroids
+                // Second pass: Draw cosmic meteor trails and asteroids
                 store.asteroidProjectiles.forEach(ast => {
                     if (ast.impacted) return;
                     
+                    // Calculate trail direction (opposite of velocity)
+                    const dx = ast.targetX - ast.x;
+                    const dy = ast.targetY - ast.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const trailDirX = -dx / dist;
+                    const trailDirY = -dy / dist;
+                    
+                    ctx.save();
+                    
+                    // Draw long cosmic trail with star streaks
+                    const trailLength = ast.r * 8;
+                    for (let i = 0; i < 5; i++) {
+                        const offset = (i / 5) * trailLength;
+                        const trailX = ast.x + trailDirX * offset;
+                        const trailY = ast.y + trailDirY * offset;
+                        const alpha = 0.4 * (1 - i / 5) * (0.7 + Math.sin(time * 10 + i) * 0.3);
+                        
+                        ctx.globalAlpha = alpha;
+                        const gradient = ctx.createRadialGradient(trailX, trailY, 0, trailX, trailY, ast.r * 2);
+                        gradient.addColorStop(0, '#ff88ff');
+                        gradient.addColorStop(0.3, '#ff44ff');
+                        gradient.addColorStop(0.6, '#ff0088');
+                        gradient.addColorStop(1, 'rgba(255, 0, 136, 0)');
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(trailX, trailY, ast.r * 2, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    
+                    // Bright star trails - thin streaks
+                    ctx.globalAlpha = 0.8;
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.lineCap = 'round';
+                    for (let i = 0; i < 8; i++) {
+                        const angle = (i / 8) * Math.PI * 2;
+                        const sparkOffset = ast.r * 3;
+                        const sparkX = ast.x + Math.cos(angle) * ast.r + trailDirX * sparkOffset;
+                        const sparkY = ast.y + Math.sin(angle) * ast.r + trailDirY * sparkOffset;
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(ast.x + Math.cos(angle) * ast.r, ast.y + Math.sin(angle) * ast.r);
+                        ctx.lineTo(sparkX, sparkY);
+                        ctx.stroke();
+                    }
+                    
+                    ctx.restore();
+                    
+                    // Draw meteor core with cosmic glow
                     ctx.save();
                     ctx.translate(ast.x, ast.y);
                     ctx.rotate(ast.rotation);
                     
-                    // Fiery trail
-                    const trailLength = ast.r * 4;
-                    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, trailLength);
-                    gradient.addColorStop(0, 'rgba(255, 200, 100, 0.9)');
-                    gradient.addColorStop(0.5, 'rgba(255, 100, 0, 0.6)');
-                    gradient.addColorStop(1, 'rgba(255, 50, 0, 0)');
-                    ctx.fillStyle = gradient;
+                    // Outer cosmic aura
+                    ctx.globalCompositeOperation = 'lighter';
+                    const auraSize = ast.r * 3;
+                    const auraGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, auraSize);
+                    auraGradient.addColorStop(0, 'rgba(255, 100, 255, 0.9)');
+                    auraGradient.addColorStop(0.3, 'rgba(255, 50, 200, 0.6)');
+                    auraGradient.addColorStop(0.6, 'rgba(200, 100, 255, 0.3)');
+                    auraGradient.addColorStop(1, 'rgba(100, 50, 255, 0)');
+                    ctx.fillStyle = auraGradient;
                     ctx.beginPath();
-                    ctx.arc(0, 0, trailLength, 0, Math.PI * 2);
+                    ctx.arc(0, 0, auraSize, 0, Math.PI * 2);
                     ctx.fill();
                     
-                    // Draw small asteroid core
-                    ctx.fillStyle = '#8B4513';
-                    ctx.strokeStyle = '#FF6600';
-                    ctx.lineWidth = 1;
+                    // Bright white-hot core
+                    ctx.shadowColor = '#ff88ff';
+                    ctx.shadowBlur = 20;
+                    const coreGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, ast.r * 1.5);
+                    coreGradient.addColorStop(0, '#ffffff');
+                    coreGradient.addColorStop(0.4, '#ffddff');
+                    coreGradient.addColorStop(0.7, '#ff66ff');
+                    coreGradient.addColorStop(1, '#ff0088');
+                    ctx.fillStyle = coreGradient;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, ast.r * 1.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                    
+                    // Rocky asteroid texture
+                    ctx.globalCompositeOperation = 'source-over';
+                    ctx.fillStyle = '#4a2f5f';
+                    ctx.strokeStyle = '#ff88dd';
+                    ctx.lineWidth = 1.5;
                     
                     ctx.beginPath();
                     ctx.arc(0, 0, ast.r, 0, Math.PI * 2);
                     ctx.fill();
                     ctx.stroke();
                     
-                    // Hot glow
-                    ctx.fillStyle = 'rgba(255, 150, 0, 0.8)';
+                    // Hot spots on the rock
+                    ctx.fillStyle = 'rgba(255, 200, 255, 0.7)';
                     ctx.beginPath();
-                    ctx.arc(0, 0, ast.r * 0.6, 0, Math.PI * 2);
+                    ctx.arc(ast.r * 0.3, -ast.r * 0.2, ast.r * 0.4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.fillStyle = 'rgba(255, 150, 255, 0.5)';
+                    ctx.beginPath();
+                    ctx.arc(-ast.r * 0.4, ast.r * 0.3, ast.r * 0.3, 0, Math.PI * 2);
                     ctx.fill();
                     
                     ctx.restore();
@@ -10532,15 +10663,56 @@
                 store.impactCraters.forEach(crater => {
                     ctx.save();
                     
-                    const alpha = Math.max(0, 1 - (crater.timer / (crater.duration + 0.5)));
+                    const alpha = Math.max(0, 1 - (crater.timer / crater.duration));
                     
-                    // Draw secondary blast wave (large circle)
+                    // Draw smoke particles
+                    if (crater.smokeParticles) {
+                        crater.smokeParticles.forEach(particle => {
+                            if (particle.life > 0) {
+                                const particleAlpha = particle.life / particle.maxLife;
+                                ctx.globalAlpha = particleAlpha * 0.5;
+                                const smokeGradient = ctx.createRadialGradient(
+                                    particle.x, particle.y, 0,
+                                    particle.x, particle.y, particle.size
+                                );
+                                smokeGradient.addColorStop(0, 'rgba(60, 60, 60, 0.6)');
+                                smokeGradient.addColorStop(1, 'rgba(40, 40, 40, 0)');
+                                ctx.fillStyle = smokeGradient;
+                                ctx.beginPath();
+                                ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                        });
+                    }
+                    
+                    // Draw fire particles
+                    if (crater.fireParticles) {
+                        crater.fireParticles.forEach(particle => {
+                            if (particle.life > 0) {
+                                const particleAlpha = particle.life / particle.maxLife;
+                                ctx.globalAlpha = particleAlpha * 0.8;
+                                const fireGradient = ctx.createRadialGradient(
+                                    particle.x, particle.y, 0,
+                                    particle.x, particle.y, particle.size
+                                );
+                                fireGradient.addColorStop(0, 'rgba(255, 200, 100, 0.9)');
+                                fireGradient.addColorStop(0.5, 'rgba(255, 100, 0, 0.7)');
+                                fireGradient.addColorStop(1, 'rgba(255, 50, 0, 0)');
+                                ctx.fillStyle = fireGradient;
+                                ctx.beginPath();
+                                ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                        });
+                    }
+                    
+                    // Draw secondary blast wave (large circle) - more translucent
                     if (crater.secondaryRadius > 0) {
                         ctx.save();
-                        ctx.globalAlpha = alpha * 0.4;
+                        ctx.globalAlpha = alpha * 0.15; // Much more translucent
                         const blastGradient = ctx.createRadialGradient(crater.x, crater.y, 0, crater.x, crater.y, crater.secondaryRadius);
-                        blastGradient.addColorStop(0, 'rgba(139, 69, 19, 0.3)');
-                        blastGradient.addColorStop(0.7, 'rgba(100, 70, 40, 0.2)');
+                        blastGradient.addColorStop(0, 'rgba(139, 69, 19, 0.2)');
+                        blastGradient.addColorStop(0.7, 'rgba(100, 70, 40, 0.1)');
                         blastGradient.addColorStop(1, 'rgba(139, 99, 69, 0)');
                         ctx.fillStyle = blastGradient;
                         ctx.beginPath();
@@ -10548,89 +10720,53 @@
                         ctx.fill();
                         ctx.restore();
                         
-                        // Blast wave edge
+                        // Blast wave edge - more translucent
                         ctx.save();
-                        ctx.globalAlpha = alpha * 0.6;
-                        ctx.strokeStyle = 'rgba(200, 140, 80, 0.8)';
-                        ctx.lineWidth = 3;
+                        ctx.globalAlpha = alpha * 0.25; // More translucent
+                        ctx.strokeStyle = 'rgba(200, 140, 80, 0.4)';
+                        ctx.lineWidth = 2;
                         ctx.beginPath();
                         ctx.arc(crater.x, crater.y, crater.secondaryRadius, 0, Math.PI * 2);
                         ctx.stroke();
                         ctx.restore();
                     }
                     
-                    // Draw earthquake shockwave rings
+                    // Draw earthquake shockwave rings - more translucent
                     crater.rings.forEach(ring => {
                         if (ring.timer > ring.delay && ring.radius > 0) {
                             const age = ring.timer - ring.delay;
-                            const ringAlpha = Math.max(0, 1 - age * 2);
+                            const ringAlpha = Math.max(0, 1 - age * 5); // Fade faster
                             
-                            ctx.strokeStyle = `rgba(180, 120, 60, ${ringAlpha * 0.7})`;
-                            ctx.lineWidth = 4;
+                            ctx.strokeStyle = `rgba(180, 120, 60, ${ringAlpha * 0.3})`; // More translucent
+                            ctx.lineWidth = 2;
                             ctx.beginPath();
                             ctx.arc(crater.x, crater.y, ring.radius, 0, Math.PI * 2);
                             ctx.stroke();
                         }
                     });
                     
-                    // Draw primary impact crater (small circle - red/orange)
+                    // Draw primary impact crater (small circle - red/orange) - brief flash
                     ctx.save();
-                    ctx.globalAlpha = alpha;
+                    ctx.globalAlpha = alpha * 0.8;
                     const primaryGradient = ctx.createRadialGradient(crater.x, crater.y, 0, crater.x, crater.y, crater.primaryRadius);
-                    primaryGradient.addColorStop(0, 'rgba(255, 80, 0, 0.9)');
-                    primaryGradient.addColorStop(0.5, 'rgba(200, 60, 0, 0.7)');
-                    primaryGradient.addColorStop(1, 'rgba(139, 40, 0, 0.3)');
+                    primaryGradient.addColorStop(0, 'rgba(255, 80, 0, 0.7)');
+                    primaryGradient.addColorStop(0.5, 'rgba(200, 60, 0, 0.5)');
+                    primaryGradient.addColorStop(1, 'rgba(139, 40, 0, 0.2)');
                     ctx.fillStyle = primaryGradient;
                     ctx.beginPath();
                     ctx.arc(crater.x, crater.y, crater.primaryRadius, 0, Math.PI * 2);
                     ctx.fill();
                     ctx.restore();
                     
-                    // Primary impact edge - bright
-                    ctx.save();
-                    ctx.globalAlpha = alpha * 0.9;
-                    ctx.strokeStyle = 'rgba(255, 100, 0, 1)';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.arc(crater.x, crater.y, crater.primaryRadius, 0, Math.PI * 2);
-                    ctx.stroke();
-                    ctx.restore();
-                    
-                    // Rumbling debris particles around primary
-                    if (crater.timer < crater.duration) {
+                    // Primary impact edge - bright flash
+                    if (alpha > 0.5) {
                         ctx.save();
-                        ctx.globalAlpha = alpha * 0.7;
-                        for (let i = 0; i < 12; i++) {
-                            const angle = (crater.timer * 4 + i) * Math.PI / 6;
-                            const dist = crater.primaryRadius + 5 + Math.sin(crater.timer * 12 + i) * 10;
-                            const x = crater.x + Math.cos(angle) * dist;
-                            const y = crater.y + Math.sin(angle) * dist;
-                            
-                            ctx.fillStyle = '#FF6600';
-                            ctx.beginPath();
-                            ctx.arc(x, y, 2 + Math.random() * 1.5, 0, Math.PI * 2);
-                            ctx.fill();
-                        }
-                        ctx.restore();
-                    }
-                    
-                    // Cracks radiating from center
-                    if (crater.timer < 0.4) {
-                        ctx.save();
-                        ctx.globalAlpha = alpha * 0.8;
-                        ctx.strokeStyle = 'rgba(100, 40, 0, 0.7)';
+                        ctx.globalAlpha = alpha * 0.6;
+                        ctx.strokeStyle = 'rgba(255, 100, 0, 0.8)';
                         ctx.lineWidth = 2;
-                        for (let i = 0; i < 16; i++) {
-                            const angle = (i / 16) * Math.PI * 2;
-                            const crackLength = crater.primaryRadius * 2.5;
-                            ctx.beginPath();
-                            ctx.moveTo(crater.x, crater.y);
-                            ctx.lineTo(
-                                crater.x + Math.cos(angle) * crackLength,
-                                crater.y + Math.sin(angle) * crackLength
-                            );
-                            ctx.stroke();
-                        }
+                        ctx.beginPath();
+                        ctx.arc(crater.x, crater.y, crater.primaryRadius, 0, Math.PI * 2);
+                        ctx.stroke();
                         ctx.restore();
                     }
                     
@@ -13704,7 +13840,7 @@
                 const cfgs = {
                     drone: { r: 10, v: 80, vx: 0, hp: 30, color: '#C0C0C0', xp: 5, score: 50, gold: 2, fireRateChance: 0.004, contactDamage: 8 },
                     hunter: { r: 20, v: 100, vx: 0, hp: 26, color: '#DC143C', xp: 8, score: 80, gold: 3, fireRateChance: 0.005, contactDamage: 10 }, ///SNAKE GUY
-                    zombie: { r: 14, v: 35, vx: 0, hp: 50, color: '#1a3d2e', color2: '#2d5a42', eyeColor: '#ff3333', xp: 3, score: 30, gold: 1, fireRateChance: 0, contactDamage: 8, tracksPlayer: true },
+                    zombie: { r: 14, v: 35, vx: 0, hp: 50, color: '#1a3d2e', color2: '#2d5a42', eyeColor: '#ff3333', xp: 3, score: 30, gold: 1, fireRateChance: 0, contactDamage: 8, tracksPlayer: true, dashCooldown: 3, dashTimer: 0, isDashing: false, dashTargetY: 0, eyeGlowPhase: 0 },
                     trap_king_add: { r: 6, v: 90, vx: 0, hp: 12, color: '#ffc83d', damage: 5, xp: 2, score: 10, gold: 1, contactDamage: 6 },
                     phantom: { r: 14, v: 90, vx: 0, hp: 48, color: '#FFFFFF', xp: 10, score: 100, gold: 3, fireRateChance: 0.006, fireCooldown: 1.5, contactDamage: 10 },
                     mech: { r: 18, v: 40, vx: 0, hp: 60, color: '#FF8500', xp: 15, score: 150, gold: 6, fireRateChance: 0.007, attackPhase: 0, contactDamage: 12 },
