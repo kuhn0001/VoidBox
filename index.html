@@ -5563,6 +5563,7 @@
             let consecutiveLightningHits = 0; // Track lightning chain hits for lightningCrack sound
             let consecutiveLightningCrits = 0; // Track crits on lightning hits for lightning crack detection
             let lastLightningHitTime = 0; // Track when last lightning hit occurred (reset after 0.8s gap)
+            let artilleryClusterSoundIndex = 0; // Cycle through the 3 cluster landing sounds
             const SOUND_COOLDOWNS = {
                 thunder: 1500,
                 epicHorn: 2500,
@@ -7763,7 +7764,7 @@
                 return { amount, blocked: false };
             }
 
-            const ICE_SPEED_BY_STACK = [1, 0.55, 0.18, 0];
+            const ICE_SPEED_BY_STACK = [1.0, 0.67, 0.33, 0]; // Proportional slowing: 33% per stack, frozen at 3 stacks
 
             function getVoidProfileForBullet(bullet) {
                 if (!bullet || bullet.element !== 'void') return null;
@@ -10001,15 +10002,11 @@
                     angle,
                     centerX,
                     centerY,
-                    sequenceIndex: 0, // Which sequence (0 or 1)
-                    sequenceCount: 2, // 2 sequences total
-                    waveIndex: 0, // Which wave in sequence (0, 1, or 2)
-                    waveCount: 3, // 3 waves per sequence (more clusters!)
-                    waveTimer: 0,
-                    waveDelay: 0.4, // 0.4 seconds between waves (tighter cadence)
-                    sequenceTimer: 0,
-                    sequenceDelay: 2.5, // 2.5 seconds between sequences
-                    waveSpawned: false
+                    volleyIndex: 0, // Which volley (0, 1, or 2)
+                    volleyCount: 3, // 3 volleys total
+                    volleyTimer: 0,
+                    volleyDelay: 0.5, // 0.5 seconds between volleys
+                    volleySpawned: false
                 };
                 
                 if (!store.asteroidBombardments) {
@@ -10126,124 +10123,103 @@
                 for (let i = store.asteroidBombardments.length - 1; i >= 0; i--) {
                     const bomb = store.asteroidBombardments[i];
                     
-                    // Spawn wave at start
-                    if (!bomb.waveSpawned && bomb.sequenceIndex < bomb.sequenceCount) {
-                        spawnAsteroidWave(bomb, bomb.waveIndex);
-                        bomb.waveSpawned = true;
-                        bomb.waveTimer = 0;
+                    // Spawn volley at start
+                    if (!bomb.volleySpawned && bomb.volleyIndex < bomb.volleyCount) {
+                        spawnAsteroidVolley(bomb, bomb.volleyIndex);
+                        bomb.volleySpawned = true;
+                        bomb.volleyTimer = 0;
                     }
                     
-                    // Update wave timer
-                    bomb.waveTimer += dt;
+                    // Update volley timer
+                    bomb.volleyTimer += dt;
                     
-                    // Check if wave is complete
-                    if (bomb.waveTimer >= bomb.waveDelay) {
-                        bomb.waveIndex++;
-                        bomb.waveSpawned = false;
-                        
-                        // Check if sequence is complete (3 waves done)
-                        if (bomb.waveIndex >= bomb.waveCount) {
-                            bomb.waveIndex = 0;
-                            bomb.sequenceIndex++;
-                            bomb.sequenceTimer = 0;
-                            bomb.waveTimer = 0;
-                            
-                            // If more sequences, wait longer
-                            if (bomb.sequenceIndex < bomb.sequenceCount) {
-                                bomb.waveDelay = bomb.sequenceDelay; // 2.5 second wait
-                                bomb.waveSpawned = false;
-                            }
-                        } else {
-                            bomb.waveDelay = 0.4; // Tight 0.4s between waves
-                        }
+                    // Check if ready for next volley
+                    if (bomb.volleyTimer >= bomb.volleyDelay) {
+                        bomb.volleyIndex++;
+                        bomb.volleySpawned = false;
+                        bomb.volleyTimer = 0;
                     }
                     
-                    // Remove if all sequences complete
-                    if (bomb.sequenceIndex >= bomb.sequenceCount) {
+                    // Remove if all volleys complete
+                    if (bomb.volleyIndex >= bomb.volleyCount) {
                         store.asteroidBombardments.splice(i, 1);
                     }
                 }
             }
 
-            function spawnAsteroidWave(bombardment, waveOffset) {
+            function spawnAsteroidVolley(bombardment, volleyIndex) {
                 const centerX = bombardment.centerX;
                 const centerY = bombardment.centerY;
                 
-                // Play appropriate cluster sound based on sequence and wave
-                const sequenceIndex = bombardment.sequenceIndex;
-                const totalWavesSoFar = sequenceIndex * bombardment.waveCount + waveOffset;
+                // Cycle through the 3 cluster landing sounds
+                const clusterSounds = ['artilleryClusterInitial', 'artilleryCluster2nd', 'artilleryCluster3rd'];
+                playSound(clusterSounds[artilleryClusterSoundIndex]);
+                artilleryClusterSoundIndex = (artilleryClusterSoundIndex + 1) % 3; // Cycle 0, 1, 2, 0, 1, 2...
                 
-                if (totalWavesSoFar === 0) {
-                    playSound('artilleryClusterInitial'); // First cluster volley
-                } else if (totalWavesSoFar === 3) {
-                    playSound('artilleryCluster2nd'); // Second sequence first wave
-                } else if (totalWavesSoFar === 1 || totalWavesSoFar === 2) {
-                    playSound('artilleryCluster2nd'); // 2nd and 3rd wave of first sequence
-                } else {
-                    playSound('artilleryCluster3rd'); // Remaining waves
-                }
-                
-                // Calculate wave center position along the targeting path
-                // Path starts horizontal, rotates based on bombardment.angle
-                // Add slight variation between waves in the same sequence
-                const pathLength = 400; // Realistic strike zone length
-                const distAlongPath = (Math.random() - 0.5) * pathLength + (waveOffset * 50);
-                const lateralOffset = (Math.random() - 0.5) * 35; // Small perpendicular variation
-                
-                // Calculate world position considering rotation
-                // For a horizontal path at 0°:
-                // - distAlongPath moves along X axis (left-right)
-                // - lateralOffset moves along Y axis (perpendicular to path)
+                // Spawn 5 clusters spread evenly along the targeting path
+                const pathLength = 450; // Full targeting zone length
                 const cos = Math.cos(bombardment.angle);
                 const sin = Math.sin(bombardment.angle);
                 
-                const localX = distAlongPath; // Distance along the path
-                const localY = lateralOffset; // Distance perpendicular to path
-                
-                const waveCenterX = centerX + localX * cos - localY * sin;
-                const waveCenterY = centerY + localX * sin + localY * cos;
-                
-                // Spawn 3 tightly packed asteroids per wave
-                const waveSpread = 30; // Tight grouping
-                
-                for (let i = 0; i < 3; i++) {
-                    const offsetAngle = (i / 3) * Math.PI * 2 + Math.random() * 0.4;
-                    const offsetDist = Math.random() * waveSpread;
+                for (let clusterIdx = 0; clusterIdx < 5; clusterIdx++) {
+                    // Spread clusters evenly along the path
+                    // Position from -pathLength/2 to +pathLength/2
+                    const spacing = pathLength / 4; // 4 gaps for 5 clusters
+                    const distAlongPath = -pathLength / 2 + clusterIdx * spacing;
                     
-                    const targetX = waveCenterX + Math.cos(offsetAngle) * offsetDist;
-                    const targetY = waveCenterY + Math.sin(offsetAngle) * offsetDist;
+                    // Small random variation to avoid perfect grid
+                    const pathVariation = (Math.random() - 0.5) * 40;
+                    const lateralOffset = (Math.random() - 0.5) * 50; // Perpendicular spread
                     
-                    // Spawn from top-right
-                    const startX = targetX + 400 + Math.random() * 100;
-                    const startY = -100 - Math.random() * 50;
+                    // Calculate cluster center in world space
+                    const localX = distAlongPath + pathVariation;
+                    const localY = lateralOffset;
                     
-                    const dx = targetX - startX;
-                    const dy = targetY - startY;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    const speed = 1200 + Math.random() * 300; // Faster
-                    const travelTime = distance / speed;
+                    const clusterCenterX = centerX + localX * cos - localY * sin;
+                    const clusterCenterY = centerY + localX * sin + localY * cos;
                     
-                    const asteroid = {
-                        x: startX,
-                        y: startY,
-                        targetX: targetX,
-                        targetY: targetY,
-                        vx: dx / travelTime,
-                        vy: dy / travelTime,
-                        r: 4 + Math.random() * 3, // Smaller asteroids
-                        rotation: Math.random() * Math.PI * 2,
-                        rotationSpeed: (Math.random() - 0.5) * 12,
-                        damage: 100 + Math.random() * 50,
-                        impacted: false,
-                        life: travelTime + 0.5,
-                        shadowAlpha: 0
-                    };
+                    // Spawn 3 asteroids per cluster (tightly packed)
+                    const clusterSpread = 35; // Tight grouping for impact
                     
-                    if (!store.asteroidProjectiles) {
-                        store.asteroidProjectiles = [];
+                    for (let i = 0; i < 3; i++) {
+                        const offsetAngle = (i / 3) * Math.PI * 2 + Math.random() * 0.4;
+                        const offsetDist = Math.random() * clusterSpread;
+                        
+                        const targetX = clusterCenterX + Math.cos(offsetAngle) * offsetDist;
+                        const targetY = clusterCenterY + Math.sin(offsetAngle) * offsetDist;
+                        
+                        // Spawn from top-right
+                        const startX = targetX + 400 + Math.random() * 100;
+                        const startY = -100 - Math.random() * 50;
+                        
+                        const dx = targetX - startX;
+                        const dy = targetY - startY;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        const speed = 1200 + Math.random() * 300; // Faster
+                        const travelTime = distance / speed;
+                        
+                        const asteroid = {
+                            x: startX,
+                            y: startY,
+                            targetX: targetX,
+                            targetY: targetY,
+                            vx: dx / travelTime,
+                            vy: dy / travelTime,
+                            r: 4 + Math.random() * 3, // Smaller asteroids
+                            rotation: Math.random() * Math.PI * 2,
+                            rotationSpeed: (Math.random() - 0.5) * 12,
+                            damage: 100 + Math.random() * 50,
+                            impacted: false,
+                            life: travelTime + 0.5,
+                            shadowAlpha: 0
+                        };
+                        
+                        if (!store.asteroidProjectiles) {
+                            store.asteroidProjectiles = [];
+                        }
+                        
+                        store.asteroidProjectiles.push(asteroid);
                     }
-                    
-                    store.asteroidProjectiles.push(asteroid);
                 }
             }
 
@@ -13485,8 +13461,8 @@
                             x: spawnX,
                             y: spawnY,
                             r: 20,
-                            hp: 300,
-                            hpMax: 300,
+                            hp: 600,
+                            hpMax: 600,
                             spawnTimer: 0,
                             spawnInterval: 3.0, // Spawn zombie every 3 seconds
                             color: '#8b4789',
@@ -17683,6 +17659,7 @@
                                     e.isDashing = true;
                                     e.dashTimer = 0.6; // 0.6s dash duration
                                     e.dashTargetY = e.y + (150 + Math.random() * 100); // Dash 150-250px forward
+                                    playSound('zombieGargleAttack'); // Zombie cry when dashing
                                 }
                                 
                                 // Track player horizontally when not dashing
@@ -38525,6 +38502,10 @@
 
                     // Generate full diagnostic export button and textarea
                     const fullDiagnostics = generateFullDiagnostics();
+                    
+                    // Store diagnostics in global scope so button can access it
+                    window._cachedDiagnostics = fullDiagnostics;
+                    
                     const diagnosticExport = `
                         <div style="margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 6px;">
                             <div style="margin-bottom: 8px; font-size: 13px; color: #ffeb3b; font-weight: bold;">
@@ -38545,7 +38526,7 @@
                             " onclick="
                                 const textarea = document.getElementById('diagnosticOutput');
                                 const btn = this;
-                                const fullDiag = window.getPixiDiagnostics ? window.getPixiDiagnostics() : ${JSON.stringify(fullDiagnostics)};
+                                const fullDiag = window.getPixiDiagnostics ? window.getPixiDiagnostics() : window._cachedDiagnostics;
                                 textarea.value = JSON.stringify(fullDiag, null, 2);
                                 textarea.style.display = 'block';
                                 textarea.select();
