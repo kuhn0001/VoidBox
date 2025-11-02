@@ -4660,7 +4660,7 @@
             window.addEventListener('blur', () => {
                 window._lastBackgroundEvent = 'Window Blur';
                 window._lastBackgroundTime = Date.now();
-                if (!store.isPaused && !store.isGameOver) {
+                if (typeof store !== 'undefined' && !store.isPaused && !store.isGameOver) {
                     store.isPaused = true;
                     wasAutoPaused = true;
                     const pauseBtn = document.getElementById('pauseBtn');
@@ -4672,7 +4672,9 @@
             window.addEventListener('focus', () => {
                 window._lastBackgroundEvent = 'Window Focus';
                 window._lastBackgroundTime = Date.now();
-                store.last = performance.now();
+                if (typeof store !== 'undefined') {
+                    store.last = performance.now();
+                }
             });
             
             // Mouse input tracking
@@ -4997,7 +4999,7 @@
             
             document.addEventListener('click', (event) => {
                 // Handle asteroid targeting confirmation
-                if (asteroidTargeting.active && event.target === cvs) {
+                if (typeof asteroidTargeting !== 'undefined' && asteroidTargeting.active && event.target === cvs) {
                     confirmAsteroidTargeting();
                     event.preventDefault();
                     return false;
@@ -5027,7 +5029,7 @@
             
             // Add mouse move listener for asteroid targeting
             document.addEventListener('mousemove', (event) => {
-                if (asteroidTargeting.active && cvs) {
+                if (typeof asteroidTargeting !== 'undefined' && asteroidTargeting.active && cvs) {
                     const rect = cvs.getBoundingClientRect();
                     const scaleX = W / rect.width;
                     const scaleY = H / rect.height;
@@ -5545,8 +5547,8 @@
                 zombieSpawnCry: q('audioZombieSpawnCry'),
                 zombieGargleAttack: q('audioZombieGargleAttack')
             };
-            // Boost snake hiss volume
-            if (sounds.snakeHiss) sounds.snakeHiss.volume = 2.0;
+            // Boost snake hiss volume (max is 1.0)
+            if (sounds.snakeHiss) sounds.snakeHiss.volume = 1.0;
             let lastExplosionSoundTime = 0;
             let lastBossHitSoundTime = 0;
             let lastClusterSoundTime = 0;
