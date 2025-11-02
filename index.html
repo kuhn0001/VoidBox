@@ -5665,6 +5665,20 @@
             };
             // Boost snake hiss volume (max is 1.0)
             if (sounds.snakeHiss) sounds.snakeHiss.volume = 1.0;
+            
+            // Trim robot crumble audio to first half only (cut annoying second half)
+            if (sounds.robotCrumble) {
+                sounds.robotCrumble.addEventListener('loadedmetadata', function() {
+                    const halfDuration = this.duration / 2;
+                    this.addEventListener('timeupdate', function() {
+                        if (this.currentTime >= halfDuration) {
+                            this.pause();
+                            this.currentTime = 0;
+                        }
+                    });
+                });
+            }
+            
             let lastExplosionSoundTime = 0;
             let lastBossHitSoundTime = 0;
             let lastClusterSoundTime = 0;
@@ -5692,7 +5706,7 @@
                 lightningCrack: 2000, // Cooldown for huge multi-kill streak sound
                 artHit: 150, // Artillery hit sound cooldown to prevent spam
                 snakeHiss: 350, // Rate limit snake death sounds to prevent spam when many hunters die at once
-                robotCrumble: 350, // Rate limit mech death sounds
+                robotCrumble: 1200, // Rate limit mech death sounds - increased to prevent spam
                 zombieChoking: 350, // Rate limit zombie death sounds
                 bugSqueal: 350 // Rate limit bug death sounds
             };
