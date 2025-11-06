@@ -19934,15 +19934,30 @@
                 if (playerTotalPts === 1 && playerUnspentPts > 0) {
                     // First boss - open class select
                     if (awardPoint) store.player.pilotGenome = 'pending';
-                    setTimeout(showPilotSelect, awardPoint ? 1000 : 0);
+                    // Set flag to prevent premature resume during panel transition
+                    window.progressionPanelPending = true;
+                    setTimeout(() => {
+                        showPilotSelect();
+                        window.progressionPanelPending = false;
+                    }, awardPoint ? 1000 : 0);
                     return true;
                 } else if (playerTotalPts > 1 && currentSpec && currentSpec !== 'pending' && !currentSubclass && playerUnspentPts > 0) {
                     // Second+ boss with class selected but no subclass - open subclass select
-                    setTimeout(showSubclassSelect, awardPoint ? 1500 : 0);
+                    // Set flag to prevent premature resume during panel transition
+                    window.progressionPanelPending = true;
+                    setTimeout(() => {
+                        showSubclassSelect();
+                        window.progressionPanelPending = false;
+                    }, awardPoint ? 1500 : 0);
                     return true;
                 } else if (playerTotalPts > 2 && currentSpec && currentSpec !== 'pending' && currentSubclass && playerUnspentPts > 0) {
                     // Third+ boss with class and subclass - open skill tree
-                    setTimeout(showSkillTreeModal, awardPoint ? 1500 : 0);
+                    // Set flag to prevent premature resume during panel transition
+                    window.progressionPanelPending = true;
+                    setTimeout(() => {
+                        showSkillTreeModal();
+                        window.progressionPanelPending = false;
+                    }, awardPoint ? 1500 : 0);
                     return true;
                 }
 
@@ -46188,6 +46203,24 @@
                 const namePanel = q('namePanel');
                 if (namePanel && !namePanel.classList.contains('hide')) {
                     return; // Keep game paused until name is entered
+                }
+                
+                // Don't resume if a progression panel is pending (about to be shown)
+                // This prevents race conditions when boss kill triggers progression during level up
+                if (window.progressionPanelPending) {
+                    return; // Keep game paused until progression panel is shown
+                }
+                
+                // Critical panels that should always keep game paused (even with force=true)
+                // This prevents race conditions when multiple popups occur simultaneously (e.g., level up + boss kill skill tree)
+                const criticalPanels = ['subclassPanel', 'pilotPanel', 'levelPanel'];
+                const criticalPanelOpen = criticalPanels.some(id => {
+                    const panel = q(id);
+                    return panel && !panel.classList.contains('hide');
+                });
+                
+                if (criticalPanelOpen) {
+                    return; // Keep game paused if any critical panel is open
                 }
                 
                 // Force resume when closing specific panels, otherwise check if all panels are closed
