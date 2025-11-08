@@ -8948,21 +8948,6 @@
                     e.killedByCrit = true; // Track for double rewards if this crit kills the enemy
                     store.activeEffects.push(createEffect('critText', e.x, e.y));
                     if (Math.random() < 0.05) spawnPowerup(e.x, e.y);
-                    
-                    // LIGHTNING CRIT SOUND - for arc_cannon and stormbringer/chain lightning
-                    if ((b.championAttackModule === 'arc_cannon' || b.championAttackModule === 'storm_grid' || 
-                         store.player.subclass === 'stormbringer') && 
-                        store.player.upgradeLevels.hit > 0) {
-                        const now = performance.now();
-                        const crackCooldown = SOUND_COOLDOWNS.lightningCrit;
-                        // Reduce cooldown based on hit upgrades (more upgrades = more frequent crits can sound)
-                        const adjustedCooldown = Math.max(200, crackCooldown - (store.player.upgradeLevels.hit * 30));
-                        if (now - lastLightningCritTime >= adjustedCooldown) {
-                            playSound('lightningCrit');
-                            lastLightningCritTime = now;
-                            consecutiveLightningCrits++;
-                        }
-                    }
                 }
 
                 if (e === store.boss) playSound('hit');
