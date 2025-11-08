@@ -4426,7 +4426,6 @@
             const checkIsMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
             const MAX_PARTICLE_POOL_SIZE = checkIsMobile ? 500 : 1000;
             const MAX_BULLET_POOL_SIZE = checkIsMobile ? 100 : 200;
-            console.log(`🎮 Device type: ${checkIsMobile ? 'Mobile' : 'Desktop'}, Particle pool limit: ${MAX_PARTICLE_POOL_SIZE}, Bullet pool limit: ${MAX_BULLET_POOL_SIZE}`);
             if (!isTestMode && typeof PIXI !== 'undefined' && PIXI?.Application) {
                 (() => {
                 try {
@@ -4461,8 +4460,6 @@
                         pixiApp.stage.addChild(bulletContainer);
                         pixiApp.stage.addChild(cubeBurglarContainer);
                         pixiApp.stage.addChild(bossContainer);
-
-                        console.log('✅ PixiJS initialized for bullet rendering');
                         
                         // Set up WebGL context loss/restore handlers
                         setupWebGLContextHandlers();
@@ -4471,11 +4468,6 @@
                     console.error('❌ Failed to initialize PixiJS:', err);
                 }
                 })();
-            } else {
-                console.log('ℹ️ PixiJS initialization skipped', {
-                    isTestMode,
-                    pixiAvailable: typeof PIXI !== 'undefined'
-                });
             }
 
             // WebGL Context Loss Recovery System
@@ -4489,7 +4481,6 @@
 
             function setupWebGLContextHandlers() {
                 if (!pixiApp || !pixiApp.canvas) {
-                    console.warn('⚠️ Cannot set up WebGL handlers - no canvas');
                     return;
                 }
 
@@ -4630,8 +4621,6 @@
                         }).catch(() => {});
                     }
                     
-                    console.log('📊 CONTEXT LOSS DIAGNOSTICS:', JSON.stringify(contextLossInfo, null, 2));
-                    console.log('🚨 LIKELY CAUSES:', contextLossInfo.likelyCauses.join(', '));
                     window._lastWebGLContextLossInfo = contextLossInfo;
                     // ========== END DIAGNOSTIC LOGGING ==========
                     
@@ -4651,7 +4640,6 @@
 
                 // Handle context restoration
                 canvas.addEventListener('webglcontextrestored', async (event) => {
-                    console.log('🟢 WebGL context restored! Rebuilding renderer...');
                     webglContextLost = false;
                     window.webglContextLost = false;
                     webglRecoveryAttempts++;
@@ -6422,7 +6410,7 @@
                 lightningCrack: 1700, // Cooldown for huge multi-kill streak sound
                 artHit: 198, // Artillery hit sound cooldown to prevent spam
                 snakeHiss: 288, // Rate limit snake death sounds to prevent spam when many hunters die at once
-                robotCrumble: 1740, // Rate limit mech death sounds - increased to prevent spam
+                robotCrumble: 5220, // Rate limit mech death sounds - tripled cooldown to reduce frequency
                 zombieChoking: 100, // Rate limit zombie death sounds - REDUCED for testing
                 bugSqueal: 263 // Rate limit bug death sounds
             };
