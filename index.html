@@ -13,6 +13,12 @@
         rel="stylesheet" media="print" onload="this.media='all'" />
     <!-- PixiJS v8 -->
     <script src="https://pixijs.download/release/pixi.js"></script>
+    <script>
+        // Suppress PixiJS startup message
+        if (window.PIXI && PIXI.utils && PIXI.utils.skipHello) {
+            PIXI.utils.skipHello();
+        }
+    </script>
     <title>Void Skies</title>
     <style>
         :root {
@@ -3559,6 +3565,11 @@
             grid.position.set(0, -28, -140);
             grid.renderOrder = -5;
             scene.add(grid);
+            const baseGridRotation = {
+                x: grid.rotation.x,
+                y: grid.rotation.y,
+                z: grid.rotation.z
+            };
 
             const backdropGeometry = new THREE.PlaneGeometry(2200, 1200, 1, 1);
             const backdropMaterial = new THREE.ShaderMaterial({
@@ -3598,8 +3609,17 @@
             backdrop.renderOrder = -10;
             scene.add(backdrop);
 
+            const tiltState = { current: 0 };
+            window.__voidGridTilt = {
+                setTilt(value = 0) {
+                    tiltState.current = THREE.MathUtils.clamp(value, -1, 1);
+                    console.log('🎮 Tilt set to:', tiltState.current.toFixed(3), 'from value:', value.toFixed(3));
+                }
+            };
+            window.__voidGridTilt.setTilt(0);
+            console.log('✅ Grid tilt interface initialized');
+
             const clock = new THREE.Clock();
-            let lastElapsed = 0;
 
             const resizeRenderer = () => {
                 const target = stage || document.documentElement;
@@ -3620,15 +3640,21 @@
             const animate = () => {
                 requestAnimationFrame(animate);
                 const elapsed = clock.getElapsedTime();
-                const delta = Math.min(0.05, elapsed - lastElapsed);
-                lastElapsed = elapsed;
 
                 gridMaterial.uniforms.uTime.value = elapsed;
                 backdropMaterial.uniforms.uTime.value = elapsed;
 
-                grid.rotation.z = Math.sin(elapsed * 0.12) * 0.05;
-                grid.position.x = Math.sin(elapsed * 0.4) * 4;
-                grid.position.y = -28 + Math.sin(elapsed * 0.27) * 2;
+                const tilt = tiltState.current;
+
+                grid.rotation.x = baseGridRotation.x;
+                grid.rotation.y = baseGridRotation.y - tilt * 0.5;  // Y-axis banking (negative for correct direction)
+                grid.rotation.z = baseGridRotation.z;
+                grid.position.y = -28;
+                
+                // Debug every 60 frames (~1 sec)
+                if (Math.floor(elapsed * 60) % 60 === 0) {
+                    console.log('🌀 Grid rotation.y:', grid.rotation.y.toFixed(3), 'tilt:', tilt.toFixed(3), 'base:', baseGridRotation.y.toFixed(3), 'pos.x:', grid.position.x.toFixed(1));
+                }
 
                 renderer.render(scene, camera);
             };
@@ -5640,15 +5666,15 @@
                     const container = new PIXI.Container();
                     container.eventMode = 'none';
 
-                    const outer = new PIXI.Sprite(texture);
+                    const outer = new PIXI.Sprite({ texture });
                     outer.anchor.set(0.5);
                     outer.blendMode = PIXI.BLEND_MODES.ADD;
 
-                    const middle = new PIXI.Sprite(texture);
+                    const middle = new PIXI.Sprite({ texture });
                     middle.anchor.set(0.5);
                     middle.blendMode = PIXI.BLEND_MODES.ADD;
 
-                    const inner = new PIXI.Sprite(texture);
+                    const inner = new PIXI.Sprite({ texture });
                     inner.anchor.set(0.5);
                     inner.blendMode = PIXI.BLEND_MODES.ADD;
 
@@ -5708,7 +5734,7 @@
                 
                 let sprite = bulletSpritePool.pop();
                 if (!sprite) {
-                    sprite = new PIXI.Sprite();
+                    sprite = new PIXI.Sprite({ texture: PIXI.Texture.EMPTY });
                     bulletContainer.addChild(sprite);
                 }
                 
@@ -5772,7 +5798,7 @@
                 
                 let sprite = particleSpritePool.pop();
                 if (!sprite) {
-                    sprite = new PIXI.Sprite(particleTexture);
+                    sprite = new PIXI.Sprite({ texture: particleTexture });
                     particleContainer.addChild(sprite);
                 }
                 
@@ -16455,6 +16481,13 @@
                             p.y += vy * p.speed * dt * accelFactor;
                         }
                         p.x = clamp(p.x, 20, W - 20); p.y = clamp(p.y, 20, H - 20);
+                    }
+                    if (window.__voidGridTilt?.setTilt) {
+                        const centerX = W * 0.5;
+                        const normalizedX = (p.x - centerX) / (W * 0.5);
+                        window.__voidGridTilt.setTilt(normalizedX);
+                    } else {
+                        console.warn('⚠️ Grid tilt interface not available');
                     }
                 }
                 if (p.pilotGenome === 'beef' && p.beefMaxCharges > 0) {
