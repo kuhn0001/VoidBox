@@ -3609,14 +3609,15 @@
             backdrop.renderOrder = -10;
             scene.add(backdrop);
 
-            const tiltState = { current: 0 };
+            const tiltState = { currentX: 0, currentY: 0 };
             window.__voidGridTilt = {
-                setTilt(value = 0) {
-                    tiltState.current = THREE.MathUtils.clamp(value, -1, 1);
-                    console.log('🎮 Tilt set to:', tiltState.current.toFixed(3), 'from value:', value.toFixed(3));
+                setTilt(valueX = 0, valueY = 0) {
+                    tiltState.currentX = THREE.MathUtils.clamp(valueX, -1, 1);
+                    tiltState.currentY = THREE.MathUtils.clamp(valueY, -1, 1);
+                    console.log('🎮 Tilt set - X:', tiltState.currentX.toFixed(3), 'Y:', tiltState.currentY.toFixed(3));
                 }
             };
-            window.__voidGridTilt.setTilt(0);
+            window.__voidGridTilt.setTilt(0, 0);
             console.log('✅ Grid tilt interface initialized');
 
             const clock = new THREE.Clock();
@@ -3644,13 +3645,14 @@
                 gridMaterial.uniforms.uTime.value = elapsed;
                 backdropMaterial.uniforms.uTime.value = elapsed;
 
-                const tilt = tiltState.current;
+                const tiltX = tiltState.currentX;
+                const tiltY = tiltState.currentY;
 
-                grid.rotation.x = baseGridRotation.x;
-                grid.rotation.y = baseGridRotation.y - tilt * (Math.PI / 2);  // 90 degrees (π/2 radians) at full tilt
+                grid.rotation.x = baseGridRotation.x + tiltY * (Math.PI / 4);  // Pitch forward/back 45° (50% of 90°)
+                grid.rotation.y = baseGridRotation.y - tiltX * (Math.PI / 2);  // Bank left/right 90°
                 grid.rotation.z = baseGridRotation.z;
-                grid.position.x = tilt * 150;  // Move grid left/right with player
-                grid.position.y = -28;
+                grid.position.x = tiltX * 150;  // Move grid left/right with player
+                grid.position.y = -28 + tiltY * 75;  // Move grid up/down (50% of horizontal movement)
                 
                 // Debug every 60 frames (~1 sec)
                 if (Math.floor(elapsed * 60) % 60 === 0) {
@@ -16485,8 +16487,10 @@
                     }
                     if (window.__voidGridTilt?.setTilt) {
                         const centerX = W * 0.5;
+                        const centerY = H * 0.5;
                         const normalizedX = (p.x - centerX) / (W * 0.5);
-                        window.__voidGridTilt.setTilt(normalizedX);
+                        const normalizedY = (p.y - centerY) / (H * 0.5);
+                        window.__voidGridTilt.setTilt(normalizedX, normalizedY);
                     } else {
                         console.warn('⚠️ Grid tilt interface not available');
                     }
