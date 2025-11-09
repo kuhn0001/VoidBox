@@ -4148,8 +4148,6 @@
     <audio id="audioBeefCharge" preload="auto"></audio>
     <audio id="audioEpicHorn" preload="auto"></audio>
     <audio id="audioCluster" preload="auto"></audio>
-    <audio id="audioThunder" preload="auto"></audio>
-    <audio id="audioThunderNew" preload="auto"></audio>
     <audio id="audioShaoKahn" preload="auto"></audio>
     <audio id="audioStarGun" preload="auto"></audio>
     <audio id="audioCoin" preload="auto"></audio>
@@ -4343,8 +4341,6 @@
                 audioBeefCharge: 'beefcharge.m4a',
                 audioEpicHorn: 'epichorntrimmed.m4a',
                 audioCluster: 'cluster.mp3',
-                audioThunder: 'thunder.mp3',
-                audioThunderNew: 'thundernew.m4a',
                 audioShaoKahn: 'shao_kahn.m4a',
                 audioStarGun: 'stargun.m4a',
                 audioCoin: 'coin.mp3',
@@ -6320,8 +6316,6 @@
                 beefCharge: q('audioBeefCharge'),
                 epicHorn: q('audioEpicHorn'),
                 cluster: q('audioCluster'),
-                thunder: q('audioThunder'),
-                thundernew: q('audioThunderNew'),
                 shao_kahn: q('audioShaoKahn'),
                 stargun: q('audioStarGun'),
                 coin: q('audioCoin'),
@@ -6373,7 +6367,6 @@
             let lastExplosionSoundTime = 0;
             let lastBossHitSoundTime = 0;
             let lastClusterSoundTime = 0;
-            let lastChampionThunderTime = 0;
             let iceBreakSoundIndex = 0; // 0 for icebreak1, 1 for icebreak2 - strict alternation
             let lastIceBreakTime = 0;
             let lastVoidPulseTime = 0;
@@ -6386,7 +6379,6 @@
             let lastLightningHitTime = 0; // Track when last lightning hit occurred (reset after 0.8s gap)
             let artilleryClusterSoundIndex = 0; // Cycle through all 4 cluster landing sounds
             const SOUND_COOLDOWNS = {
-                thunder: 1875,
                 epicHorn: 1950,
                 voidpulse: 3125, // Allow sound to fully play + pause - adjust if you shorten the sound file
                 icebreak1: 650, // One second cooldown for ice break sounds
@@ -20104,11 +20096,6 @@
                         activeBoss.pixiContainer = null;
                     }
                     
-                    // Play thunder sound when Stormbringer kills a boss
-                    const p = store.player;
-                    if (p && p.hasStormbringer && (p.subclass === 'stormbringer' || p.hasChainLightning)) {
-                        playSound('thunder');
-                    }
                 }
 
                 const now = performance.now();
@@ -20371,7 +20358,6 @@
 
             function levelUp() {
                 announce(`LEVEL UP! ⚡ CHOOSE YOUR AUGMENTATION!`);
-                playSound('thundernew');
                 pauseGame();
 
                 // Natural health growth: 10% per level
@@ -48116,11 +48102,6 @@
                 p.lightningAlternate = false;
                 p.lightningCycleIndex = 0;
 
-                // Play thunder sound only when lightning ability is first acquired
-                if (!hadLightning) {
-                    playSound('thunder');
-                }
-
                 return (unlock && !wasUnlocked) || (!hadLightning);
             }
 
@@ -48822,7 +48803,6 @@
                     case 'stormbringer':
                         grantPlayerChainLightning(p, { unlock: true, initialLevel: 1 });
                         announce('CHAIN LIGHTNING ACTIVATED!');
-                        playSound('thunder');
                         break;
                     case 'double_storm':
                         p.hasDoubleStorm = true;
@@ -49736,10 +49716,6 @@
                 }));
 
                 announce('CHEAT: Cube Burglar inbound on demand.');
-                if (typeof playSound === 'function') {
-                    playSound('thunder');
-                }
-
                 cheatCodeBuffer = "";
             }
 
@@ -50058,7 +50034,6 @@
                         'beefcharge.m4a',
                         'epichorntrimmed.m4a',
                         'cluster.mp3',
-                        'thunder.mp3',
                         'shao_kahn.m4a',
                         'stargun.m4a',
                         'lightningcrit.m4a',
@@ -50081,7 +50056,6 @@
                         'power.m4a',
                         'icebreak1.m4a',
                         'icebreak2.m4a',
-                        'thundernew.m4a',
                         'zombie_choking.m4a',
                         'zombie_spawn_cry.m4a',
                         'zombie_gargle_attack.wav',
