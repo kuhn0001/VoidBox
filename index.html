@@ -4242,8 +4242,6 @@
             const PLACEHOLDER_IMAGE_SRC = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
             const PLACEHOLDER_AUDIO_SRC = 'data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
             const missingAssetSet = new Set();
-            let missingAssetNoticeShown = false;
-            let missingAssetStyleInjected = false;
 
             function noteMissingAsset(reference, type) {
                 if (!reference) {
@@ -4252,20 +4250,6 @@
                 if (!missingAssetSet.has(reference)) {
                     missingAssetSet.add(reference);
                     console.warn(`[AssetFallback] Missing ${type} "${reference}". Using placeholder.`);
-                }
-                if (!missingAssetNoticeShown) {
-                    missingAssetNoticeShown = true;
-                    if (!missingAssetStyleInjected) {
-                        const styleEl = document.createElement('style');
-                        styleEl.textContent = `#missingAssetNotice{position:fixed;left:50%;top:16px;transform:translate(-50%,-20px);background:rgba(18,0,32,0.9);color:#f8d4ff;padding:10px 16px;border-radius:10px;border:1px solid rgba(255,140,240,0.45);font-family:'Orbitron','Audiowide',ui-sans-serif;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;z-index:9999;opacity:0;transition:opacity .3s ease,transform .3s ease;}#missingAssetNotice.visible{opacity:1;transform:translate(-50%,0);}`;
-                        document.head.appendChild(styleEl);
-                        missingAssetStyleInjected = true;
-                    }
-                    const notice = document.createElement('div');
-                    notice.id = 'missingAssetNotice';
-                    notice.textContent = 'Missing asset pack detected. Placeholder art & audio in use.';
-                    document.body.appendChild(notice);
-                    requestAnimationFrame(() => notice.classList.add('visible'));
                 }
             }
             window.__voidMissingAssets = missingAssetSet;
