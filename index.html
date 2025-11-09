@@ -4367,6 +4367,68 @@
             const PLACEHOLDER_AUDIO_SRC = 'data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
             const missingAssetSet = new Set();
 
+            /**
+             * Calculate perspective scale based on Y position
+             * @param {number} y - The Y position of the entity (0 = top/far, 540 = bottom/near)
+             * @param {number} H - Canvas height (540)
+             * @returns {number} Scale multiplier (0.7 to 1.15)
+             */
+            function getPerspectiveScale(y, H = 540) {
+                if (!Number.isFinite(y)) return 1;
+                
+                // Normalize Y to 0-1 range (0 = top/far, 1 = bottom/near)
+                const normalizedY = Math.max(0, Math.min(1, y / H));
+                
+                // Define perspective range
+                const minScale = 0.7;   // Objects at top (far) are 70% size
+                const maxScale = 1.15;  // Objects at bottom (near) are 115% size
+                
+                // Apply easing for more natural perspective (quadratic)
+                const eased = normalizedY * normalizedY * 0.3 + normalizedY * 0.7;
+                
+                // Calculate final scale
+                return minScale + (maxScale - minScale) * eased;
+            }
+
+            /**
+             * Calculate shadow properties based on entity height and perspective
+             * @param {number} y - Entity Y position
+             * @param {number} baseRadiusX - Base shadow radius X
+             * @param {number} baseRadiusY - Base shadow radius Y
+             * @param {number} perspectiveScale - Current perspective scale (from getPerspectiveScale)
+             * @returns {Object} { radiusX, radiusY, alpha, yOffset }
+             */
+            function getShadowProperties(y, baseRadiusX, baseRadiusY, perspectiveScale = 1) {
+                if (!Number.isFinite(y)) {
+                    return { 
+                        radiusX: baseRadiusX, 
+                        radiusY: baseRadiusY, 
+                        alpha: 0.3, 
+                        yOffset: 0 
+                    };
+                }
+                
+                // Normalize Y position (0 = far, 1 = near)
+                const normalizedY = Math.max(0, Math.min(1, y / 540));
+                
+                // Far objects have smaller, fainter shadows (appear higher above ground)
+                // Near objects have larger, darker shadows (appear closer to ground)
+                
+                // Shadow size scales with perspective + additional reduction for far objects
+                const sizeMultiplier = perspectiveScale * (0.85 + normalizedY * 0.15);
+                const radiusX = baseRadiusX * sizeMultiplier;
+                const radiusY = baseRadiusY * sizeMultiplier;
+                
+                // Shadow intensity: far objects (0.2) to near objects (0.4)
+                const alpha = 0.2 + (normalizedY * 0.2);
+                
+                // Shadow offset: far objects appear higher (larger offset) to near objects (smaller offset)
+                const baseOffset = baseRadiusX * 0.5;
+                const yOffset = baseOffset * (1.3 - normalizedY * 0.5);
+                
+                return { radiusX, radiusY, alpha, yOffset };
+            }
+
             function noteMissingAsset(reference, type) {
                 if (!reference) {
                     return;
@@ -21905,16 +21967,30 @@
                 const graphics = enemy.pixiGraphics;
                 graphics.clear();
                 
-                // Draw aura
+                // Position and transform the graphics container
+                graphics.position.set(enemy.x, enemy.y);
+                
+                // Apply gravity-based rotation to stay parallel with background grid
+                if (enemy.gravityRotation !== undefined && !store.player?.reducedMotion) {
+                    graphics.rotation = enemy.gravityRotation;
+                } else {
+                    graphics.rotation = 0;
+                }
+                
+                // Apply perspective scaling based on Y position
+                const perspectiveScale = getPerspectiveScale(enemy.y, H);
+                graphics.scale.set(perspectiveScale, perspectiveScale);
+                
+                // Draw aura (now relative to 0,0 since we positioned the graphics)
                 const auraPulse = 1 + (enemy.auraPulse || 0) * 0.22;
                 const auraRange = enemy.auraRange || 220;
                 const auraAlpha = 0.28 + (enemy.buffStacks * 0.04);
-                graphics.circle(enemy.x, enemy.y, auraRange * auraPulse);
+                graphics.circle(0, 0, auraRange * auraPulse);
                 graphics.fill({ color: 0xff6ad5, alpha: auraAlpha * 0.35 });
                 
                 // Draw shadow
                 const groundY = enemy.shadowGround ?? 70;
-                graphics.ellipse(enemy.x, enemy.y + groundY, 30, 15);
+                graphics.ellipse(0, groundY, 30, 15);
                 graphics.fill({ color: 0x000000, alpha: 0.18 });
                 
                 // Get and sort cubes by depth
@@ -21925,8 +22001,8 @@
                 // Draw each cube
                 sorted.forEach(cube => {
                     const screen = cube.screen;
-                    let screenX = enemy.x + screen.x;
-                    let screenY = enemy.y + screen.y;
+                    let screenX = screen.x;  // Now relative to graphics origin
+                    let screenY = screen.y;
                     
                     if (cube.damageTimer > 0) {
                         screenX += (Math.random() - 0.5) * 3;
@@ -22120,6 +22196,17 @@
                     graphics.circle(endX, endY, armWidth);
                     graphics.fill({ color: coreColor, alpha: glowPulse });
                 }
+                
+                // Apply gravity-based rotation to stay parallel with background grid
+                if (enemy.gravityRotation !== undefined && !store.player?.reducedMotion) {
+                    graphics.rotation = enemy.gravityRotation;
+                } else {
+                    graphics.rotation = 0;
+                }
+                
+                // Apply perspective scaling based on Y position
+                const perspectiveScale = getPerspectiveScale(enemy.y, H);
+                graphics.scale.set(perspectiveScale, perspectiveScale);
             }
 
             function drawMechPixi(enemy) {
@@ -22308,6 +22395,17 @@
                 // Position graphics
                 graphics.x = enemy.x;
                 graphics.y = enemy.y;
+                
+                // Apply gravity-based rotation to stay parallel with background grid
+                if (enemy.gravityRotation !== undefined && !store.player?.reducedMotion) {
+                    graphics.rotation = enemy.gravityRotation;
+                } else {
+                    graphics.rotation = 0;
+                }
+                
+                // Apply perspective scaling based on Y position
+                const perspectiveScale = getPerspectiveScale(enemy.y, H);
+                graphics.scale.set(perspectiveScale, perspectiveScale);
             }
 
             function drawCubeBurglar(enemy) {
@@ -36006,15 +36104,30 @@
                     }
                 }
 
-                const shadowRadiusX = Math.max(12, a * 1.25);
-                const shadowRadiusY = Math.max(6, a * 0.5 * flattenScaleY);
-                const shadowAlpha = Math.max(0.18, Math.min(0.4, 0.18 + a * 0.004));
-                drawEntityShadow(drawX, drawY, shadowRadiusX, shadowRadiusY, {
-                    alpha: shadowAlpha,
-                    yOffset: Math.max(6, a * (0.85 * flattenScaleY + 0.35))
+                // Calculate base shadow properties
+                const baseShadowRadiusX = Math.max(12, a * 1.25);
+                const baseShadowRadiusY = Math.max(6, a * 0.5 * flattenScaleY);
+
+                // Apply perspective scaling
+                const perspectiveScale = getPerspectiveScale(drawY, H);
+
+                // Get dynamic shadow properties based on Y position
+                const shadowProps = getShadowProperties(
+                    drawY, 
+                    baseShadowRadiusX, 
+                    baseShadowRadiusY, 
+                    perspectiveScale
+                );
+
+                drawEntityShadow(drawX, drawY, shadowProps.radiusX, shadowProps.radiusY, {
+                    alpha: shadowProps.alpha,
+                    yOffset: shadowProps.yOffset
                 });
 
                 ctx.translate(drawX, drawY);
+                
+                // Apply perspective scaling based on Y position
+                ctx.scale(perspectiveScale, perspectiveScale);
                 
                 // Apply gravity-based rotation to orient enemy toward the "down" direction of the plane
                 if (e.gravityRotation !== undefined && !store.player?.reducedMotion) {
