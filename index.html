@@ -3614,11 +3614,12 @@
                 setTilt(valueX = 0, valueY = 0) {
                     tiltState.currentX = THREE.MathUtils.clamp(valueX, -1, 1);
                     tiltState.currentY = THREE.MathUtils.clamp(valueY, -1, 1);
-                    console.log('🎮 Tilt set - X:', tiltState.currentX.toFixed(3), 'Y:', tiltState.currentY.toFixed(3));
+                },
+                getTilt() {
+                    return { x: tiltState.currentX, y: tiltState.currentY };
                 }
             };
             window.__voidGridTilt.setTilt(0, 0);
-            console.log('✅ Grid tilt interface initialized');
 
             const clock = new THREE.Clock();
 
@@ -3645,18 +3646,26 @@
                 gridMaterial.uniforms.uTime.value = elapsed;
                 backdropMaterial.uniforms.uTime.value = elapsed;
 
-                const tiltX = tiltState.currentX;
-                const tiltY = tiltState.currentY;
-
-                grid.rotation.x = baseGridRotation.x + tiltY * (Math.PI / 4);  // Pitch forward/back 45° (50% of 90°)
-                grid.rotation.y = baseGridRotation.y - tiltX * (Math.PI / 2);  // Bank left/right 90°
-                grid.rotation.z = baseGridRotation.z;
-                grid.position.x = tiltX * 150;  // Move grid left/right with player
-                grid.position.y = -28 + tiltY * 75;  // Move grid up/down (50% of horizontal movement)
+                // Check if reduced motion is enabled
+                const reducedMotion = store.player?.reducedMotion || false;
                 
-                // Debug every 60 frames (~1 sec)
-                if (Math.floor(elapsed * 60) % 60 === 0) {
-                    console.log('🌀 Grid rotation.y:', grid.rotation.y.toFixed(3), 'tilt:', tilt.toFixed(3), 'base:', baseGridRotation.y.toFixed(3), 'pos.x:', grid.position.x.toFixed(1));
+                if (reducedMotion) {
+                    // Keep grid static - no rotation or position changes
+                    grid.rotation.x = baseGridRotation.x;
+                    grid.rotation.y = baseGridRotation.y;
+                    grid.rotation.z = baseGridRotation.z;
+                    grid.position.x = 0;
+                    grid.position.y = -28;
+                } else {
+                    // Normal dynamic motion
+                    const tiltX = tiltState.currentX;
+                    const tiltY = tiltState.currentY;
+
+                    grid.rotation.x = baseGridRotation.x + tiltY * (Math.PI / 6);  // Pitch forward/back 30° (reduced)
+                    grid.rotation.y = baseGridRotation.y - tiltX * (Math.PI / 2);  // Bank left/right 90°
+                    grid.rotation.z = baseGridRotation.z;
+                    grid.position.x = tiltX * 150;  // Move grid left/right with player
+                    grid.position.y = -28 + tiltY * 75;  // Move grid up/down (50% of horizontal movement)
                 }
 
                 renderer.render(scene, camera);
@@ -3823,6 +3832,14 @@
                         <div id="subclassGrid" class="grid" style="grid-template-columns: repeat(2, 1fr);">
                         </div>
 
+                    </div>
+                    <!-- Motion Sickness Survey -->
+                    <div id="motionSicknessPanel" class="panel panel-floating-close hide">
+                        <h2 style="font-family:'Orbitron';color:var(--accent);text-align:center;margin-bottom:30px;">Does this game make you feel sick? 🤢</h2>
+                        <div style="display:flex;gap:20px;justify-content:center;align-items:center;margin-top:30px;">
+                            <button id="motionSickYes" class="btn" type="button" style="font-size:24px;padding:20px 40px;">YES</button>
+                            <button id="motionSickNo" class="btn" type="button" style="font-size:24px;padding:20px 40px;">NO</button>
+                        </div>
                     </div>
                     <div id="storyPanel" class="panel hide">
                         <p>When we first discovered the voidplane, one of the earliest notes was the similarity of the
@@ -16491,8 +16508,6 @@
                         const normalizedX = (p.x - centerX) / (W * 0.5);
                         const normalizedY = (p.y - centerY) / (H * 0.5);
                         window.__voidGridTilt.setTilt(normalizedX, normalizedY);
-                    } else {
-                        console.warn('⚠️ Grid tilt interface not available');
                     }
                 }
                 if (p.pilotGenome === 'beef' && p.beefMaxCharges > 0) {
@@ -17776,6 +17791,67 @@
                 }
             }
 
+            function applyPlaneGravity(dt) {
+                // Skip if reduced motion is enabled
+                if (store.player?.reducedMotion) return;
+                
+                // Get the grid tilt angles from the Three.js system
+                const tilt = window.__voidGridTilt?.getTilt?.() || { x: 0, y: 0 };
+                const tiltX = tilt.x;  // Horizontal tilt (-1 to 1) - left is negative, right is positive
+                const tiltY = tilt.y;  // Vertical tilt (-1 to 1) - up is negative, down is positive
+                
+                // Calculate speed modifier based on plane pitch (tiltY)
+                // When plane pitches up (climbing, tiltY negative): enemies slower
+                // When plane pitches down (diving, tiltY positive): enemies faster
+                // Range: 0.4x speed (climbing) to 1.6x speed (diving)
+                const speedModifier = 1.0 + (tiltY * 0.6);
+                
+                // Calculate gravity direction perpendicular to the plane
+                // When the plane banks left (tiltX negative), enemies drift left
+                // When the plane banks right (tiltX positive), enemies drift right
+                // When the plane pitches up (tiltY negative), enemies drift up (slower)
+                // When the plane pitches down (tiltY positive), enemies drift down (faster)
+                const gravityStrength = 40; // Base gravity in pixels per second
+                
+                // Calculate the "down" direction based on plane orientation
+                // This is the direction perpendicular to the plane (where gravity points)
+                const gravityAngle = Math.atan2(tiltY, tiltX);
+                
+                // Calculate enemy rotation to match the grid's banking angle
+                // Grid banks with: rotation.y = - tiltX * (Math.PI / 2)
+                // To keep enemies parallel to the grid, we rotate them in the opposite direction
+                // When tiltX is negative (banking left), rotate counterclockwise (negative angle)
+                // When tiltX is positive (banking right), rotate clockwise (positive angle)
+                const gridBankingAngle = -tiltX * (Math.PI / 2);
+                
+                // Apply to all enemies
+                store.enemies.forEach(enemy => {
+                    if (enemy.dead || enemy.hp <= 0) return;
+                    
+                    // Horizontal gravity from banking - enemies drift toward the "downhill" side
+                    const horizontalGravity = tiltX * gravityStrength * dt;
+                    
+                    // Vertical gravity from pitching - enemies drift toward the "downhill" direction
+                    const verticalGravity = tiltY * gravityStrength * dt * speedModifier;
+                    
+                    // Apply gravity forces
+                    enemy.x += horizontalGravity;
+                    enemy.y += verticalGravity;
+                    
+                    // Rotate enemy to stay parallel to the background grid
+                    // The grid banks left/right, so we rotate the enemy to match
+                    enemy.gravityRotation = gridBankingAngle;
+                });
+                
+                // Apply to boss if present (boss less affected by gravity)
+                if (store.boss && !store.boss.dead) {
+                    const horizontalGravity = tiltX * gravityStrength * dt * 0.3;
+                    const verticalGravity = tiltY * gravityStrength * dt * speedModifier * 0.3;
+                    store.boss.x += horizontalGravity;
+                    store.boss.y += verticalGravity;
+                }
+            }
+
             function stepWorld(dt) {
                 stepPlayer(dt);
                 if (store.boss) {
@@ -17916,6 +17992,9 @@
 
                 // Update beef shield system
                 updateBeefShield();
+                
+                // Apply plane-based gravity to enemies
+                applyPlaneGravity(dt);
 
                 // Update mech oil/fuel puddles
                 for (let i = store.mechPuddles.length - 1; i >= 0; i--) {
@@ -35936,6 +36015,12 @@
                 });
 
                 ctx.translate(drawX, drawY);
+                
+                // Apply gravity-based rotation to orient enemy toward the "down" direction of the plane
+                if (e.gravityRotation !== undefined && !store.player?.reducedMotion) {
+                    ctx.rotate(e.gravityRotation);
+                }
+                
                 const spawnAlpha = e.spawnOpacity !== undefined ? Math.max(0.2, Math.min(1, e.spawnOpacity)) : 1;
                 ctx.globalAlpha *= spawnAlpha;
 
@@ -47148,7 +47233,14 @@
 
                         panel.classList.add('hide');
                         exitPanel('subclassPanel');
-                        resumeGame(true);  // Force resume to avoid panel visibility race condition
+                        
+                        // Check if this is the first time seeing subclass select (after first boss)
+                        // Show motion sickness survey only once
+                        if (!store.player.motionSicknessSurveyCompleted) {
+                            showMotionSicknessSurvey();
+                        } else {
+                            resumeGame(true);  // Force resume to avoid panel visibility race condition
+                        }
                     }, { once: true });
                 });
 
@@ -47157,6 +47249,46 @@
                     heading.style.display = 'block'; // Show h2 for subclass selection
                 }
                 panel.classList.remove('hide');
+            }
+
+            function showMotionSicknessSurvey() {
+                pauseGame();
+                const panel = q('motionSicknessPanel');
+                if (!panel) {
+                    resumeGame();
+                    return;
+                }
+                
+                panel.classList.remove('hide');
+                
+                const yesBtn = q('motionSickYes');
+                const noBtn = q('motionSickNo');
+                
+                const handleYes = () => {
+                    store.player.motionSicknessSurveyCompleted = true;
+                    store.player.reducedMotion = true;
+                    
+                    // Disable grid tilt/rotation by making setTilt a no-op
+                    if (window.__voidGridTilt) {
+                        window.__voidGridTilt.setTilt = () => {};
+                    }
+                    
+                    panel.classList.add('hide');
+                    exitPanel('motionSicknessPanel');
+                    resumeGame(true);
+                };
+                
+                const handleNo = () => {
+                    store.player.motionSicknessSurveyCompleted = true;
+                    store.player.reducedMotion = false;
+                    
+                    panel.classList.add('hide');
+                    exitPanel('motionSicknessPanel');
+                    resumeGame(true);
+                };
+                
+                if (yesBtn) yesBtn.addEventListener('click', handleYes, { once: true });
+                if (noBtn) noBtn.addEventListener('click', handleNo, { once: true });
             }
 
             function showProgressiveSkillTree() {
