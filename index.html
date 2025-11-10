@@ -4674,23 +4674,42 @@
 
                         resizeGameSurfaces();
 
-                        // Create containers for layering
+                        // OVERDRAW PREVENTION: Create containers with proper Z-ordering
+                        // Containers are added in back-to-front order to minimize overdraw
+                        // Particles are behind everything else (backgrounds, glows)
                         particleContainer = new PIXI.Container();
                         particleContainer.eventMode = 'none';
+                        particleContainer.sortableChildren = false; // Disable sorting for performance
+                        
+                        // Flames are background effects
                         flameContainer = new PIXI.Container();
                         flameContainer.eventMode = 'none';
+                        flameContainer.sortableChildren = false;
+                        
+                        // Bullets are mid-layer (player shots)
                         bulletContainer = new PIXI.Container();
                         bulletContainer.eventMode = 'none';
+                        bulletContainer.sortableChildren = false;
+                        
+                        // Cube burglar is a complex entity that needs to be on top
                         cubeBurglarContainer = new PIXI.Container();
                         cubeBurglarContainer.eventMode = 'none';
+                        cubeBurglarContainer.sortableChildren = false;
+                        
+                        // Boss container is always on top (final layer)
                         bossContainer = new PIXI.Container();
                         bossContainer.eventMode = 'none';
+                        bossContainer.sortableChildren = false;
                         
+                        // Add in Z-order: back to front
                         pixiApp.stage.addChild(particleContainer);
                         pixiApp.stage.addChild(flameContainer);
                         pixiApp.stage.addChild(bulletContainer);
                         pixiApp.stage.addChild(cubeBurglarContainer);
                         pixiApp.stage.addChild(bossContainer);
+                        
+                        // PERFORMANCE: Disable automatic sorting on stage
+                        pixiApp.stage.sortableChildren = false;
                         
                         // Set up WebGL context loss/restore handlers
                         setupWebGLContextHandlers();
@@ -14703,10 +14722,15 @@
                             vy: 80,
                             hp: hp,
                             hpMax: hp,
+                            maxHp: hp,  // Required for boss splitting mechanic
                             t: 0,
                             fireT: 0,
                             attackPhase: 0,
                             moveT: 0,
+                            splitCount: 0,  // Track split generation (0=original, 1=first split, 2=second split)
+                            hasTriggeredSplit: false,  // Prevent multiple splits at same threshold
+                            lastPuddleDamageTime: 0,  // Track puddle damage intervals
+                            damageFlashTimer: 0,  // Visual damage feedback
                             instanceId: `debug-hive-${Date.now()}`,
                             spawnWave: store.world ? store.world.wave : 20,
                             spawnedAt: performance.now()
@@ -18487,6 +18511,11 @@
                         updateCubeBurglar(e, dt);
                         return;
                     }
+                    
+                    if (e.type === 'hive_fragment') {
+                        updateHiveFragment(e, dt);
+                        return;
+                    }
 
                     // MOVEMENT AND AI UPDATES
                     if (e.knockback) {
@@ -21560,6 +21589,11 @@
                         strength: 42,
                         crit: false
                     }));
+                    
+                    // Play bug squeal when hull is critically damaged (30% or below)
+                    if (enemy.hp <= enemy.maxHp * 0.3 && enemy.maxHp > 0) {
+                        playBugSqueal();
+                    }
                 }
 
                 // Only defeat when ALL cubes are destroyed, not just HP reaching zero
@@ -22569,16 +22603,26 @@
                 ctx.globalCompositeOperation = 'source-over';
                 ctx.imageSmoothingEnabled = false;
 
-                // Performance optimization: Use faster fill method and cache time calculation
-                ctx.clearRect(0, 0, W, H);
-                if (BASE_SCENE_BACKGROUND_ALPHA > 0) {
+                // OVERDRAW PREVENTION: Clear canvas only once per frame
+                // Using fillRect with opaque color is faster than clearRect + fillRect
+                frameTime = performance.now() / 1000;
+                
+                if (BASE_SCENE_BACKGROUND_ALPHA >= 1.0) {
+                    // Fully opaque background - no need to clearRect, just fill
+                    ctx.fillStyle = BASE_SCENE_BACKGROUND_COLOR;
+                    ctx.fillRect(0, 0, W, H);
+                } else if (BASE_SCENE_BACKGROUND_ALPHA > 0) {
+                    // Transparent background - need to clear first
+                    ctx.clearRect(0, 0, W, H);
                     ctx.save();
                     ctx.globalAlpha = BASE_SCENE_BACKGROUND_ALPHA;
                     ctx.fillStyle = BASE_SCENE_BACKGROUND_COLOR;
                     ctx.fillRect(0, 0, W, H);
                     ctx.restore();
+                } else {
+                    // No background - just clear
+                    ctx.clearRect(0, 0, W, H);
                 }
-                frameTime = performance.now() / 1000;
 
                 advanceMapTheme(dt);
 
@@ -22821,12 +22865,32 @@
                 // ============================================================================
 
                 // Canvas fallback rendering (for special bullets or when Pixi not ready)
+                // OVERDRAW PREVENTION: Batch bullets by type to minimize context state changes
+                // Group bullets to reduce save/restore overhead
+                const flameBullets = [];
+                const iceBullets = [];
+                const poisonBullets = [];
+                const fireBullets = [];
+                const voidBullets = [];
+                const normalBullets = [];
+                
                 store.bullets.forEach(b => {
                     // Skip bullets if Pixi is handling them (skip lava blades AND flames)
                     if (USE_PIXI_BULLETS && (!b.isFlame || b.isLavaBlade)) {
                         return;
                     }
                     
+                    // Group by type for batch rendering
+                    if (b.isFlame) flameBullets.push(b);
+                    else if (b.element === 'ice') iceBullets.push(b);
+                    else if (b.element === 'poison') poisonBullets.push(b);
+                    else if (b.element === 'fire') fireBullets.push(b);
+                    else if (b.element === 'void') voidBullets.push(b);
+                    else normalBullets.push(b);
+                });
+                
+                // Render each batch with minimal state changes
+                [...flameBullets, ...iceBullets, ...poisonBullets, ...fireBullets, ...voidBullets, ...normalBullets].forEach(b => {
                     ctx.save();
                     ctx.translate(b.x, b.y);
                     ctx.fillStyle = b.col;
@@ -23179,7 +23243,7 @@
                 drawTemporalBeam();
                 drawGeminiSlowFields();
                 if (store.boss && store.boss.visible !== false) {
-                    drawBoss(store.boss);
+                    drawBoss(store.boss, dt);
                     // Draw hallucinations after boss if it's shadow clone
                     if (store.boss.behavior === 'shadow_clone') {
                         renderShadowHallucinations(ctx, store.boss);
@@ -23206,7 +23270,22 @@
 
                 const activePixiFlames = pixiFlamesEnabled ? new Set() : null;
 
+                // OVERDRAW PREVENTION: Culling margins for off-screen particles
+                const cullMargin = 50; // Extra margin to prevent pop-in
+                const minX = -cullMargin;
+                const maxX = W + cullMargin;
+                const minY = -cullMargin;
+                const maxY = H + cullMargin;
+
                 store.flameParticles.forEach(p => {
+                    // OVERDRAW PREVENTION: Cull off-screen flames early
+                    if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) {
+                        if (activeFlameDisplays.has(p)) {
+                            releaseFlameDisplay(p);
+                        }
+                        return;
+                    }
+
                     const tryPixi = pixiFlamesEnabled && p && p.enablePixiFlame;
 
                     if (!tryPixi) {
@@ -24023,6 +24102,13 @@
                 ctx.restore();
 
                 store.bulletToggleOrbs = orbsForHover;
+
+                // OVERDRAW PREVENTION: Reset canvas state to defaults at end of render
+                // Prevents state leakage between frames that could cause overdraw
+                ctx.globalAlpha = 1.0;
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.shadowBlur = 0;
+                ctx.shadowColor = 'transparent';
             }
 
 
@@ -26348,38 +26434,82 @@
             function renderShadowHallucinations(ctx, boss) {
                 if (!boss.hallucinations) return;
                 
-                boss.hallucinations.forEach(hal => {
+                const player = (typeof store !== 'undefined' && store && store.player) ? store.player : {};
+                const playerSubclass = player && player.subclass ? player.subclass : '';
+                
+                // Get base accent color that matches the real boss
+                let baseAccent = '#8fa0ff';
+                let baseGlowR = 90, baseGlowG = 140, baseGlowB = 255;
+                
+                switch (playerSubclass) {
+                    case 'juggernaut': 
+                        baseAccent = '#ff6b6b'; 
+                        baseGlowR = 255; baseGlowG = 107; baseGlowB = 107;
+                        break;
+                    case 'marauder': 
+                        baseAccent = '#66ff99'; 
+                        baseGlowR = 102; baseGlowG = 255; baseGlowB = 153;
+                        break;
+                    case 'demolitioner': 
+                        baseAccent = '#ffd166'; 
+                        baseGlowR = 255; baseGlowG = 209; baseGlowB = 102;
+                        break;
+                    case 'railgunner': 
+                        baseAccent = '#b794ff'; 
+                        baseGlowR = 183; baseGlowG = 148; baseGlowB = 255;
+                        break;
+                    case 'phasestriker': 
+                        baseAccent = '#ff91d2'; 
+                        baseGlowR = 255; baseGlowG = 145; baseGlowB = 210;
+                        break;
+                    case 'stormbringer': 
+                        baseAccent = '#6dd0ff'; 
+                        baseGlowR = 109; baseGlowG = 208; baseGlowB = 255;
+                        break;
+                }
+                
+                boss.hallucinations.forEach((hal, index) => {
                     if (hal.dead && hal.dissolveTimer <= 0) return;
                     
                     ctx.save();
                     
-                    // Pulsing blue glow for hallucinations
+                    // Generate subtle color variation for each hallucination
+                    // Keep them similar to real boss but with slight hue/brightness shifts
+                    const hueShift = (index * 0.15) - 0.225; // Range: -0.225 to +0.225
+                    const brightnessShift = (index % 2 === 0) ? 0.9 : 1.1; // Alternate slightly darker/brighter
+                    
+                    // Apply subtle color variation
+                    const variedR = Math.min(255, Math.max(0, baseGlowR * brightnessShift + hueShift * 15));
+                    const variedG = Math.min(255, Math.max(0, baseGlowG * brightnessShift + hueShift * 15));
+                    const variedB = Math.min(255, Math.max(0, baseGlowB * brightnessShift + hueShift * 15));
+                    
+                    // Pulsing glow matching the real boss color
                     const pulse = 0.7 + Math.sin(hal.pulsePhase) * 0.3;
                     const glowSize = hal.r * (1.6 + pulse * 0.4);
                     const glowGradient = ctx.createRadialGradient(hal.x, hal.y, 0, hal.x, hal.y, glowSize);
-                    glowGradient.addColorStop(0, 'rgba(90, 140, 255, 0.5)');
-                    glowGradient.addColorStop(0.5, 'rgba(70, 120, 255, 0.25)');
-                    glowGradient.addColorStop(1, 'rgba(50, 100, 255, 0)');
+                    glowGradient.addColorStop(0, `rgba(${variedR}, ${variedG}, ${variedB}, ${0.5 * 0.85})`); // Slightly more transparent
+                    glowGradient.addColorStop(0.5, `rgba(${variedR * 0.9}, ${variedG * 0.9}, ${variedB * 0.9}, ${0.25 * 0.85})`);
+                    glowGradient.addColorStop(1, `rgba(${variedR * 0.8}, ${variedG * 0.8}, ${variedB * 0.8}, 0)`);
                     ctx.fillStyle = glowGradient;
                     ctx.beginPath();
                     ctx.arc(hal.x, hal.y, glowSize, 0, Math.PI * 2);
                     ctx.fill();
                     
-                    // Draw full shadow clone body for hallucination
+                    // Draw full shadow clone body for hallucination with matched subclass colors
                     drawShadowCloneBody(ctx, hal.x, hal.y, hal.r, {
                         isHallucination: true,
-                        alpha: hal.alpha,
+                        alpha: hal.alpha * 0.85, // Slightly more transparent than real boss
                         isEnraged: false,
                         moveT: hal.moveT || 0,
-                        subclass: '' // Hallucinations always use default blue accent
+                        subclass: playerSubclass // Match the real boss's accent color
                     });
                     
-                    // Extra shimmer ring to distinguish hallucinations
-                    ctx.globalAlpha = hal.alpha * (0.4 + 0.3 * pulse);
-                    ctx.strokeStyle = `rgba(150, 200, 255, ${0.8 * pulse})`;
-                    ctx.lineWidth = 2;
+                    // Extra shimmer ring to subtly distinguish hallucinations
+                    ctx.globalAlpha = hal.alpha * (0.3 + 0.2 * pulse); // More subtle shimmer
+                    ctx.strokeStyle = `rgba(${variedR * 1.2}, ${variedG * 1.2}, ${variedB * 1.2}, ${0.6 * pulse})`;
+                    ctx.lineWidth = 1.5; // Thinner ring
                     ctx.beginPath();
-                    ctx.arc(hal.x, hal.y, hal.r * 1.3, 0, Math.PI * 2);
+                    ctx.arc(hal.x, hal.y, hal.r * 1.25, 0, Math.PI * 2); // Closer to body
                     ctx.stroke();
                     
                     ctx.restore();
@@ -31966,6 +32096,232 @@
             }
             function stepBossVoidRaven(dt, b, dmgScale) { b.moveT += dt; if (!b.isDiving) { b.y = 100 + Math.sin(b.moveT * 2) * 20; b.x = W / 2 + Math.cos(b.moveT * 0.5) * (W / 2 - 100); } b.fireT -= dt; if (b.fireT <= 0) { b.attackPhase = (b.attackPhase + 1) % 5; switch (b.attackPhase) { case 0: case 2: b.fireT = 1.2; for (let i = 0; i < 7; i++) { const angle = Math.atan2(store.player.y - b.y, store.player.x - b.x) + (i - 3) * 0.1; store.eBullets.push({ x: b.x, y: b.y, vx: Math.cos(angle) * 220, vy: Math.sin(angle) * 220, r: 4, col: '#4169e1', dmg: 18 * dmgScale }); } break; case 1: case 3: b.fireT = 2.0; const numHatchlings = 2 + Math.floor(store.world.wave / 15); for (let i = 0; i < numHatchlings; i++) { const hatchling = spawnEnemy('avian_hatchling'); hatchling.x = b.x + (Math.random() - 0.5) * 80; hatchling.y = b.y + 40; store.enemies.push(hatchling); } break; case 4: b.fireT = 4.0; b.isDiving = true; b.diveTarget = { x: store.player.x, y: store.player.y }; const dx = b.diveTarget.x - b.x; const dy = b.diveTarget.y - b.y; const dist = Math.sqrt(dx * dx + dy * dy); b.vx = (dx / dist) * 400; b.vy = (dy / dist) * 400; setTimeout(() => { b.isDiving = false; b.vx = 0; b.vy = 30; }, 1500); break; } } if (b.isDiving) { b.x += b.vx * dt; b.y += b.vy * dt; } }
 
+            function playBugSqueal() {
+                const now = performance.now();
+                const cooldown = 200; // 200ms cooldown to avoid spam
+                if (!window.lastBugSquealTime) window.lastBugSquealTime = 0;
+                if (now - window.lastBugSquealTime < cooldown) return;
+                window.lastBugSquealTime = now;
+                
+                if (sounds.bugSqueal) {
+                    sounds.bugSqueal.currentTime = 0;
+                    sounds.bugSqueal.volume = 0.4;
+                    sounds.bugSqueal.play().catch(() => {});
+                }
+            }
+            
+            function updateHiveFragment(e, dt) {
+                // Update damage flash timer
+                if (e.damageFlashTimer > 0) {
+                    e.damageFlashTimer = Math.max(0, e.damageFlashTimer - dt);
+                }
+                
+                // Check poison puddle collisions and take damage
+                if (!e.lastPuddleDamageTime) e.lastPuddleDamageTime = 0;
+                const now = performance.now();
+                store.poisonPuddles.forEach(puddle => {
+                    const dx = e.x - puddle.x;
+                    const dy = e.y - puddle.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist < puddle.r + e.r) {
+                        if (now - e.lastPuddleDamageTime > 500) {
+                            const damage = puddle.damage || 5;
+                            e.hp = Math.max(0, e.hp - damage);
+                            e.lastPuddleDamageTime = now;
+                            e.damageFlashTimer = 0.2;
+                            
+                            if (e.hp <= 0) {
+                                e.dead = true;
+                                // Play bug squeal for smallest fragments
+                                if (e.splitCount === 2) {
+                                    playBugSqueal();
+                                }
+                                return;
+                            }
+                        }
+                    }
+                });
+                
+                // Fragment skittering movement (simpler than boss)
+                e.moveT = (e.moveT || 0) + dt;
+                
+                const speedScale = 1 + (e.splitCount * 0.2);
+                e.x += e.spiderVX * speedScale * dt;
+                e.y += e.spiderVY * speedScale * dt;
+
+                const minX = 90;
+                const maxX = W - 90;
+                const minY = 90;
+                const maxY = Math.min(H - 170, H * 0.78);
+
+                // Bounce off walls
+                if (e.x <= minX && e.spiderVX < 0) {
+                    e.x = minX;
+                    e.spiderVX = Math.abs(e.spiderVX) * (0.9 + Math.random() * 0.25);
+                    e.spiderVY += (Math.random() - 0.5) * 140;
+                } else if (e.x >= maxX && e.spiderVX > 0) {
+                    e.x = maxX;
+                    e.spiderVX = -Math.abs(e.spiderVX) * (0.9 + Math.random() * 0.25);
+                    e.spiderVY += (Math.random() - 0.5) * 140;
+                }
+
+                if (e.y <= minY && e.spiderVY < 0) {
+                    e.y = minY;
+                    e.spiderVY = Math.abs(e.spiderVY) * (0.9 + Math.random() * 0.25);
+                    e.spiderVX += (Math.random() - 0.5) * 110;
+                } else if (e.y >= maxY && e.spiderVY > 0) {
+                    e.y = maxY;
+                    e.spiderVY = -Math.abs(e.spiderVY) * (0.9 + Math.random() * 0.25);
+                    e.spiderVX += (Math.random() - 0.5) * 110;
+                }
+
+                e.spiderVX = clamp(e.spiderVX, -260, 260);
+                e.spiderVY = clamp(e.spiderVY, -240, 240);
+
+                // Retarget toward player periodically
+                e.webRetargetT -= dt;
+                if (e.webRetargetT <= 0) {
+                    const player = store.player;
+                    const dx = player.x - e.x;
+                    const dy = (player.y - 40) - e.y;
+                    const dist = Math.max(120, Math.hypot(dx, dy));
+                    
+                    // Fragments dive more often (30% vs 15%)
+                    const shouldDive = Math.random() < 0.3;
+                    
+                    if (shouldDive) {
+                        const chaseStrengthX = 280 + Math.random() * 80;
+                        const chaseStrengthY = 260 + Math.random() * 80;
+                        e.spiderVX = clamp(e.spiderVX * 0.3 + (dx / dist) * chaseStrengthX, -320, 320);
+                        e.spiderVY = clamp(e.spiderVY * 0.3 + (dy / dist) * chaseStrengthY, -300, 300);
+                    } else {
+                        // Avoid puddles
+                        let avoidX = 0;
+                        let avoidY = 0;
+                        const checkRadius = 150;
+                        
+                        store.poisonPuddles.forEach(puddle => {
+                            const pdx = e.x - puddle.x;
+                            const pdy = e.y - puddle.y;
+                            const pdist = Math.hypot(pdx, pdy);
+                            
+                            if (pdist < checkRadius) {
+                                const avoidStrength = (checkRadius - pdist) / checkRadius;
+                                avoidX += (pdx / pdist) * avoidStrength * 200;
+                                avoidY += (pdy / pdist) * avoidStrength * 200;
+                            }
+                        });
+                        
+                        const chaseStrengthX = 180 + Math.random() * 60;
+                        const chaseStrengthY = 170 + Math.random() * 60;
+                        e.spiderVX = clamp(e.spiderVX * 0.5 + (dx / dist) * chaseStrengthX + avoidX, -260, 260);
+                        e.spiderVY = clamp(e.spiderVY * 0.5 + (dy / dist) * chaseStrengthY + avoidY, -240, 240);
+                    }
+                    
+                    e.webRetargetT = 1.3 + Math.random() * 0.9;
+                }
+                
+                // Fire poison blobs at player periodically
+                e.fireT = (e.fireT || 0) - dt;
+                if (e.fireT <= 0) {
+                    e.fireT = 2.5 + Math.random() * 1.5; // Less frequent than boss
+                    
+                    const player = store.player;
+                    const angle = Math.atan2(player.y - e.y, player.x - e.x);
+                    const numBlobs = e.splitCount === 2 ? 2 : 3; // Fewer blobs for smaller fragments
+                    
+                    for (let i = 0; i < numBlobs; i++) {
+                        const spread = Math.PI * 0.4;
+                        const blobAngle = angle + (Math.random() - 0.5) * spread;
+                        const speed = 180 + Math.random() * 60;
+                        
+                        store.eBullets.push({
+                            x: e.x,
+                            y: e.y,
+                            vx: Math.cos(blobAngle) * speed,
+                            vy: Math.sin(blobAngle) * speed,
+                            r: 6,
+                            col: '#7cfc00',
+                            dmg: 15,
+                            life: 4,
+                            type: 'poisonBlob'
+                        });
+                    }
+                }
+                
+                // Check for splitting at 50% health
+                if (!e.hasTriggeredSplit && e.hp <= e.maxHp * 0.5 && e.splitCount < 2) {
+                    e.hasTriggeredSplit = true;
+                    
+                    const splitCount = e.splitCount + 1;
+                    const healthPerSplit = e.maxHp * 0.25; // Each split gets 25% of original max health
+                    const sizeScale = 0.7 - (splitCount * 0.15); // Fragments get progressively smaller
+                    const speedScale = 1 + (splitCount * 0.3); // Fragments get progressively faster
+                    
+                    // Preserve original total rewards - splitting distributes them, doesn't multiply them
+                    const originalGold = e.originalGold || e.gold || 400;
+                    const originalXp = e.originalXp || e.xp || 800;
+                    const originalScore = e.originalScore || e.score || 200;
+                    
+                    // Current entity rewards when it splits (1/3 of what's remaining)
+                    const currentGold = e.gold || Math.floor(originalGold / 3);
+                    const currentXp = e.xp || Math.floor(originalXp / 3);
+                    const currentScore = e.score || Math.floor(originalScore / 3);
+                    
+                    // Split current rewards: parent keeps its share, each fragment gets half of what's left
+                    // This ensures total = originalGold/Xp/Score across all generations
+                    const fragmentGold = Math.floor(currentGold / 2);
+                    const fragmentXp = Math.floor(currentXp / 2);
+                    const fragmentScore = Math.floor(currentScore / 2);
+                    
+                    for (let i = 0; i < 2; i++) {
+                        const offsetAngle = (i * Math.PI) + Math.random() * 0.5;
+                        const offsetDist = e.r * 1.5;
+                        
+                        const newFragment = {
+                            x: e.x + Math.cos(offsetAngle) * offsetDist,
+                            y: e.y + Math.sin(offsetAngle) * offsetDist,
+                            r: e.r * sizeScale,
+                            hp: healthPerSplit,
+                            maxHp: healthPerSplit,
+                            hpMax: healthPerSplit, // Required for nested splits
+                            type: 'hive_fragment',
+                            behavior: 'broodlord', // Use same AI as parent
+                            isChampion: true,
+                            splitCount: splitCount,
+                            hasTriggeredSplit: false, // Allow this fragment to split again
+                            spiderInit: false, // Force re-initialization
+                            spiderVX: (Math.random() < 0.5 ? -1 : 1) * (120 + Math.random() * 40) * speedScale,
+                            spiderVY: (90 + Math.random() * 50) * speedScale,
+                            webRetargetT: 1.4,
+                            poisonTrailT: 2.0,
+                            lastPuddleDamageTime: 0,
+                            damageFlashTimer: 0,
+                            fireT: 1.0 + Math.random() * 0.8,
+                            moveT: 0,
+                            gold: fragmentGold,
+                            xp: fragmentXp,
+                            score: fragmentScore,
+                            originalGold: originalGold, // Preserve for nested splits
+                            originalXp: originalXp,
+                            originalScore: originalScore,
+                            color: '#FF6B35'
+                        };
+                        
+                        store.enemies.push(newFragment);
+                    }
+                    
+                    // Original fragment dies and is replaced by the 2 new ones
+                    e.dead = true;
+                    
+                    // Play bug squeal sound if this is the smallest generation (splitCount 2)
+                    if (splitCount >= 2) {
+                        playSound('bugSqueal');
+                    }
+                }
+            }
+            
             function stepBossBroodlord(dt, b, dmgScale) {
                 // Initialize poison puddles array if not exists
                 if (!store.poisonPuddles) {
@@ -32014,16 +32370,68 @@
                 b.spiderVX = clamp(b.spiderVX, -260, 260);
                 b.spiderVY = clamp(b.spiderVY, -240, 240);
 
+                // Check poison puddle collisions and take damage
+                if (!b.lastPuddleDamageTime) b.lastPuddleDamageTime = 0;
+                const currentTime = performance.now();
+                store.poisonPuddles.forEach(puddle => {
+                    const dx = b.x - puddle.x;
+                    const dy = b.y - puddle.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist < puddle.r + b.r) {
+                        // Boss is in poison puddle - apply damage
+                        if (currentTime - b.lastPuddleDamageTime > 500) {
+                            const damage = puddle.damage || 5;
+                            b.hp = Math.max(0, b.hp - damage);
+                            b.lastPuddleDamageTime = currentTime;
+                            // Set damage flash timer for visual feedback
+                            b.damageFlashTimer = 0.2;
+                        }
+                    }
+                });
+
                 b.webRetargetT -= dt;
                 if (b.webRetargetT <= 0) {
                     const player = store.player;
                     const dx = player.x - b.x;
                     const dy = (player.y - 40) - b.y;
                     const dist = Math.max(120, Math.hypot(dx, dy));
-                    const chaseStrengthX = 180 + Math.random() * 60;
-                    const chaseStrengthY = 170 + Math.random() * 60;
-                    b.spiderVX = clamp(b.spiderVX * 0.5 + (dx / dist) * chaseStrengthX, -260, 260);
-                    b.spiderVY = clamp(b.spiderVY * 0.5 + (dy / dist) * chaseStrengthY, -240, 240);
+                    
+                    // Decide whether to dive toward player or avoid puddles (15% chance to dive)
+                    const shouldDive = Math.random() < 0.15;
+                    
+                    if (shouldDive) {
+                        // DIVE MODE: Aggressively move toward player ignoring puddles
+                        const chaseStrengthX = 280 + Math.random() * 80; // Faster chase
+                        const chaseStrengthY = 260 + Math.random() * 80;
+                        b.spiderVX = clamp(b.spiderVX * 0.3 + (dx / dist) * chaseStrengthX, -320, 320);
+                        b.spiderVY = clamp(b.spiderVY * 0.3 + (dy / dist) * chaseStrengthY, -300, 300);
+                    } else {
+                        // AVOID MODE: Check for nearby puddles and steer away
+                        let avoidX = 0;
+                        let avoidY = 0;
+                        const checkRadius = 150; // Distance to check for puddles
+                        
+                        store.poisonPuddles.forEach(puddle => {
+                            const pdx = b.x - puddle.x;
+                            const pdy = b.y - puddle.y;
+                            const pdist = Math.hypot(pdx, pdy);
+                            
+                            if (pdist < checkRadius) {
+                                // Add avoidance force (stronger when closer)
+                                const avoidStrength = (checkRadius - pdist) / checkRadius;
+                                avoidX += (pdx / pdist) * avoidStrength * 200;
+                                avoidY += (pdy / pdist) * avoidStrength * 200;
+                            }
+                        });
+                        
+                        // Combine chase and avoidance
+                        const chaseStrengthX = 180 + Math.random() * 60;
+                        const chaseStrengthY = 170 + Math.random() * 60;
+                        b.spiderVX = clamp(b.spiderVX * 0.5 + (dx / dist) * chaseStrengthX + avoidX, -260, 260);
+                        b.spiderVY = clamp(b.spiderVY * 0.5 + (dy / dist) * chaseStrengthY + avoidY, -240, 240);
+                    }
+                    
                     b.webRetargetT = 1.3 + Math.random() * 0.9;
                 }
 
@@ -32221,7 +32629,7 @@
                     }
                 }
 
-                const now = performance.now();
+                const puddleCheckTime = performance.now();
                 const bossRadius = b.r || 80;
                 const puddleDamageInterval = 600; // ms between damage ticks while boss is in the acid
 
@@ -32241,18 +32649,81 @@
                     if (dist < effectiveRadius) {
                         // Standing in the acid slows and harms the Hive Sovereign
                         b.slowTimer = Math.max(b.slowTimer || 0, 0.45);
-
-                        if (!b.lastPuddleDamageTime || now - b.lastPuddleDamageTime >= puddleDamageInterval) {
-                            const puddleDamage = Math.max(8, puddle.damage * 0.9);
-                            b.hp -= puddleDamage;
-                            store.world.totalDamage += puddleDamage;
-                            b.lastPuddleDamageTime = now;
-
-                            if (b.hp <= 0) {
-                                handleBossDefeat();
-                                return;
-                            }
-                        }
+                    }
+                }
+                
+                // Check for splitting at 50% health
+                if (!b.splitCount) b.splitCount = 0; // Track generation: 0=original, 1=first split, 2=second split
+                if (!b.hasTriggeredSplit && b.hp <= b.maxHp * 0.5 && b.splitCount < 2) {
+                    b.hasTriggeredSplit = true;
+                    
+                    // Create 2 new hive queen fragments as elite enemies
+                    const splitCount = b.splitCount + 1;
+                    const healthPerSplit = b.maxHp * 0.25; // Each split gets 25% of original health
+                    const sizeScale = 0.7 - (splitCount * 0.15); // Smaller with each split (0.7 -> 0.55 -> 0.4)
+                    const speedScale = 1 + (splitCount * 0.3); // Faster with each split
+                    
+                    // Preserve original total rewards - splitting distributes them, doesn't multiply them
+                    // Boss rewards from powerups/handleBossDefeat are separate - these are fragment kill rewards
+                    const originalGold = b.originalGold || b.gold || 1200;
+                    const originalXp = b.originalXp || b.xp || 2400;
+                    const originalScore = b.originalScore || b.score || 600;
+                    
+                    // Current entity rewards when it splits (1/3 of what's remaining)
+                    const currentGold = b.gold || Math.floor(originalGold / 3);
+                    const currentXp = b.xp || Math.floor(originalXp / 3);
+                    const currentScore = b.score || Math.floor(originalScore / 3);
+                    
+                    // Split current rewards: parent keeps its share, each fragment gets half of what's left
+                    // This ensures total = originalGold/Xp/Score across all generations
+                    const fragmentGold = Math.floor(currentGold / 2);
+                    const fragmentXp = Math.floor(currentXp / 2);
+                    const fragmentScore = Math.floor(currentScore / 2);
+                    
+                    for (let i = 0; i < 2; i++) {
+                        const offsetAngle = (i * Math.PI * 2 / 2) + Math.random() * 0.5;
+                        const offsetDist = b.r * 1.5;
+                        
+                        const fragment = {
+                            x: b.x + Math.cos(offsetAngle) * offsetDist,
+                            y: b.y + Math.sin(offsetAngle) * offsetDist,
+                            r: b.r * sizeScale,
+                            hp: healthPerSplit,
+                            maxHp: healthPerSplit,
+                            hpMax: healthPerSplit, // Required for nested splits
+                            type: 'hive_fragment',
+                            behavior: 'broodlord', // Use same AI as parent
+                            isChampion: true, // Treat as champion for visual effects
+                            splitCount: splitCount,
+                            hasTriggeredSplit: false, // Allow recursive splitting
+                            spiderInit: false, // Force re-initialization of movement
+                            spiderVX: (Math.random() < 0.5 ? -1 : 1) * (120 + Math.random() * 40) * speedScale,
+                            spiderVY: (90 + Math.random() * 50) * speedScale,
+                            webRetargetT: 1.4,
+                            poisonTrailT: 1.2 + Math.random() * 0.5,
+                            lastPuddleDamageTime: 0,
+                            damageFlashTimer: 0,
+                            fireT: 0.5 + Math.random() * 0.8,
+                            attackPhase: Math.floor(Math.random() * 4),
+                            moveT: 0,
+                            gold: fragmentGold,
+                            xp: fragmentXp,
+                            score: fragmentScore,
+                            originalGold: originalGold, // Preserve for nested splits
+                            originalXp: originalXp,
+                            originalScore: originalScore,
+                            color: '#FF6B35'
+                        };
+                        
+                        store.enemies.push(fragment);
+                    }
+                    
+                    // Mark original boss for removal - this triggers handleBossDefeat and awards boss powerups
+                    b.dead = true;
+                    
+                    // Play bug squeal sound if this is the smallest generation (splitCount 2)
+                    if (splitCount >= 2) {
+                        playSound('bugSqueal');
                     }
                 }
             }
@@ -34292,7 +34763,7 @@
                 ctx.restore();
             }
 
-            function drawBoss(t) {
+            function drawBoss(t, dt = 0) {
                 // DISABLED: PixiJS rendering causes layering issues - boss renders above particles/effects
                 // The Canvas2D rendering works better for proper visual layering
                 // if (t.behavior === "broodlord") {
@@ -34639,6 +35110,25 @@
 
                 } else if (t.behavior === "broodlord") {
                     // Canvas fallback rendering for HIVE SOVEREIGN (PixiJS already tried at function start)
+                    // Update damage flash timer
+                    if (t.damageFlashTimer > 0) {
+                        t.damageFlashTimer = Math.max(0, t.damageFlashTimer - dt);
+                    }
+                    
+                    // Apply red flash if damaged recently
+                    const flashIntensity = t.damageFlashTimer > 0 ? (t.damageFlashTimer / 0.2) : 0;
+                    if (flashIntensity > 0) {
+                        ctx.save();
+                        ctx.globalCompositeOperation = 'lighter';
+                        ctx.shadowColor = 'rgba(255, 0, 0, 0.8)';
+                        ctx.shadowBlur = 40 * flashIntensity;
+                        ctx.fillStyle = `rgba(255, 0, 0, ${0.3 * flashIntensity})`;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, t.r * 1.5, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                    }
+                    
                     // Draw cyberpunk HIVE SOVEREIGN - sleek and menacing
                     const time = performance.now() / 1000;
                     const pulseFactor = 1 + 0.08 * Math.sin(time * 3);
@@ -35792,6 +36282,13 @@
                     return;
                 }
                 
+                // OVERDRAW PREVENTION: Cull enemies completely off-screen
+                // Use generous margin to account for large enemies and visual effects
+                const cullMargin = 100;
+                if (e.x < -cullMargin || e.x > W + cullMargin || e.y < -cullMargin || e.y > H + cullMargin) {
+                    return;
+                }
+                
                 const { x: t, y: o, r: a, type: r, color: n, hp: l, hpMax: s, t: c } = e;
                 
                 ctx.save();
@@ -35955,6 +36452,62 @@
                 ctx.lineWidth = 2; ctx.beginPath(); switch (r) {
                     case "cube_burglar":
                         drawCubeBurglar(e);
+                        break;
+                    case "hive_fragment":
+                        // Draw hive fragment - smaller version of Hive Queen boss
+                        // Apply red flash if damaged recently
+                        const flashIntensity = e.damageFlashTimer > 0 ? (e.damageFlashTimer / 0.2) : 0;
+                        if (flashIntensity > 0) {
+                            ctx.save();
+                            ctx.globalCompositeOperation = 'lighter';
+                            ctx.shadowColor = 'rgba(255, 0, 0, 0.8)';
+                            ctx.shadowBlur = 30 * flashIntensity;
+                            ctx.fillStyle = `rgba(255, 0, 0, ${0.3 * flashIntensity})`;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, a * 1.5, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.restore();
+                        }
+                        
+                        const time = performance.now() / 1000;
+                        const pulseFactor = 1 + 0.08 * Math.sin(time * 3);
+                        
+                        // Main body gradient
+                        const mainGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, a * 1.2);
+                        mainGradient.addColorStop(0, '#FF6B35');
+                        mainGradient.addColorStop(0.4, '#FF8E53');
+                        mainGradient.addColorStop(0.7, '#8B4A9C');
+                        mainGradient.addColorStop(1, '#2D1B69');
+                        
+                        ctx.fillStyle = mainGradient;
+                        ctx.strokeStyle = '#FF6B35';
+                        ctx.lineWidth = 2;
+                        ctx.shadowColor = '#8B4A9C';
+                        ctx.shadowBlur = 15 * pulseFactor;
+                        
+                        ctx.beginPath();
+                        ctx.ellipse(0, 0, a * 1.2 * pulseFactor, a * 0.8, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.stroke();
+                        ctx.shadowBlur = 0;
+                        
+                        // Energy eyes
+                        const eyeGlow = 0.6 + 0.4 * Math.sin(time * 5);
+                        for (let side = -1; side <= 1; side += 2) {
+                            ctx.shadowColor = '#FF6B35';
+                            ctx.shadowBlur = 15 * eyeGlow;
+                            ctx.fillStyle = '#FF6B35';
+                            ctx.beginPath();
+                            ctx.arc(side * a * 0.4, -a * 0.3, a * 0.15 * eyeGlow, 0, Math.PI * 2);
+                            ctx.fill();
+                            
+                            ctx.shadowBlur = 8;
+                            ctx.fillStyle = '#FFFFFF';
+                            ctx.beginPath();
+                            ctx.arc(side * a * 0.4, -a * 0.3, a * 0.1, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                        ctx.shadowBlur = 0;
                         break;
                     case "avian_hatchling": ctx.fillStyle = n + "aa"; ctx.strokeStyle = n; ctx.lineWidth = 2; ctx.moveTo(0, -a * 1.2); ctx.lineTo(a, -a * 0.5); ctx.lineTo(a, a * 0.5); ctx.lineTo(0, a * 1.2); ctx.lineTo(-a, a * 0.5); ctx.lineTo(-a, -a * 0.5); ctx.closePath(); ctx.fill(); ctx.stroke(); break; case "construct_gold": ctx.fillStyle = n + "aa"; ctx.strokeStyle = n; ctx.lineWidth = 2; ctx.moveTo(0, -a); ctx.lineTo(a, 0); ctx.lineTo(0, a); ctx.lineTo(-a, 0); ctx.closePath(); ctx.fill(); ctx.stroke(); break; case "trap_king_add": case "drone": const droneGradient = ctx.createLinearGradient(-a, -a, a, a); droneGradient.addColorStop(0, "#E0E0E0"); droneGradient.addColorStop(1, "#A0A0A0"); ctx.fillStyle = droneGradient; ctx.strokeStyle = "#808080"; ctx.beginPath(); ctx.moveTo(-1.2 * a, 0); ctx.quadraticCurveTo(0, -a, 1.2 * a, 0); ctx.quadraticCurveTo(0, .6 * a, -1.2 * a, 0); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#aaddff"; ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, -.2 * a, .6 * a, Math.PI, 0); ctx.fill(); ctx.stroke(); ctx.fillStyle = r === "trap_king_add" ? "#ffc83d" : "#32CD32"; ctx.beginPath(); ctx.ellipse(0, -.2 * a, .3 * a, .4 * a, 0, 0, 2 * Math.PI); ctx.fill(); ctx.fillStyle = "#000000"; ctx.beginPath(); ctx.ellipse(-.1 * a, -.25 * a, .08 * a, .15 * a, -.5, 0, 2 * Math.PI); ctx.ellipse(.1 * a, -.25 * a, .08 * a, .15 * a, .5, 0, 2 * Math.PI); ctx.fill(); break;
                     case "hunter": {
