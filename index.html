@@ -43,28 +43,6 @@
             font-family: 'Audiowide', ui-sans-serif, system-ui
         }
 
-        /* Three.js Warp Tunnel Background */
-        .warp-tunnel-layer {
-            position: absolute;
-            inset: 0;
-            z-index: 0;
-            pointer-events: none;
-            overflow: hidden;
-            background: #000;
-        }
-
-        .warp-tunnel-layer canvas {
-            width: 100%;
-            height: 100%;
-            display: block;
-            pointer-events: none;
-        }
-
-        .warp-tunnel-canvas {
-            border-radius: 0 !important;
-            cursor: default !important;
-        }
-
         /* Hide VS Code browser controls */
         .monaco-workbench .part.titlebar,
         .vs-dark .monaco-workbench .part.titlebar,
@@ -3457,163 +3435,15 @@
 </head>
 
 <body>
-    <!-- Three.js Warp Tunnel Background -->
-    <script type="module">
-        import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-
-        const initWarpTunnel = () => {
-            const stage = document.getElementById('stage');
-
-            let container = document.getElementById('warpTunnelContainer');
-            if (!container) {
-                container = document.createElement('div');
-                container.id = 'warpTunnelContainer';
-                container.setAttribute('aria-hidden', 'true');
-            }
-
-            container.classList.add('warp-tunnel-layer');
-            container.textContent = '';
-
-            if (stage && container.parentElement !== stage) {
-                stage.insertBefore(container, stage.firstChild || null);
-            } else if (!stage && container.parentElement !== document.body) {
-                document.body.insertBefore(container, document.body.firstChild || null);
-                container.style.position = 'fixed';
-                container.style.inset = '0';
-                container.style.zIndex = '-1';
-            }
-
-            const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-            renderer.setClearColor(0x02000a, 1);
-            renderer.domElement.classList.add('warp-tunnel-canvas');
-            container.appendChild(renderer.domElement);
-
-            const scene = new THREE.Scene();
-            const camera = new THREE.PerspectiveCamera(80, 1, 0.01, 2000);
-            camera.position.set(0, 6, 18);
-            camera.lookAt(0, -12, -140);
-
-            scene.fog = new THREE.Fog(0x02000a, 40, 260);
-
-            const gridGeometry = new THREE.PlaneGeometry(2200, 2200, 1, 1);
-            const gridMaterial = new THREE.ShaderMaterial({
-                extensions: { derivatives: true },
-                uniforms: {
-                    uTime: { value: 0 },
-                    uGridScale: { value: 0.055 },
-                    uLineWidth: { value: 0.08 },
-                    uGlowColor: { value: new THREE.Color(0x00eaff) },
-                    uAccentColor: { value: new THREE.Color(0x8a2bff) },
-                    uBaseColor: { value: new THREE.Color(0x02000a) }
-                },
-                vertexShader: `
-                    varying vec3 vWorldPos;
-                    void main() {
-                        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-                        vWorldPos = worldPosition.xyz;
-                        gl_Position = projectionMatrix * viewMatrix * worldPosition;
-                    }
-                `,
-                fragmentShader: `
-                    uniform float uTime;
-                    uniform float uGridScale;
-                    uniform float uLineWidth;
-                    uniform vec3 uGlowColor;
-                    uniform vec3 uAccentColor;
-                    uniform vec3 uBaseColor;
-                    varying vec3 vWorldPos;
-
-                    float lineIntensity(float coord, float width, float derivative) {
-                        float distanceToLine = abs(fract(coord) - 0.5);
-                        float feather = max(derivative, 1e-5);
-                        return 1.0 - smoothstep(0.0, width + feather, distanceToLine);
-                    }
-
-                    void main() {
-                        vec2 coord = vec2(vWorldPos.x, vWorldPos.z - uTime * 120.0);
-                        vec2 scaled = coord * uGridScale;
-                        vec2 derivative = fwidth(scaled);
-                        float lineX = lineIntensity(scaled.x, uLineWidth, derivative.x);
-                        float lineY = lineIntensity(scaled.y, uLineWidth, derivative.y);
-                        float gridGlow = max(lineX, lineY);
-                        float crossGlow = lineX * lineY;
-
-                        float depthFade = clamp(1.0 - abs(vWorldPos.z) * 0.0018, 0.0, 1.0);
-                        float pulse = 0.5 + 0.5 * sin(uTime * 2.6 + vWorldPos.z * 0.07);
-                        float sweep = smoothstep(0.0, 0.7, fract(scaled.y * 0.14 + uTime * 0.45));
-
-                        vec3 color = uBaseColor * 0.25;
-                        color += uGlowColor * gridGlow * (0.65 + pulse * 0.35);
-                        color += uAccentColor * crossGlow * 1.8;
-                        color += uGlowColor * sweep * 0.35;
-                        color *= depthFade;
-
-                        float alpha = clamp(gridGlow * 0.9 + sweep * 0.25, 0.0, 1.0) * depthFade;
-                        if (alpha <= 0.001) discard;
-                        gl_FragColor = vec4(color, alpha);
-                    }
-                `,
-                transparent: true,
-                depthWrite: false,
-                side: THREE.DoubleSide,
-                blending: THREE.AdditiveBlending
-            });
-
-            const grid = new THREE.Mesh(gridGeometry, gridMaterial);
-            grid.rotation.x = -Math.PI * 0.46;
-            grid.position.set(0, -28, -140);
-            grid.renderOrder = -5;
-            scene.add(grid);
-            const baseGridRotation = {
-                x: grid.rotation.x,
-                y: grid.rotation.y,
-                z: grid.rotation.z
-            };
-
-            const backdropGeometry = new THREE.PlaneGeometry(2200, 1200, 1, 1);
-            const backdropMaterial = new THREE.ShaderMaterial({
-                uniforms: {
-                    uTime: { value: 0 },
-                    uColorTop: { value: new THREE.Color(0x26006a) },
-                    uColorBottom: { value: new THREE.Color(0x02000a) }
-                },
-                vertexShader: `
-                    varying vec2 vUv;
-                    void main() {
-                        vUv = uv;
-                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                    }
-                `,
-                fragmentShader: `
-                    uniform float uTime;
-                    uniform vec3 uColorTop;
-                    uniform vec3 uColorBottom;
-                    varying vec2 vUv;
-                    void main() {
-                        float gradient = smoothstep(0.1, 0.85, vUv.y);
-                        vec3 color = mix(uColorBottom, uColorTop, pow(gradient, 1.4));
-                        float scan = sin((vUv.y + uTime * 0.18) * 70.0) * 0.015;
-                        color += vec3(0.05, 0.0, 0.12) * scan;
-                        gl_FragColor = vec4(color, 1.0);
-                    }
-                `,
-                depthWrite: false,
-                depthTest: false,
-                transparent: false,
-                side: THREE.DoubleSide
-            });
-
-            const backdrop = new THREE.Mesh(backdropGeometry, backdropMaterial);
-            backdrop.position.set(0, 120, -420);
-            backdrop.renderOrder = -10;
-            scene.add(backdrop);
-
+    <!-- Lightweight Space Background -->
+    <script>
+        (() => {
+            // Tilt state compatibility layer
             const tiltState = { currentX: 0, currentY: 0 };
             window.__voidGridTilt = {
                 setTilt(valueX = 0, valueY = 0) {
-                    tiltState.currentX = THREE.MathUtils.clamp(valueX, -1, 1);
-                    tiltState.currentY = THREE.MathUtils.clamp(valueY, -1, 1);
+                    tiltState.currentX = Math.max(-1, Math.min(1, valueX));
+                    tiltState.currentY = Math.max(-1, Math.min(1, valueY));
                 },
                 getTilt() {
                     return { x: tiltState.currentX, y: tiltState.currentY };
@@ -3621,66 +3451,174 @@
             };
             window.__voidGridTilt.setTilt(0, 0);
 
-            const clock = new THREE.Clock();
-
-            const resizeRenderer = () => {
-                const target = stage || document.documentElement;
-                const width = target?.clientWidth || window.innerWidth;
-                const height = target?.clientHeight || window.innerHeight;
-                renderer.setSize(width, height);
-                camera.aspect = width / Math.max(height, 1);
-                camera.updateProjectionMatrix();
-            };
-
-            resizeRenderer();
-            window.addEventListener('resize', resizeRenderer);
-            if (stage && 'ResizeObserver' in window) {
-                const resizeObserver = new ResizeObserver(resizeRenderer);
-                resizeObserver.observe(stage);
-            }
-
-            const animate = () => {
-                requestAnimationFrame(animate);
-                const elapsed = clock.getElapsedTime();
-
-                gridMaterial.uniforms.uTime.value = elapsed;
-                backdropMaterial.uniforms.uTime.value = elapsed;
-
-                // Check if reduced motion is enabled
-                const reducedMotion = store.player?.reducedMotion || false;
+            // Wait for DOM
+            const initBackground = () => {
+                const stage = document.getElementById('stage') || document.body;
                 
-                if (reducedMotion) {
-                    // Keep grid static - no rotation or position changes
-                    grid.rotation.x = baseGridRotation.x;
-                    grid.rotation.y = baseGridRotation.y;
-                    grid.rotation.z = baseGridRotation.z;
-                    grid.position.x = 0;
-                    grid.position.y = -28;
-                } else {
-                    // Normal dynamic motion
-                    const tiltX = tiltState.currentX;
-                    const tiltY = tiltState.currentY;
+                // Create background canvas
+                const bgCanvas = document.createElement('canvas');
+                bgCanvas.style.position = 'absolute';
+                bgCanvas.style.top = '0';
+                bgCanvas.style.left = '0';
+                bgCanvas.style.width = '100%';
+                bgCanvas.style.height = '100%';
+                bgCanvas.style.zIndex = '0';
+                bgCanvas.style.pointerEvents = 'none';
+                stage.insertBefore(bgCanvas, stage.firstChild);
 
-                    grid.rotation.x = baseGridRotation.x + tiltY * (Math.PI / 6);  // Pitch forward/back 30° (reduced)
-                    grid.rotation.y = baseGridRotation.y - tiltX * (Math.PI / 2);  // Bank left/right 90°
-                    grid.rotation.z = baseGridRotation.z;
-                    grid.position.x = tiltX * 150;  // Move grid left/right with player
-                    grid.position.y = -28 + tiltY * 75;  // Move grid up/down (50% of horizontal movement)
-                }
+                const bgCtx = bgCanvas.getContext('2d', { alpha: false });
+                let stars = [];
+                let nebulaClouds = [];
 
-                renderer.render(scene, camera);
+                const resize = () => {
+                    bgCanvas.width = bgCanvas.clientWidth;
+                    bgCanvas.height = bgCanvas.clientHeight;
+                    initStars();
+                    initNebula();
+                };
+
+                // Initialize starfield - multiple layers for depth
+                const initStars = () => {
+                    stars = [];
+                    const numStars = Math.min(200, Math.floor((bgCanvas.width * bgCanvas.height) / 4000));
+                    
+                    for (let i = 0; i < numStars; i++) {
+                        stars.push({
+                            x: Math.random() * bgCanvas.width,
+                            y: Math.random() * bgCanvas.height,
+                            size: Math.random() * 1.5 + 0.5,
+                            speed: Math.random() * 0.3 + 0.1,
+                            brightness: Math.random() * 0.6 + 0.4,
+                            twinklePhase: Math.random() * Math.PI * 2,
+                            twinkleSpeed: Math.random() * 2 + 1
+                        });
+                    }
+                };
+
+                // Initialize nebula clouds
+                const initNebula = () => {
+                    nebulaClouds = [];
+                    const numClouds = 8;
+                    
+                    for (let i = 0; i < numClouds; i++) {
+                        nebulaClouds.push({
+                            x: Math.random() * bgCanvas.width,
+                            y: Math.random() * bgCanvas.height,
+                            radius: Math.random() * 200 + 100,
+                            hue: Math.random() * 60 + 260, // Purple-blue range
+                            alpha: Math.random() * 0.08 + 0.03,
+                            drift: Math.random() * 0.05 + 0.02
+                        });
+                    }
+                };
+
+                resize();
+                window.addEventListener('resize', resize, { passive: true });
+
+                // Animation loop
+                let lastTime = performance.now();
+                const animate = () => {
+                    requestAnimationFrame(animate);
+                    const currentTime = performance.now();
+                    const delta = (currentTime - lastTime) / 16.67; // Normalized to 60fps
+                    lastTime = currentTime;
+
+                    const w = bgCanvas.width;
+                    const h = bgCanvas.height;
+
+                    // Clear with dark space gradient
+                    const gradient = bgCtx.createRadialGradient(w * 0.5, h * 0.3, 0, w * 0.5, h * 0.5, Math.max(w, h));
+                    gradient.addColorStop(0, '#0a0015');
+                    gradient.addColorStop(0.5, '#050010');
+                    gradient.addColorStop(1, '#000005');
+                    bgCtx.fillStyle = gradient;
+                    bgCtx.fillRect(0, 0, w, h);
+
+                    // Draw nebula clouds
+                    for (const cloud of nebulaClouds) {
+                        const radialGrad = bgCtx.createRadialGradient(
+                            cloud.x, cloud.y, 0,
+                            cloud.x, cloud.y, cloud.radius
+                        );
+                        radialGrad.addColorStop(0, `hsla(${cloud.hue}, 80%, 50%, ${cloud.alpha})`);
+                        radialGrad.addColorStop(0.5, `hsla(${cloud.hue + 20}, 70%, 40%, ${cloud.alpha * 0.5})`);
+                        radialGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                        
+                        bgCtx.fillStyle = radialGrad;
+                        bgCtx.fillRect(cloud.x - cloud.radius, cloud.y - cloud.radius, cloud.radius * 2, cloud.radius * 2);
+
+                        // Slow drift
+                        cloud.x += cloud.drift * delta;
+                        if (cloud.x > w + cloud.radius) cloud.x = -cloud.radius;
+                    }
+
+                    // Draw distant planet in background
+                    const planetX = w * 0.15;
+                    const planetY = h * 0.25;
+                    const planetRadius = Math.min(w, h) * 0.12;
+                    
+                    // Planet glow
+                    const planetGlow = bgCtx.createRadialGradient(planetX, planetY, planetRadius * 0.8, planetX, planetY, planetRadius * 1.8);
+                    planetGlow.addColorStop(0, 'rgba(138, 43, 226, 0.15)');
+                    planetGlow.addColorStop(1, 'rgba(138, 43, 226, 0)');
+                    bgCtx.fillStyle = planetGlow;
+                    bgCtx.fillRect(planetX - planetRadius * 1.8, planetY - planetRadius * 1.8, planetRadius * 3.6, planetRadius * 3.6);
+
+                    // Planet surface
+                    const planetGrad = bgCtx.createRadialGradient(
+                        planetX - planetRadius * 0.3, planetY - planetRadius * 0.3, 0,
+                        planetX, planetY, planetRadius
+                    );
+                    planetGrad.addColorStop(0, '#3a1f5c');
+                    planetGrad.addColorStop(0.6, '#1a0a2e');
+                    planetGrad.addColorStop(1, '#0a0015');
+                    bgCtx.fillStyle = planetGrad;
+                    bgCtx.beginPath();
+                    bgCtx.arc(planetX, planetY, planetRadius, 0, Math.PI * 2);
+                    bgCtx.fill();
+
+                    // Planet atmosphere rim light
+                    bgCtx.strokeStyle = 'rgba(138, 43, 226, 0.3)';
+                    bgCtx.lineWidth = 2;
+                    bgCtx.beginPath();
+                    bgCtx.arc(planetX, planetY, planetRadius, 0, Math.PI * 2);
+                    bgCtx.stroke();
+
+                    // Draw stars with twinkling
+                    const time = currentTime / 1000;
+                    for (const star of stars) {
+                        const twinkle = Math.sin(time * star.twinkleSpeed + star.twinklePhase) * 0.3 + 0.7;
+                        const alpha = star.brightness * twinkle;
+                        
+                        bgCtx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+                        bgCtx.fillRect(star.x, star.y, star.size, star.size);
+
+                        // Star glow
+                        if (star.size > 1) {
+                            bgCtx.fillStyle = `rgba(200, 220, 255, ${alpha * 0.3})`;
+                            bgCtx.fillRect(star.x - 0.5, star.y - 0.5, star.size + 1, star.size + 1);
+                        }
+
+                        // Parallax movement
+                        star.y += star.speed * delta;
+                        if (star.y > h) {
+                            star.y = 0;
+                            star.x = Math.random() * w;
+                        }
+                    }
+                };
+
+                animate();
             };
 
-            animate();
-        };
-
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initWarpTunnel, { once: true });
-        } else {
-            initWarpTunnel();
-        }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initBackground, { once: true });
+            } else {
+                initBackground();
+            }
+        })();
     </script>
-    <!-- End Three.js Background -->
+    <!-- End Lightweight Space Background -->
 
     <!-- Loading Screen - No font dependencies for instant display -->
     <div id="loadingScreen" style="display: flex;">
@@ -3763,7 +3701,6 @@
 
                     <div id="announce" style="display: none;" aria-live="polite"></div>
                 </div>
-                <canvas id="game" width="960" height="540"></canvas>
                 <div id="diagBox">
                     <table
                         style="font-size:10px; color:var(--fg); background:rgba(0,0,0,0.7); padding:8px; border-radius:8px; border-spacing:8px 2px;">
@@ -4339,7 +4276,7 @@
             
             // --- CORE SETUP ---
             const isTestMode = window.__voidTestMode === true;
-            const W = 960, H = 540;
+            let W = 960, H = 540; // Dynamic - will be set by resize handler
             const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
             const q = (id) => document.getElementById(id);
             const CHAMPION_SYSTEM_ENABLED = false;
@@ -17870,48 +17807,6 @@
                 
                 // Calculate gravity direction perpendicular to the plane
                 // When the plane banks left (tiltX negative), enemies drift left
-                // When the plane banks right (tiltX positive), enemies drift right
-                // When the plane pitches up (tiltY negative), enemies drift up (slower)
-                // When the plane pitches down (tiltY positive), enemies drift down (faster)
-                const gravityStrength = 40; // Base gravity in pixels per second
-                
-                // Calculate the "down" direction based on plane orientation
-                // This is the direction perpendicular to the plane (where gravity points)
-                const gravityAngle = Math.atan2(tiltY, tiltX);
-                
-                // Calculate enemy rotation to match the grid's banking angle
-                // Grid banks with: rotation.y = - tiltX * (Math.PI / 2)
-                // To keep enemies parallel to the grid, we rotate them in the opposite direction
-                // When tiltX is negative (banking left), rotate counterclockwise (negative angle)
-                // When tiltX is positive (banking right), rotate clockwise (positive angle)
-                const gridBankingAngle = -tiltX * (Math.PI / 2);
-                
-                // Apply to all enemies
-                store.enemies.forEach(enemy => {
-                    if (enemy.dead || enemy.hp <= 0) return;
-                    
-                    // Horizontal gravity from banking - enemies drift toward the "downhill" side
-                    const horizontalGravity = tiltX * gravityStrength * dt;
-                    
-                    // Vertical gravity from pitching - enemies drift toward the "downhill" direction
-                    const verticalGravity = tiltY * gravityStrength * dt * speedModifier;
-                    
-                    // Apply gravity forces
-                    enemy.x += horizontalGravity;
-                    enemy.y += verticalGravity;
-                    
-                    // Rotate enemy to stay parallel to the background grid
-                    // The grid banks left/right, so we rotate the enemy to match
-                    enemy.gravityRotation = gridBankingAngle;
-                });
-                
-                // Apply to boss if present (boss less affected by gravity)
-                if (store.boss && !store.boss.dead) {
-                    const horizontalGravity = tiltX * gravityStrength * dt * 0.3;
-                    const verticalGravity = tiltY * gravityStrength * dt * speedModifier * 0.3;
-                    store.boss.x += horizontalGravity;
-                    store.boss.y += verticalGravity;
-                }
             }
 
             function stepWorld(dt) {
@@ -21969,13 +21864,7 @@
                 
                 // Position and transform the graphics container
                 graphics.position.set(enemy.x, enemy.y);
-                
-                // Apply gravity-based rotation to stay parallel with background grid
-                if (enemy.gravityRotation !== undefined && !store.player?.reducedMotion) {
-                    graphics.rotation = enemy.gravityRotation;
-                } else {
-                    graphics.rotation = 0;
-                }
+                graphics.rotation = 0;
                 
                 // Apply perspective scaling based on Y position
                 const perspectiveScale = getPerspectiveScale(enemy.y, H);
@@ -22197,12 +22086,7 @@
                     graphics.fill({ color: coreColor, alpha: glowPulse });
                 }
                 
-                // Apply gravity-based rotation to stay parallel with background grid
-                if (enemy.gravityRotation !== undefined && !store.player?.reducedMotion) {
-                    graphics.rotation = enemy.gravityRotation;
-                } else {
-                    graphics.rotation = 0;
-                }
+                graphics.rotation = 0;
                 
                 // Apply perspective scaling based on Y position
                 const perspectiveScale = getPerspectiveScale(enemy.y, H);
@@ -22396,12 +22280,7 @@
                 graphics.x = enemy.x;
                 graphics.y = enemy.y;
                 
-                // Apply gravity-based rotation to stay parallel with background grid
-                if (enemy.gravityRotation !== undefined && !store.player?.reducedMotion) {
-                    graphics.rotation = enemy.gravityRotation;
-                } else {
-                    graphics.rotation = 0;
-                }
+                graphics.rotation = 0;
                 
                 // Apply perspective scaling based on Y position
                 const perspectiveScale = getPerspectiveScale(enemy.y, H);
@@ -36129,11 +36008,6 @@
                 // Apply perspective scaling based on Y position
                 ctx.scale(perspectiveScale, perspectiveScale);
                 
-                // Apply gravity-based rotation to orient enemy toward the "down" direction of the plane
-                if (e.gravityRotation !== undefined && !store.player?.reducedMotion) {
-                    ctx.rotate(e.gravityRotation);
-                }
-                
                 const spawnAlpha = e.spawnOpacity !== undefined ? Math.max(0.2, Math.min(1, e.spawnOpacity)) : 1;
                 ctx.globalAlpha *= spawnAlpha;
 
@@ -47384,6 +47258,13 @@
                     // Disable grid tilt/rotation by making setTilt a no-op
                     if (window.__voidGridTilt) {
                         window.__voidGridTilt.setTilt = () => {};
+                        // Reset tilt to 0 to stop all lateral movement
+                        window.__voidGridTilt.getTilt = () => ({ x: 0, y: 0 });
+                    }
+                    
+                    // Reset grid offset tracking so enemies don't have residual offset
+                    if (store.world) {
+                        store.world.prevGridOffset = { x: 0, y: 0 };
                     }
                     
                     panel.classList.add('hide');
