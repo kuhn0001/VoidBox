@@ -4652,14 +4652,14 @@
                 try {
                     const stage = document.querySelector('.stage');
                     pixiApp = new PIXI.Application();
-                    const rendererResolution = Math.min(window.devicePixelRatio || 1, 1.5);
+                    const rendererResolution = Math.min(window.devicePixelRatio || 1, 2);
                     pixiApp.init({
                         width: W,
                         height: H,
                         backgroundAlpha: 0,
                         antialias: false,
                         resolution: rendererResolution,
-                        autoDensity: true,
+                        autoDensity: false,
                         useContextAlpha: false,
                         powerPreference: 'high-performance'
                     }).then(() => {
@@ -5068,8 +5068,6 @@
 
             // --- MAIN CANVAS SETUP ---
             const cvs = document.createElement('canvas');
-            cvs.width = W;
-            cvs.height = H;
             cvs.style.position = 'absolute';
             cvs.style.top = '0';
             cvs.style.left = '0';
@@ -5080,11 +5078,29 @@
             const ctx = cvs.getContext('2d');
             const stageElement = document.querySelector('.stage');
 
-            // Simple resize handler - no complex scaling
+            // DPI-aware rendering
             const resizeGameSurfaces = () => {
-                // Canvas stays at fixed 960x540 resolution
-                // CSS will handle stretching to fit the viewport
+                const dpr = Math.min(window.devicePixelRatio || 1, 2); // Cap at 2x for performance
+                
+                // Canvas stays at 960x540 but with higher internal resolution for crispness
+                cvs.width = W * dpr;
+                cvs.height = H * dpr;
+                
+                // Scale context to maintain game coordinates
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.imageSmoothingEnabled = false;
+
+                // Update PixiJS resolution to match
+                if (pixiApp && pixiApp.renderer) {
+                    pixiApp.renderer.resolution = dpr;
+                    if (typeof pixiApp.renderer.resize === 'function') {
+                        pixiApp.renderer.resize(W, H);
+                    }
+                }
             };
+
+            // Initial resize
+            resizeGameSurfaces();
 
             // ═══════════════════════════════════════════════════════════════════════
             // PIXI BOSS RENDERING - High Performance Hive Sovereign
@@ -22547,7 +22563,8 @@
                 frameCount++;
                 clearGradientCaches();
 
-                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
                 ctx.globalAlpha = 1;
                 ctx.globalCompositeOperation = 'source-over';
                 ctx.imageSmoothingEnabled = false;
