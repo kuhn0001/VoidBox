@@ -18,6 +18,8 @@
         if (window.PIXI && PIXI.utils && PIXI.utils.skipHello) {
             PIXI.utils.skipHello();
         }
+
+        
     </script>
     <title>Void Skies</title>
     <style>
@@ -128,6 +130,28 @@
             box-shadow: 0 0 60px rgba(255, 0, 255, .4);
             container-type: inline-size;
             z-index: 2;
+        }
+
+        /* Three.js Warp Tunnel Background */
+        .warp-tunnel-layer {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            overflow: hidden;
+            background: #000;
+        }
+
+        .warp-tunnel-layer canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            pointer-events: none;
+        }
+
+        .warp-tunnel-canvas {
+            border-radius: 0 !important;
+            cursor: default !important;
         }
 
         canvas {
@@ -3432,12 +3456,20 @@
             to { transform: rotate(360deg); }
         }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+        }
+      }
+    </script>
 </head>
 
 <body>
     <!-- Three.js Purple Tron Grid Background -->
-    <script>
+    <script type="module">
+        import * as THREE from 'three';
+        
         (() => {
             // Tilt state compatibility layer
             const tiltState = { currentX: 0, currentY: 0 };
@@ -3452,14 +3484,11 @@
             };
             window.__voidGridTilt.setTilt(0, 0);
 
-            // Initialize Three.js Tron grid background
+            // Initialize Three.js Tron grid background with asteroid system
             const initBackground = () => {
-                if (typeof THREE === 'undefined') {
-                    console.warn('Three.js not loaded, skipping background');
-                    return;
-                }
-
                 const stage = document.getElementById('stage') || document.body;
+                // Determine mobile context locally in this scope; global checkIsMobile may be defined later
+                const checkIsMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
                 
                 // Create Three.js renderer
                 const renderer = new THREE.WebGLRenderer({ 
@@ -3476,24 +3505,87 @@
                 renderer.domElement.style.height = '100%';
                 renderer.domElement.style.zIndex = '0';
                 renderer.domElement.style.pointerEvents = 'none';
-                stage.insertBefore(renderer.domElement, stage.firstChild);
+                // Optionally reuse or wrap the renderer canvas in a container layer for CSS and accessibility
+                let warpContainer = document.getElementById('warpTunnelContainer');
+                if (!warpContainer) {
+                    warpContainer = document.createElement('div');
+                    warpContainer.id = 'warpTunnelContainer';
+                    warpContainer.className = 'warp-tunnel-layer';
+                    warpContainer.setAttribute('aria-hidden', 'true');
+                    warpContainer.style.pointerEvents = 'none';
+                }
+                // Attach or reattach the renderer canvas
+                if (!warpContainer.contains(renderer.domElement)) warpContainer.appendChild(renderer.domElement);
+                renderer.domElement.classList.add('warp-tunnel-canvas');
+                stage.insertBefore(warpContainer, stage.firstChild);
 
                 const scene = new THREE.Scene();
                 const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 3000);
                 camera.position.set(0, 80, 100);
                 camera.lookAt(0, -50, -300);
 
-                // Create purple Tron grid
-                const gridSize = 3000;
-                const gridGeometry = new THREE.PlaneGeometry(gridSize, gridSize, 1, 1);
+                // Asteroid artillery system for Three.js
+                const asteroidGroup = new THREE.Group();
+                scene.add(asteroidGroup);
+                
+                // Store reference globally for game code to access
+                window.__threeAsteroidSystem = {
+                    scene,
+                    asteroidGroup,
+                    asteroids: [],
+                    impactParticles: [],
+                    // Per-system performance tuning
+                    performance: {
+                        fpsHistory: [],
+                        maxActiveAsteroids: checkIsMobile ? 50 : 120,
+                        minActiveAsteroids: checkIsMobile ? 20 : 40
+                    }
+                };
+
+                // Shared asteroid geometry/material for performance (reused across many asteroids)
+                const sharedAsteroidGeometry = new THREE.SphereGeometry(1, 8, 6);
+                const sharedAsteroidMaterial = new THREE.MeshBasicMaterial({
+                    color: 0xff66ff,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                const sharedTrailMaterial = new THREE.PointsMaterial({
+                    color: 0xff44ff,
+                    size: 6,
+                    transparent: true,
+                    opacity: 0.6,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false
+                });
+
+                // Attach shared references to the system for debug/cleanup
+                window.__threeAsteroidSystem.sharedAsteroidGeometry = sharedAsteroidGeometry;
+                window.__threeAsteroidSystem.sharedAsteroidMaterial = sharedAsteroidMaterial;
+                window.__threeAsteroidSystem.sharedTrailMaterial = sharedTrailMaterial;
+
+                // Create InstancedMesh for asteroid cores to minimize draw calls
+                const MAX_INSTANCED_ASTEROIDS = 200; // enough precision for heavy bombardments
+                const asteroidInstanced = new THREE.InstancedMesh(sharedAsteroidGeometry, sharedAsteroidMaterial, MAX_INSTANCED_ASTEROIDS);
+                asteroidInstanced.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+                asteroidInstanced.count = 0; // start with zero drawn instances
+                asteroidGroup.add(asteroidInstanced);
+                // Save capacity for later capacity checks
+                window.__threeAsteroidSystem.instancedCapacity = MAX_INSTANCED_ASTEROIDS;
+                window.__threeAsteroidSystem.asteroidInstanced = asteroidInstanced;
+                window.__threeAsteroidSystem.instancedCount = 0;
+                window.__threeAsteroidSystem.instanceMap = new Map(); // asteroid -> instance index
+
+                // Create purple Tron grid (lower-overhead backed by optimized shader)
+                const gridGeometry = new THREE.PlaneGeometry(2200, 2200, 1, 1);
                 const gridMaterial = new THREE.ShaderMaterial({
+                    extensions: { derivatives: true },
                     uniforms: {
                         uTime: { value: 0 },
-                        uGridScale: { value: 0.025 }, // Larger grid cells for distant look
-                        uLineWidth: { value: 0.06 },
-                        uGlowColor: { value: new THREE.Color(0xaa00ff) }, // Purple
-                        uAccentColor: { value: new THREE.Color(0xff00ff) }, // Magenta
-                        uBaseColor: { value: new THREE.Color(0x0a0015) }
+                        uGridScale: { value: 0.055 },
+                        uLineWidth: { value: 0.08 },
+                        uGlowColor: { value: new THREE.Color(0x00eaff) },
+                        uAccentColor: { value: new THREE.Color(0x8a2bff) },
+                        uBaseColor: { value: new THREE.Color(0x02000a) }
                     },
                     vertexShader: `
                         varying vec3 vWorldPos;
@@ -3512,33 +3604,32 @@
                         uniform vec3 uBaseColor;
                         varying vec3 vWorldPos;
 
-                        float lineIntensity(float coord, float width) {
+                        float lineIntensity(float coord, float width, float derivative) {
                             float distanceToLine = abs(fract(coord) - 0.5);
-                            return 1.0 - smoothstep(0.0, width, distanceToLine);
+                            float feather = max(derivative, 1e-5);
+                            return 1.0 - smoothstep(0.0, width + feather, distanceToLine);
                         }
 
                         void main() {
-                            // Very slow scroll
-                            vec2 coord = vec2(vWorldPos.x, vWorldPos.z - uTime * 15.0);
+                            vec2 coord = vec2(vWorldPos.x, vWorldPos.z - uTime * 120.0);
                             vec2 scaled = coord * uGridScale;
-                            
-                            float lineX = lineIntensity(scaled.x, uLineWidth);
-                            float lineY = lineIntensity(scaled.y, uLineWidth);
+                            vec2 derivative = fwidth(scaled);
+                            float lineX = lineIntensity(scaled.x, uLineWidth, derivative.x);
+                            float lineY = lineIntensity(scaled.y, uLineWidth, derivative.y);
                             float gridGlow = max(lineX, lineY);
                             float crossGlow = lineX * lineY;
 
-                            // Fade with distance
-                            float depthFade = clamp(1.0 - abs(vWorldPos.z) * 0.0008, 0.0, 1.0);
-                            
-                            // Subtle pulse
-                            float pulse = 0.7 + 0.3 * sin(uTime * 1.5 + vWorldPos.z * 0.04);
+                            float depthFade = clamp(1.0 - abs(vWorldPos.z) * 0.0018, 0.0, 1.0);
+                            float pulse = 0.5 + 0.5 * sin(uTime * 2.6 + vWorldPos.z * 0.07);
+                            float sweep = smoothstep(0.0, 0.7, fract(scaled.y * 0.14 + uTime * 0.45));
 
-                            vec3 color = uBaseColor * 0.3;
-                            color += uGlowColor * gridGlow * (0.5 + pulse * 0.3);
-                            color += uAccentColor * crossGlow * 1.2;
+                            vec3 color = uBaseColor * 0.25;
+                            color += uGlowColor * gridGlow * (0.65 + pulse * 0.35);
+                            color += uAccentColor * crossGlow * 1.8;
+                            color += uGlowColor * sweep * 0.35;
                             color *= depthFade;
 
-                            float alpha = clamp(gridGlow * 0.7, 0.0, 1.0) * depthFade;
+                            float alpha = clamp(gridGlow * 0.9 + sweep * 0.25, 0.0, 1.0) * depthFade;
                             if (alpha <= 0.001) discard;
                             gl_FragColor = vec4(color, alpha);
                         }
@@ -3550,9 +3641,52 @@
                 });
 
                 const grid = new THREE.Mesh(gridGeometry, gridMaterial);
-                grid.rotation.x = -Math.PI * 0.5; // Horizontal below player
-                grid.position.set(0, -200, -500); // Far below and in distance
+                grid.rotation.x = -Math.PI * 0.46;
+                grid.position.set(0, -28, -140);
+                grid.renderOrder = -5;
                 scene.add(grid);
+
+                // Save base rotation for subtle tilt changes
+                const baseGridRotation = { x: grid.rotation.x, y: grid.rotation.y, z: grid.rotation.z };
+
+                // Decorative backdrop gradient (low overhead) like the backup.
+                const backdropGeometry = new THREE.PlaneGeometry(2200, 1200, 1, 1);
+                const backdropMaterial = new THREE.ShaderMaterial({
+                    uniforms: {
+                        uTime: { value: 0 },
+                        uColorTop: { value: new THREE.Color(0x26006a) },
+                        uColorBottom: { value: new THREE.Color(0x02000a) }
+                    },
+                    vertexShader: `
+                        varying vec2 vUv;
+                        void main() {
+                            vUv = uv;
+                            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform float uTime;
+                        uniform vec3 uColorTop;
+                        uniform vec3 uColorBottom;
+                        varying vec2 vUv;
+                        void main() {
+                            float gradient = smoothstep(0.1, 0.85, vUv.y);
+                            vec3 color = mix(uColorBottom, uColorTop, pow(gradient, 1.4));
+                            float scan = sin((vUv.y + uTime * 0.18) * 70.0) * 0.015;
+                            color += vec3(0.05, 0.0, 0.12) * scan;
+                            gl_FragColor = vec4(color, 1.0);
+                        }
+                    `,
+                    depthWrite: false,
+                    depthTest: false,
+                    transparent: false,
+                    side: THREE.DoubleSide
+                });
+
+                const backdrop = new THREE.Mesh(backdropGeometry, backdropMaterial);
+                backdrop.position.set(0, 120, -420);
+                backdrop.renderOrder = -10;
+                scene.add(backdrop);
 
                 // Resize handler
                 const resize = () => {
@@ -3571,14 +3705,314 @@
                 const animate = () => {
                     requestAnimationFrame(animate);
                     const elapsed = clock.getElapsedTime();
+                    const dt = clock.getDelta();
 
                     // Update shader time for slow animation
                     gridMaterial.uniforms.uTime.value = elapsed;
+                    if (typeof backdropMaterial !== 'undefined' && backdropMaterial.uniforms) backdropMaterial.uniforms.uTime.value = elapsed;
+
+                    // Subtle tilt control: apply grid transform unless the player requested reduced motion
+                    // Tilting effect disabled - keep grid static
+                    grid.rotation.x = baseGridRotation.x;
+                    grid.rotation.y = baseGridRotation.y;
+                    grid.rotation.z = baseGridRotation.z;
+                    grid.position.x = 0;
+                    grid.position.y = -28;
+
+                    // Update asteroid artillery system (instanced rendering + trail pools)
+                    updateThreeAsteroidSystem(dt, elapsed);
 
                     renderer.render(scene, camera);
                 };
 
                 animate();
+                
+                // Create performant Three.js asteroid system
+                function updateThreeAsteroidSystem(dt, time) {
+                    if (!window.__threeAsteroidSystem || !store.asteroidProjectiles) return;
+                    
+                    const sys = window.__threeAsteroidSystem;
+                    const W = 960, H = 540; // Game dimensions
+                    // Update performance manager
+                    const perf = sys.performance || {};
+                    if (!perf.fpsHistory) perf.fpsHistory = [];
+                    if (dt > 0) perf.fpsHistory.push(1 / dt);
+                    if (perf.fpsHistory.length > 60) perf.fpsHistory.shift();
+                    const avgFPS = perf.fpsHistory.length ? perf.fpsHistory.reduce((a, b) => a + b, 0) / perf.fpsHistory.length : 60;
+                    perf.avgFPS = avgFPS;
+                    // Simple hysteresis throttling: reduce maxActiveAsteroids when FPS drops below thresholds
+                    const targetLow = 32;
+                    const targetHigh = 50;
+                    const cap = (checkIsMobile ? 50 : 120);
+                    if (avgFPS < targetLow && perf.maxActiveAsteroids > perf.minActiveAsteroids) {
+                        perf.maxActiveAsteroids = Math.max(perf.minActiveAsteroids, perf.maxActiveAsteroids - 6);
+                    } else if (avgFPS > targetHigh && perf.maxActiveAsteroids < cap) {
+                        perf.maxActiveAsteroids = Math.min(cap, perf.maxActiveAsteroids + 6);
+                    }
+                    sys.performance = perf;
+                    
+                    // Sync Three.js asteroids with game asteroids
+                    // Temporary objects for reuse (reduce GC)
+                    const _tmpMatrix = new THREE.Matrix4();
+                    const _tmpQuat = new THREE.Quaternion();
+                    const _tmpPos = new THREE.Vector3();
+                    const _tmpScale = new THREE.Vector3();
+                    store.asteroidProjectiles.forEach(ast => {
+                        if (ast.impacted) return;
+                        
+                        // Create Three.js mesh/instance if needed
+                        if (!ast.threeMesh && !Number.isFinite(ast.instanceId)) {
+                            // Prefer instanced rendering when available
+                            if (sys.asteroidInstanced) {
+                                if (sys.instancedCount < (sys.instancedCapacity || 0)) {
+                                    ast.instanceId = sys.instancedCount;
+                                    sys.instanceMap.set(ast, ast.instanceId);
+                                    sys.instancedCount++;
+                                } else {
+                                    // No instanced slots left; fallback to non-instanced mesh
+                                }
+                            }
+                            if (!Number.isFinite(ast.instanceId) && !ast.threeMesh) {
+                                // Fallback: create a mesh using shared geometry/material
+                                ast.threeMesh = new THREE.Mesh(sys.sharedAsteroidGeometry, sys.sharedAsteroidMaterial);
+                                ast.threeMesh.scale.set(ast.r * 0.8, ast.r * 0.8, ast.r * 0.8);
+                                sys.asteroidGroup.add(ast.threeMesh);
+                            }
+                            
+                            // Trail particles (per-asteroid geometry, shared material)
+                            const trailGeo = new THREE.BufferGeometry();
+                            const trailPositions = new Float32Array(6 * 3); // 6 trail particles
+                            trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+                            
+                            // Use trail pool if available
+                            if (!sys.trailPool) sys.trailPool = [];
+                            let trail = sys.trailPool.pop();
+                            if (!trail) {
+                                trail = new THREE.Points(trailGeo, sys.sharedTrailMaterial);
+                                trail.frustumCulled = false;
+                            } else {
+                                const posAttr = trail.geometry.attributes.position;
+                                if (!posAttr || posAttr.array.length !== trailPositions.length) {
+                                    // Replace geometry if incompatible
+                                    trail.geometry.dispose();
+                                    trail.geometry = trailGeo;
+                                } else {
+                                    // Reuse existing geometry and clear positions
+                                    const arr = posAttr.array;
+                                    for (let j = 0; j < arr.length; j++) arr[j] = 0;
+                                    posAttr.needsUpdate = true;
+                                }
+                            }
+                            trail.material = sys.sharedTrailMaterial; // reuse shared material
+                            ast.threeTrail = trail;
+                            sys.asteroidGroup.add(ast.threeTrail);
+
+                            // Track this asteroid in the system for cleanup
+                            sys.asteroids.push(ast);
+                        }
+                        
+                        // Convert 2D game coords to 3D space (game is 960x540, map to 3D)
+                        const x3d = (ast.x - W / 2) * 0.5;
+                        const z3d = -(ast.y - H / 2) * 0.5;
+                        const y3d = 50; // Above the grid
+                        
+                        // If instanced, update instance matrix; otherwise update mesh position
+                        if (Number.isFinite(ast.instanceId) && sys.asteroidInstanced) {
+                            const scale = ast.r * 0.8;
+                            _tmpQuat.setFromEuler(new THREE.Euler(ast.rotation, ast.rotation * 0.7, 0));
+                            _tmpPos.set(x3d, y3d, z3d);
+                            _tmpScale.set(scale, scale, scale);
+                            _tmpMatrix.compose(_tmpPos, _tmpQuat, _tmpScale);
+                            sys.asteroidInstanced.setMatrixAt(ast.instanceId, _tmpMatrix);
+                            sys.asteroidInstanced.instanceMatrix.needsUpdate = true;
+                        } else if (ast.threeMesh) {
+                            ast.threeMesh.position.set(x3d, y3d, z3d);
+                            ast.threeMesh.rotation.x += dt * ast.rotationSpeed * 0.5;
+                            ast.threeMesh.rotation.y += dt * ast.rotationSpeed * 0.3;
+                            // Pulse glow based on approach
+                            const pulse = 0.7 + Math.sin(time * 15) * 0.3;
+                            ast.threeMesh.material.opacity = 0.9 * pulse;
+                        }
+                        
+                        // Update trail particles (diffusive dots!)
+                        const positions = ast.threeTrail.geometry.attributes.position.array;
+                        for (let i = 0; i < 6; i++) {
+                            const offset = (i / 6) * ast.r * -15;
+                            const spread = Math.sin(time * 5 + i) * ast.r * 1.4;
+                            positions[i * 3] = x3d + offset * 0.5 + spread;
+                            positions[i * 3 + 1] = y3d + Math.cos(time * 3 + i) * ast.r;
+                            positions[i * 3 + 2] = z3d + offset;
+                        }
+                        ast.threeTrail.geometry.attributes.position.needsUpdate = true;
+                        ast.threeTrail.material.opacity = 0.4 * (1 - ast.shadowAlpha * 0.5);
+                    });
+                    
+                    // Clean up Three.js meshes for impacted asteroids
+                    for (let i = sys.asteroids.length - 1; i >= 0; i--) {
+                        const ast = sys.asteroids[i];
+                        const gameAst = store.asteroidProjectiles.find(a => a === ast);
+                        
+                        if (!gameAst || gameAst.impacted) {
+                            // If it has an instanced index, free it and move last instance to this slot
+                            if (Number.isFinite(ast.instanceId) && sys.asteroidInstanced) {
+                                const lastIndex = sys.instancedCount - 1;
+                                if (ast.instanceId !== lastIndex) {
+                                    // Move last instance matrix to freed slot
+                                    const matrix = new THREE.Matrix4();
+                                    sys.asteroidInstanced.getMatrixAt(lastIndex, matrix);
+                                    sys.asteroidInstanced.setMatrixAt(ast.instanceId, matrix);
+                                    // Find the asteroid that used lastIndex and reassign
+                                    for (const [key, idx] of sys.instanceMap.entries()) {
+                                        if (idx === lastIndex) {
+                                            key.instanceId = ast.instanceId;
+                                            sys.instanceMap.set(key, ast.instanceId);
+                                            break;
+                                        }
+                                    }
+                                }
+                                sys.instancedCount = Math.max(0, sys.instancedCount - 1);
+                                sys.instanceMap.delete(ast);
+                            }
+                            if (ast.threeMesh) {
+                                sys.asteroidGroup.remove(ast.threeMesh);
+                                // Shared geometry/material should not be disposed - they are reused
+                            }
+                            if (ast.threeTrail) {
+                                sys.asteroidGroup.remove(ast.threeTrail);
+                                // Recycle trail into pool instead of disposing geometry/material
+                                if (!sys.trailPool) sys.trailPool = [];
+                                const MAX_TRAIL_POOL = 100;
+                                if (sys.trailPool.length < MAX_TRAIL_POOL) {
+                                    sys.trailPool.push(ast.threeTrail);
+                                } else {
+                                    // Too many pooled trails; dispose the geometry
+                                    if (ast.threeTrail.geometry) ast.threeTrail.geometry.dispose();
+                                    // Material is shared - don't dispose
+                                }
+                                ast.threeTrail = null;
+                            }
+                            sys.asteroids.splice(i, 1);
+                        }
+                    }
+                    
+                    // Update impact particles (smoke/fire)
+                    if (store.impactCraters) {
+                        store.impactCraters.forEach(crater => {
+                            if (!crater.threeParticles && crater.timer < 0.1) {
+                                // Create particle system on impact
+                                const particleCount = (sys.performance && sys.performance.avgFPS < 30) ? 12 : 30;
+                                const geometry = new THREE.BufferGeometry();
+                                const positions = new Float32Array(particleCount * 3);
+                                const velocities = [];
+                                
+                                for (let i = 0; i < particleCount; i++) {
+                                    const angle = (i / particleCount) * Math.PI * 2;
+                                    const x3d = (crater.x - W / 2) * 0.5;
+                                    const z3d = -(crater.y - H / 2) * 0.5;
+                                    
+                                    positions[i * 3] = x3d;
+                                    positions[i * 3 + 1] = 0;
+                                    positions[i * 3 + 2] = z3d;
+                                    
+                                    velocities.push({
+                                        vx: Math.cos(angle) * (10 + Math.random() * 15),
+                                        vy: 20 + Math.random() * 30,
+                                        vz: Math.sin(angle) * (10 + Math.random() * 15)
+                                    });
+                                }
+                                
+                                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                                
+                                const material = new THREE.PointsMaterial({
+                                    color: 0xff8800,
+                                    size: 5,
+                                    transparent: true,
+                                    opacity: 0.8,
+                                    blending: THREE.AdditiveBlending,
+                                    depthWrite: false
+                                });
+                                
+                                crater.threeParticles = new THREE.Points(geometry, material);
+                                crater.particleVelocities = velocities;
+                                sys.asteroidGroup.add(crater.threeParticles);
+                                sys.impactParticles.push(crater);
+                            }
+                            
+                            // Update existing particles
+                            if (crater.threeParticles) {
+                                const positions = crater.threeParticles.geometry.attributes.position.array;
+                                const alpha = Math.max(0, 1 - (crater.timer / crater.duration));
+                                
+                                crater.particleVelocities.forEach((vel, i) => {
+                                    positions[i * 3] += vel.vx * dt;
+                                    positions[i * 3 + 1] += vel.vy * dt;
+                                    positions[i * 3 + 2] += vel.vz * dt;
+                                    
+                                    vel.vy -= 60 * dt; // Gravity
+                                    vel.vx *= 0.98; // Air resistance
+                                    vel.vz *= 0.98;
+                                });
+                                
+                                crater.threeParticles.geometry.attributes.position.needsUpdate = true;
+                                crater.threeParticles.material.opacity = alpha * 0.8;
+                                
+                                // Remove when faded
+                                if (alpha < 0.05) {
+                                    sys.asteroidGroup.remove(crater.threeParticles);
+                                    crater.threeParticles.geometry.dispose();
+                                    crater.threeParticles.material.dispose();
+                                    crater.threeParticles = null;
+                                }
+                            }
+                        });
+                    }
+                    
+                    // Cleanup old impact particles
+                    sys.impactParticles = sys.impactParticles.filter(crater => crater.threeParticles);
+
+                    // Keep instanced count synced to actual used count for drawing
+                    if (sys.asteroidInstanced) {
+                        sys.asteroidInstanced.count = sys.instancedCount;
+                    }
+
+                    // Update debug HUD
+                    if (sys.debugHud) {
+                        const fps = Math.round((sys.performance && sys.performance.avgFPS) || 0);
+                        const activeAsteroids = (store.asteroidProjectiles && store.asteroidProjectiles.length) || 0;
+                        const instancedUsed = sys.instancedCount || 0;
+                        const impactCount = sys.impactParticles.length || 0;
+                        sys.debugHud.innerText = `FPS: ${fps}\nActive Asteroids: ${activeAsteroids}\nInstanced Used: ${instancedUsed} / ${sys.asteroidInstanced?.count || 0}\nImpact Particles: ${impactCount}`;
+                    }
+                }
+                
+                // Make update function available globally
+                window.updateThreeAsteroidSystem = updateThreeAsteroidSystem;
+
+                // Debug HUD for performance stats
+                const debugHud = document.createElement('div');
+                debugHud.id = 'threeAsteroidDebug';
+                debugHud.style.position = 'fixed';
+                debugHud.style.bottom = '8px';
+                debugHud.style.left = '8px';
+                debugHud.style.zIndex = '20000';
+                debugHud.style.background = 'rgba(0,0,0,0.6)';
+                debugHud.style.color = '#fff';
+                debugHud.style.fontFamily = 'monospace';
+                debugHud.style.fontSize = '12px';
+                debugHud.style.padding = '6px 10px';
+                debugHud.style.borderRadius = '6px';
+                debugHud.style.pointerEvents = 'none';
+                debugHud.style.display = 'none'; // default off
+                document.body.appendChild(debugHud);
+                window.__threeAsteroidSystem.debugHud = debugHud;
+                window.toggleThreeAsteroidDebug = function(show) {
+                    if (!debugHud) return;
+                    if (show === undefined) show = debugHud.style.display === 'none';
+                    debugHud.style.display = show ? 'block' : 'none';
+                };
+                // Expose debug entry for the warp tunnel so testers can check status
+                window.__warpTunnel = { scene, camera, renderer, grid, backdrop, active: true };
+                console.log('✅ Warp tunnel initialized', window.__warpTunnel);
             };
 
             if (document.readyState === 'loading') {
@@ -11131,10 +11565,10 @@
                 
                 // Check if more artillery strikes are queued
                 if (asteroidTargeting.queue.length > 0) {
-                    // Process next in queue after a short delay
+                    // Process next in queue after bombardment completes (2.5 second pause)
                     setTimeout(() => {
                         processNextArtilleryInQueue();
-                    }, 100);
+                    }, 2500);
                 } else {
                     // No more in queue, hide cancel button and restore pause button
                     const cancelBtn = document.getElementById('asteroidCancelBtn');
@@ -11153,11 +11587,13 @@
                     angle,
                     centerX,
                     centerY,
-                    clusterIndex: 0, // Which cluster is spawning (0-11)
-                    clusterCount: 12, // 12 clusters total along the line (increased density)
+                    clusterIndex: 0, // Which cluster is spawning (0-17)
+                    clusterCount: 18, // 18 clusters total for comprehensive coverage
                     clusterTimer: 0,
-                    clusterDelay: 0.22, // Faster sequential impacts for more intense barrage
-                    clusterSpawned: false
+                    clusterDelay: 0.35, // Slower progression allows for more dramatic effect
+                    baseClusterDelay: 0.35,
+                    clusterSpawned: false,
+                    hasBackfilled: false // Track if we've done redundant backfill volleys
                 };
                 
                 if (!store.asteroidBombardments) {
@@ -11280,6 +11716,16 @@
                 
                 for (let i = store.asteroidBombardments.length - 1; i >= 0; i--) {
                     const bomb = store.asteroidBombardments[i];
+                    // Adaptive cluster delay based on performance
+                    const sys = window.__threeAsteroidSystem;
+                    const avgFPS = sys && sys.performance ? (sys.performance.avgFPS || 60) : 60;
+                    if (avgFPS < 30) {
+                        bomb.clusterDelay = bomb.baseClusterDelay * 2.0; // slow down dramatically
+                    } else if (avgFPS < 45) {
+                        bomb.clusterDelay = bomb.baseClusterDelay * 1.4; // moderate slowdown
+                    } else {
+                        bomb.clusterDelay = bomb.baseClusterDelay; // restore baseline
+                    }
                     
                     // Spawn cluster at start
                     if (!bomb.clusterSpawned && bomb.clusterIndex < bomb.clusterCount) {
@@ -11312,7 +11758,7 @@
                 // Cycle through all 3 cluster landing sounds
                 const clusterSounds = ['artilleryClusterInitial', 'artilleryCluster2nd', 'artilleryCluster3rd'];
                 
-                // Play sound immediately - the faster cluster delay (0.22s) ensures sounds don't overlap
+                // Play sound immediately - the slower cluster delay (0.35s) ensures sounds don't overlap
                 playSound(clusterSounds[artilleryClusterSoundIndex]);
                 artilleryClusterSoundIndex = (artilleryClusterSoundIndex + 1) % 3; // Cycle 0, 1, 2, 0, 1, 2...
                 
@@ -11323,14 +11769,36 @@
                 const cos = Math.cos(bombardment.angle);
                 const sin = Math.sin(bombardment.angle);
                 
-                // Progress from start to end across entire screen
-                // Position from -pathLength/2 (start) to +pathLength/2 (end)
-                const spacing = pathLength / (bombardment.clusterCount - 1); // Even distribution
-                const distAlongPath = -pathLength / 2 + clusterIndex * spacing;
+                // Unpredictable cluster positioning with redundancy
+                // 30% chance to spawn "backfill" volley in already-bombarded area
+                // 10% chance to spawn "stray" volley outside main path
+                const randomBehavior = Math.random();
+                let distAlongPath;
+                let lateralOffsetMultiplier = 1;
                 
-                // Increased radial variation for realistic artillery spread
-                const pathVariation = (Math.random() - 0.5) * 80; // Doubled from 40
-                const lateralOffset = (Math.random() - 0.5) * 100; // Doubled from 50
+                if (randomBehavior < 0.3 && clusterIndex > 3) {
+                    // BACKFILL: Hit an area we've already progressed through
+                    const backfillRange = clusterIndex * 0.7; // Can hit anywhere behind current position
+                    const backfillIndex = Math.floor(Math.random() * backfillRange);
+                    const spacing = pathLength / (bombardment.clusterCount - 1);
+                    distAlongPath = -pathLength / 2 + backfillIndex * spacing;
+                    distAlongPath += (Math.random() - 0.5) * spacing * 0.8; // Extra variation
+                } else if (randomBehavior < 0.4) {
+                    // STRAY: Hit outside the main path (lateral deviation)
+                    const spacing = pathLength / (bombardment.clusterCount - 1);
+                    distAlongPath = -pathLength / 2 + clusterIndex * spacing;
+                    distAlongPath += (Math.random() - 0.5) * spacing * 0.6;
+                    lateralOffsetMultiplier = 1.8 + Math.random() * 0.7; // 1.8x-2.5x lateral deviation
+                } else {
+                    // NORMAL: Progressive bombardment with natural variation
+                    const spacing = pathLength / (bombardment.clusterCount - 1);
+                    distAlongPath = -pathLength / 2 + clusterIndex * spacing;
+                    distAlongPath += (Math.random() - 0.5) * spacing * 0.4; // Some forward/backward drift
+                }
+                
+                // Artillery scatter - realistic unpredictability
+                const pathVariation = (Math.random() - 0.5) * 120; // Significant along-path scatter
+                const lateralOffset = (Math.random() - 0.5) * 140 * lateralOffsetMultiplier; // Perpendicular scatter
                 
                 // Calculate cluster center in world space
                 const localX = distAlongPath + pathVariation;
@@ -11339,20 +11807,32 @@
                 const clusterCenterX = centerX + localX * cos - localY * sin;
                 const clusterCenterY = centerY + localX * sin + localY * cos;
                 
-                // Spawn 5-7 asteroids per cluster (increased density)
-                const asteroidsPerCluster = 5 + Math.floor(Math.random() * 3);
-                const clusterSpread = 55; // Wider spread for more realistic artillery scatter
+                // Spawn 6-9 asteroids per cluster (increased for redundancy)
+                let asteroidsPerCluster = 6 + Math.floor(Math.random() * 4);
+                // Limit active asteroids to reduce CPU pressure
+                const MAX_ACTIVE_ASTEROIDS = (window.__threeAsteroidSystem && window.__threeAsteroidSystem.performance && window.__threeAsteroidSystem.performance.maxActiveAsteroids) || (checkIsMobile ? 50 : 120);
+                const currentActiveAsteroids = (store.asteroidProjectiles && store.asteroidProjectiles.length) ? store.asteroidProjectiles.length : 0;
+                let allowedToSpawn = Math.max(0, MAX_ACTIVE_ASTEROIDS - currentActiveAsteroids);
+                // Also ensure we have instanced slots available when using instanced rendering
+                const sys = window.__threeAsteroidSystem;
+                if (sys && sys.asteroidInstanced) {
+                    const availableInstancedSlots = Math.max(0, (sys.instancedCapacity || 0) - (sys.instancedCount || 0));
+                    allowedToSpawn = Math.min(allowedToSpawn, availableInstancedSlots);
+                }
+                if (allowedToSpawn <= 0) return; // Skip spawning this cluster - we are at capacity
+                asteroidsPerCluster = Math.min(asteroidsPerCluster, allowedToSpawn);
+                const clusterSpread = 65; // Wider spread for coverage
                 
                 for (let i = 0; i < asteroidsPerCluster; i++) {
-                    const offsetAngle = (i / asteroidsPerCluster) * Math.PI * 2 + Math.random() * 0.4;
+                    const offsetAngle = (i / asteroidsPerCluster) * Math.PI * 2 + Math.random() * 0.6;
                     const offsetDist = Math.random() * clusterSpread;
                     
                     const targetX = clusterCenterX + Math.cos(offsetAngle) * offsetDist;
                     const targetY = clusterCenterY + Math.sin(offsetAngle) * offsetDist;
                     
-                    // Spawn from top-right
-                    const startX = targetX + 400 + Math.random() * 100;
-                    const startY = -100 - Math.random() * 50;
+                    // Spawn from top-right with variation
+                    const startX = targetX + 400 + Math.random() * 150;
+                    const startY = -100 - Math.random() * 80;
                     
                     const dx = targetX - startX;
                     const dy = targetY - startY;
@@ -11711,240 +12191,56 @@
             }
 
             function renderAsteroidProjectiles(ctx) {
+                // Now handled by Three.js - much more performant!
+                // Renders in updateThreeAsteroidSystem() called from the Three.js animation loop
+                if (!window.__threeAsteroidSystem) return;
+                
+                // Only draw minimal 2D shadows on canvas for gameplay clarity
                 if (!store.asteroidProjectiles || store.asteroidProjectiles.length === 0) return;
                 
-                const time = performance.now() / 1000;
-                
-                // First pass: Draw shadows on the ground
                 store.asteroidProjectiles.forEach(ast => {
-                    if (ast.shadowAlpha > 0 && !ast.impacted) {
+                    if (ast.shadowAlpha > 0.3 && !ast.impacted) {
                         ctx.save();
-                        ctx.globalAlpha = ast.shadowAlpha * 0.6;
+                        ctx.globalAlpha = ast.shadowAlpha * 0.4;
                         
-                        // Shadow grows as asteroid approaches
-                        const shadowSize = ast.r * 3 * (0.5 + ast.shadowAlpha * 0.5);
-                        const gradient = ctx.createRadialGradient(ast.targetX, ast.targetY, 0, ast.targetX, ast.targetY, shadowSize);
-                        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.8)');
-                        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-                        
-                        ctx.fillStyle = gradient;
+                        // Minimal shadow for target indication
+                        const shadowSize = ast.r * 2;
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
                         ctx.beginPath();
-                        ctx.arc(ast.targetX, ast.targetY, shadowSize, 0, Math.PI * 2);
+                        ctx.ellipse(ast.targetX, ast.targetY, shadowSize, shadowSize * 0.5, 0, 0, Math.PI * 2);
                         ctx.fill();
                         ctx.restore();
                     }
-                });
-                
-                // Second pass: Draw cosmic meteor trails and asteroids
-                store.asteroidProjectiles.forEach(ast => {
-                    if (ast.impacted) return;
-                    
-                    // Calculate trail direction (opposite of velocity)
-                    const dx = ast.targetX - ast.x;
-                    const dy = ast.targetY - ast.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    const trailDirX = -dx / dist;
-                    const trailDirY = -dy / dist;
-                    
-                    ctx.save();
-                    
-                    // Draw long cosmic trail with star streaks
-                    const trailLength = ast.r * 8;
-                    for (let i = 0; i < 5; i++) {
-                        const offset = (i / 5) * trailLength;
-                        const trailX = ast.x + trailDirX * offset;
-                        const trailY = ast.y + trailDirY * offset;
-                        const alpha = 0.4 * (1 - i / 5) * (0.7 + Math.sin(time * 10 + i) * 0.3);
-                        
-                        ctx.globalAlpha = alpha;
-                        const gradient = ctx.createRadialGradient(trailX, trailY, 0, trailX, trailY, ast.r * 2);
-                        gradient.addColorStop(0, '#ff88ff');
-                        gradient.addColorStop(0.3, '#ff44ff');
-                        gradient.addColorStop(0.6, '#ff0088');
-                        gradient.addColorStop(1, 'rgba(255, 0, 136, 0)');
-                        ctx.fillStyle = gradient;
-                        ctx.beginPath();
-                        ctx.arc(trailX, trailY, ast.r * 2, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
-                    
-                    // Bright star trails - thin streaks
-                    ctx.globalAlpha = 0.8;
-                    ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = 2;
-                    ctx.lineCap = 'round';
-                    for (let i = 0; i < 8; i++) {
-                        const angle = (i / 8) * Math.PI * 2;
-                        const sparkOffset = ast.r * 3;
-                        const sparkX = ast.x + Math.cos(angle) * ast.r + trailDirX * sparkOffset;
-                        const sparkY = ast.y + Math.sin(angle) * ast.r + trailDirY * sparkOffset;
-                        
-                        ctx.beginPath();
-                        ctx.moveTo(ast.x + Math.cos(angle) * ast.r, ast.y + Math.sin(angle) * ast.r);
-                        ctx.lineTo(sparkX, sparkY);
-                        ctx.stroke();
-                    }
-                    
-                    ctx.restore();
-                    
-                    // Draw meteor core with cosmic glow
-                    ctx.save();
-                    ctx.translate(ast.x, ast.y);
-                    ctx.rotate(ast.rotation);
-                    
-                    // Outer cosmic aura
-                    ctx.globalCompositeOperation = 'lighter';
-                    const auraSize = ast.r * 3;
-                    const auraGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, auraSize);
-                    auraGradient.addColorStop(0, 'rgba(255, 100, 255, 0.9)');
-                    auraGradient.addColorStop(0.3, 'rgba(255, 50, 200, 0.6)');
-                    auraGradient.addColorStop(0.6, 'rgba(200, 100, 255, 0.3)');
-                    auraGradient.addColorStop(1, 'rgba(100, 50, 255, 0)');
-                    ctx.fillStyle = auraGradient;
-                    ctx.beginPath();
-                    ctx.arc(0, 0, auraSize, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    // Bright white-hot core
-                    ctx.shadowColor = '#ff88ff';
-                    ctx.shadowBlur = 20;
-                    const coreGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, ast.r * 1.5);
-                    coreGradient.addColorStop(0, '#ffffff');
-                    coreGradient.addColorStop(0.4, '#ffddff');
-                    coreGradient.addColorStop(0.7, '#ff66ff');
-                    coreGradient.addColorStop(1, '#ff0088');
-                    ctx.fillStyle = coreGradient;
-                    ctx.beginPath();
-                    ctx.arc(0, 0, ast.r * 1.5, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.shadowBlur = 0;
-                    
-                    // Rocky asteroid texture
-                    ctx.globalCompositeOperation = 'source-over';
-                    ctx.fillStyle = '#4a2f5f';
-                    ctx.strokeStyle = '#ff88dd';
-                    ctx.lineWidth = 1.5;
-                    
-                    ctx.beginPath();
-                    ctx.arc(0, 0, ast.r, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.stroke();
-                    
-                    // Hot spots on the rock
-                    ctx.fillStyle = 'rgba(255, 200, 255, 0.7)';
-                    ctx.beginPath();
-                    ctx.arc(ast.r * 0.3, -ast.r * 0.2, ast.r * 0.4, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    ctx.fillStyle = 'rgba(255, 150, 255, 0.5)';
-                    ctx.beginPath();
-                    ctx.arc(-ast.r * 0.4, ast.r * 0.3, ast.r * 0.3, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    ctx.restore();
                 });
             }
 
             function renderImpactCraters(ctx) {
+                // Now handled by Three.js particle system - much more performant!
+                // Only draw minimal 2D indicators for gameplay clarity
                 if (!store.impactCraters || store.impactCraters.length === 0) return;
                 
                 store.impactCraters.forEach(crater => {
+                    const alpha = Math.max(0, 1 - (crater.timer / crater.duration));
+                    if (alpha < 0.1) return; // Skip nearly invisible craters
+                    
                     ctx.save();
                     
-                    const alpha = Math.max(0, 1 - (crater.timer / crater.duration));
+                    // Just draw a simple impact flash - particles are in Three.js
+                    ctx.globalAlpha = alpha * 0.6;
+                    ctx.fillStyle = `rgba(255, 120, 0, ${alpha * 0.5})`;
+                    ctx.beginPath();
+                    ctx.arc(crater.x, crater.y, crater.primaryRadius * 0.8, 0, Math.PI * 2);
+                    ctx.fill();
                     
-                    // Draw smoke particles
-                    if (crater.smokeParticles) {
-                        crater.smokeParticles.forEach(particle => {
-                            if (particle.life > 0) {
-                                const particleAlpha = particle.life / particle.maxLife;
-                                ctx.globalAlpha = particleAlpha * 0.5;
-                                const smokeGradient = ctx.createRadialGradient(
-                                    particle.x, particle.y, 0,
-                                    particle.x, particle.y, particle.size
-                                );
-                                smokeGradient.addColorStop(0, 'rgba(60, 60, 60, 0.6)');
-                                smokeGradient.addColorStop(1, 'rgba(40, 40, 40, 0)');
-                                ctx.fillStyle = smokeGradient;
-                                ctx.beginPath();
-                                ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-                                ctx.fill();
-                            }
-                        });
-                    }
-                    
-                    // Draw fire particles
-                    if (crater.fireParticles) {
-                        crater.fireParticles.forEach(particle => {
-                            if (particle.life > 0) {
-                                const particleAlpha = particle.life / particle.maxLife;
-                                ctx.globalAlpha = particleAlpha * 0.8;
-                                const fireGradient = ctx.createRadialGradient(
-                                    particle.x, particle.y, 0,
-                                    particle.x, particle.y, particle.size
-                                );
-                                fireGradient.addColorStop(0, 'rgba(255, 200, 100, 0.9)');
-                                fireGradient.addColorStop(0.5, 'rgba(255, 100, 0, 0.7)');
-                                fireGradient.addColorStop(1, 'rgba(255, 50, 0, 0)');
-                                ctx.fillStyle = fireGradient;
-                                ctx.beginPath();
-                                ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-                                ctx.fill();
-                            }
-                        });
-                    }
-                    
-                    // Draw secondary blast wave (large circle) - more translucent
+                    // Minimal shockwave ring
                     if (crater.secondaryRadius > 0) {
-                        ctx.save();
-                        ctx.globalAlpha = alpha * 0.15; // Much more translucent
-                        const blastGradient = ctx.createRadialGradient(crater.x, crater.y, 0, crater.x, crater.y, crater.secondaryRadius);
-                        blastGradient.addColorStop(0, 'rgba(139, 69, 19, 0.2)');
-                        blastGradient.addColorStop(0.7, 'rgba(100, 70, 40, 0.1)');
-                        blastGradient.addColorStop(1, 'rgba(139, 99, 69, 0)');
-                        ctx.fillStyle = blastGradient;
-                        ctx.beginPath();
-                        ctx.arc(crater.x, crater.y, crater.secondaryRadius, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.restore();
-                        
-                        // Blast wave edge - more translucent
-                        ctx.save();
-                        ctx.globalAlpha = alpha * 0.25; // More translucent
-                        ctx.strokeStyle = 'rgba(200, 140, 80, 0.4)';
-                        ctx.lineWidth = 2;
+                        ctx.globalAlpha = alpha * 0.2;
+                        ctx.strokeStyle = 'rgba(255, 150, 80, 0.3)';
+                        ctx.lineWidth = 1.5;
                         ctx.beginPath();
                         ctx.arc(crater.x, crater.y, crater.secondaryRadius, 0, Math.PI * 2);
                         ctx.stroke();
-                        ctx.restore();
                     }
-                    
-                    // Draw earthquake shockwave rings - more translucent
-                    crater.rings.forEach(ring => {
-                        if (ring.timer > ring.delay && ring.radius > 0) {
-                            const age = ring.timer - ring.delay;
-                            const ringAlpha = Math.max(0, 1 - age * 5); // Fade faster
-                            
-                            ctx.strokeStyle = `rgba(180, 120, 60, ${ringAlpha * 0.3})`; // More translucent
-                            ctx.lineWidth = 2;
-                            ctx.beginPath();
-                            ctx.arc(crater.x, crater.y, ring.radius, 0, Math.PI * 2);
-                            ctx.stroke();
-                        }
-                    });
-                    
-                    // Draw primary impact crater (small circle - red/orange) - brief flash
-                    ctx.save();
-                    ctx.globalAlpha = alpha * 0.8;
-                    const primaryGradient = ctx.createRadialGradient(crater.x, crater.y, 0, crater.x, crater.y, crater.primaryRadius);
-                    primaryGradient.addColorStop(0, 'rgba(255, 80, 0, 0.7)');
-                    primaryGradient.addColorStop(0.5, 'rgba(200, 60, 0, 0.5)');
-                    primaryGradient.addColorStop(1, 'rgba(139, 40, 0, 0.2)');
-                    ctx.fillStyle = primaryGradient;
-                    ctx.beginPath();
-                    ctx.arc(crater.x, crater.y, crater.primaryRadius, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.restore();
                     
                     // Primary impact edge - bright flash
                     if (alpha > 0.5) {
@@ -16360,8 +16656,8 @@
                     if (window.__voidGridTilt?.setTilt) {
                         const centerX = W * 0.5;
                         const centerY = H * 0.5;
-                        const normalizedX = (p.x - centerX) / (W * 0.5);
-                        const normalizedY = (p.y - centerY) / (H * 0.5);
+                        const normalizedX = (p.x - centerX) / (W * 0.5) * 0.5;  // 50% reduced input sensitivity
+                        const normalizedY = (p.y - centerY) / (H * 0.5) * 0.5;  // 50% reduced input sensitivity
                         window.__voidGridTilt.setTilt(normalizedX, normalizedY);
                     }
                 }
