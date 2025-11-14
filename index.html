@@ -9529,6 +9529,9 @@
                         deathElement = getStackDeathType(e, { fallbackElement: b.element });
                         e.deathElement = deathElement;
                         e.dead = true;
+                        if (e.type === 'hive_fragment') {
+                            unregisterHiveFragment(e);
+                        }
                         
                         // Play enemy-specific death sounds
                         if (e.type === 'mech' || e.type === 'mech_elite') {
@@ -12191,56 +12194,240 @@
             }
 
             function renderAsteroidProjectiles(ctx) {
-                // Now handled by Three.js - much more performant!
-                // Renders in updateThreeAsteroidSystem() called from the Three.js animation loop
-                if (!window.__threeAsteroidSystem) return;
-                
-                // Only draw minimal 2D shadows on canvas for gameplay clarity
                 if (!store.asteroidProjectiles || store.asteroidProjectiles.length === 0) return;
                 
+                const time = performance.now() / 1000;
+                
+                // First pass: Draw shadows on the ground
                 store.asteroidProjectiles.forEach(ast => {
-                    if (ast.shadowAlpha > 0.3 && !ast.impacted) {
+                    if (ast.shadowAlpha > 0 && !ast.impacted) {
                         ctx.save();
-                        ctx.globalAlpha = ast.shadowAlpha * 0.4;
+                        ctx.globalAlpha = ast.shadowAlpha * 0.6;
                         
-                        // Minimal shadow for target indication
-                        const shadowSize = ast.r * 2;
-                        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                        // Shadow grows as asteroid approaches
+                        const shadowSize = ast.r * 3 * (0.5 + ast.shadowAlpha * 0.5);
+                        const gradient = ctx.createRadialGradient(ast.targetX, ast.targetY, 0, ast.targetX, ast.targetY, shadowSize);
+                        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.8)');
+                        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                        
+                        ctx.fillStyle = gradient;
                         ctx.beginPath();
-                        ctx.ellipse(ast.targetX, ast.targetY, shadowSize, shadowSize * 0.5, 0, 0, Math.PI * 2);
+                        ctx.arc(ast.targetX, ast.targetY, shadowSize, 0, Math.PI * 2);
                         ctx.fill();
                         ctx.restore();
                     }
                 });
-            }
-
-            function renderImpactCraters(ctx) {
-                // Now handled by Three.js particle system - much more performant!
-                // Only draw minimal 2D indicators for gameplay clarity
-                if (!store.impactCraters || store.impactCraters.length === 0) return;
                 
-                store.impactCraters.forEach(crater => {
-                    const alpha = Math.max(0, 1 - (crater.timer / crater.duration));
-                    if (alpha < 0.1) return; // Skip nearly invisible craters
+                // Second pass: Draw cosmic meteor trails and asteroids
+                store.asteroidProjectiles.forEach(ast => {
+                    if (ast.impacted) return;
+                    
+                    // Calculate trail direction (opposite of velocity)
+                    const dx = ast.targetX - ast.x;
+                    const dy = ast.targetY - ast.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const trailDirX = -dx / dist;
+                    const trailDirY = -dy / dist;
                     
                     ctx.save();
                     
-                    // Just draw a simple impact flash - particles are in Three.js
-                    ctx.globalAlpha = alpha * 0.6;
-                    ctx.fillStyle = `rgba(255, 120, 0, ${alpha * 0.5})`;
+                    // Draw long cosmic trail with star streaks
+                    const trailLength = ast.r * 8;
+                    for (let i = 0; i < 5; i++) {
+                        const offset = (i / 5) * trailLength;
+                        const trailX = ast.x + trailDirX * offset;
+                        const trailY = ast.y + trailDirY * offset;
+                        const alpha = 0.4 * (1 - i / 5) * (0.7 + Math.sin(time * 10 + i) * 0.3);
+                        
+                        ctx.globalAlpha = alpha;
+                        const gradient = ctx.createRadialGradient(trailX, trailY, 0, trailX, trailY, ast.r * 2);
+                        gradient.addColorStop(0, '#ff88ff');
+                        gradient.addColorStop(0.3, '#ff44ff');
+                        gradient.addColorStop(0.6, '#ff0088');
+                        gradient.addColorStop(1, 'rgba(255, 0, 136, 0)');
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(trailX, trailY, ast.r * 2, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    
+                    // Bright star trails - thin streaks
+                    ctx.globalAlpha = 0.8;
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.lineCap = 'round';
+                    for (let i = 0; i < 8; i++) {
+                        const angle = (i / 8) * Math.PI * 2;
+                        const sparkOffset = ast.r * 3;
+                        const sparkX = ast.x + Math.cos(angle) * ast.r + trailDirX * sparkOffset;
+                        const sparkY = ast.y + Math.sin(angle) * ast.r + trailDirY * sparkOffset;
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(ast.x + Math.cos(angle) * ast.r, ast.y + Math.sin(angle) * ast.r);
+                        ctx.lineTo(sparkX, sparkY);
+                        ctx.stroke();
+                    }
+                    
+                    ctx.restore();
+                    
+                    // Draw meteor core with cosmic glow
+                    ctx.save();
+                    ctx.translate(ast.x, ast.y);
+                    ctx.rotate(ast.rotation);
+                    
+                    // Outer cosmic aura
+                    ctx.globalCompositeOperation = 'lighter';
+                    const auraSize = ast.r * 3;
+                    const auraGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, auraSize);
+                    auraGradient.addColorStop(0, 'rgba(255, 100, 255, 0.9)');
+                    auraGradient.addColorStop(0.3, 'rgba(255, 50, 200, 0.6)');
+                    auraGradient.addColorStop(0.6, 'rgba(200, 100, 255, 0.3)');
+                    auraGradient.addColorStop(1, 'rgba(100, 50, 255, 0)');
+                    ctx.fillStyle = auraGradient;
                     ctx.beginPath();
-                    ctx.arc(crater.x, crater.y, crater.primaryRadius * 0.8, 0, Math.PI * 2);
+                    ctx.arc(0, 0, auraSize, 0, Math.PI * 2);
                     ctx.fill();
                     
-                    // Minimal shockwave ring
+                    // Bright white-hot core
+                    ctx.shadowColor = '#ff88ff';
+                    ctx.shadowBlur = 20;
+                    const coreGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, ast.r * 1.5);
+                    coreGradient.addColorStop(0, '#ffffff');
+                    coreGradient.addColorStop(0.4, '#ffddff');
+                    coreGradient.addColorStop(0.7, '#ff66ff');
+                    coreGradient.addColorStop(1, '#ff0088');
+                    ctx.fillStyle = coreGradient;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, ast.r * 1.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                    
+                    // Rocky asteroid texture
+                    ctx.globalCompositeOperation = 'source-over';
+                    ctx.fillStyle = '#4a2f5f';
+                    ctx.strokeStyle = '#ff88dd';
+                    ctx.lineWidth = 1.5;
+                    
+                    ctx.beginPath();
+                    ctx.arc(0, 0, ast.r, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Hot spots on the rock
+                    ctx.fillStyle = 'rgba(255, 200, 255, 0.7)';
+                    ctx.beginPath();
+                    ctx.arc(ast.r * 0.3, -ast.r * 0.2, ast.r * 0.4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.fillStyle = 'rgba(255, 150, 255, 0.5)';
+                    ctx.beginPath();
+                    ctx.arc(-ast.r * 0.4, ast.r * 0.3, ast.r * 0.3, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.restore();
+                });
+            }
+
+            function renderImpactCraters(ctx) {
+                if (!store.impactCraters || store.impactCraters.length === 0) return;
+                
+                store.impactCraters.forEach(crater => {
+                    ctx.save();
+                    
+                    const alpha = Math.max(0, 1 - (crater.timer / crater.duration));
+                    
+                    // Draw smoke particles
+                    if (crater.smokeParticles) {
+                        crater.smokeParticles.forEach(particle => {
+                            if (particle.life > 0) {
+                                const particleAlpha = particle.life / particle.maxLife;
+                                ctx.globalAlpha = particleAlpha * 0.5;
+                                const smokeGradient = ctx.createRadialGradient(
+                                    particle.x, particle.y, 0,
+                                    particle.x, particle.y, particle.size
+                                );
+                                smokeGradient.addColorStop(0, 'rgba(60, 60, 60, 0.6)');
+                                smokeGradient.addColorStop(1, 'rgba(40, 40, 40, 0)');
+                                ctx.fillStyle = smokeGradient;
+                                ctx.beginPath();
+                                ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                        });
+                    }
+                    
+                    // Draw fire particles
+                    if (crater.fireParticles) {
+                        crater.fireParticles.forEach(particle => {
+                            if (particle.life > 0) {
+                                const particleAlpha = particle.life / particle.maxLife;
+                                ctx.globalAlpha = particleAlpha * 0.8;
+                                const fireGradient = ctx.createRadialGradient(
+                                    particle.x, particle.y, 0,
+                                    particle.x, particle.y, particle.size
+                                );
+                                fireGradient.addColorStop(0, 'rgba(255, 200, 100, 0.9)');
+                                fireGradient.addColorStop(0.5, 'rgba(255, 100, 0, 0.7)');
+                                fireGradient.addColorStop(1, 'rgba(255, 50, 0, 0)');
+                                ctx.fillStyle = fireGradient;
+                                ctx.beginPath();
+                                ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                        });
+                    }
+                    
+                    // Draw secondary blast wave (large circle) - more translucent
                     if (crater.secondaryRadius > 0) {
-                        ctx.globalAlpha = alpha * 0.2;
-                        ctx.strokeStyle = 'rgba(255, 150, 80, 0.3)';
-                        ctx.lineWidth = 1.5;
+                        ctx.save();
+                        ctx.globalAlpha = alpha * 0.15; // Much more translucent
+                        const blastGradient = ctx.createRadialGradient(crater.x, crater.y, 0, crater.x, crater.y, crater.secondaryRadius);
+                        blastGradient.addColorStop(0, 'rgba(139, 69, 19, 0.2)');
+                        blastGradient.addColorStop(0.7, 'rgba(100, 70, 40, 0.1)');
+                        blastGradient.addColorStop(1, 'rgba(139, 99, 69, 0)');
+                        ctx.fillStyle = blastGradient;
+                        ctx.beginPath();
+                        ctx.arc(crater.x, crater.y, crater.secondaryRadius, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                        
+                        // Blast wave edge - more translucent
+                        ctx.save();
+                        ctx.globalAlpha = alpha * 0.25; // More translucent
+                        ctx.strokeStyle = 'rgba(200, 140, 80, 0.4)';
+                        ctx.lineWidth = 2;
                         ctx.beginPath();
                         ctx.arc(crater.x, crater.y, crater.secondaryRadius, 0, Math.PI * 2);
                         ctx.stroke();
+                        ctx.restore();
                     }
+                    
+                    // Draw earthquake shockwave rings - more translucent
+                    crater.rings.forEach(ring => {
+                        if (ring.timer > ring.delay && ring.radius > 0) {
+                            const age = ring.timer - ring.delay;
+                            const ringAlpha = Math.max(0, 1 - age * 5); // Fade faster
+                            
+                            ctx.strokeStyle = `rgba(180, 120, 60, ${ringAlpha * 0.3})`;
+                            ctx.lineWidth = 2;
+                            ctx.beginPath();
+                            ctx.arc(crater.x, crater.y, ring.radius, 0, Math.PI * 2);
+                            ctx.stroke();
+                        }
+                    });
+                    
+                    // Draw primary impact crater (small circle - red/orange) - brief flash
+                    ctx.save();
+                    ctx.globalAlpha = alpha * 0.8;
+                    const primaryGradient = ctx.createRadialGradient(crater.x, crater.y, 0, crater.x, crater.y, crater.primaryRadius);
+                    primaryGradient.addColorStop(0, 'rgba(255, 80, 0, 0.7)');
+                    primaryGradient.addColorStop(0.5, 'rgba(200, 60, 0, 0.5)');
+                    primaryGradient.addColorStop(1, 'rgba(139, 40, 0, 0.2)');
+                    ctx.fillStyle = primaryGradient;
+                    ctx.beginPath();
+                    ctx.arc(crater.x, crater.y, crater.primaryRadius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
                     
                     // Primary impact edge - bright flash
                     if (alpha > 0.5) {
@@ -17966,6 +18153,9 @@
                 if (store.boss) {
                     stepBoss(dt);
                 }
+                if (store.hiveFragmentTracker) {
+                    sweepDeadHiveFragments();
+                }
 
                 // Check for bullet element toggle orb hover
                 if (store.bulletToggleOrbs && store.player) {
@@ -20470,6 +20660,9 @@
                 });
 
                 store.boss = null;
+                if (store.hiveFragmentTracker) {
+                    store.hiveFragmentTracker = null;
+                }
                 
                 // Clean up PixiJS boss graphics
                 if (bossContainer && hiveBossGraphics) {
@@ -24476,6 +24669,10 @@
                 const deathType = getStackDeathType(enemy, {
                     fallbackElement: fallbackElement || enemy.lastStackHitElement || null
                 });
+
+                if (enemy.type === 'hive_fragment') {
+                    unregisterHiveFragment(enemy);
+                }
 
                 enemy.dead = true;
                 enemy.hp = 0;
@@ -32405,11 +32602,107 @@
                     sounds.bugSqueal.play().catch(() => {});
                 }
             }
+
+            const HIVE_FRAGMENT_ID_PREFIX = 'hive_fragment_';
+            const HIVE_FRAGMENT_REWARD_SCALE = 0.55; // Fragments collectively award 55% of the base boss rewards
+
+            function ensureHiveBossRootId(boss) {
+                if (!boss) return null;
+                if (!boss.splitRootId) {
+                    const base = boss.instanceId || boss._instanceId || boss.id || boss.behavior || 'hive';
+                    const stamp = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
+                    boss.splitRootId = `${base}-root-${Math.floor(stamp + Math.random() * 1000)}`;
+                }
+                return boss.splitRootId;
+            }
+
+            function getHiveFragmentTracker(rootId) {
+                if (!rootId) return null;
+                if (!store.hiveFragmentTracker) {
+                    store.hiveFragmentTracker = Object.create(null);
+                }
+                if (!store.hiveFragmentTracker[rootId]) {
+                    store.hiveFragmentTracker[rootId] = { alive: 0, spawned: 0 };
+                }
+                return store.hiveFragmentTracker[rootId];
+            }
+
+            function hiveFragmentsAlive(rootId) {
+                const tracker = store.hiveFragmentTracker && store.hiveFragmentTracker[rootId];
+                return !!(tracker && tracker.alive > 0);
+            }
+
+            function registerHiveFragment(fragment, rootId) {
+                if (!fragment || !rootId) return;
+                const tracker = getHiveFragmentTracker(rootId);
+                if (!tracker) return;
+                fragment.parentHiveId = rootId;
+                if (!fragment.fragmentId) {
+                    fragment.fragmentId = `${HIVE_FRAGMENT_ID_PREFIX}${Math.floor(Date.now())}${Math.floor(Math.random() * 1000)}`;
+                }
+                if (fragment._registeredHiveRootId === rootId) return;
+                fragment._registeredHiveRootId = rootId;
+                tracker.alive = Math.max(0, (tracker.alive || 0) + 1);
+                tracker.spawned = Math.max(0, (tracker.spawned || 0) + 1);
+            }
+
+            function completeHiveFragmentPhase(rootId) {
+                if (!rootId || !store) return false;
+                const tracker = store.hiveFragmentTracker && store.hiveFragmentTracker[rootId];
+                if (tracker) {
+                    tracker.completed = true;
+                }
+                const boss = store.boss;
+                if (boss && boss.behavior === 'broodlord' && boss.splitRootId === rootId && !boss.fragmentCollapseTriggered) {
+                    boss.fragmentCollapseTriggered = true;
+                    boss.fragmentPhaseActive = false;
+                    boss.hp = 0;
+                    boss.dead = true;
+                    handleBossDefeat();
+                }
+                if (store.hiveFragmentTracker) {
+                    delete store.hiveFragmentTracker[rootId];
+                }
+                return true;
+            }
+
+            function unregisterHiveFragment(fragment) {
+                if (!fragment || fragment._hiveFragmentRemoved) return;
+                const rootId = fragment.parentHiveId;
+                if (!rootId || !store.hiveFragmentTracker) {
+                    fragment._hiveFragmentRemoved = true;
+                    return;
+                }
+                const tracker = store.hiveFragmentTracker[rootId];
+                fragment._hiveFragmentRemoved = true;
+                if (!tracker) {
+                    return;
+                }
+                tracker.alive = Math.max(0, (tracker.alive || 0) - 1);
+                if (tracker.alive === 0) {
+                    completeHiveFragmentPhase(rootId);
+                }
+            }
+
+            function sweepDeadHiveFragments() {
+                if (!store || !store.hiveFragmentTracker || !Array.isArray(store.enemies)) return;
+                for (const enemy of store.enemies) {
+                    if (!enemy || enemy.type !== 'hive_fragment') continue;
+                    if (enemy.dead && !enemy._hiveFragmentRemoved) {
+                        unregisterHiveFragment(enemy);
+                    }
+                }
+            }
             
             function updateHiveFragment(e, dt) {
                 // Update damage flash timer
                 if (e.damageFlashTimer > 0) {
                     e.damageFlashTimer = Math.max(0, e.damageFlashTimer - dt);
+                }
+
+                const broodlordBoss = store.boss && store.boss.behavior === 'broodlord' ? store.boss : null;
+                if (!e.parentHiveId && broodlordBoss) {
+                    e.parentHiveId = ensureHiveBossRootId(broodlordBoss);
                 }
                 
                 // Check poison puddle collisions and take damage
@@ -32429,6 +32722,7 @@
                             
                             if (e.hp <= 0) {
                                 e.dead = true;
+                                    unregisterHiveFragment(e);
                                 // Play bug squeal for smallest fragments
                                 if (e.splitCount === 2) {
                                     playBugSqueal();
@@ -32554,27 +32848,29 @@
                     const healthPerSplit = e.maxHp * 0.25; // Each split gets 25% of original max health
                     const sizeScale = 0.7 - (splitCount * 0.15); // Fragments get progressively smaller
                     const speedScale = 1 + (splitCount * 0.3); // Fragments get progressively faster
+                    const rootId = e.parentHiveId || (broodlordBoss ? ensureHiveBossRootId(broodlordBoss) : null);
                     
-                    // Preserve original total rewards - splitting distributes them, doesn't multiply them
-                    const originalGold = e.originalGold || e.gold || 400;
-                    const originalXp = e.originalXp || e.xp || 800;
-                    const originalScore = e.originalScore || e.score || 200;
-                    
-                    // Current entity rewards when it splits (1/3 of what's remaining)
-                    const currentGold = e.gold || Math.floor(originalGold / 3);
-                    const currentXp = e.xp || Math.floor(originalXp / 3);
-                    const currentScore = e.score || Math.floor(originalScore / 3);
-                    
-                    // Split current rewards: parent keeps its share, each fragment gets half of what's left
-                    // This ensures total = originalGold/Xp/Score across all generations
-                    const fragmentGold = Math.floor(currentGold / 2);
-                    const fragmentXp = Math.floor(currentXp / 2);
-                    const fragmentScore = Math.floor(currentScore / 2);
+                    const fallbackGoldBudget = e.originalGold || e.gold || 400;
+                    const fallbackXpBudget = e.originalXp || e.xp || 800;
+                    const fallbackScoreBudget = e.originalScore || e.score || 200;
+                    const parentGoldBudget = Number.isFinite(e.hiveRewardGold)
+                        ? e.hiveRewardGold
+                        : Math.max(0, Math.floor(fallbackGoldBudget * HIVE_FRAGMENT_REWARD_SCALE));
+                    const parentXpBudget = Number.isFinite(e.hiveRewardXp)
+                        ? e.hiveRewardXp
+                        : Math.max(0, Math.floor(fallbackXpBudget * HIVE_FRAGMENT_REWARD_SCALE));
+                    const parentScoreBudget = Number.isFinite(e.hiveRewardScore)
+                        ? e.hiveRewardScore
+                        : Math.max(0, Math.floor(fallbackScoreBudget * HIVE_FRAGMENT_REWARD_SCALE));
                     
                     for (let i = 0; i < 2; i++) {
                         const offsetAngle = (i * Math.PI) + Math.random() * 0.5;
                         const offsetDist = e.r * 1.5;
                         
+                        const goldShare = Math.floor(parentGoldBudget / 2) + (i === 0 ? parentGoldBudget % 2 : 0);
+                        const xpShare = Math.floor(parentXpBudget / 2) + (i === 0 ? parentXpBudget % 2 : 0);
+                        const scoreShare = Math.floor(parentScoreBudget / 2) + (i === 0 ? parentScoreBudget % 2 : 0);
+                        const willSplitAgain = splitCount < 2;
                         const newFragment = {
                             x: e.x + Math.cos(offsetAngle) * offsetDist,
                             y: e.y + Math.sin(offsetAngle) * offsetDist,
@@ -32596,20 +32892,25 @@
                             damageFlashTimer: 0,
                             fireT: 1.0 + Math.random() * 0.8,
                             moveT: 0,
-                            gold: fragmentGold,
-                            xp: fragmentXp,
-                            score: fragmentScore,
-                            originalGold: originalGold, // Preserve for nested splits
-                            originalXp: originalXp,
-                            originalScore: originalScore,
+                            gold: willSplitAgain ? 0 : goldShare,
+                            xp: willSplitAgain ? 0 : xpShare,
+                            score: willSplitAgain ? 0 : scoreShare,
+                            originalGold: goldShare,
+                            originalXp: xpShare,
+                            originalScore: scoreShare,
+                            hiveRewardGold: goldShare,
+                            hiveRewardXp: xpShare,
+                            hiveRewardScore: scoreShare,
                             color: '#FF6B35'
                         };
+                        registerHiveFragment(newFragment, rootId);
                         
                         store.enemies.push(newFragment);
                     }
                     
                     // Original fragment dies and is replaced by the 2 new ones
                     e.dead = true;
+                    unregisterHiveFragment(e);
                     
                     // Play bug squeal sound if this is the smallest generation (splitCount 2)
                     if (splitCount >= 2) {
@@ -32622,6 +32923,14 @@
                 // Initialize poison puddles array if not exists
                 if (!store.poisonPuddles) {
                     store.poisonPuddles = [];
+                }
+
+                const hiveRootId = ensureHiveBossRootId(b);
+                if (b.fragmentPhaseActive) {
+                    if (!hiveFragmentsAlive(hiveRootId) && !b.fragmentCollapseTriggered) {
+                        completeHiveFragmentPhase(hiveRootId);
+                    }
+                    return;
                 }
 
                 // Broodlord skittering movement
@@ -32959,27 +33268,31 @@
                     const sizeScale = 0.7 - (splitCount * 0.15); // Smaller with each split (0.7 -> 0.55 -> 0.4)
                     const speedScale = 1 + (splitCount * 0.3); // Faster with each split
                     
-                    // Preserve original total rewards - splitting distributes them, doesn't multiply them
-                    // Boss rewards from powerups/handleBossDefeat are separate - these are fragment kill rewards
-                    const originalGold = b.originalGold || b.gold || 1200;
-                    const originalXp = b.originalXp || b.xp || 2400;
-                    const originalScore = b.originalScore || b.score || 600;
-                    
-                    // Current entity rewards when it splits (1/3 of what's remaining)
-                    const currentGold = b.gold || Math.floor(originalGold / 3);
-                    const currentXp = b.xp || Math.floor(originalXp / 3);
-                    const currentScore = b.score || Math.floor(originalScore / 3);
-                    
-                    // Split current rewards: parent keeps its share, each fragment gets half of what's left
-                    // This ensures total = originalGold/Xp/Score across all generations
-                    const fragmentGold = Math.floor(currentGold / 2);
-                    const fragmentXp = Math.floor(currentXp / 2);
-                    const fragmentScore = Math.floor(currentScore / 2);
+                    // Preserve a fixed reward budget that gets divided among descendants without multiplying totals
+                    const baseBossGold = b.originalGold || b.gold || 1200;
+                    const baseBossXp = b.originalXp || b.xp || 2400;
+                    const baseBossScore = b.originalScore || b.score || 600;
+                    const totalGoldBudget = Number.isFinite(b.hiveRewardGold)
+                        ? b.hiveRewardGold
+                        : Math.max(0, Math.floor(baseBossGold * HIVE_FRAGMENT_REWARD_SCALE));
+                    const totalXpBudget = Number.isFinite(b.hiveRewardXp)
+                        ? b.hiveRewardXp
+                        : Math.max(0, Math.floor(baseBossXp * HIVE_FRAGMENT_REWARD_SCALE));
+                    const totalScoreBudget = Number.isFinite(b.hiveRewardScore)
+                        ? b.hiveRewardScore
+                        : Math.max(0, Math.floor(baseBossScore * HIVE_FRAGMENT_REWARD_SCALE));
+                    b.hiveRewardGold = totalGoldBudget;
+                    b.hiveRewardXp = totalXpBudget;
+                    b.hiveRewardScore = totalScoreBudget;
                     
                     for (let i = 0; i < 2; i++) {
                         const offsetAngle = (i * Math.PI * 2 / 2) + Math.random() * 0.5;
                         const offsetDist = b.r * 1.5;
                         
+                        const goldShare = Math.floor(totalGoldBudget / 2) + (i === 0 ? totalGoldBudget % 2 : 0);
+                        const xpShare = Math.floor(totalXpBudget / 2) + (i === 0 ? totalXpBudget % 2 : 0);
+                        const scoreShare = Math.floor(totalScoreBudget / 2) + (i === 0 ? totalScoreBudget % 2 : 0);
+                        const willSplitAgain = splitCount < 2;
                         const fragment = {
                             x: b.x + Math.cos(offsetAngle) * offsetDist,
                             y: b.y + Math.sin(offsetAngle) * offsetDist,
@@ -33002,25 +33315,37 @@
                             fireT: 0.5 + Math.random() * 0.8,
                             attackPhase: Math.floor(Math.random() * 4),
                             moveT: 0,
-                            gold: fragmentGold,
-                            xp: fragmentXp,
-                            score: fragmentScore,
-                            originalGold: originalGold, // Preserve for nested splits
-                            originalXp: originalXp,
-                            originalScore: originalScore,
+                            gold: willSplitAgain ? 0 : goldShare,
+                            xp: willSplitAgain ? 0 : xpShare,
+                            score: willSplitAgain ? 0 : scoreShare,
+                            originalGold: goldShare,
+                            originalXp: xpShare,
+                            originalScore: scoreShare,
+                            hiveRewardGold: goldShare,
+                            hiveRewardXp: xpShare,
+                            hiveRewardScore: scoreShare,
                             color: '#FF6B35'
                         };
+                        fragment.parentHiveId = hiveRootId;
+                        registerHiveFragment(fragment, hiveRootId);
                         
                         store.enemies.push(fragment);
                     }
                     
-                    // Mark original boss for removal - this triggers handleBossDefeat and awards boss powerups
+                    // Enter fragment monitoring phase - original body retreats while fragments fight
+                    b.fragmentPhaseActive = true;
+                    b.fragmentCollapseTriggered = false;
                     b.dead = true;
+                    b.awaitingFragments = true;
+                    b.fragmentAnchor = { x: b.x, y: b.y };
+                    b.damageFlashTimer = 0;
+                    announce('HIVE SOVEREIGN FRACTURES! DESTROY THE BROOD!');
                     
                     // Play bug squeal sound if this is the smallest generation (splitCount 2)
                     if (splitCount >= 2) {
                         playSound('bugSqueal');
                     }
+                    return;
                 }
             }
 
@@ -41852,7 +42177,8 @@
                 }
 
                 // Prioritize champions over regular enemies (unless boss exists)
-                if (bestChampion && (!store.boss || store.boss.dead)) {
+                const bossUnavailable = !store.boss || (store.boss.dead && !store.boss.fragmentPhaseActive);
+                if (bestChampion && bossUnavailable) {
                     return bestChampion;
                 }
 
