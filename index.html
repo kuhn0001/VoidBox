@@ -663,6 +663,62 @@
             margin: 16px 0;
         }
 
+        /* Shop header sticky positioning for better UX */
+        #shopPanel .shop-header-priority {
+            position: sticky;
+            top: 0;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 10;
+            padding: 12px 0 8px 0;
+            margin: -12px 0 12px 0;
+            border-bottom: 1px solid var(--accent);
+        }
+
+        #shopPanel .close-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            min-width: 40px;
+            min-height: 40px;
+            font-size: 32px;
+            font-weight: bold;
+            z-index: 11;
+        }
+
+        /* Quick buy section for common purchases */
+        .shop-quick-buy {
+            display: flex;
+            gap: 8px;
+            margin: 12px 0;
+            padding: 12px;
+            background: rgba(102, 0, 204, 0.15);
+            border-radius: 8px;
+            border: 1px solid rgba(204, 153, 255, 0.3);
+        }
+
+        .shop-quick-buy button {
+            flex: 1;
+            min-height: 48px;
+            font-size: 14px;
+            padding: 8px;
+            background: rgba(102, 0, 204, 0.3);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .shop-quick-buy button:hover {
+            background: rgba(102, 0, 204, 0.5);
+            box-shadow: 0 0 10px rgba(204, 153, 255, 0.4);
+        }
+
+        .shop-quick-buy button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
         .shop-control-block {
             display: flex;
             align-items: center;
@@ -3108,7 +3164,38 @@
             }
 
             .panel {
-                width: min(500px, 94vw)
+                width: min(400px, 94vw);
+                max-height: 80vh;
+                overflow-y: auto;
+            }
+
+            /* Make buttons bigger on mobile for better touch targets */
+            .panel button,
+            .shop-item button,
+            .pilot-card,
+            .skill-card,
+            .upgrade-option {
+                min-height: 48px;
+                font-size: 16px;
+                padding: 12px 16px;
+            }
+
+            /* Shop grid single column on mobile */
+            .shop-grid {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            .shop-item {
+                padding: 16px;
+            }
+
+            /* Bigger close buttons */
+            .close-btn,
+            .panel-close {
+                min-width: 48px;
+                min-height: 48px;
+                font-size: 24px;
             }
 
             .stage {
@@ -6770,6 +6857,8 @@
             let consecutiveLightningCrits = 0; // Track crits on lightning hits for lightning crack detection
             let lastLightningHitTime = 0; // Track when last lightning hit occurred (reset after 0.8s gap)
             let artilleryClusterSoundIndex = 0; // Cycle through all 4 cluster landing sounds
+            let lastChainLightningTime = 0; // Track champion chain lightning sound
+            let lastDeathEngineLaughTime = 0; // Track DEATH ENGINE laugh sound
             const SOUND_COOLDOWNS = {
                 epicHorn: 1950,
                 voidpulse: 3125, // Allow sound to fully play + pause - adjust if you shorten the sound file
@@ -6779,6 +6868,8 @@
                 lightningCrit: 13500, // Cooldown for lightning crit sound (10 seconds for stormbringer chain lightning)
                 lightningPower: 1680, // Cooldown for lightning power upgrade sound
                 lightningCrack: 1700, // Cooldown for huge multi-kill streak sound
+                chainLightning: 400, // Cooldown for champion chain lightning sound (400ms)
+                deathEngineLaugh: 2500, // Cooldown for DEATH ENGINE laugh (2.5s)
                 artHit: 198, // Artillery hit sound cooldown to prevent spam
                 snakeHiss: 288, // Rate limit snake death sounds to prevent spam when many hunters die at once
                 robotCrumble: 5220, // Rate limit mech death sounds - tripled cooldown to reduce frequency
@@ -15634,6 +15725,9 @@
                 boss._instanceId = boss.instanceId;
                 boss.spawnWave = waveIndex;
                 boss.spawnedAt = performance.now();
+                
+                // Initialize healing powerup drop timer for non-vampiric players
+                boss.healingDropTimer = 5.0; // Drop healing every 5 seconds
 
                 console.log(`🏆 Boss Created: ${boss.name} | Wave: ${store.world.wave} | HP: ${hp.toFixed(0)} | Scale: ${scale} | CollarStacks: ${store.world.collarStacks} | CollarBonus: ${collarBonus.toFixed(2)}x`);
 
@@ -16545,7 +16639,7 @@
                 // Factor in player speed upgrades to make beef charge faster with speed upgrades
                 const baseChargeSpeed = p.beefChargeSpeed || 1.35;
                 const speedUpgradeMultiplier = Math.max(1.0, (p.speed || 2.5) / 2.5); // Speed upgrades make charge faster
-                const effectiveChargeSpeed = baseChargeSpeed * speedUpgradeMultiplier;
+                const effectiveChargeSpeed = baseChargeSpeed * speedUpgradeMultiplier * 0.6; // Slow down by 40% to make animation more visible
                 
                 return {
                     context,
@@ -17377,12 +17471,14 @@
                 if (store.player.subclass === 'demolitioner') {
                     aoeDmg *= 1.5;  // OPTIONAL: Boost damage for demolitioner
                 }
+                // Use darker color for demolitioner explosions (burnt orange)
+                const explosionColor = store.player.subclass === 'demolitioner' ? '#cc5500' : undefined;
                 for (let i = 0; i < microExplosionCount; i++) {
                     const angle = Math.random() * 2 * Math.PI;
                     const dist = Math.random() * explosionRadius * 0.7;
                     const ex = m.x + Math.cos(angle) * dist;
                     const ey = m.y + Math.sin(angle) * dist;
-                    store.activeEffects.push(createEffect("grenadeExplosion", ex, ey, 20 + Math.random() * 15));
+                    store.activeEffects.push(createEffect("grenadeExplosion", ex, ey, 20 + Math.random() * 15, { color: explosionColor }));
                 }
                 const targets = store.boss ? [...store.enemies, store.boss] : store.enemies;
                 targets.forEach(e => {
@@ -17797,7 +17893,7 @@
                         const px = pulse.x + Math.cos(angle) * pulse.radius;
                         const py = pulse.y + Math.sin(angle) * pulse.radius;
                         
-                        const particle = new FlameParticle(px, py, null, 0);
+                        const particle = new FlameParticle(px, py, null);
                         particle.vx = Math.cos(angle) * 30;
                         particle.vy = Math.sin(angle) * 30;
                         particle.life *= 0.3;
@@ -20930,8 +21026,140 @@
                 announce('◢ NEXUS BREACH - PILOT LOST ◣'); q('finalScore').textContent = store.world.score; q('gameOverPanel').classList.remove('hide');
             }
 
+            // Comprehensive game state wipe to prevent artifacts between games
+            function wipeGameState() {
+                console.log('🧹 Comprehensive game state wipe initiated');
+                
+                // Clear all projectiles and entities
+                if (store.bullets && store.bullets.length) {
+                    console.log(`  🧹 Clearing ${store.bullets.length} bullets`);
+                    store.bullets.forEach(bullet => bulletPool.release(bullet));
+                    store.bullets = [];
+                }
+                if (store.eBullets && store.eBullets.length) {
+                    console.log(`  🧹 Clearing ${store.eBullets.length} enemy bullets`);
+                    store.eBullets.forEach(returnEBulletToPool);
+                    store.eBullets = [];
+                }
+                
+                // Clear all enemy and entity arrays
+                store.boss = null;
+                store.enemies = [];
+                store.powerups = [];
+                store.fragmentProjectiles = [];
+                store.starProjectiles = [];
+                store.pendingStarSalvos = [];
+                store.pendingStarClones = [];
+                store.juggernautBombs = [];
+                store.drones = [];
+                store.hounds = [];
+                store.shadowHounds = [];
+                store.voidRifts = [];
+                store.missiles = [];
+                store.lasers = [];
+                store.mines = [];
+                store.empCharges = [];
+                store.knockbackCharges = [];
+                store.empGlobalCooldown = 0;
+                store.knockbackGlobalCooldown = 0;
+                
+                // Clear all visual effects and particles
+                store.activeEffects = [];
+                store.flameParticles = [];
+                store.hitParticles = [];
+                store.lightningBolts = [];
+                store.empNovas = [];
+                store.flamePulses = [];
+                store.poisonPuddles = [];
+                store.goldenOrbs = [];
+                store.shadowEchoes = [];
+                
+                // Clear champion/companion state
+                store.championMinions = [];
+                store.pendingChampionUpgrade = null;
+                store.playerChampion = null;
+                store.shadowChampionId = null;
+                store.shadowChampionDefeated = false;
+                store.shadowChampionTokenDropped = false;
+                store.shadowChampionLastPos = null;
+                store.iceman = null;
+                store.beefClone = null;
+                store.escortDrones = [];
+                
+                // Clear boss snapshots and tracking
+                store.lastBossSnapshot = null;
+                store.lastBossDefeatId = null;
+                
+                // Clean up PixiJS boss graphics
+                if (bossContainer && hiveBossGraphics) {
+                    bossContainer.removeChild(hiveBossGraphics);
+                    hiveBossGraphics.destroy();
+                    hiveBossGraphics = null;
+                }
+                
+                // Clear wave/spawn state
+                store.waveSpawnQueue = [];
+                store.pendingSpawnCount = 0;
+                
+                // Clear sound tracking
+                powerSoundPlayedTargets.clear();
+                
+                // Clear UI timers
+                if (store.ui.shopSpotlightAutoDismissTimer) {
+                    clearTimeout(store.ui.shopSpotlightAutoDismissTimer);
+                    store.ui.shopSpotlightAutoDismissTimer = null;
+                }
+                if (store.ui.teleportTutorialAutoDismissTimer) {
+                    clearTimeout(store.ui.teleportTutorialAutoDismissTimer);
+                    store.ui.teleportTutorialAutoDismissTimer = null;
+                }
+                
+                // Clear any remaining timers that might cause artifacts
+                if (store.world && store.world.mechForgePulseTimeout) {
+                    clearTimeout(store.world.mechForgePulseTimeout);
+                    store.world.mechForgePulseTimeout = null;
+                }
+                
+                // Close all panels and reset panel state
+                closeAllPanels();
+                currentOpenPanel = null;
+                
+                // Hide all game panels
+                q('gameOverPanel').classList.add('hide');
+                q('shopPanel').classList.add('hide');
+                q('levelPanel').classList.add('hide');
+                q('subclassPanel').classList.add('hide');
+                q('pilotPanel').classList.add('hide');
+                q('namePanel').classList.add('hide');
+                q('scorePanel').classList.add('hide');
+                q('teleportTutorialPanel').classList.add('hide');
+                q('shopTutorialPanel').classList.add('hide');
+                
+                // Clear mech forge highlighting
+                const mechForgeBtn = q('shopBtn');
+                if (mechForgeBtn) {
+                    mechForgeBtn.classList.remove('forge-highlight');
+                    mechForgeBtn.classList.remove('mech-forge-pulse');
+                    if (mechForgeBtn._forgePulseTimeout) {
+                        clearTimeout(mechForgeBtn._forgePulseTimeout);
+                        mechForgeBtn._forgePulseTimeout = null;
+                    }
+                }
+                
+                // Reset UI state
+                store.ui.shopSpotlightActive = false;
+                store.ui.shopSpotlightMessage = 'Upgrade Hangar online. Deploy credits as needed.';
+                
+                console.log('✅ Game state wipe complete');
+            }
+
             function resetGame() {
                 console.log('🔄 RESET GAME initiated');
+                
+                // First, comprehensively wipe all game state and visual artifacts
+                wipeGameState();
+                
+                // Reset player state
                 store.player = JSON.parse(JSON.stringify(player_initial_state));
                 const prevAutoForge = (store.world && typeof store.world.autoForgeEnabled === 'boolean') ? store.world.autoForgeEnabled : storedAutoForgeEnabled;
 
@@ -21006,67 +21234,28 @@
                     cubeBurglarDefeated: 0
                 };
 
-                if (store.bullets && store.bullets.length) {
-                    console.log(`🧹 Clearing ${store.bullets.length} bullets during game reset`);
-                    store.bullets.forEach(bullet => bulletPool.release(bullet));
-                }
-                if (store.eBullets && store.eBullets.length) {
-                    store.eBullets.forEach(returnEBulletToPool);
-                }
-                store.boss = null; store.bullets = []; store.fragmentProjectiles = []; store.eBullets = []; store.enemies = []; store.powerups = []; store.starProjectiles = []; store.pendingStarSalvos = []; store.pendingStarClones = []; store.juggernautBombs = [];
-                store.lastBossSnapshot = null;
-                store.lastBossDefeatId = null;
-                
-                // Clean up PixiJS boss graphics on reset
-                if (bossContainer && hiveBossGraphics) {
-                    bossContainer.removeChild(hiveBossGraphics);
-                    hiveBossGraphics.destroy();
-                    hiveBossGraphics = null;
-                }
-                store.drones = []; store.hounds = []; store.shadowHounds = []; store.voidRifts = []; store.missiles = []; store.lasers = []; store.mines = []; store.activeEffects = []; store.flameParticles = [];
-                store.lightningBolts = []; store.empNovas = []; store.flamePulses = []; store.poisonPuddles = []; store.goldenOrbs = []; store.shadowEchoes = [];
-                store.championMinions = [];
-                store.pendingChampionUpgrade = null;
-                powerSoundPlayedTargets.clear(); // Clear power sound tracking for new wave
-                store.empCharges = [];
-                store.knockbackCharges = [];
-                store.empGlobalCooldown = 0;
-                store.knockbackGlobalCooldown = 0;
+                // Reset grenades and shields
                 if (store.player) {
                     store.player.grenades = 0;
                     store.player.knockbackShields = 0;
                 }
-                store.playerChampion = null;
-                store.shadowChampionId = null;
-                store.shadowChampionDefeated = false;
-                store.shadowChampionTokenDropped = false;
-                store.shadowChampionLastPos = null;
-                store.iceman = null;
-                store.beefClone = null;
-                store.escortDrones = [];
-                store.waveSpawnQueue = [];
-                store.pendingSpawnCount = 0;
-                store._startTs = performance.now(); store.isGameOver = false;
+                
+                // Reset cheat cooldowns
+                store._startTs = performance.now(); 
+                store.isGameOver = false;
                 store.cheatsUsed = false;
                 store.cheatInvincibilityCooldown = 0;
                 store.cheatDogHealCooldown = 0;
                 store.cheatChampionCooldown = 0;
-                store.ui.shopSpotlightActive = false;
-                store.ui.shopSpotlightMessage = 'Upgrade Hangar online. Deploy credits as needed.';
+                
+                // Reset shop item order
                 shopItemOrder = [...SHOP_DISPLAY_ORDER];
-                q('gameOverPanel').classList.add('hide'); q('shopPanel').classList.add('hide'); q('levelPanel').classList.add('hide');
-                q('subclassPanel').classList.add('hide');
-                const mechForgeBtn = q('shopBtn');
-                if (mechForgeBtn) {
-                    mechForgeBtn.classList.remove('forge-highlight');
-                    mechForgeBtn.classList.remove('mech-forge-pulse');
-                    if (mechForgeBtn._forgePulseTimeout) {
-                        clearTimeout(mechForgeBtn._forgePulseTimeout);
-                        mechForgeBtn._forgePulseTimeout = null;
-                    }
-                }
+                
+                // Set theme and ensure name
                 setMapThemeImmediate(DEFAULT_MAP_THEME_KEY);
                 ensureName();
+                
+                console.log('✅ Game reset complete');
             }
 
             // --- RENDER & DRAW FUNCTIONS ---
@@ -32136,11 +32325,15 @@
                             b.fireT = 2.5;
                             switch (b.attackPhase) {
                                 case 0:
-                                    // Trigger Death Engine laugh
-                                    b.isLaughing = true;
-                                    b.laughStartTime = performance.now();
-                                    if (b.skullRenderer) {
-                                        b.skullRenderer.triggerAttack(true);
+                                    // Trigger Death Engine laugh (with cooldown to prevent spam)
+                                    const now = performance.now();
+                                    if (now - lastDeathEngineLaughTime >= SOUND_COOLDOWNS.deathEngineLaugh) {
+                                        b.isLaughing = true;
+                                        b.laughStartTime = now;
+                                        if (b.skullRenderer) {
+                                            b.skullRenderer.triggerAttack(true);
+                                        }
+                                        lastDeathEngineLaughTime = now;
                                     }
                                     const n = 12;
                                     for (let i = 0; i < n; i++) {
@@ -32206,7 +32399,11 @@
                             b.skullRenderer.y = b.y;
                         }
 
-                        playSound('shao_kahn'); // Skull laugh when disappearing
+                        const now = performance.now();
+                        if (now - lastDeathEngineLaughTime >= SOUND_COOLDOWNS.deathEngineLaugh) {
+                            playSound('shao_kahn'); // Skull laugh when disappearing
+                            lastDeathEngineLaughTime = now;
+                        }
                         announce('THE DEATH ENGINE VANISHES INTO THE VOID!');
 
                         // Reset safe zone position and changes
@@ -32279,7 +32476,11 @@
                                 b.skullRenderer.y = b.y;
                             }
 
-                            playSound('shao_kahn'); // Another laugh as he returns
+                            const now = performance.now();
+                            if (now - lastDeathEngineLaughTime >= SOUND_COOLDOWNS.deathEngineLaugh) {
+                                playSound('shao_kahn'); // Another laugh as he returns
+                                lastDeathEngineLaughTime = now;
+                            }
                             announce('THE DEATH ENGINE RETURNS!');
                         }
                     }
@@ -32353,7 +32554,11 @@
                                 b.skullRenderer.y = b.y;
                             }
 
-                            playSound('shao_kahn'); // Final laugh as he returns
+                            const now = performance.now();
+                            if (now - lastDeathEngineLaughTime >= SOUND_COOLDOWNS.deathEngineLaugh) {
+                                playSound('shao_kahn'); // Final laugh as he returns
+                                lastDeathEngineLaughTime = now;
+                            }
                             announce('THE DEATH ENGINE RETURNS FOR THE FINAL ASSAULT!');
                         }
                     }
@@ -32381,7 +32586,11 @@
                                 b.skullRenderer.y = b.y;
                             }
 
-                            playSound('shao_kahn'); // Skull laugh when disappearing again
+                            const now = performance.now();
+                            if (now - lastDeathEngineLaughTime >= SOUND_COOLDOWNS.deathEngineLaugh) {
+                                playSound('shao_kahn'); // Skull laugh when disappearing again
+                                lastDeathEngineLaughTime = now;
+                            }
                             announce('THE DEATH ENGINE VANISHES INTO THE VOID AGAIN!');
 
                             // Reset bullet timer
@@ -32452,11 +32661,15 @@
                             b.fireT = fireRate;
                             switch (b.attackPhase) {
                                 case 0:
-                                    // Trigger Death Engine laugh
-                                    b.isLaughing = true;
-                                    b.laughStartTime = performance.now();
-                                    if (b.skullRenderer) {
-                                        b.skullRenderer.triggerAttack(true);
+                                    // Trigger Death Engine laugh (with cooldown to prevent spam)
+                                    const now2 = performance.now();
+                                    if (now2 - lastDeathEngineLaughTime >= SOUND_COOLDOWNS.deathEngineLaugh) {
+                                        b.isLaughing = true;
+                                        b.laughStartTime = now2;
+                                        if (b.skullRenderer) {
+                                            b.skullRenderer.triggerAttack(true);
+                                        }
+                                        lastDeathEngineLaughTime = now2;
                                     }
                                     // Dense spiral (more bullets in final phase)
                                     const n = isFinalPhase ? 20 : 16;
@@ -33355,6 +33568,19 @@
                 const dmgScale = Math.pow(1.065, store.world.wave - 1);
                 tickChampionBurn(b, dt);
                 tickChampionVoidMarks(b, dt);
+                
+                // Boss healing powerup drops for non-vampiric players
+                if (store.player && store.player.vampirism <= 0) {
+                    b.healingDropTimer = (b.healingDropTimer || 5.0) - dt;
+                    if (b.healingDropTimer <= 0) {
+                        // Spawn healing powerup near boss
+                        const dropX = b.x + (Math.random() - 0.5) * 80;
+                        const dropY = b.y + 60 + Math.random() * 40;
+                        if (!store.powerups) store.powerups = [];
+                        store.powerups.push({ x: dropX, y: dropY, r: 12, type: 'repair' });
+                        b.healingDropTimer = 5.0; // Reset timer
+                    }
+                }
 
                 // BOSS IMMUNITY: Bosses are completely immune to movement-affecting debuffs
                 // They can still take damage from ice/poison/fire, but movement is unaffected
@@ -35393,22 +35619,7 @@
                 //         return;
                 //     }
                 // }
-                
-                // Special rendering for Heat Death of the Universe
-                if (t.isHeatDeath) {
-                    // Darken the top half of screen with haze effect
-                    ctx.save();
-                    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-                    ctx.fillRect(0, 0, W, H / 2);
-
-                    // Add dark gray haze
-                    ctx.fillStyle = 'rgba(32, 32, 32, 0.6)';
-                    ctx.fillRect(0, 0, W, H / 2);
-
-                    // No health bar or physical form - just the void
-                    ctx.restore();
-                    return;
-                }
+            
 
                 if (t.behavior === 'gemini') {
                     drawGeminiBoss(t);
@@ -40684,6 +40895,21 @@
                         btn.classList.add('mech-forge-pulse');
                     }
                 }
+
+                // Auto-dismiss after 2.5 seconds
+                if (store.ui.shopSpotlightAutoDismissTimer) {
+                    clearTimeout(store.ui.shopSpotlightAutoDismissTimer);
+                }
+                store.ui.shopSpotlightAutoDismissTimer = setTimeout(() => {
+                    dismissShopSpotlight();
+                }, 2500);
+
+                // Tap to dismiss
+                const tapHandler = () => {
+                    dismissShopSpotlight();
+                    container.removeEventListener('click', tapHandler);
+                };
+                container.addEventListener('click', tapHandler);
             }
 
             function hideShopSpotlight() {
@@ -40706,8 +40932,7 @@
                 }
                 const panel = q('shopTutorialPanel');
                 if (!panel) return;
-                pauseGame();
-                panel.classList.remove('hide');
+                showPanel('shopTutorialPanel');
                 const checkbox = q('shopTutorialDontShow');
                 if (checkbox) {
                     checkbox.checked = !store.settings.showShopTutorial;
@@ -41131,6 +41356,26 @@
                 };
 
                 const sections = [];
+                
+                // Quick Buy section for common purchases
+                const renderQuickBuy = () => {
+                    const gold = store.world?.gold ?? 0;
+                    const repairInfo = getShopItemInfo('repair', store.player);
+                    const grenadeInfo = getShopItemInfo('grenade', store.player);
+                    const canAffordRepair = repairInfo.available && gold >= repairInfo.cost;
+                    const canAffordGrenade = grenadeInfo.available && gold >= grenadeInfo.cost;
+                    
+                    return `<div class="shop-quick-buy">
+                        <button id="quickBuyRepair" ${canAffordRepair ? '' : 'disabled'}>
+                            🔧 REPAIR<br>${repairInfo.cost}💰
+                        </button>
+                        <button id="quickBuyGrenade" ${canAffordGrenade ? '' : 'disabled'}>
+                            💣 GRENADE<br>${grenadeInfo.cost}💰
+                        </button>
+                    </div>`;
+                };
+                
+                sections.push(renderQuickBuy());
                 sections.push(renderSection('Pilot Systems', 'Enhance your fighter and core modules.', playerCards));
                 // Champion Arsenal section removed - moved to Primordial Soldier Laboratory
 
@@ -41139,6 +41384,27 @@
                 } else {
                     grid.innerHTML = sections.filter(Boolean).join('');
                 }
+                
+                // Quick buy handlers
+                const quickRepair = q('quickBuyRepair');
+                const quickGrenade = q('quickBuyGrenade');
+                if (quickRepair) {
+                    quickRepair.addEventListener('click', () => {
+                        const item = document.querySelector('.shop-item[data-key="repair"]');
+                        if (item && !item.classList.contains('disabled')) {
+                            item.click();
+                        }
+                    });
+                }
+                if (quickGrenade) {
+                    quickGrenade.addEventListener('click', () => {
+                        const item = document.querySelector('.shop-item[data-key="grenade"]');
+                        if (item && !item.classList.contains('disabled')) {
+                            item.click();
+                        }
+                    });
+                }
+                
                 grid.querySelectorAll(".shop-item").forEach(item => {
                     let isProcessing = false;
                     item.addEventListener("click", async () => {
@@ -41171,7 +41437,6 @@
             }
 
             function showMechForgeMenu() {
-                pauseGame();
                 const panel = q("mechForgeMenuPanel");
 
                 const tutorialToggle = q('shopTutorialToggle');
@@ -41237,12 +41502,11 @@
                     }
                 }
 
-                panel.classList.remove("hide");
+                showPanel('mechForgeMenuPanel'); // Use centralized manager
                 enterPanel('mechForgeMenuPanel');
             }
 
             function showCharacterSheet() {
-                pauseGame();
                 const panel = q("characterSheetPanel");
                 const body = q("characterSheetBody");
 
@@ -41250,7 +41514,7 @@
                     renderCharacterSheet(body);
                 }
 
-                panel.classList.remove("hide");
+                showPanel('characterSheetPanel'); // Use centralized manager
                 enterPanel('characterSheetPanel');
             }
 
@@ -42413,7 +42677,11 @@
                         }));
                         prevPoint = point;
                     });
-                    playSound('chainLightning');
+                    const now = performance.now();
+                    if (now - lastChainLightningTime >= SOUND_COOLDOWNS.chainLightning) {
+                        playSound('chainLightning');
+                        lastChainLightningTime = now;
+                    }
                 }
 
                 return {
@@ -42535,14 +42803,13 @@
                     return;
                 }
 
-                pauseGame();
                 const panel = q("championDressingRoom");
                 populateChampionBuilder();
                 populateChampionUpgradeGrid();
                 updateChampionPreview();
                 updateChampionStats();
                 resetChampionPresetPanel();
-                panel.classList.remove("hide");
+                showPanel('championDressingRoom'); // Use centralized manager
                 enterPanel('championDressingRoom');
             }
 
@@ -47393,8 +47660,128 @@
 
             // --- PAUSE & MENU LOGIC ---
             const PANELS = ['namePanel', 'pilotPanel', 'scorePanel', 'levelPanel', 'shopPanel', 'storyPanel', 'subclassPanel', 'teleportTutorialPanel', 'championDressingRoom', 'mechForgeMenuPanel', 'characterSheetPanel', 'upgradePopupPanel'];
+            
+            // Panel priority levels for z-index management
+            const PANEL_PRIORITY = {
+                NORMAL: { level: 0, className: 'panel-priority-normal' },
+                HIGH: { level: 1, className: 'panel-priority-high' },
+                MANDATORY: { level: 2, className: 'panel-priority-mandatory' },
+                CRITICAL: { level: 3, className: 'panel-priority-critical' }
+            };
+            
+            // Panel configuration with priorities
+            const PANEL_CONFIG = {
+                namePanel: { priority: PANEL_PRIORITY.CRITICAL, canDisplace: false },
+                pilotPanel: { priority: PANEL_PRIORITY.MANDATORY, canDisplace: true },
+                levelPanel: { priority: PANEL_PRIORITY.MANDATORY, canDisplace: true },
+                subclassPanel: { priority: PANEL_PRIORITY.MANDATORY, canDisplace: true },
+                upgradePopupPanel: { priority: PANEL_PRIORITY.HIGH, canDisplace: true },
+                shopPanel: { priority: PANEL_PRIORITY.NORMAL, canDisplace: true },
+                mechForgeMenuPanel: { priority: PANEL_PRIORITY.NORMAL, canDisplace: true },
+                characterSheetPanel: { priority: PANEL_PRIORITY.NORMAL, canDisplace: true },
+                championDressingRoom: { priority: PANEL_PRIORITY.NORMAL, canDisplace: true },
+                teleportTutorialPanel: { priority: PANEL_PRIORITY.HIGH, canDisplace: true },
+                shopTutorialPanel: { priority: PANEL_PRIORITY.HIGH, canDisplace: true },
+                scorePanel: { priority: PANEL_PRIORITY.NORMAL, canDisplace: true },
+                storyPanel: { priority: PANEL_PRIORITY.NORMAL, canDisplace: true }
+            };
+            
+            // Track currently open panel
+            let currentOpenPanel = null;
+            
             function isAnyPanelOpen() {
                 return PANELS.some(id => !q(id).classList.contains('hide'));
+            }
+            
+            /**
+             * Centralized panel manager - ensures only one panel is open at a time
+             * @param {string} panelId - ID of the panel to show
+             * @param {Object} options - Configuration options
+             * @param {boolean} options.force - Force open even if higher priority panel is open
+             * @param {Function} options.onClose - Callback when panel is closed
+             */
+            function showPanel(panelId, options = {}) {
+                const panel = q(panelId);
+                if (!panel) {
+                    console.warn(`Panel ${panelId} not found`);
+                    return false;
+                }
+                
+                const config = PANEL_CONFIG[panelId] || { priority: PANEL_PRIORITY.NORMAL, canDisplace: true };
+                
+                // Check if we can displace the current panel
+                if (currentOpenPanel && currentOpenPanel !== panelId) {
+                    const currentConfig = PANEL_CONFIG[currentOpenPanel] || { priority: PANEL_PRIORITY.NORMAL, canDisplace: true };
+                    
+                    // Don't displace if current panel is higher priority and force is not set
+                    if (!options.force && currentConfig.priority.level > config.priority.level) {
+                        console.log(`Cannot displace higher priority panel ${currentOpenPanel}`);
+                        return false;
+                    }
+                    
+                    // Don't displace if current panel cannot be displaced
+                    if (!currentConfig.canDisplace && !options.force) {
+                        console.log(`Panel ${currentOpenPanel} cannot be displaced`);
+                        return false;
+                    }
+                    
+                    // Close the current panel
+                    const currentPanel = q(currentOpenPanel);
+                    if (currentPanel) {
+                        currentPanel.classList.add('hide');
+                    }
+                }
+                
+                // Apply priority class for z-index
+                panel.className = panel.className.replace(/panel-priority-\w+/g, '');
+                panel.classList.add('panel');
+                panel.classList.add(config.priority.className);
+                
+                // Show the new panel
+                panel.classList.remove('hide');
+                currentOpenPanel = panelId;
+                
+                // Store close callback if provided
+                if (options.onClose) {
+                    panel.dataset.closeCallback = options.onClose.name || 'callback';
+                }
+                
+                pauseGame();
+                return true;
+            }
+            
+            /**
+             * Close a specific panel
+             * @param {string} panelId - ID of the panel to close
+             */
+            function closePanel(panelId) {
+                const panel = q(panelId);
+                if (!panel) return;
+                
+                panel.classList.add('hide');
+                
+                if (currentOpenPanel === panelId) {
+                    currentOpenPanel = null;
+                }
+                
+                // Check if any other panels are open before resuming
+                if (!isAnyPanelOpen()) {
+                    resumeGame(true);
+                }
+            }
+            
+            /**
+             * Close all panels (use with caution)
+             */
+            function closeAllPanels() {
+                PANELS.forEach(panelId => {
+                    const panel = q(panelId);
+                    if (panel) {
+                        panel.classList.add('hide');
+                    }
+                });
+                currentOpenPanel = null;
+                resumeGame(true);
             }
 
             function pauseGame() {
@@ -47467,24 +47854,22 @@
                     tier.style.color = tierColor;
                 }
                 
-                pauseGame();
-                panel.classList.remove('hide');
+                showPanel('upgradePopupPanel'); // Use centralized manager
             }
 
             // --- EVENT LISTENERS & INITIALIZATION ---
             function showPilotSelect() {
                 playSound('epicHorn');
-                pauseGame();
                 const panel = q('pilotPanel');
-
-                panel.classList.remove('hide');
+                
+                showPanel('pilotPanel', { force: true }); // Mandatory progression panel
                 const cards = panel.querySelectorAll('.skill-card');
 
                 const clickHandler = (e) => {
                     const card = e.currentTarget;
                     const genome = card.dataset.genome;
                     store.player.pilotGenome = genome;
-                    panel.classList.add('hide');
+                    closePanel('pilotPanel'); // Use centralized close
                     applyGenomeBonus(genome);
 
                     // Spend progression point for successful class selection
@@ -47504,18 +47889,39 @@
             }
 
             function showTeleportTutorial() {
+                showPanel('teleportTutorialPanel');
+
                 const panel = q('teleportTutorialPanel');
-                panel.classList.remove('hide');
+                
+                // Auto-dismiss after 2.5 seconds
+                if (store.ui.teleportTutorialAutoDismissTimer) {
+                    clearTimeout(store.ui.teleportTutorialAutoDismissTimer);
+                }
+                store.ui.teleportTutorialAutoDismissTimer = setTimeout(() => {
+                    closePanel('teleportTutorialPanel');
+                }, 2500);
 
                 // Set up close button handler
                 const closeBtn = q('closeTeleportTutorial');
                 const closeHandler = () => {
-                    panel.classList.add('hide');
+                    if (store.ui.teleportTutorialAutoDismissTimer) {
+                        clearTimeout(store.ui.teleportTutorialAutoDismissTimer);
+                    }
+                    closePanel('teleportTutorialPanel');
                     closeBtn.removeEventListener('click', closeHandler);
-                    resumeGame(true);  // Force resume to avoid panel visibility race condition
                 };
 
                 closeBtn.addEventListener('click', closeHandler);
+
+                // Tap anywhere on panel to dismiss
+                const tapHandler = () => {
+                    if (store.ui.teleportTutorialAutoDismissTimer) {
+                        clearTimeout(store.ui.teleportTutorialAutoDismissTimer);
+                    }
+                    closePanel('teleportTutorialPanel');
+                    panel.removeEventListener('click', tapHandler);
+                };
+                panel.addEventListener('click', tapHandler);
             }
 
             // --- HIT PARTICLE EFFECT ---
@@ -48189,21 +48595,21 @@
             };
 
             function showSubclassSelect() {
-                pauseGame();
                 const panel = q('subclassPanel');
                 const grid = q('subclassGrid');
                 const skillTree = q('skillTree');
                 const genome = store.player.pilotGenome;
 
                 if (!panel || !grid) {
-                    resumeGame();
                     return;
                 }
+                
+                showPanel('subclassPanel', { force: true }); // Mandatory progression panel
 
                 // Show traditional card selection for all pilots (including beef)
                 const choices = SUBCLASSES[genome];
                 if (!choices) {
-                    resumeGame();
+                    closePanel('subclassPanel');
                     return;
                 }
                 if (skillTree) {
@@ -48226,16 +48632,10 @@
                         // Update mobile controls ability button icon
                         updateAbilityButtonIcon();
 
-                        panel.classList.add('hide');
+                        closePanel('subclassPanel'); // Use centralized close
                         exitPanel('subclassPanel');
                         
-                        // Check if this is the first time seeing subclass select (after first boss)
-                        // Show motion sickness survey only once
-                        if (!store.player.motionSicknessSurveyCompleted) {
-                            showMotionSicknessSurvey();
-                        } else {
-                            resumeGame(true);  // Force resume to avoid panel visibility race condition
-                        }
+                        // Motion sickness survey removed - auto-resume after subclass selection
                     }, { once: true });
                 });
 
@@ -48243,7 +48643,6 @@
                 if (heading) {
                     heading.style.display = 'block'; // Show h2 for subclass selection
                 }
-                panel.classList.remove('hide');
             }
 
             function showMotionSicknessSurvey() {
@@ -48319,7 +48718,7 @@
                     playSound('epicHorn');
                 }
 
-                pauseGame();
+                showPanel('subclassPanel', { force: true });
 
                 if (grid) {
                     grid.classList.add('hide');
@@ -48335,7 +48734,6 @@
 
                 skillTree.classList.remove('hide');
 
-                panel.classList.remove('hide');
                 panel.classList.add('skill-tree-active');
                 panel.classList.add('panel-floating-close');
                 panel.scrollTop = 0;
@@ -49973,7 +50371,7 @@
                 }
 
                 // Only pause game if we have valid choices to show
-                pauseGame();
+                showPanel('subclassPanel', { force: true });
                 const panel = q('subclassPanel'); // Reuse the subclass panel
                 const grid = q('subclassGrid');
 
@@ -49986,13 +50384,10 @@
                     card.addEventListener('click', () => {
                         const specId = card.dataset.spec;
                         applySpecBonus(specId);
-                        panel.classList.add('hide');
-                        resumeGame(true);  // Force resume to avoid panel visibility race condition
+                        closePanel('subclassPanel');
                         document.querySelector('#subclassPanel h2').textContent = 'CHOOSE SPECIALIZATION'; // Reset title
                     }, { once: true });
                 });
-
-                panel.classList.remove('hide');
             }
 
             // DISABLED: applySpecBonus function for stability  
