@@ -1132,64 +1132,6 @@
             grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         }
 
-        .forge-profile-grid {
-            display: grid;
-            gap: 12px;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        }
-
-        .forge-profile-card {
-            position: relative;
-            border: 1px solid rgba(160, 110, 255, 0.28);
-            background: linear-gradient(145deg, rgba(16, 0, 32, 0.85), rgba(30, 0, 48, 0.65));
-            border-radius: 12px;
-            padding: 12px 14px 14px;
-            color: #f0eaff;
-            text-align: left;
-            font-size: 12px;
-            line-height: 1.5;
-            cursor: pointer;
-            transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-        }
-
-        .forge-profile-card:hover {
-            transform: translateY(-2px);
-            border-color: rgba(190, 150, 255, 0.5);
-            box-shadow: 0 10px 24px rgba(90, 40, 150, 0.25);
-        }
-
-        .forge-profile-card.active {
-            border-color: var(--accent);
-            box-shadow: 0 12px 28px rgba(120, 70, 220, 0.38);
-            background: linear-gradient(150deg, rgba(34, 4, 70, 0.95), rgba(18, 0, 40, 0.9));
-        }
-
-        .forge-profile-card-title {
-            font-family: 'Orbitron', 'Audiowide', ui-sans-serif;
-            font-size: 13px;
-            letter-spacing: 0.16em;
-            text-transform: uppercase;
-            margin-bottom: 6px;
-            color: var(--accent);
-        }
-
-        .forge-profile-card-summary {
-            font-size: 12px;
-            color: #d7caff;
-        }
-
-        .forge-profile-card.active .forge-profile-card-summary {
-            color: #ffffff;
-        }
-
-        .forge-profile-summary {
-            margin-top: 16px;
-            font-size: 12px;
-            line-height: 1.6;
-            color: #d7caff;
-            min-height: 40px;
-        }
-
         .forge-menu-btn {
             background: linear-gradient(135deg, rgba(150, 80, 255, 0.3), rgba(120, 60, 200, 0.4));
             border: 1px solid var(--accent);
@@ -4364,18 +4306,6 @@
                         </div>
 
                         <div class="forge-menu-section">
-                            <div class="forge-menu-section-head">
-                                <div>
-                                    <div class="forge-menu-title">Auto-Buy Doctrine</div>
-                                    <div class="forge-menu-section-hint">Auto-buy assists new pilots by handling purchases until they make their first manual upgrade. Choose a doctrine to guide its priorities.</div>
-                                </div>
-                            </div>
-                            <div id="autoForgeProfileGrid" class="forge-profile-grid" role="group"
-                                aria-label="Auto-buy doctrines"></div>
-                            <div id="autoForgeProfileSummary" class="forge-profile-summary"></div>
-                        </div>
-
-                        <div class="forge-menu-section">
                             <div class="forge-menu-grid">
                                 <button id="openPrimordialLabFromMenu" class="forge-menu-btn" type="button">
                                     <span class="forge-menu-btn-title">🧬 PRIMORDIAL SOLDIER LABORATORY 🧬</span>
@@ -6109,7 +6039,7 @@
                 // Generate at higher resolution for crisp sharp edges
                 bulletTextures.lavaBlade = pixiApp.renderer.generateTexture(lavaGraphics, {
                     resolution: 6,
-                    scaleMode: PIXI.SCALE_MODES.LINEAR
+                    scaleMode: 'linear'
                 });
                 
             console.log('✅ Bullet textures created', bulletTextures);
@@ -6209,15 +6139,15 @@
 
                     const outer = new PIXI.Sprite({ texture });
                     outer.anchor.set(0.5);
-                    outer.blendMode = PIXI.BLEND_MODES.ADD;
+                    outer.blendMode = 'add';
 
                     const middle = new PIXI.Sprite({ texture });
                     middle.anchor.set(0.5);
-                    middle.blendMode = PIXI.BLEND_MODES.ADD;
+                    middle.blendMode = 'add';
 
                     const inner = new PIXI.Sprite({ texture });
                     inner.anchor.set(0.5);
-                    inner.blendMode = PIXI.BLEND_MODES.ADD;
+                    inner.blendMode = 'add';
 
                     container.addChild(outer);
                     container.addChild(middle);
@@ -6561,9 +6491,6 @@
                         const goldEl = q('shopgold');
                         if (goldEl && typeof getWorldGold === 'function') {
                             goldEl.textContent = getWorldGold();
-                        }
-                        if (typeof updateAutoForgeStatusLabel === 'function') {
-                            updateAutoForgeStatusLabel();
                         }
                         break;
                     }
@@ -7532,154 +7459,6 @@
                 }
             })();
 
-            const AUTO_FORGE_DEFAULT_PROFILE_ID = 'baseline_directive';
-
-            const rawAutoForgeProfiles = [
-                {
-                    id: 'baseline_directive',
-                    label: 'Baseline Directive',
-                    summary: 'Balanced logistics that rotates through heavy ordnance and sustain.',
-                    statusLine: 'Balanced procurement across weapons and hull sustain.',
-                    groups: [
-                        { keys: ['gravity_well', 'star_cannon', 'ghost_hounds', 'lazarus_beam', 'launcher', 'iceman'], sort: 'cost-desc', isFun: true },
-                        { keys: ['nano_save', 'max_shield', 'hp', 'vampirism'], sort: 'cost-desc' },
-                        { keys: ['speed', 'luck_boost'], sort: 'cost-asc' }
-                    ],
-                    fallback: ['dmg', 'crit_chance', 'repair'],
-                    repairThreshold: 0.82
-                },
-                {
-                    id: 'void_savant',
-                    label: 'Void Savant',
-                    summary: 'Singularity tactician favouring beams, speed, and layered shields.',
-                    statusLine: 'Prioritizes Gravity Well, Lazarus protocols, and shield fortification.',
-                    groups: [
-                        { keys: ['gravity_well', 'lazarus_beam'], sort: 'cost-desc', isFun: true },
-                        { keys: ['speed', 'magnet_pull'], sort: 'cost-desc' },
-                        { keys: ['max_shield', 'rear_guard', 'nano_save'], sort: 'cost-desc' }
-                    ],
-                    fallback: ['hp', 'vampirism', 'luck_boost'],
-                    repairThreshold: 0.78
-                },
-                {
-                    id: 'starcaller',
-                    label: 'Starcaller',
-                    summary: 'Amplifies orbital cannons while stacking lifesteal and fortune.',
-                    statusLine: 'Channels Star Cannon calibrations with vampiric sustain.',
-                    groups: [
-                        { keys: ['star_cannon'], sort: 'cost-desc', isFun: true },
-                        { keys: ['vampirism', 'hp'], sort: 'cost-desc' },
-                        { keys: ['luck_boost', 'max_shield', 'nano_save'], sort: 'cost-desc' }
-                    ],
-                    fallback: ['speed', 'repair', 'dmg'],
-                    repairThreshold: 0.76
-                },
-                {
-                    id: 'fleet_admiral',
-                    label: 'Fleet Admiral',
-                    summary: 'Directs companion cadres and champion support systems.',
-                    statusLine: 'Funds hounds, iceman, and champion modules when available.',
-                    groups: [
-                        { keys: ['ghost_hounds', 'iceman'], sort: 'cost-desc', isFun: true },
-                        { keys: ['champion_attack_module', 'champion_cadence', 'champion_protocol'], sort: 'cost-desc', includeRestricted: true },
-                        { keys: ['rear_guard', 'nano_save', 'max_shield'], sort: 'cost-desc' }
-                    ],
-                    fallback: ['hp', 'speed', 'repair'],
-                    repairThreshold: 0.8
-                },
-                {
-                    id: 'aegis_warden',
-                    label: 'Aegis Warden',
-                    summary: 'Fortifies hull integrity and keeps emergency reserves primed.',
-                    statusLine: 'Stacks shields, nanosaves, and defensive redundancies.',
-                    groups: [
-                        { keys: ['max_shield', 'nano_save'], sort: 'cost-desc' },
-                        { keys: ['rear_guard', 'hp'], sort: 'cost-desc' },
-                        { keys: ['repair', 'magnet_pull'], sort: 'cost-asc' }
-                    ],
-                    fallback: ['vampirism', 'luck_boost', 'speed'],
-                    repairThreshold: 0.9
-                },
-                {
-                    id: 'blitz_vanguard',
-                    label: 'Blitz Vanguard',
-                    summary: 'Rushdown doctrine emphasising damage spikes and crowd clear.',
-                    statusLine: 'Invests in raw damage, crit chains, and explosive salvos.',
-                    groups: [
-                        { keys: ['dmg', 'crit_chance'], sort: 'cost-desc', isFun: true },
-                        { keys: ['speed', 'launcher'], sort: 'cost-desc', isFun: true },
-                        { keys: ['grenade', 'knockback_shield', 'star_cannon'], sort: 'cost-desc', isFun: true }
-                    ],
-                    fallback: ['hp', 'repair', 'max_shield'],
-                    repairThreshold: 0.74
-                },
-                {
-                    id: 'arc_technician',
-                    label: 'Arc Technician',
-                    summary: 'Optimises utility grids, resource pulls, and survivability buffers.',
-                    statusLine: 'Focuses on magnetics, luck matrices, and nanosaves.',
-                    groups: [
-                        { keys: ['magnet_pull', 'luck_boost'], sort: 'cost-desc' },
-                        { keys: ['speed', 'nano_save'], sort: 'cost-desc' },
-                        { keys: ['rear_guard', 'vampirism'], sort: 'cost-desc' }
-                    ],
-                    fallback: ['hp', 'max_shield', 'dmg'],
-                    repairThreshold: 0.82
-                },
-                {
-                    id: 'stormrunner',
-                    label: 'Stormrunner',
-                    summary: 'Keeps velocity high while topping off shields and ordnance.',
-                    statusLine: 'Funds speed, shield loops, and opportunistic explosives.',
-                    groups: [
-                        { keys: ['speed', 'magnet_pull'], sort: 'cost-desc' },
-                        { keys: ['max_shield', 'nano_save'], sort: 'cost-desc' },
-                        { keys: ['grenade', 'knockback_shield', 'dmg'], sort: 'cost-desc', isFun: true }
-                    ],
-                    fallback: ['hp', 'repair', 'luck_boost'],
-                    repairThreshold: 0.8
-                }
-            ];
-
-            function normalizeAutoForgeProfile(profile) {
-                const groups = Array.isArray(profile.groups) ? profile.groups.map(group => Object.freeze({
-                    ...group,
-                    keys: Object.freeze([...(group.keys || [])])
-                })) : [];
-                return Object.freeze({
-                    ...profile,
-                    groups: Object.freeze(groups),
-                    fallback: Object.freeze([...(profile.fallback || [])])
-                });
-            }
-
-            const AUTO_FORGE_PROFILES = Object.freeze(rawAutoForgeProfiles.map(normalizeAutoForgeProfile));
-            const AUTO_FORGE_PROFILE_MAP = (() => {
-                const map = new Map();
-                for (const profile of AUTO_FORGE_PROFILES) {
-                    map.set(profile.id, profile);
-                }
-                return map;
-            })();
-
-            function resolveAutoForgeProfileId(candidate) {
-                if (candidate && AUTO_FORGE_PROFILE_MAP.has(candidate)) {
-                    return candidate;
-                }
-                return AUTO_FORGE_DEFAULT_PROFILE_ID;
-            }
-
-            const storedAutoForgeProfileRaw = (() => {
-                try {
-                    if (!window.localStorage) return null;
-                    return window.localStorage.getItem('voidAutoForgeProfile');
-                } catch (err) {
-                    return null;
-                }
-            })();
-
-            const initialAutoForgeProfileId = resolveAutoForgeProfileId(storedAutoForgeProfileRaw);
-
             const RAW_BOSS_DEFINITIONS = Object.freeze({
                 vibemaster: {
                     name: 'VIBEMASTER',
@@ -8039,7 +7818,6 @@
                     targetThemeKey: DEFAULT_MAP_THEME_KEY,
                     themeTransitionProgress: 1,
                     themeTransitionActive: false,
-                    autoForgeProfileId: initialAutoForgeProfileId,
                     voidReaperSpawnedThisWave: false,
                     lastVoidReaperWave: 0,
                     voidReaperCooldown: 0,
@@ -8056,7 +7834,6 @@
                 },
                 settings: {
                     showShopTutorial: storedShopTutorialEnabled,
-                    autoForgeProfile: initialAutoForgeProfileId,
                     audioMuted: false
                 },
                 ui: {
@@ -8162,128 +7939,6 @@
                     store.enemies.push(zombie);
                     return zombie;
                 };
-            }
-
-            function getActiveAutoForgeProfileId() {
-                const worldId = store?.world?.autoForgeProfileId;
-                if (worldId && AUTO_FORGE_PROFILE_MAP.has(worldId)) {
-                    return worldId;
-                }
-                const settingsId = store?.settings?.autoForgeProfile;
-                if (settingsId && AUTO_FORGE_PROFILE_MAP.has(settingsId)) {
-                    return settingsId;
-                }
-                return AUTO_FORGE_DEFAULT_PROFILE_ID;
-            }
-
-            function getActiveAutoForgeProfile() {
-                const profileId = getActiveAutoForgeProfileId();
-                return AUTO_FORGE_PROFILE_MAP.get(profileId) || AUTO_FORGE_PROFILE_MAP.get(AUTO_FORGE_DEFAULT_PROFILE_ID);
-            }
-
-            function setAutoForgeProfile(profileId, options = {}) {
-                const resolved = resolveAutoForgeProfileId(profileId);
-                const current = getActiveAutoForgeProfileId();
-                if (resolved === current && !options.force) {
-                    if (!options.skipUi) {
-                        updateAutoForgeProfileButtons();
-                        updateAutoForgeStatusLabel();
-                    }
-                    return resolved;
-                }
-
-                if (store.settings) {
-                    store.settings.autoForgeProfile = resolved;
-                }
-                if (store.world) {
-                    store.world.autoForgeProfileId = resolved;
-                }
-
-                try {
-                    if (window.localStorage) {
-                        window.localStorage.setItem('voidAutoForgeProfile', resolved);
-                    }
-                } catch (err) { }
-
-                if (!options.skipUi) {
-                    updateAutoForgeProfileButtons();
-                    updateAutoForgeStatusLabel();
-                }
-
-                if (!options.silent && typeof announce === 'function') {
-                    const profile = AUTO_FORGE_PROFILE_MAP.get(resolved);
-                    if (profile) {
-                        announce(`Auto-buy doctrine set: ${profile.label}.`);
-                    }
-                }
-
-                return resolved;
-            }
-
-            function getAutoForgeStatusText() {
-                const world = store.world;
-                if (!world || !world.autoForgeEnabled) {
-                    return 'Auto-buy offline. Route purchases manually.';
-                }
-                const profile = getActiveAutoForgeProfile();
-                if (profile) {
-                    return `Auto-buy active: ${profile.label}. ${profile.statusLine}`;
-                }
-                return 'Auto-buy active. Logistics maintain core systems.';
-            }
-
-            function updateAutoForgeStatusLabel() {
-                const statusEl = q('autoForgeStatusLabel');
-                if (statusEl) {
-                    statusEl.textContent = getAutoForgeStatusText();
-                }
-            }
-
-            function updateAutoForgeProfileButtons() {
-                const container = q('autoForgeProfileGrid');
-                if (!container) return;
-                const activeId = getActiveAutoForgeProfileId();
-                container.querySelectorAll('.forge-profile-card').forEach(card => {
-                    if (!(card instanceof HTMLElement)) return;
-                    const isActive = card.dataset.profileId === activeId;
-                    if (isActive) {
-                        card.classList.add('active');
-                        card.setAttribute('aria-pressed', 'true');
-                    } else {
-                        card.classList.remove('active');
-                        card.setAttribute('aria-pressed', 'false');
-                    }
-                });
-                const summaryEl = q('autoForgeProfileSummary');
-                if (summaryEl) {
-                    const profile = getActiveAutoForgeProfile();
-                    if (!store.world || !store.world.autoForgeEnabled) {
-                        summaryEl.textContent = 'Auto-buy is inactive. It will assist new pilots until they make their first manual purchase.';
-                    } else {
-                        summaryEl.textContent = profile ? profile.summary : '';
-                    }
-                }
-            }
-
-            function ensureAutoForgeProfileGrid() {
-                const container = q('autoForgeProfileGrid');
-                if (!container) return;
-                if (!container.dataset.initialized) {
-                    container.dataset.initialized = 'true';
-                    for (const profile of AUTO_FORGE_PROFILES) {
-                        const card = document.createElement('button');
-                        card.type = 'button';
-                        card.className = 'forge-profile-card';
-                        card.dataset.profileId = profile.id;
-                        card.setAttribute('aria-pressed', 'false');
-                        card.innerHTML = `<div class="forge-profile-card-title">${profile.label}</div><div class="forge-profile-card-summary">${profile.summary}</div>`;
-                        card.addEventListener('click', () => {
-                            setAutoForgeProfile(profile.id);
-                        });
-                        container.appendChild(card);
-                    }
-                }
-                updateAutoForgeProfileButtons();
             }
 
             // --- OBJECT POOLING SYSTEM ---
@@ -21499,7 +21154,6 @@
                     themeTransitionProgress: 1,
                     themeTransitionActive: false,
                     gameStartTime: now,
-                    autoForgeProfileId: store.settings.autoForgeProfile,
                     cubeBurglarCooldown: 0,
                     cubeBurglarActive: false,
                     cubeBurglarLastSpawnWave: 0,
@@ -40848,44 +40502,20 @@
                 const player = store.player;
                 if (!player) return null;
 
-                const profile = getActiveAutoForgeProfile();
+                // Check for repair needs first
                 const repairInfo = getNextUpgradeCost('repair');
                 if (repairInfo && isFinite(repairInfo.cost) && gold >= repairInfo.cost) {
                     const hpRatio = player.hpMax > 0 ? player.hp / player.hpMax : 1;
-                    const repairThreshold = profile && Number.isFinite(profile.repairThreshold)
-                        ? profile.repairThreshold
-                        : AUTO_FORGE_REPAIR_WASTE_THRESHOLD;
-                    const repairCoinFlip = profile && Number.isFinite(profile.repairCoinFlip)
-                        ? profile.repairCoinFlip
-                        : 0.5;
                     if (hpRatio <= 0.35) {
                         return { key: 'repair', info: repairInfo, isFun: false, reason: 'criticalRepair' };
                     }
-                    if (hpRatio >= repairThreshold || (hpRatio > 0.4 && Math.random() < repairCoinFlip)) {
-                        return { key: 'repair', info: repairInfo, isFun: false, reason: 'doctrineRepair' };
+                    if (hpRatio < AUTO_FORGE_REPAIR_WASTE_THRESHOLD && Math.random() < 0.5) {
+                        return { key: 'repair', info: repairInfo, isFun: false, reason: 'standardRepair' };
                     }
                 }
 
-                const groups = profile?.groups || [];
-                for (const group of groups) {
-                    const candidates = getAffordableUpgrades(group.keys, gold, { includeRestricted: !!group.includeRestricted });
-                    if (!candidates.length) continue;
-                    rankAutoForgeCandidates(candidates, group.sort);
-                    const chosen = selectAutoForgeCandidate(candidates, group.pick);
-                    if (chosen) {
-                        return {
-                            key: chosen.key,
-                            info: chosen.info,
-                            isFun: !!group.isFun,
-                            reason: `${profile?.id || 'profile'}:${group.reason || 'priority'}`
-                        };
-                    }
-                }
-
-                const fallbackKeys = profile?.fallback && profile.fallback.length
-                    ? profile.fallback
-                    : AUTO_FORGE_GLOBAL_FALLBACK_KEYS;
-                const fallbackCandidates = getAffordableUpgrades(fallbackKeys, gold);
+                // Try to get something from fallback keys
+                const fallbackCandidates = getAffordableUpgrades(AUTO_FORGE_GLOBAL_FALLBACK_KEYS, gold);
                 if (fallbackCandidates.length) {
                     rankAutoForgeCandidates(fallbackCandidates, 'cost-desc');
                     const fallbackPick = fallbackCandidates[0];
@@ -40894,11 +40524,12 @@
                             key: fallbackPick.key,
                             info: fallbackPick.info,
                             isFun: false,
-                            reason: `${profile?.id || 'profile'}:fallback`
+                            reason: 'fallback'
                         };
                     }
                 }
 
+                // Last resort: pick anything affordable
                 const everything = getAffordableUpgrades(Object.keys(SHOP_UPGRADES), gold);
                 if (everything.length) {
                     rankAutoForgeCandidates(everything, 'cost-desc');
@@ -41409,22 +41040,17 @@
                     return;
                 }
 
-                const activeProfile = typeof getActiveAutoForgeProfile === 'function' ? getActiveAutoForgeProfile() : null;
-                const doctrineName = activeProfile ? `${activeProfile.label} doctrine` : 'Auto-buy doctrine';
-
                 if (!store.world.autoForgeTutorialShown) {
                     store.world.autoForgeTutorialShown = true;
-                    announce(`Auto-buy online. ${activeProfile ? `${activeProfile.label} doctrine is now overseeing requisitions.` : 'Hangar logistics will monitor your loadout.'}`);
+                    announce('Auto-buy online. Hangar logistics will monitor your loadout.');
                 } else if ((store.world.autoForgeAnnounceCooldown || 0) <= 0) {
                     const names = purchases.map(p => p.name).join(', ');
                     if (purchases.length === 1 && purchases[0].key === 'repair') {
-                        announce(`${doctrineName} rerouted credits toward emergency repairs.`);
-                    } else if (purchases.some(p => p.isFun)) {
-                        announce(`${doctrineName} queued experimental modules: ${names}.`);
+                        announce('Auto-buy rerouted credits toward emergency repairs.');
                     } else {
-                        announce(`${doctrineName} acquired: ${names}.`);
+                        announce(`Auto-buy acquired: ${names}.`);
                     }
-                    store.world.autoForgeAnnounceCooldown = purchases.some(p => p.isFun) ? 5.5 : 4.2;
+                    store.world.autoForgeAnnounceCooldown = 4.2;
                 }
 
                 flashForgeButton(1100 + (purchases.some(p => p.isFun) ? 450 : 0));
@@ -41666,9 +41292,6 @@
                         }
                     };
                 }
-
-                ensureAutoForgeProfileGrid();
-                updateAutoForgeProfileButtons();
 
                 // Enable/disable skill tree button based on subclass
                 const skillTreeBtn = q('openSkillTreeReadonly');
@@ -42600,10 +42223,8 @@
                         showShop();
                     }
                 } else {
-                    const profile = typeof getActiveAutoForgeProfile === 'function' ? getActiveAutoForgeProfile() : null;
-                    const doctrineName = profile ? `${profile.label} doctrine` : 'Auto-buy doctrine';
-                    announce(`${doctrineName} stocked up. Open the Upgrade Hangar to adjust priorities.`);
-                    showShopSpotlight(`${doctrineName} stocked up. Adjust priorities in the Upgrade Hangar.`, { flashButton: false });
+                    announce('Auto-buy stocked up. Open the Upgrade Hangar to adjust priorities.');
+                    showShopSpotlight('Auto-buy stocked up. Adjust priorities in the Upgrade Hangar.', { flashButton: false });
                 }
 
                 setTimeout(() => {
