@@ -5695,23 +5695,53 @@
 
             // DPI-aware rendering
             const resizeGameSurfaces = () => {
+                console.log('resizeGameSurfaces: triggered');
                 const dpr = Math.min(window.devicePixelRatio || 1, 2); // Cap at 2x for performance
+                console.log(`resizeGameSurfaces: dpr=${dpr}, W=${W}, H=${H}`);
                 
                 // Canvas stays at 960x540 but with higher internal resolution for crispness
-                cvs.width = W * dpr;
-                cvs.height = H * dpr;
+                try {
+                    cvs.width = W * dpr;
+                    cvs.height = H * dpr;
+                    console.log('resizeGameSurfaces: 2d canvas resized');
+                } catch (e) {
+                    console.error('resizeGameSurfaces: Error resizing 2D canvas', e);
+                }
                 
                 // Scale context to maintain game coordinates
-                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-                ctx.imageSmoothingEnabled = false;
+                try {
+                    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                    ctx.imageSmoothingEnabled = false;
+                    console.log('resizeGameSurfaces: ctx transform set');
+                } catch (e) {
+                     console.error('resizeGameSurfaces: Error setting ctx transform', e);
+                }
 
                 // Update PixiJS resolution to match
                 if (pixiApp && pixiApp.renderer) {
-                    pixiApp.renderer.resolution = dpr;
-                    if (typeof pixiApp.renderer.resize === 'function') {
-                        pixiApp.renderer.resize(W, H);
+                    console.log('resizeGameSurfaces: Attempting to resize Pixi renderer');
+                    try {
+                        const currentRes = pixiApp.renderer.resolution;
+                         if (currentRes !== dpr) {
+                             console.log(`resizeGameSurfaces: Changing Pixi resolution from ${currentRes} to ${dpr}`);
+                             pixiApp.renderer.resolution = dpr;
+                         } else {
+                             console.log('resizeGameSurfaces: Resolution already matches dpr');
+                         }
+
+                        if (typeof pixiApp.renderer.resize === 'function') {
+                            pixiApp.renderer.resize(W, H);
+                            console.log('resizeGameSurfaces: Pixi renderer resized');
+                        } else {
+                            console.warn('resizeGameSurfaces: pixiApp.renderer.resize is not a function');
+                        }
+                    } catch (e) {
+                        console.error('resizeGameSurfaces: Error resizing Pixi renderer', e);
                     }
+                } else {
+                     console.warn('resizeGameSurfaces: pixiApp or renderer not ready');
                 }
+                console.log('resizeGameSurfaces: completed');
             };
 
             // Initial resize
@@ -5865,10 +5895,24 @@
                 }
             });
 
+            // Track fullscreen transitions to avoid pausing during them
+            let isFullscreenTransition = false;
+            document.addEventListener('fullscreenchange', () => {
+                isFullscreenTransition = true;
+                // Reset flag after a short delay to allow blur event to pass
+                setTimeout(() => { isFullscreenTransition = false; }, 500);
+            });
+
             // Additional mobile safeguard: pause on page blur (iOS Safari)
+            // BUT don't pause during fullscreen transitions
             window.addEventListener('blur', () => {
                 window._lastBackgroundEvent = 'Window Blur';
                 window._lastBackgroundTime = Date.now();
+                // Skip pause if we're in a fullscreen transition
+                if (isFullscreenTransition) {
+                    console.log('🖥️ Skipping pause during fullscreen transition');
+                    return;
+                }
                 if (typeof store !== 'undefined' && !store.isPaused && !store.isGameOver) {
                     store.isPaused = true;
                     wasAutoPaused = true;
@@ -6538,11 +6582,13 @@
                 entry.element.classList.add('hide');
 
                 exitPanel(panelId);
+                if (currentOpenPanel === panelId) currentOpenPanel = null; // Sync panel manager
 
                 if (destination && panelRegistry[destination]) {
                     const destEntry = panelRegistry[destination];
                     destEntry.element.classList.remove('hide');
                     currentPanelId = destination;
+                    currentOpenPanel = destination; // Sync panel manager
                     runPanelResumeHooks(destination);
                 } else if (!destination) {
                     currentPanelId = null;
@@ -10952,7 +10998,14 @@
                     },
                     isPremium: true,
                     category: 'attack',
+                    maxQueue: 2, // Limit to 2 at a time for performance
                     apply: (info) => {
+                        // Check queue limit first
+                        if (asteroidTargeting.queue.length >= 2) {
+                            announce('☄️ Max 2 artillery strikes at a time!');
+                            return false;
+                        }
+                        
                         const wave = store.world.wave;
                         const baseCost = 25;
                         const waveMultiplier = Math.pow(1.10, wave - 1);
@@ -10981,7 +11034,8 @@
                         const baseCost = 25;
                         const waveMultiplier = Math.pow(1.10, wave - 1);
                         const cost = Math.floor(baseCost * waveMultiplier);
-                        return `Skillshot: Target a path for devastating asteroid bombardment. 3 waves of destruction! Cost: ${cost} gold`;
+                        const queuedCount = (typeof asteroidTargeting !== 'undefined') ? asteroidTargeting.queue.length : 0;
+                        return `Skillshot: Target a path for devastating asteroid bombardment. 3 waves of destruction! Cost: ${cost} gold (Max 2 queued, ${2 - queuedCount} available)`;
                     }
                 },
                 'ghost_hounds': {
@@ -41058,6 +41112,7 @@
 
             function showShop(defaultView = 'upgrades') {
                 pauseGame();
+                currentOpenPanel = 'shopPanel'; // Sync with panel manager
                 const panel = q("shopPanel"),
                     grid = q("shopGrid"),
                     goldEl = q("shopgold"),
@@ -42213,9 +42268,14 @@
                 flashForgeButton(promptCount <= 2 ? 10000 : 5000);
 
                 const autoEnabled = !!world.autoForgeEnabled;
+                // Don't pause the game - just show spotlight highlight and let gameplay continue
                 if (store.settings.showShopTutorial && (!world.shopTutorialShown || forceShop)) {
-                    showShopTutorial(forceShop, 'Upgrade Hangar unlocked. Allocate your credits.');
+                    world.shopTutorialShown = true; // Mark as shown without opening the tutorial panel
+                    announce('Upgrade Hangar unlocked. Allocate your credits.');
                     showShopSpotlight('Upgrade Hangar unlocked. Allocate your credits.', { flashButton: true, force: true });
+                    if (forceShop) {
+                        showShop();
+                    }
                 } else if (!autoEnabled || forceShop) {
                     announce('Upgrade Hangar unlocked. Deploy your credits.');
                     showShopSpotlight('Upgrade Hangar unlocked. Deploy your credits.', { flashButton: true });
@@ -47596,6 +47656,7 @@
                 if (!panel) return;
                 
                 panel.classList.add('hide');
+                exitPanel(panelId); // Sync with panel stack
                 
                 if (currentOpenPanel === panelId) {
                     currentOpenPanel = null;
@@ -50324,6 +50385,7 @@
                 const panel = q("shopPanel");
                 panel.classList.add('hide');
                 exitPanel('shopPanel');
+                if (currentOpenPanel === 'shopPanel') currentOpenPanel = null; // Sync with panel manager
                 const highlighted = document.querySelector('.shop-item.highlight');
                 if (highlighted) highlighted.classList.remove('highlight');
                 const mechForgeBtn = q('shopBtn');
@@ -50382,12 +50444,14 @@
                 const panel = q("mechForgeMenuPanel");
                 panel.classList.add("hide");
                 exitPanel('mechForgeMenuPanel');
+                if (currentOpenPanel === 'mechForgeMenuPanel') currentOpenPanel = null;
                 resumeGame(true);  // Force resume to avoid panel visibility race condition
             });
             q("closeMechForgeMenuBtn").addEventListener("click", () => {
                 const panel = q("mechForgeMenuPanel");
                 panel.classList.add("hide");
                 exitPanel('mechForgeMenuPanel');
+                if (currentOpenPanel === 'mechForgeMenuPanel') currentOpenPanel = null;
                 resumeGame(true);  // Force resume to avoid panel visibility race condition
             });
             const openPrimordialLabBtn = q("openPrimordialLabFromMenu");
@@ -50427,12 +50491,14 @@
                 const panel = q("characterSheetPanel");
                 panel.classList.add("hide");
                 exitPanel('characterSheetPanel');
+                if (currentOpenPanel === 'characterSheetPanel') currentOpenPanel = null;
                 resumeGame(true);  // Force resume to avoid panel visibility race condition
             });
             q("closeCharacterSheetBtn").addEventListener("click", () => {
                 const panel = q("characterSheetPanel");
                 panel.classList.add("hide");
                 exitPanel('characterSheetPanel');
+                if (currentOpenPanel === 'characterSheetPanel') currentOpenPanel = null;
                 resumeGame(true);  // Force resume to avoid panel visibility race condition
             });
 
@@ -50454,6 +50520,7 @@
                         const panel = q('championDressingRoom');
                         panel.classList.add('hide');
                         exitPanel('championDressingRoom');
+                        if (currentOpenPanel === 'championDressingRoom') currentOpenPanel = null;
                         resumeGame(true);  // Force resume to avoid panel visibility race condition
                     });
                 }
@@ -50464,6 +50531,7 @@
                         const panel = q('championDressingRoom');
                         panel.classList.add('hide');
                         exitPanel('championDressingRoom');
+                        if (currentOpenPanel === 'championDressingRoom') currentOpenPanel = null;
                         resumeGame(true);  // Force resume to avoid panel visibility race condition
                     });
                 }
