@@ -17076,6 +17076,8 @@
 
                     // Release flame pulse when ready
                     if (p.flamePulseCooldown <= 0) {
+                        // Use flameBarrierDuration if set, otherwise default to 3.0 seconds
+                        const pulseDuration = p.flameBarrierDuration || 3.0;
                         // Create expanding fire ring
                         store.flamePulses.push({
                             x: p.x,
@@ -17083,7 +17085,7 @@
                             radius: 20, // Start small
                             maxRadius: 200, // Expand to 200 pixels
                             speed: 250, // Expansion speed
-                            life: 2.0, // Lasts 2 seconds
+                            life: pulseDuration, // Duration based on skill level
                             damage: 0.6, // Damage per frame
                             knockback: 300, // Knockback strength
                             dead: false
@@ -49686,7 +49688,7 @@
                         // Give flame barrier ability
                         p.flameBarrierActive = false;
                         p.flameBarrierCooldown = 0;
-                        p.flameBarrierDuration = 12; // 12 seconds (50% longer)
+                        p.flameBarrierDuration = 4; // 4 seconds active (longer than base)
                         p.flameBarrierRecharge = 15; // 15 second cooldown
                         announce('RAILGUNNER ACTIVATED - Flame Barrier Defense!');
                         break;
@@ -49695,7 +49697,7 @@
                         // Give enhanced flame barrier ability
                         p.flameBarrierActive = false;
                         p.flameBarrierCooldown = 0;
-                        p.flameBarrierDuration = 18; // 18 seconds (50% longer than railgunner)
+                        p.flameBarrierDuration = 5; // 5 seconds active (enhanced duration)
                         p.flameBarrierRecharge = 10; // Faster cooldown than railgunner
                         p.flameBarrierExplosive = true; // Explosive reactive damage
                         announce('DEMOLITIONER ACTIVATED - Explosive Flame Wall!');
@@ -49758,12 +49760,12 @@
                     case 'flame_barrier':
                         p.flameBarrierActive = false;
                         p.flameBarrierCooldown = 0;
-                        p.flameBarrierDuration = 12; // 12 seconds (50% longer)
+                        p.flameBarrierDuration = 4; // 4 seconds active
                         p.flameBarrierRecharge = 15; // 15 second cooldown
                         announce('FLAME BARRIER ACTIVATED - Burning Protective Field!');
                         break;
                     case 'flame_barrier_enhanced':
-                        p.flameBarrierDuration = 18; // 18 seconds (50% longer)
+                        p.flameBarrierDuration = 5; // 5 seconds active (enhanced)
                         p.flameBarrierRecharge = 10; // Faster cooldown
                         p.flameBarrierExplosive = true; // Explosive reactive damage
                         announce('INFERNO WALL ACTIVATED - Explosive Reactive Defense!');
