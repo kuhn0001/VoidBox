@@ -4312,6 +4312,7 @@
                             </button>
                         </div>
                         <div class="shop-control-bar">
+                            <button id="shopGameMenuBtn" class="btn shop-advanced-btn" type="button">Game Menu</button>
                             <div class="shop-control-block">
                                 <div class="shop-control-copy">
                                     <div class="shop-control-title">Mobile Controls</div>
@@ -4323,19 +4324,6 @@
                                     <span class="slider"></span>
                                 </label>
                             </div>
-                            <div class="shop-control-block">
-                                <div class="shop-control-copy">
-                                    <div class="shop-control-title">Auto-Buy Logistics</div>
-                                    <div class="shop-control-desc">Let hangar personnel resupply core systems between
-                                        waves.</div>
-                                    <div id="autoForgeStatusLabel" class="shop-control-status"></div>
-                                </div>
-                                <label class="switch">
-                                    <input type="checkbox" id="shopAutoToggle">
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-                            <button id="shopGameMenuBtn" class="btn shop-advanced-btn" type="button">Game Menu</button>
                         </div>
 
                         <div class="shop-view-tabs">
@@ -4379,8 +4367,7 @@
                             <div class="forge-menu-section-head">
                                 <div>
                                     <div class="forge-menu-title">Auto-Buy Doctrine</div>
-                                    <div class="forge-menu-section-hint">Choose a logistics profile to steer procurement
-                                        priorities whenever Auto-Buy takes over.</div>
+                                    <div class="forge-menu-section-hint">Auto-buy assists new pilots by handling purchases until they make their first manual upgrade. Choose a doctrine to guide its priorities.</div>
                                 </div>
                             </div>
                             <div id="autoForgeProfileGrid" class="forge-profile-grid" role="group"
@@ -8271,7 +8258,7 @@
                 if (summaryEl) {
                     const profile = getActiveAutoForgeProfile();
                     if (!store.world || !store.world.autoForgeEnabled) {
-                        summaryEl.textContent = 'Auto-buy is currently offline. Enable the switch above to deploy a doctrine.';
+                        summaryEl.textContent = 'Auto-buy is inactive. It will assist new pilots until they make their first manual purchase.';
                     } else {
                         summaryEl.textContent = profile ? profile.summary : '';
                     }
@@ -41117,6 +41104,19 @@
                         shopItemOrder.push(key);
                     }
                     store.world.totalForgeSpend = (store.world.totalForgeSpend || 0) + cost;
+                    
+                    // Silently disable auto-purchase once user demonstrates shop knowledge
+                    // (Only if this was a manual purchase, not an auto-forge decision)
+                    if (!options.silent && !options.isAutoForge && store.world.autoForgeEnabled) {
+                        store.world.autoForgeEnabled = false;
+                        store.world.autoForgeDecisionTimer = null;
+                        try {
+                            if (window.localStorage) {
+                                window.localStorage.setItem('voidAutoForge', 'off');
+                            }
+                        } catch (err) { }
+                    }
+                    
                     if (!options.silent) {
                         requestAnimationFrame(() => showShop());
                     }
@@ -41394,7 +41394,7 @@
                 }
 
                 const purchases = [];
-                const result = attemptPurchaseUpgrade(decision.key, { silent: true });
+                const result = attemptPurchaseUpgrade(decision.key, { silent: true, isAutoForge: true });
                 if (result.success) {
                     result.isFun = !!decision.isFun;
                     result.reason = decision.reason;
@@ -41435,13 +41435,11 @@
                 const panel = q("shopPanel"),
                     grid = q("shopGrid"),
                     goldEl = q("shopgold"),
-                    autoStatusEl = q('autoForgeStatusLabel'),
                     powerupView = q('shopPowerupView'),
                     upgradeView = q('shopUpgradeView'),
                     powerupTab = q('shopTabPowerups'),
                     upgradeTab = q('shopTabUpgrades'),
                     mobileToggle = q('shopMobileToggle'),
-                    autoToggle = q('shopAutoToggle'),
                     gameMenuBtn = q('shopGameMenuBtn');
 
                 const mechMenu = q('mechForgeMenuPanel');
@@ -41450,9 +41448,6 @@
                 }
 
                 goldEl.textContent = getWorldGold();
-                if (autoStatusEl) {
-                    autoStatusEl.textContent = getAutoForgeStatusText();
-                }
 
 
 
@@ -41472,34 +41467,6 @@
                                 window.localStorage.setItem('mobileControlsEnabled', enabled ? 'true' : 'false');
                             }
                         } catch (err) { }
-                    };
-                }
-
-                if (autoToggle) {
-                    autoToggle.checked = !!store.world.autoForgeEnabled;
-                    autoToggle.onchange = () => {
-                        const enabled = !!autoToggle.checked;
-                        store.world.autoForgeEnabled = enabled;
-                        store.world.autoForgeAnnounceCooldown = 0;
-                        if (enabled) {
-                            scheduleNextAutoForgeDecision(store.world, 0.75);
-                        } else {
-                            store.world.autoForgeDecisionTimer = null;
-                        }
-                        try {
-                            if (window.localStorage) {
-                                window.localStorage.setItem('voidAutoForge', enabled ? 'on' : 'off');
-                            }
-                        } catch (err) { }
-                        const profile = getActiveAutoForgeProfile();
-                        const statusMessage = enabled
-                            ? `Auto-buy enabled. ${profile ? `${profile.label} doctrine engaged.` : 'Hangar logistics will handle repairs and resupply.'}`
-                            : 'Auto-buy disabled. Route purchases through the Upgrade Hangar manually.';
-                        if (typeof announce === 'function') {
-                            announce(statusMessage);
-                        }
-                        updateAutoForgeStatusLabel();
-                        updateAutoForgeProfileButtons();
                     };
                 }
 
@@ -41645,50 +41612,6 @@
                 };
 
                 const sections = [];
-                
-                // Helper function to get shop item info
-                const getShopItemInfo = (itemType, player) => {
-                    const gold = store.world?.gold ?? 0;
-                    
-                    if (itemType === 'repair') {
-                        const repairCost = 30;
-                        const canRepair = player.hp < player.hpMax;
-                        return {
-                            cost: repairCost,
-                            available: canRepair && gold >= repairCost
-                        };
-                    } else if (itemType === 'grenade') {
-                        const grenadeCost = 50;
-                        const maxGrenades = 3;
-                        const canBuyGrenade = (player.grenades || 0) < maxGrenades;
-                        return {
-                            cost: grenadeCost,
-                            available: canBuyGrenade && gold >= grenadeCost
-                        };
-                    }
-                    
-                    return { cost: 0, available: false };
-                };
-                
-                // Quick Buy section for common purchases
-                const renderQuickBuy = () => {
-                    const gold = store.world?.gold ?? 0;
-                    const repairInfo = getShopItemInfo('repair', store.player);
-                    const grenadeInfo = getShopItemInfo('grenade', store.player);
-                    const canAffordRepair = repairInfo.available && gold >= repairInfo.cost;
-                    const canAffordGrenade = grenadeInfo.available && gold >= grenadeInfo.cost;
-                    
-                    return `<div class="shop-quick-buy">
-                        <button id="quickBuyRepair" ${canAffordRepair ? '' : 'disabled'}>
-                            🔧 REPAIR<br>${repairInfo.cost}💰
-                        </button>
-                        <button id="quickBuyGrenade" ${canAffordGrenade ? '' : 'disabled'}>
-                            💣 GRENADE<br>${grenadeInfo.cost}💰
-                        </button>
-                    </div>`;
-                };
-                
-                sections.push(renderQuickBuy());
                 sections.push(renderSection('Pilot Systems', 'Enhance your fighter and core modules.', playerCards));
                 // Champion Arsenal section removed - moved to Primordial Soldier Laboratory
 
@@ -41696,26 +41619,6 @@
                     grid.innerHTML = '<div class="shop-empty">No upgrades available right now.</div>';
                 } else {
                     grid.innerHTML = sections.filter(Boolean).join('');
-                }
-                
-                // Quick buy handlers
-                const quickRepair = q('quickBuyRepair');
-                const quickGrenade = q('quickBuyGrenade');
-                if (quickRepair) {
-                    quickRepair.addEventListener('click', () => {
-                        const item = document.querySelector('.shop-item[data-key="repair"]');
-                        if (item && !item.classList.contains('disabled')) {
-                            item.click();
-                        }
-                    });
-                }
-                if (quickGrenade) {
-                    quickGrenade.addEventListener('click', () => {
-                        const item = document.querySelector('.shop-item[data-key="grenade"]');
-                        if (item && !item.classList.contains('disabled')) {
-                            item.click();
-                        }
-                    });
                 }
                 
                 grid.querySelectorAll(".shop-item").forEach(item => {
