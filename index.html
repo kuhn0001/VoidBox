@@ -5168,12 +5168,45 @@
                     flameCircleTexture = null;
                 };
             }
+            // WebGL Context Tracking - diagnose context loss causes
+            window.webglDiagnostics = {
+                contextCreationTime: null,
+                texturesCreated: 0,
+                texturesDestroyed: 0,
+                buffersCreated: 0,
+                buffersDestroyed: 0,
+                maxTextureSize: null,
+                maxTextureUnits: null,
+                renderer: null,
+                memorySnapshots: [],
+                contextLossEvents: []
+            };
+
             if (!isTestMode && typeof PIXI !== 'undefined' && PIXI?.Application) {
                 (() => {
                 try {
+                    console.log('🎮 Initializing PixiJS WebGL context...');
+                    
+                    // Count existing WebGL contexts (browsers typically limit to 8-16)
+                    const existingContexts = document.querySelectorAll('canvas');
+                    let webglContextCount = 0;
+                    existingContexts.forEach(canvas => {
+                        try {
+                            const gl = canvas.getContext('webgl') || canvas.getContext('webgl2');
+                            if (gl) webglContextCount++;
+                        } catch (e) {}
+                    });
+                    console.log(`📊 Existing WebGL contexts found: ${webglContextCount}`);
+                    if (webglContextCount >= 8) {
+                        console.warn('⚠️ HIGH CONTEXT COUNT - may cause context loss! Browser limit is typically 8-16.');
+                    }
+                    
                     const stage = document.querySelector('.stage');
                     pixiApp = new PIXI.Application();
                     const rendererResolution = Math.min(window.devicePixelRatio || 1, 2);
+                    
+                    console.log(`📐 Canvas resolution: ${W}x${H}, pixel ratio: ${rendererResolution}`);
+                    
                     pixiApp.init({
                         width: W,
                         height: H,
@@ -5182,8 +5215,50 @@
                         resolution: rendererResolution,
                         autoDensity: false,
                         useContextAlpha: false,
-                        powerPreference: 'high-performance'
+                        powerPreference: 'high-performance',
+                        failIfMajorPerformanceCaveat: false
                     }).then(() => {
+                        window.webglDiagnostics.contextCreationTime = performance.now();
+                        
+                        // Log GPU capabilities and limits
+                        const gl = pixiApp.renderer.gl;
+                        if (gl) {
+                            // Use standard extension for renderer info (WEBGL_debug_renderer_info is deprecated in Firefox)
+                            let gpuVendor = 'unknown';
+                            let gpuRenderer = 'unknown';
+                            try {
+                                const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                                if (debugInfo) {
+                                    gpuVendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) || 'unknown';
+                                    gpuRenderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || 'unknown';
+                                }
+                            } catch (e) {
+                                // Firefox deprecates WEBGL_debug_renderer_info, fall back to standard
+                                gpuRenderer = gl.getParameter(gl.RENDERER) || 'unknown';
+                                gpuVendor = gl.getParameter(gl.VENDOR) || 'unknown';
+                            }
+                            
+                            console.log('🖥️ GPU Info:', {
+                                vendor: gpuVendor,
+                                renderer: gpuRenderer,
+                                maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE),
+                                maxTextureUnits: gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS),
+                                maxRenderbufferSize: gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),
+                                maxViewportDims: gl.getParameter(gl.MAX_VIEWPORT_DIMS)
+                            });
+                            
+                            window.webglDiagnostics.maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+                            window.webglDiagnostics.maxTextureUnits = gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS);
+                            window.webglDiagnostics.renderer = pixiApp.renderer;
+                            
+                            // Check for memory extension
+                            const memoryExt = gl.getExtension('WEBGL_debug_renderer_info');
+                            if (memoryExt) {
+                                console.log('✅ WEBGL_debug_renderer_info extension available');
+                            } else {
+                                console.warn('⚠️ Cannot query GPU memory - extension unavailable');
+                            }
+                        }
                         pixiApp.canvas.style.position = 'absolute';
                         pixiApp.canvas.style.top = '0';
                         pixiApp.canvas.style.left = '0';
@@ -5234,9 +5309,46 @@
                         
                         // Set up WebGL context loss/restore handlers
                         setupWebGLContextHandlers();
+                        
+                        // Periodically log GPU resource usage
+                        setInterval(() => {
+                            if (pixiApp && pixiApp.renderer && pixiApp.renderer.gl) {
+                                const gl = pixiApp.renderer.gl;
+                                const textures = window.webglDiagnostics.texturesCreated - window.webglDiagnostics.texturesDestroyed;
+                                const buffers = window.webglDiagnostics.buffersCreated - window.webglDiagnostics.buffersDestroyed;
+                                
+                                const snapshot = {
+                                    time: performance.now(),
+                                    activeTextures: textures,
+                                    activeBuffers: buffers,
+                                    contextLost: gl.isContextLost(),
+                                    pixiTextures: pixiApp.renderer.texture?.managedTextures?.length || 0,
+                                    containerChildren: pixiApp.stage.children.length
+                                };
+                                
+                                window.webglDiagnostics.memorySnapshots.push(snapshot);
+                                
+                                // Keep only last 20 snapshots
+                                if (window.webglDiagnostics.memorySnapshots.length > 20) {
+                                    window.webglDiagnostics.memorySnapshots.shift();
+                                }
+                                
+                                // Warn if resources are growing unbounded
+                                if (textures > 100) {
+                                    console.warn(`⚠️ HIGH TEXTURE COUNT: ${textures} active textures - possible leak!`);
+                                }
+                                if (buffers > 200) {
+                                    console.warn(`⚠️ HIGH BUFFER COUNT: ${buffers} active buffers - possible leak!`);
+                                }
+                            }
+                        }, 5000); // Check every 5 seconds
+                        
+                        console.log('✅ PixiJS WebGL context initialized successfully');
+                        console.log('💡 Run window.checkWebGLHealth() in console to check GPU health anytime');
                     });
                 } catch (err) {
                     console.error('❌ Failed to initialize PixiJS:', err);
+                    console.error('Stack trace:', err.stack);
                 }
                 })();
             }
@@ -5262,7 +5374,53 @@
                     event.preventDefault();
                     webglContextLost = true;
                     window.webglContextLost = true;
-                    console.error('🔴 WebGL context lost! Pausing game...');
+                    
+                    // Capture detailed diagnostics at time of loss
+                    const diagnostics = {
+                        timestamp: new Date().toISOString(),
+                        timeSinceInit: performance.now() - (window.webglDiagnostics.contextCreationTime || 0),
+                        activeTextures: window.webglDiagnostics.texturesCreated - window.webglDiagnostics.texturesDestroyed,
+                        activeBuffers: window.webglDiagnostics.buffersCreated - window.webglDiagnostics.buffersDestroyed,
+                        totalTexturesCreated: window.webglDiagnostics.texturesCreated,
+                        totalBuffersCreated: window.webglDiagnostics.buffersCreated,
+                        pixiStageChildren: pixiApp?.stage?.children?.length || 0,
+                        flameContainerChildren: flameContainer?.children?.length || 0,
+                        bossContainerChildren: bossContainer?.children?.length || 0,
+                        particleContainerChildren: particleContainer?.children?.length || 0,
+                        recentMemory: window.webglDiagnostics.memorySnapshots.slice(-5),
+                        gameState: {
+                            wave: store?.world?.wave || 0,
+                            enemies: store?.enemies?.length || 0,
+                            bullets: store?.bullets?.length || 0,
+                            particles: store?.activeEffects?.length || 0,
+                            flames: store?.flameParticles?.length || 0
+                        }
+                    };
+                    
+                    window.webglDiagnostics.contextLossEvents.push(diagnostics);
+                    
+                    console.error('🔴 WebGL CONTEXT LOST! Diagnostics:');
+                    console.error('├─ Time since init:', (diagnostics.timeSinceInit / 1000).toFixed(2), 'seconds');
+                    console.error('├─ Active textures:', diagnostics.activeTextures, '(created:', diagnostics.totalTexturesCreated, ')');
+                    console.error('├─ Active buffers:', diagnostics.activeBuffers, '(created:', diagnostics.totalBuffersCreated, ')');
+                    console.error('├─ PixiJS stage children:', diagnostics.pixiStageChildren);
+                    console.error('├─ Flame container:', diagnostics.flameContainerChildren, 'children');
+                    console.error('├─ Boss container:', diagnostics.bossContainerChildren, 'children');
+                    console.error('├─ Particle container:', diagnostics.particleContainerChildren, 'children');
+                    console.error('├─ Game wave:', diagnostics.gameState.wave);
+                    console.error('├─ Active enemies:', diagnostics.gameState.enemies);
+                    console.error('└─ Full diagnostics stored in window.webglDiagnostics.contextLossEvents');
+                    
+                    // Likely causes based on diagnostics
+                    if (diagnostics.activeTextures > 50) {
+                        console.error('💡 LIKELY CAUSE: Texture leak - too many active textures');
+                    }
+                    if (diagnostics.timeSinceInit < 10000) {
+                        console.error('💡 LIKELY CAUSE: Initialization failure or driver crash');
+                    }
+                    if (diagnostics.pixiStageChildren > 1000) {
+                        console.error('💡 LIKELY CAUSE: Too many display objects - memory exhaustion');
+                    }
 
                     pixiFlamesForcedOff = true;
                     if (typeof window !== 'undefined') {
@@ -6029,12 +6187,17 @@
 
                 if (flameCircleTexture && typeof flameCircleTexture.destroy === 'function' && !flameCircleTexture.destroyed) {
                     flameCircleTexture.destroy(true);
+                    if (window.webglDiagnostics) window.webglDiagnostics.texturesDestroyed++;
                 }
 
                 const graphics = new PIXI.Graphics();
                 graphics.circle(0, 0, 1);
                 graphics.fill(0xffffff);
                 flameCircleTexture = pixiApp.renderer.generateTexture(graphics);
+                if (window.webglDiagnostics) {
+                    window.webglDiagnostics.texturesCreated++;
+                    console.log(`🔥 Flame texture created (total: ${window.webglDiagnostics.texturesCreated})`);
+                }
                 graphics.destroy(true);
                 return flameCircleTexture;
             }
@@ -6785,47 +6948,88 @@
 
             // --- AUDIO ---
             const bgm = q('bgmAudio');
+            
+            // Add error handling to background music
+            if (bgm) {
+                bgm.addEventListener('error', (e) => {
+                    console.warn('⚠️ Background music failed to load/decode:', e);
+                });
+                const originalBgmPlay = bgm.play.bind(bgm);
+                bgm.play = () => {
+                    try {
+                        return originalBgmPlay().catch(err => {
+                            console.debug('BGM play failed (normal):', err.message);
+                        });
+                    } catch (err) {
+                        console.debug('BGM play exception:', err.message);
+                        return Promise.resolve();
+                    }
+                };
+            }
+            
+            // Add error handling to all audio elements to prevent crashes
+            const addAudioErrorHandlers = (audioEl, name) => {
+                if (audioEl) {
+                    audioEl.addEventListener('error', (e) => {
+                        console.warn(`⚠️ Audio '${name}' failed to load/decode:`, e);
+                    });
+                    // Wrap play() method to catch errors silently
+                    const originalPlay = audioEl.play.bind(audioEl);
+                    audioEl.play = () => {
+                        try {
+                            return originalPlay().catch(err => {
+                                console.debug(`Audio '${name}' play failed (normal):`, err.message);
+                            });
+                        } catch (err) {
+                            console.debug(`Audio '${name}' play exception:`, err.message);
+                            return Promise.resolve();
+                        }
+                    };
+                }
+                return audioEl;
+            };
+            
             const sounds = {
-                explosion: q('audioExplosion'),
-                horn: q('audioHorn'),
-                hit: q('audioHit'),
-                trap: q('audioTrap'),
-                dogs: q('audioDogs'),
-                charge: q('audioCharge'),
-                beefCharge: q('audioBeefCharge'),
-                epicHorn: q('audioEpicHorn'),
-                cluster: q('audioCluster'),
-                shao_kahn: q('audioShaoKahn'),
-                stargun: q('audioStarGun'),
-                coin: q('audioCoin'),
-                bloop: q('audioBloop'),
-                voidpulse: q('audioVoidPulse'),
-                icebreak1: q('audioIceBreak1'),
-                icebreak2: q('audioIceBreak2'),
-                power: q('audioPower'),
-                lightningCrit: q('audioLightningCrit'),
-                lightningPower: q('audioLightningPower'),
-                lightningCrack: q('audioLightningCrack'),
-                fireWhoosh: q('audioFireWhoosh'),
-                sizzle: q('audioSizzle'),
-                upgradePurchase: q('audioUpgradePurchase'),
-                voidPulseAlt: q('audioVoidPulseAlt'),
-                rocketHit: q('audioRocketHit'),
-                coinPickup: q('audioCoinPickup'),
-                poisonSplash: q('audioPoisonSplash'),
-                snakeHiss: q('audioSnakeHiss'),
-                bugSqueal: q('audioBugSqueal'),
-                farExplosion: q('audioFarExplosion'),
-                robotCrumble: q('audioRobotCrumble'),
-                artilleryClusterInitial: q('audioArtilleryClusterInitial'),
-                artilleryCluster2nd: q('audioArtilleryCluster2nd'),
-                artilleryCluster3rd: q('audioArtilleryCluster3rd'),
-                artHit: q('audioArtHit'),
-                zombieChoking: q('audioZombieChoking'),
-                zombieSpawnCry: q('audioZombieSpawnCry'),
-                zombieGargleAttack: q('audioZombieGargleAttack'),
-                icemanSummon: q('audioIcemanSummon'),
-                miniIceSummon: q('audioMiniIceSummon')
+                explosion: addAudioErrorHandlers(q('audioExplosion'), 'explosion'),
+                horn: addAudioErrorHandlers(q('audioHorn'), 'horn'),
+                hit: addAudioErrorHandlers(q('audioHit'), 'hit'),
+                trap: addAudioErrorHandlers(q('audioTrap'), 'trap'),
+                dogs: addAudioErrorHandlers(q('audioDogs'), 'dogs'),
+                charge: addAudioErrorHandlers(q('audioCharge'), 'charge'),
+                beefCharge: addAudioErrorHandlers(q('audioBeefCharge'), 'beefCharge'),
+                epicHorn: addAudioErrorHandlers(q('audioEpicHorn'), 'epicHorn'),
+                cluster: addAudioErrorHandlers(q('audioCluster'), 'cluster'),
+                shao_kahn: addAudioErrorHandlers(q('audioShaoKahn'), 'shao_kahn'),
+                stargun: addAudioErrorHandlers(q('audioStarGun'), 'stargun'),
+                coin: addAudioErrorHandlers(q('audioCoin'), 'coin'),
+                bloop: addAudioErrorHandlers(q('audioBloop'), 'bloop'),
+                voidpulse: addAudioErrorHandlers(q('audioVoidPulse'), 'voidpulse'),
+                icebreak1: addAudioErrorHandlers(q('audioIceBreak1'), 'icebreak1'),
+                icebreak2: addAudioErrorHandlers(q('audioIceBreak2'), 'icebreak2'),
+                power: addAudioErrorHandlers(q('audioPower'), 'power'),
+                lightningCrit: addAudioErrorHandlers(q('audioLightningCrit'), 'lightningCrit'),
+                lightningPower: addAudioErrorHandlers(q('audioLightningPower'), 'lightningPower'),
+                lightningCrack: addAudioErrorHandlers(q('audioLightningCrack'), 'lightningCrack'),
+                fireWhoosh: addAudioErrorHandlers(q('audioFireWhoosh'), 'fireWhoosh'),
+                sizzle: addAudioErrorHandlers(q('audioSizzle'), 'sizzle'),
+                upgradePurchase: addAudioErrorHandlers(q('audioUpgradePurchase'), 'upgradePurchase'),
+                voidPulseAlt: addAudioErrorHandlers(q('audioVoidPulseAlt'), 'voidPulseAlt'),
+                rocketHit: addAudioErrorHandlers(q('audioRocketHit'), 'rocketHit'),
+                coinPickup: addAudioErrorHandlers(q('audioCoinPickup'), 'coinPickup'),
+                poisonSplash: addAudioErrorHandlers(q('audioPoisonSplash'), 'poisonSplash'),
+                snakeHiss: addAudioErrorHandlers(q('audioSnakeHiss'), 'snakeHiss'),
+                bugSqueal: addAudioErrorHandlers(q('audioBugSqueal'), 'bugSqueal'),
+                farExplosion: addAudioErrorHandlers(q('audioFarExplosion'), 'farExplosion'),
+                robotCrumble: addAudioErrorHandlers(q('audioRobotCrumble'), 'robotCrumble'),
+                artilleryClusterInitial: addAudioErrorHandlers(q('audioArtilleryClusterInitial'), 'artilleryClusterInitial'),
+                artilleryCluster2nd: addAudioErrorHandlers(q('audioArtilleryCluster2nd'), 'artilleryCluster2nd'),
+                artilleryCluster3rd: addAudioErrorHandlers(q('audioArtilleryCluster3rd'), 'artilleryCluster3rd'),
+                artHit: addAudioErrorHandlers(q('audioArtHit'), 'artHit'),
+                zombieChoking: addAudioErrorHandlers(q('audioZombieChoking'), 'zombieChoking'),
+                zombieSpawnCry: addAudioErrorHandlers(q('audioZombieSpawnCry'), 'zombieSpawnCry'),
+                zombieGargleAttack: addAudioErrorHandlers(q('audioZombieGargleAttack'), 'zombieGargleAttack'),
+                icemanSummon: addAudioErrorHandlers(q('audioIcemanSummon'), 'icemanSummon'),
+                miniIceSummon: addAudioErrorHandlers(q('audioMiniIceSummon'), 'miniIceSummon')
             };
             // Boost snake hiss volume (max is 1.0)
             if (sounds.snakeHiss) sounds.snakeHiss.volume = 1.0;
@@ -6877,6 +7081,91 @@
                 bugSqueal: 263 // Rate limit bug death sounds
             };
             const soundLastPlayTime = {};
+
+            // ===== WebGL DIAGNOSTIC COMMAND =====
+            window.checkWebGLHealth = function() {
+                console.log('\n═══════════════════════════════════════');
+                console.log('🔍 WebGL Health Check');
+                console.log('═══════════════════════════════════════');
+                
+                if (!pixiApp || !pixiApp.renderer) {
+                    console.error('❌ PixiJS not initialized');
+                    return;
+                }
+                
+                const gl = pixiApp.renderer.gl;
+                if (!gl) {
+                    console.error('❌ WebGL context not available');
+                    return;
+                }
+                
+                const diag = window.webglDiagnostics;
+                const contextLost = gl.isContextLost();
+                
+                console.log('📊 Context Status:', contextLost ? '❌ LOST' : '✅ Active');
+                console.log('⏱️  Uptime:', ((performance.now() - diag.contextCreationTime) / 1000).toFixed(1), 'seconds');
+                console.log('\n📦 Resource Counts:');
+                console.log('  Textures created:', diag.texturesCreated);
+                console.log('  Textures destroyed:', diag.texturesDestroyed);
+                console.log('  Active textures:', diag.texturesCreated - diag.texturesDestroyed);
+                console.log('  Buffers created:', diag.buffersCreated);
+                console.log('  Buffers destroyed:', diag.buffersDestroyed);
+                console.log('  Active buffers:', diag.buffersCreated - diag.buffersDestroyed);
+                
+                console.log('\n🎭 PixiJS Containers:');
+                console.log('  Stage children:', pixiApp.stage.children.length);
+                console.log('  Flame container:', flameContainer?.children?.length || 0);
+                console.log('  Boss container:', bossContainer?.children?.length || 0);
+                console.log('  Particle container:', particleContainer?.children?.length || 0);
+                console.log('  Bullet container:', bulletContainer?.children?.length || 0);
+                console.log('  Cube burglar container:', cubeBurglarContainer?.children?.length || 0);
+                
+                console.log('\n🎮 Game State:');
+                console.log('  Wave:', store?.world?.wave || 0);
+                console.log('  Enemies:', store?.enemies?.length || 0);
+                console.log('  Bullets:', store?.bullets?.length || 0);
+                console.log('  Particles:', store?.activeEffects?.length || 0);
+                console.log('  Flames:', store?.flameParticles?.length || 0);
+                
+                console.log('\n💾 Recent Memory Snapshots:');
+                const recent = diag.memorySnapshots.slice(-3);
+                recent.forEach((snap, i) => {
+                    console.log(`  [${i + 1}] Textures: ${snap.activeTextures}, Buffers: ${snap.activeBuffers}, Children: ${snap.containerChildren}`);
+                });
+                
+                if (diag.contextLossEvents.length > 0) {
+                    console.log('\n⚠️  Context Loss History:');
+                    diag.contextLossEvents.forEach((event, i) => {
+                        console.log(`  [${i + 1}] ${event.timestamp} - ${(event.timeSinceInit / 1000).toFixed(1)}s after init`);
+                        console.log(`      Textures: ${event.activeTextures}, Wave: ${event.gameState.wave}`);
+                    });
+                }
+                
+                // Warnings
+                const activeTextures = diag.texturesCreated - diag.texturesDestroyed;
+                const activeBuffers = diag.buffersCreated - diag.buffersDestroyed;
+                
+                console.log('\n⚠️  Warnings:');
+                if (activeTextures > 50) {
+                    console.warn('  ⚠️  HIGH TEXTURE COUNT - possible memory leak!');
+                }
+                if (activeBuffers > 200) {
+                    console.warn('  ⚠️  HIGH BUFFER COUNT - possible memory leak!');
+                }
+                if (pixiApp.stage.children.length > 500) {
+                    console.warn('  ⚠️  TOO MANY DISPLAY OBJECTS - may cause lag!');
+                }
+                if (flameContainer && flameContainer.children.length > 100) {
+                    console.warn('  ⚠️  TOO MANY FLAME PARTICLES - reduce particle count!');
+                }
+                if (!contextLost && activeTextures < 10 && activeBuffers < 10) {
+                    console.log('  ✅ All systems nominal');
+                }
+                
+                console.log('═══════════════════════════════════════\n');
+                console.log('💡 Run window.checkWebGLHealth() anytime to check status');
+                console.log('💡 Check window.webglDiagnostics for raw data');
+            };
 
             function playSound(name) {
                 // Check if audio is muted
@@ -41357,6 +41646,30 @@
 
                 const sections = [];
                 
+                // Helper function to get shop item info
+                const getShopItemInfo = (itemType, player) => {
+                    const gold = store.world?.gold ?? 0;
+                    
+                    if (itemType === 'repair') {
+                        const repairCost = 30;
+                        const canRepair = player.hp < player.hpMax;
+                        return {
+                            cost: repairCost,
+                            available: canRepair && gold >= repairCost
+                        };
+                    } else if (itemType === 'grenade') {
+                        const grenadeCost = 50;
+                        const maxGrenades = 3;
+                        const canBuyGrenade = (player.grenades || 0) < maxGrenades;
+                        return {
+                            cost: grenadeCost,
+                            available: canBuyGrenade && gold >= grenadeCost
+                        };
+                    }
+                    
+                    return { cost: 0, available: false };
+                };
+                
                 // Quick Buy section for common purchases
                 const renderQuickBuy = () => {
                     const gold = store.world?.gold ?? 0;
@@ -51525,6 +51838,20 @@
             function frame(now) {
                 const telemetryActive = !!store.telemetryEnabled;
                 const frameStart = telemetryActive ? performance.now() : 0;
+
+                // Check for WebGL context loss early
+                if (window.webglContextLost && pixiApp && pixiApp.renderer) {
+                    try {
+                        const gl = pixiApp.renderer.gl;
+                        if (gl && gl.isContextLost()) {
+                            console.warn('⚠️ WebGL context still lost, waiting for recovery...');
+                            requestAnimationFrame(frame);
+                            return;
+                        }
+                    } catch (err) {
+                        console.error('Error checking WebGL context:', err);
+                    }
+                }
 
                 // Detect abnormally large time jumps (e.g., app returning from background)
                 const timeSinceLastFrame = (now - store.last) / 1000;
