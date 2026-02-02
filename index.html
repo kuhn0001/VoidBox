@@ -5895,24 +5895,10 @@
                 }
             });
 
-            // Track fullscreen transitions to avoid pausing during them
-            let isFullscreenTransition = false;
-            document.addEventListener('fullscreenchange', () => {
-                isFullscreenTransition = true;
-                // Reset flag after a short delay to allow blur event to pass
-                setTimeout(() => { isFullscreenTransition = false; }, 500);
-            });
-
             // Additional mobile safeguard: pause on page blur (iOS Safari)
-            // BUT don't pause during fullscreen transitions
             window.addEventListener('blur', () => {
                 window._lastBackgroundEvent = 'Window Blur';
                 window._lastBackgroundTime = Date.now();
-                // Skip pause if we're in a fullscreen transition
-                if (isFullscreenTransition || window.__ignoreBlurPause) {
-                    console.log('🖥️ Skipping pause during fullscreen transition');
-                    return;
-                }
                 if (typeof store !== 'undefined' && !store.isPaused && !store.isGameOver) {
                     store.isPaused = true;
                     wasAutoPaused = true;
@@ -7210,6 +7196,7 @@
                 beefChargeState: null, beefChargeCooldown: 0, beefChargeOrigin: null, beefChargeTarget: null, beefChargeT: 0, beefCharges: 0, beefMaxCharges: 0,
                 beefChargePlan: null, beefChargeSegmentIndex: 0, beefImpactDelay: 0, beefLastImpact: null, beefQueuedCharge: null,
                 beefDoubleCharge: false, beefBigExplosion: false, // New skill tree abilities
+                beefChargeAngle: 0, beefChargeAngleSmooth: 0, // Ship rotation during charge
                 beefChainMode: false, // Chain jumping system for marauder
                 beefShield: 0, beefShieldMax: 0, beefShieldDamageDealt: 0, beefShieldDamageTaken: 0, beefShieldCooldown: 0,
                 beefShieldTier: 0, beefShieldLastHpMax: 0, beefShieldLastTier: 0, beefShieldLastWave: 0,
@@ -9930,14 +9917,14 @@
                         return p.life > 0;
                     });
                 } else if (b.element === 'ice' || b.element === 'poison') {
-                    // Spawn trail particles for elemental bullets
+                    // Spawn trail particles for elemental bullets (capped for performance)
                     b.particleSpawnT = (b.particleSpawnT || 0) - dt;
-                    if (b.particleSpawnT <= 0) {
-                        b.particleSpawnT = b.element === 'ice' ? 0.015 : 0.025; // Ice spawns more frequently for dense mist
-                        const life = 0.25 + Math.random() * 0.2;
-                        const spreadAngle = (Math.random() - 0.5) * 0.4;
-                        const spreadSpeed = (Math.random() - 0.5) * 30;
-                        if (!Array.isArray(b.particles)) b.particles = [];
+                    const MAX_PARTICLES_PER_BULLET = 8; // Cap particles per bullet
+                    if (!Array.isArray(b.particles)) b.particles = [];
+                    if (b.particleSpawnT <= 0 && b.particles.length < MAX_PARTICLES_PER_BULLET) {
+                        b.particleSpawnT = b.element === 'ice' ? 0.04 : 0.05; // Reduced spawn rate
+                        const life = 0.2 + Math.random() * 0.15;
+                        const spreadSpeed = (Math.random() - 0.5) * 25;
                         b.particles.push({
                             x: 0,
                             y: 0,
@@ -9948,20 +9935,27 @@
                             r: b.element === 'ice' ? (1.2 + Math.random() * 0.8) : (1.5 + Math.random() * 1.5)
                         });
                     }
-                    b.particles = b.particles.filter(p => {
+                    // Update particles in-place to avoid allocation
+                    let writeIdx = 0;
+                    for (let i = 0; i < b.particles.length; i++) {
+                        const p = b.particles[i];
                         p.life -= dt;
-                        p.x += p.vx * dt;
-                        p.y += p.vy * dt;
-                        return p.life > 0;
-                    });
+                        if (p.life > 0) {
+                            p.x += p.vx * dt;
+                            p.y += p.vy * dt;
+                            b.particles[writeIdx++] = p;
+                        }
+                    }
+                    b.particles.length = writeIdx;
                 } else if (b.element === 'void') {
                     b.particleSpawnT = (b.particleSpawnT || 0) - dt;
-                    if (b.particleSpawnT <= 0) {
-                        b.particleSpawnT = 0.02;
-                        const life = 0.24 + Math.random() * 0.22;
+                    const MAX_PARTICLES_PER_BULLET = 8;
+                    if (!Array.isArray(b.particles)) b.particles = [];
+                    if (b.particleSpawnT <= 0 && b.particles.length < MAX_PARTICLES_PER_BULLET) {
+                        b.particleSpawnT = 0.05; // Reduced from 0.02
+                        const life = 0.2 + Math.random() * 0.18;
                         const angle = Math.random() * Math.PI * 2;
                         const speed = 18 + Math.random() * 26;
-                        if (!Array.isArray(b.particles)) b.particles = [];
                         b.particles.push({
                             x: 0,
                             y: 0,
@@ -9973,21 +9967,28 @@
                             spin: Math.random() * Math.PI * 2
                         });
                     }
-                    b.particles = b.particles.filter(p => {
+                    // Update particles in-place
+                    let writeIdx = 0;
+                    for (let i = 0; i < b.particles.length; i++) {
+                        const p = b.particles[i];
                         p.life -= dt;
-                        p.spin = (p.spin || 0) + dt * 6.5;
-                        p.vx *= 0.9;
-                        p.vy *= 0.9;
-                        p.x += p.vx * dt + Math.cos(p.spin) * 12 * dt;
-                        p.y += p.vy * dt + Math.sin(p.spin) * 12 * dt;
-                        return p.life > 0;
-                    });
+                        if (p.life > 0) {
+                            p.spin = (p.spin || 0) + dt * 6.5;
+                            p.vx *= 0.9;
+                            p.vy *= 0.9;
+                            p.x += p.vx * dt + Math.cos(p.spin) * 12 * dt;
+                            p.y += p.vy * dt + Math.sin(p.spin) * 12 * dt;
+                            b.particles[writeIdx++] = p;
+                        }
+                    }
+                    b.particles.length = writeIdx;
                 } else if (b.element === 'fire') {
                     b.particleSpawnT = (b.particleSpawnT || 0) - dt;
-                    if (b.particleSpawnT <= 0) {
-                        b.particleSpawnT = 0.02;
-                        const life = 0.18 + Math.random() * 0.18;
-                        if (!Array.isArray(b.particles)) b.particles = [];
+                    const MAX_PARTICLES_PER_BULLET = 8;
+                    if (!Array.isArray(b.particles)) b.particles = [];
+                    if (b.particleSpawnT <= 0 && b.particles.length < MAX_PARTICLES_PER_BULLET) {
+                        b.particleSpawnT = 0.05; // Reduced from 0.02
+                        const life = 0.15 + Math.random() * 0.15;
                         b.particles.push({
                             x: 0,
                             y: 0,
@@ -9998,12 +9999,18 @@
                             r: 1 + Math.random() * 1.4
                         });
                     }
-                    b.particles = b.particles.filter(p => {
+                    // Update particles in-place
+                    let writeIdx = 0;
+                    for (let i = 0; i < b.particles.length; i++) {
+                        const p = b.particles[i];
                         p.life -= dt;
-                        p.x += p.vx * dt;
-                        p.y += p.vy * dt;
-                        return p.life > 0;
-                    });
+                        if (p.life > 0) {
+                            p.x += p.vx * dt;
+                            p.y += p.vy * dt;
+                            b.particles[writeIdx++] = p;
+                        }
+                    }
+                    b.particles.length = writeIdx;
                 } else if (b.isLevelUpPulse) {
                     b.life -= dt;
                     if (b.life <= 0) b.dead = true;
@@ -16806,6 +16813,18 @@
                             const targetPos = getBeefChargeTargetPosition(segment);
                             const startX = segment.startX;
                             const startY = segment.startY;
+                            
+                            // Calculate charge direction angle (offset by -PI/2 since ship faces "up" at angle 0)
+                            const dx = targetPos.x - startX;
+                            const dy = targetPos.y - startY;
+                            p.beefChargeAngle = Math.atan2(dy, dx) + Math.PI / 2;
+                            
+                            // Smoothly interpolate the visual angle for fluid rotation
+                            const angleDiff = p.beefChargeAngle - (p.beefChargeAngleSmooth || 0);
+                            // Normalize angle difference to [-PI, PI]
+                            const normalizedDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+                            p.beefChargeAngleSmooth = (p.beefChargeAngleSmooth || 0) + normalizedDiff * Math.min(1, dt * 15);
+                            
                             const progress = Math.min((p.beefChargeT + dt) / plan.segmentDuration, 1);
                             const eased = 1 - Math.pow(1 - progress, 3);
                             p.x = startX + (targetPos.x - startX) * eased;
@@ -16880,12 +16899,20 @@
                         }
                     } else if (p.beefChargeState === 'recovering') {
                         p.beefImpactDelay -= dt;
+                        // Smoothly rotate ship back to upright (angle 0) during recovery
+                        if (p.beefChargeAngleSmooth !== undefined && Math.abs(p.beefChargeAngleSmooth) > 0.01) {
+                            p.beefChargeAngleSmooth *= Math.max(0, 1 - dt * 8); // Decay rotation
+                        } else {
+                            p.beefChargeAngleSmooth = 0;
+                        }
                         if (p.beefImpactDelay <= 0) {
                             p.beefChargeState = 'ready';
                             p.beefChargePlan = null;
                             p.beefChargeT = 0;
                             p.beefImpactDelay = 0;
                             p.isInvincible = false;
+                            p.beefChargeAngle = 0;
+                            p.beefChargeAngleSmooth = 0;
                         }
                     }
                 } else {
@@ -23512,16 +23539,10 @@
                         }
                     });
                     
-                    // Clean up removed particles
-                    const activeParticles = new Set();
-                    store.bullets.forEach(b => {
-                        if (b.particles) {
-                            b.particles.forEach(p => activeParticles.add(p));
-                        }
-                    });
-                    
+                    // Clean up removed particles - mark active ones during update
                     activeParticleSprites.forEach((sprite, particle) => {
-                        if (!activeParticles.has(particle)) {
+                        // Check if particle is still referenced (has positive life)
+                        if (!particle || particle.life <= 0) {
                             releaseParticleSprite(particle);
                         }
                     });
@@ -36634,6 +36655,12 @@
 
                 ctx.save();
                 ctx.translate(t, e);
+                
+                // Rotate ship during Beef's charge attack (charging and recovering for smooth animation)
+                if (player.pilotGenome === 'beef' && player.beefChargeAngleSmooth !== undefined && Math.abs(player.beefChargeAngleSmooth) > 0.01) {
+                    ctx.rotate(player.beefChargeAngleSmooth);
+                }
+                
                 if (player.isInvincible || player.hasShieldBubble) {
                     ctx.beginPath(); ctx.arc(0, 0, 24, 0, 2 * Math.PI);
                     const g = ctx.createRadialGradient(0, 0, 18, 0, 0, 24);
@@ -46060,41 +46087,139 @@
                 const time = performance.now() / 1000;
                 const lifeRatio = pulse.life / 2.0;
                 const opacity = Math.min(1, lifeRatio);
+                
+                // Seed for consistent flame positions per pulse (use pulse position as seed)
+                const seed = (pulse.x * 7919 + pulse.y * 7927) % 10000;
+                const seededRandom = (i, offset = 0) => {
+                    const x = Math.sin((seed + i * 127.1 + offset * 311.7) * 43758.5453);
+                    return x - Math.floor(x);
+                };
 
-                // Outer fire ring (orange)
-                const outerGradient = ctx.createRadialGradient(pulse.x, pulse.y, pulse.radius - 20, pulse.x, pulse.y, pulse.radius + 10);
-                outerGradient.addColorStop(0, `rgba(255, 69, 0, 0)`);
-                outerGradient.addColorStop(0.4, `rgba(255, 120, 0, ${opacity * 0.6})`);
-                outerGradient.addColorStop(0.7, `rgba(255, 80, 0, ${opacity * 0.8})`);
-                outerGradient.addColorStop(1, `rgba(255, 40, 0, 0)`);
-
-                ctx.fillStyle = outerGradient;
+                // Number of flame puffs based on radius for high resolution
+                const numPuffs = Math.max(24, Math.floor(pulse.radius * 0.4));
+                const baseAngleStep = (Math.PI * 2) / numPuffs;
+                
+                // Draw individual flame puffs around the perimeter
+                for (let i = 0; i < numPuffs; i++) {
+                    // Irregular angle distribution for organic feel
+                    const angleJitter = (seededRandom(i, 1) - 0.5) * baseAngleStep * 0.6;
+                    const angle = i * baseAngleStep + angleJitter;
+                    
+                    // Vary the radius for each puff (creates wavy, non-perfect circle)
+                    const radiusVariation = 1 + (seededRandom(i, 2) - 0.5) * 0.25;
+                    const puffRadius = pulse.radius * radiusVariation;
+                    
+                    // Position of this flame puff
+                    const px = pulse.x + Math.cos(angle) * puffRadius;
+                    const py = pulse.y + Math.sin(angle) * puffRadius;
+                    
+                    // Animated wobble for living fire effect
+                    const wobbleX = Math.sin(time * 8 + i * 0.7) * 3;
+                    const wobbleY = Math.cos(time * 9 + i * 0.5) * 3;
+                    const finalX = px + wobbleX;
+                    const finalY = py + wobbleY;
+                    
+                    // Vary puff size for organic look
+                    const basePuffSize = 18 + seededRandom(i, 3) * 14;
+                    const puffSize = basePuffSize * (0.8 + 0.4 * Math.sin(time * 6 + i * 1.3));
+                    
+                    // Draw flame puff with layered gradients
+                    // Outer glow (orange/red)
+                    const outerGrad = ctx.createRadialGradient(finalX, finalY, 0, finalX, finalY, puffSize * 1.4);
+                    outerGrad.addColorStop(0, `rgba(255, 100, 20, ${opacity * 0.5})`);
+                    outerGrad.addColorStop(0.4, `rgba(255, 60, 0, ${opacity * 0.4})`);
+                    outerGrad.addColorStop(0.7, `rgba(200, 40, 0, ${opacity * 0.2})`);
+                    outerGrad.addColorStop(1, `rgba(150, 20, 0, 0)`);
+                    
+                    ctx.fillStyle = outerGrad;
+                    ctx.beginPath();
+                    ctx.arc(finalX, finalY, puffSize * 1.4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Core flame (yellow/orange)
+                    const coreGrad = ctx.createRadialGradient(finalX, finalY - puffSize * 0.2, 0, finalX, finalY, puffSize);
+                    coreGrad.addColorStop(0, `rgba(255, 255, 180, ${opacity * 0.9})`);
+                    coreGrad.addColorStop(0.3, `rgba(255, 200, 80, ${opacity * 0.8})`);
+                    coreGrad.addColorStop(0.6, `rgba(255, 120, 30, ${opacity * 0.6})`);
+                    coreGrad.addColorStop(1, `rgba(255, 60, 0, 0)`);
+                    
+                    ctx.fillStyle = coreGrad;
+                    ctx.beginPath();
+                    ctx.arc(finalX, finalY, puffSize, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Hot white center for some puffs
+                    if (seededRandom(i, 4) > 0.5) {
+                        const hotGrad = ctx.createRadialGradient(finalX, finalY - puffSize * 0.15, 0, finalX, finalY, puffSize * 0.4);
+                        hotGrad.addColorStop(0, `rgba(255, 255, 255, ${opacity * 0.7})`);
+                        hotGrad.addColorStop(0.5, `rgba(255, 240, 200, ${opacity * 0.4})`);
+                        hotGrad.addColorStop(1, `rgba(255, 200, 100, 0)`);
+                        
+                        ctx.fillStyle = hotGrad;
+                        ctx.beginPath();
+                        ctx.arc(finalX, finalY - puffSize * 0.1, puffSize * 0.4, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+                
+                // Add secondary smaller flame wisps between main puffs
+                const numWisps = Math.floor(numPuffs * 0.7);
+                for (let i = 0; i < numWisps; i++) {
+                    const angle = (i + 0.5) * baseAngleStep + seededRandom(i, 10) * 0.5;
+                    const radiusOffset = pulse.radius * (0.85 + seededRandom(i, 11) * 0.3);
+                    
+                    const wx = pulse.x + Math.cos(angle) * radiusOffset + Math.sin(time * 10 + i) * 4;
+                    const wy = pulse.y + Math.sin(angle) * radiusOffset + Math.cos(time * 11 + i) * 4;
+                    
+                    const wispSize = 8 + seededRandom(i, 12) * 10;
+                    
+                    const wispGrad = ctx.createRadialGradient(wx, wy, 0, wx, wy, wispSize);
+                    wispGrad.addColorStop(0, `rgba(255, 180, 60, ${opacity * 0.6})`);
+                    wispGrad.addColorStop(0.5, `rgba(255, 100, 20, ${opacity * 0.4})`);
+                    wispGrad.addColorStop(1, `rgba(255, 50, 0, 0)`);
+                    
+                    ctx.fillStyle = wispGrad;
+                    ctx.beginPath();
+                    ctx.arc(wx, wy, wispSize, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                // Add rising flame tongues (embers rising from the ring)
+                const numEmbers = Math.floor(numPuffs * 0.4);
+                for (let i = 0; i < numEmbers; i++) {
+                    const angle = seededRandom(i, 20) * Math.PI * 2;
+                    const baseRadius = pulse.radius * (0.9 + seededRandom(i, 21) * 0.2);
+                    
+                    // Embers rise outward and upward
+                    const riseOffset = (time * 40 + seededRandom(i, 22) * 100) % 40;
+                    const ex = pulse.x + Math.cos(angle) * (baseRadius + riseOffset * 0.5);
+                    const ey = pulse.y + Math.sin(angle) * (baseRadius + riseOffset * 0.3) - riseOffset;
+                    
+                    const emberOpacity = opacity * Math.max(0, 1 - riseOffset / 40);
+                    const emberSize = 4 + seededRandom(i, 23) * 6;
+                    
+                    const emberGrad = ctx.createRadialGradient(ex, ey, 0, ex, ey, emberSize);
+                    emberGrad.addColorStop(0, `rgba(255, 220, 100, ${emberOpacity * 0.8})`);
+                    emberGrad.addColorStop(0.6, `rgba(255, 140, 40, ${emberOpacity * 0.5})`);
+                    emberGrad.addColorStop(1, `rgba(255, 80, 0, 0)`);
+                    
+                    ctx.fillStyle = emberGrad;
+                    ctx.beginPath();
+                    ctx.arc(ex, ey, emberSize, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                // Subtle inner glow at center (heat haze effect)
+                const pulseEffect = 0.7 + 0.3 * Math.sin(time * 8);
+                const innerGlowGrad = ctx.createRadialGradient(pulse.x, pulse.y, 0, pulse.x, pulse.y, pulse.radius * 0.6);
+                innerGlowGrad.addColorStop(0, `rgba(255, 150, 50, ${opacity * 0.15 * pulseEffect})`);
+                innerGlowGrad.addColorStop(0.5, `rgba(255, 80, 20, ${opacity * 0.08})`);
+                innerGlowGrad.addColorStop(1, `rgba(255, 40, 0, 0)`);
+                
+                ctx.fillStyle = innerGlowGrad;
                 ctx.beginPath();
-                ctx.arc(pulse.x, pulse.y, pulse.radius + 10, 0, Math.PI * 2);
-                ctx.arc(pulse.x, pulse.y, Math.max(0, pulse.radius - 20), 0, Math.PI * 2, true);
+                ctx.arc(pulse.x, pulse.y, pulse.radius * 0.6, 0, Math.PI * 2);
                 ctx.fill();
-
-                // Inner hot core (yellow/white)
-                const innerGradient = ctx.createRadialGradient(pulse.x, pulse.y, pulse.radius - 15, pulse.x, pulse.y, pulse.radius + 5);
-                innerGradient.addColorStop(0, `rgba(255, 255, 200, 0)`);
-                innerGradient.addColorStop(0.5, `rgba(255, 220, 100, ${opacity * 0.7})`);
-                innerGradient.addColorStop(1, `rgba(255, 150, 50, 0)`);
-
-                ctx.fillStyle = innerGradient;
-                ctx.beginPath();
-                ctx.arc(pulse.x, pulse.y, pulse.radius + 5, 0, Math.PI * 2);
-                ctx.arc(pulse.x, pulse.y, Math.max(0, pulse.radius - 15), 0, Math.PI * 2, true);
-                ctx.fill();
-
-                // Pulsing glow effect
-                const pulseEffect = 0.5 + 0.5 * Math.sin(time * 10);
-                ctx.shadowColor = 'rgba(255, 100, 0, 0.8)';
-                ctx.shadowBlur = 20 * pulseEffect;
-                ctx.strokeStyle = `rgba(255, 180, 80, ${opacity * 0.8 * pulseEffect})`;
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.arc(pulse.x, pulse.y, pulse.radius, 0, Math.PI * 2);
-                ctx.stroke();
 
                 ctx.restore();
             }
@@ -50742,10 +50867,6 @@
             });
 
             q("fsEnterBtn").addEventListener('click', () => {
-                // Set global flag to ignore blur pause for 1 second
-                window.__ignoreBlurPause = true;
-                setTimeout(() => window.__ignoreBlurPause = false, 1000);
-                
                 const r = document.documentElement;
                 if (!document.fullscreenElement) {
                     if (r.requestFullscreen) r.requestFullscreen();
