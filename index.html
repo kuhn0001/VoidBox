@@ -23528,6 +23528,7 @@
                                 pSprite.y = b.y + p.y;
                                 pSprite.alpha = 0.75 * t;
                                 pSprite.scale.set(p.r * t / 8);
+                                p._activeFrame = frameCount; // Mark particle as active this frame
                             });
                         }
                     });
@@ -23539,10 +23540,9 @@
                         }
                     });
                     
-                    // Clean up removed particles - mark active ones during update
+                    // Clean up removed particles - check if they were active this frame
                     activeParticleSprites.forEach((sprite, particle) => {
-                        // Check if particle is still referenced (has positive life)
-                        if (!particle || particle.life <= 0) {
+                        if (!particle || particle._activeFrame !== frameCount) {
                             releaseParticleSprite(particle);
                         }
                     });
