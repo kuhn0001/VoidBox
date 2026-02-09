@@ -21056,6 +21056,29 @@
                     store.eBullets = [];
                 }
                 
+                // Clean up PixiJS graphics on all enemies before clearing
+                if (store.enemies && store.enemies.length) {
+                    store.enemies.forEach(enemy => {
+                        if (enemy && enemy.pixiGraphics) {
+                            if (enemy.type === 'cube_burglar' && cubeBurglarContainer) {
+                                cubeBurglarContainer.removeChild(enemy.pixiGraphics);
+                            }
+                            enemy.pixiGraphics.destroy();
+                            enemy.pixiGraphics = null;
+                        }
+                    });
+                }
+                
+                // Clear any remaining children in the cubeBurglarContainer
+                if (cubeBurglarContainer) {
+                    while (cubeBurglarContainer.children.length > 0) {
+                        const child = cubeBurglarContainer.children[0];
+                        cubeBurglarContainer.removeChild(child);
+                        child.destroy();
+                    }
+                }
+                store.cubeBurglarId = null;
+                
                 // Clear all enemy and entity arrays
                 store.boss = null;
                 store.enemies = [];
