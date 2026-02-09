@@ -16791,12 +16791,32 @@
                 
                 if (p.pilotGenome === 'beef' && p.beefMaxCharges > 0 && p.beefChargeState !== 'ready') {
                     const plan = p.beefChargePlan;
-                    if (!plan || !plan.segments || plan.segments.length === 0) {
+                    // Check recovering state FIRST - it runs with plan=null after charge completes
+                    if (p.beefChargeState === 'recovering') {
+                        p.beefImpactDelay -= dt;
+                        // Smoothly rotate ship back to upright (angle 0) during recovery
+                        if (p.beefChargeAngleSmooth !== undefined && Math.abs(p.beefChargeAngleSmooth) > 0.01) {
+                            p.beefChargeAngleSmooth *= Math.max(0, 1 - dt * 8); // Decay rotation
+                        } else {
+                            p.beefChargeAngleSmooth = 0;
+                        }
+                        if (p.beefImpactDelay <= 0) {
+                            p.beefChargeState = 'ready';
+                            p.beefChargePlan = null;
+                            p.beefChargeT = 0;
+                            p.beefImpactDelay = 0;
+                            p.isInvincible = false;
+                            p.beefChargeAngle = 0;
+                            p.beefChargeAngleSmooth = 0;
+                        }
+                    } else if (!plan || !plan.segments || plan.segments.length === 0) {
                         p.beefChargeState = 'ready';
                         p.beefChargePlan = null;
                         p.beefChargeT = 0;
                         p.beefImpactDelay = 0;
                         p.isInvincible = false;
+                        p.beefChargeAngle = 0;
+                        p.beefChargeAngleSmooth = 0;
                     } else if (p.beefChargeState === 'charging') {
                         const segmentIndex = Math.min(p.beefChargeSegmentIndex, plan.segments.length - 1);
                         const segment = plan.segments[segmentIndex];
@@ -16805,6 +16825,8 @@
                             p.beefChargePlan = null;
                             p.beefChargeT = 0;
                             p.isInvincible = false;
+                            p.beefChargeAngle = 0;
+                            p.beefChargeAngleSmooth = 0;
                         } else {
                             if (segment.startX === undefined) {
                                 segment.startX = p.x;
@@ -16896,23 +16918,6 @@
                                 p.beefImpactDelay = plan ? plan.recoveryDelay : 0.12;
                                 p.isInvincible = false;
                             }
-                        }
-                    } else if (p.beefChargeState === 'recovering') {
-                        p.beefImpactDelay -= dt;
-                        // Smoothly rotate ship back to upright (angle 0) during recovery
-                        if (p.beefChargeAngleSmooth !== undefined && Math.abs(p.beefChargeAngleSmooth) > 0.01) {
-                            p.beefChargeAngleSmooth *= Math.max(0, 1 - dt * 8); // Decay rotation
-                        } else {
-                            p.beefChargeAngleSmooth = 0;
-                        }
-                        if (p.beefImpactDelay <= 0) {
-                            p.beefChargeState = 'ready';
-                            p.beefChargePlan = null;
-                            p.beefChargeT = 0;
-                            p.beefImpactDelay = 0;
-                            p.isInvincible = false;
-                            p.beefChargeAngle = 0;
-                            p.beefChargeAngleSmooth = 0;
                         }
                     }
                 } else {
