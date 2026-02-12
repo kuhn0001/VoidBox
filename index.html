@@ -33604,16 +33604,28 @@
                 tickChampionBurn(b, dt);
                 tickChampionVoidMarks(b, dt);
                 
-                // Boss healing powerup drops for non-vampiric players
-                if (store.player && store.player.vampirism <= 0) {
+                // Boss support drops (Health or Gold) for prolonged engagements
+                // Intended to help sustain players during Hive Sovereign or Death Engine fights
+                if (store.player) {
                     b.healingDropTimer = (b.healingDropTimer || 5.0) - dt;
                     if (b.healingDropTimer <= 0) {
-                        // Spawn healing powerup near boss
                         const dropX = b.x + (Math.random() - 0.5) * 80;
                         const dropY = b.y + 60 + Math.random() * 40;
                         if (!store.powerups) store.powerups = [];
-                        store.powerups.push({ x: dropX, y: dropY, r: 12, type: 'repair' });
-                        b.healingDropTimer = 5.0; // Reset timer
+
+                        // Determine drop type: Health (repair) or Gold (cash)
+                        // If vampirism is active, player cannot heal from pickups, so force cash
+                        const isVampiric = (store.player.vampirism || 0) > 0;
+                        const wantsHealth = !isVampiric && (store.player.hp < store.player.hpMax || Math.random() < 0.5);
+                        
+                        const dropType = wantsHealth ? 'repair' : 'cash';
+                        
+                        // Spawn the powerup
+                        store.powerups.push({ x: dropX, y: dropY, r: 12, type: dropType });
+
+                        // Reset timer - slightly faster for tanky bosses to help the player along
+                        const isMajorBoss = b.behavior === 'broodlord' || b.behavior === 'asynchronos';
+                        b.healingDropTimer = isMajorBoss ? 4.0 : 5.0;
                     }
                 }
 
