@@ -6876,6 +6876,12 @@
                     const p = pointFromEvent(e);
                     mouse.x = p.x;
                     mouse.y = p.y;
+                    
+                    // Update asteroid targeting aiming on touch
+                    if (typeof asteroidTargeting !== 'undefined' && asteroidTargeting.active) {
+                        updateAsteroidTargeting(p.x, p.y);
+                    }
+                    
                     e.preventDefault();
                 } catch (err) {
                     // Touch start error silenced
@@ -6886,6 +6892,12 @@
                     const p = pointFromEvent(e);
                     mouse.x = p.x;
                     mouse.y = p.y;
+                    
+                    // Update asteroid targeting aiming on touch
+                    if (typeof asteroidTargeting !== 'undefined' && asteroidTargeting.active) {
+                        updateAsteroidTargeting(p.x, p.y);
+                    }
+                    
                     e.preventDefault();
                 } catch (err) {
                     // Touch move error silenced
@@ -51508,6 +51520,13 @@
             let lastTapTime = 0;
             cvs.addEventListener('touchend', e => {
                 e.preventDefault();
+
+                // Handle asteroid targeting confirmation on mobile tap
+                if (typeof asteroidTargeting !== 'undefined' && asteroidTargeting.active) {
+                    confirmAsteroidTargeting();
+                    return;
+                }
+
                 if (store.player.pilotGenome === 'voidmancer' && store.player.hasBlink && !store.isPaused && !store.isGameOver) {
                     const now = performance.now();
                     const DOUBLE_TAP_DELAY = 300;
